@@ -3,7 +3,7 @@
 
 // Turns raw hardware (contacts, and optionally tilt) into game intent. Nothing
 // here talks to a driver -- it sits entirely on top of vg_port.h, so it
-// survives the move into Clawdmeter unchanged.
+// survives a move to another host firmware unchanged.
 //
 // Control scheme: left thumb on the throttle strip, right finger anywhere else
 // to steer. A quick tap fires; so does any additional finger, so you can shoot

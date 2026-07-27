@@ -8,16 +8,16 @@
 // hardware touch -- panel, touchscreen, IMU -- goes through these functions.
 // No other vg_*.cpp file includes a driver header.
 //
-// Standalone builds use vg_port_arduino_gfx.cpp, which drives the CO5300 and
-// CST9220 directly via Arduino_GFX + SensorLib.
+// Standalone builds use vg_port_co5300.cpp, which drives the panel over raw
+// QSPI and reads the CST9220 / QMI8658 via SensorLib.
 //
-// To fold the game into Clawdmeter: drop vg_port_arduino_gfx.cpp from the
-// build and add a vg_port_clawdmeter.cpp implementing these same functions on
-// top of display_hal_draw_bitmap() / touch_hal_read() / the QMI8658. Nothing
-// else in the game changes.
+// To embed the game in another firmware: drop vg_port_co5300.cpp from the build
+// and add your own vg_port_*.cpp implementing these same functions on top of
+// whatever display / touch / IMU layer that firmware already has. Nothing else
+// in the game changes.
 //
-// Note for that port: Clawdmeter's imu_hal only exposes a rotation quadrant at
-// ~10 Hz, which is far too coarse to fly with. The port will need a raw
+// Note for such a port: a UI-oriented IMU layer often exposes only a rotation
+// quadrant at ~10 Hz, which is far too coarse to fly with. The port needs a raw
 // accelerometer read at >=100 Hz (see vg_imu_read below).
 // ===========================================================================
 

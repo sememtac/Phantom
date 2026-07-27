@@ -11,26 +11,29 @@ to tighten your turn when something is chasing you and to run when it isn't.
 
 ## Build & flash
 
-```powershell
-cd F:\ESP32-S3\Game
-python -m platformio run --target upload --upload-port COM6
-python -m serial.tools.miniterm COM6 115200 --raw     # telemetry
+Requires [PlatformIO](https://platformio.org/). From the repository root,
+substituting your serial port:
+
+```
+pio run --target upload --upload-port COM6
+pio device monitor --port COM6 --baud 115200     # telemetry
 ```
 
-**COM6 is shared with Clawdmeter.** Its tray daemon holds the port open, so stop
-it first:
+The only dependency is `lewisxhe/SensorLib` (IMU + touch); the panel is driven
+directly and pulls in nothing.
 
-```powershell
-Stop-Process -Name pythonw -Force        # or the specific tray_windows.py PID
+The firmware prints a per-frame cost breakdown over serial, which is how every
+performance claim below was measured:
+
+```
+66.7 fps | in 871us upd 183us submit 1203us blit 13407us | prims 106
 ```
 
-### Restoring Clawdmeter to the device
+### Sharing the board with other firmware
 
-```powershell
-cd F:\Clawdmeter\firmware
-python -m platformio run -t upload -e waveshare_amoled_216
-python F:\Clawdmeter\daemon\tray_windows.py
-```
+If something else on the host holds the serial port open (a companion daemon,
+a monitor), stop it before flashing or the upload will fail with an access
+error. On Windows the offender is usually a background `pythonw` process.
 
 ---
 
@@ -507,34 +510,38 @@ bytes on the wire (dirty-rectangle tracking, which a rotating starfield defeats)
 
 ---
 
-## Folding into Clawdmeter
+## Embedding in another firmware
 
-`vg_port.h` is the only file that touches hardware. To integrate:
+The game is designed to be launched from inside an existing application rather
+than only run standalone. `vg_port.h` is the only file that touches hardware,
+and everything under `src/vg/` is prefixed `vg_` so it can be dropped into
+another `src/` without colliding.
 
-1. Copy `src/vg/` into Clawdmeter's `src/`.
-2. **Drop `vg_port_co5300.cpp`** and add `vg_port_clawdmeter.cpp` implementing
-   the same functions on top of `display_hal_draw_bitmap()` / `touch_hal_read()`
-   — or keep this file, since it is self-contained and much faster than routing
-   through Clawdmeter's Arduino_GFX display HAL.
+1. Copy `src/vg/` into the host firmware's `src/`.
+2. **Drop `vg_port_co5300.cpp`** and add your own implementation of the same
+   functions on top of whatever display and touch layer the host already has —
+   or keep this file, since it is self-contained and likely faster than routing
+   through a general-purpose graphics library.
 3. Have the launcher call, per frame:
    `vg_input_update()` -> `vg_game_update()` -> `vg_render_frame()` -> `vg_rast_flush()`.
 
 No other game file changes.
 
-Things to watch:
+Four things to watch, learned from planning exactly this against an LVGL
+application on the same board:
 
-- **Bus ownership.** If this file is kept, Clawdmeter's `Arduino_ESP32QSPI` and
-  this driver would both want SPI2 and the same pins. Only one may hold the bus,
-  so entering the game must tear down the other (or the game must borrow
-  Clawdmeter's `spi_device_handle_t`).
-- **LVGL owns the panel.** The game bypasses it and writes bands directly, so on
-  entry it must stop LVGL flushing, and on exit call
-  `lv_obj_invalidate(lv_screen_active())` to force a full repaint.
-- **Rotation.** Clawdmeter rotates in software via
-  `imu_hal_rotation_quadrant()`. The game assumes quadrant 0 — lock it while
-  playing, or accept an extra full-frame copy.
-- **Multi-touch.** Clawdmeter's `touch_hal_read()` returns a single point. The
-  game needs up to 5 (throttle held while steering while firing).
+- **Bus ownership.** If you keep this QSPI driver, it and the host's own display
+  driver will both want SPI2 and the same pins. Only one may hold the bus, so
+  entering the game has to tear down the other — or borrow its
+  `spi_device_handle_t`.
+- **The host's UI toolkit owns the panel.** The game bypasses it and writes bands
+  directly, so on entry it must stop that toolkit flushing, and on exit force a
+  full repaint (`lv_obj_invalidate(lv_screen_active())` under LVGL).
+- **Rotation.** If the host applies its own software rotation, the game will
+  fight it — it does its own quarter turn at submit time. Lock the host's
+  rotation while playing, or accept an extra full-frame copy.
+- **Multi-touch.** Many touch HALs return a single point. The game needs up to
+  five: the throttle can be held while steering while a button is pressed.
 
 ---
 
@@ -559,9 +566,8 @@ All in `vg_config.h`. The ones that actually change how it plays:
 
 ## Not done yet
 
-- **Sound.** The board has an ES8311 codec + speaker on I2S; Clawdmeter's
-  `es8311.c` / `chime.cpp` are a working reference for this exact hardware. A
-  launch whoosh and a lock tone would add a lot.
+- **Sound.** The board has an ES8311 codec and a speaker on I2S, entirely unused
+  so far. A launch whoosh and a lock tone would add a lot.
 - **More maps.** `vg_arena.cpp` needs a `surf`, a `nearest`, an `inward` and a
   `patch_extent` per shape; everything else is generic. A box/hangar interior is
   the obvious next one, though it is the first non-parametric shape so it would
@@ -574,3 +580,11 @@ All in `vg_config.h`. The ones that actually change how it plays:
   rate.
 - **A gun** for close-in work, once the missile duel feels right.
 - High score persistence (NVS).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+The one dependency, [SensorLib](https://github.com/lewisxhe/SensorLib), is MIT
+as well. Nothing else is vendored: the panel driver, rasteriser, font and
+procedural backdrop are all written from scratch in this repo.

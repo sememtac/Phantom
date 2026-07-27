@@ -1,7 +1,7 @@
 // PHANTOM - standalone entry point.
 //
-// This file exists only for the standalone build. When the game is folded into
-// Clawdmeter, its launcher calls the same four functions per frame instead:
+// This file exists only for the standalone build. When the game is embedded in
+// another firmware, its launcher calls the same four functions per frame:
 //   vg_input_update() -> vg_game_update() -> vg_render_frame() -> vg_rast_flush()
 
 #include <Arduino.h>

@@ -18,8 +18,8 @@
 // is self-contained, so hardware CS is fine -- no need for the manual CS
 // juggling Arduino_GFX does to hold a chip-select across chunked writes.
 //
-// Drop this file when folding the game into Clawdmeter and supply a
-// vg_port_clawdmeter.cpp instead.
+// Drop this file when embedding the game in another firmware and supply a port
+// built on that firmware's own display / touch / IMU layer instead.
 
 #include "vg_port.h"
 #include "vg_config.h"
@@ -30,7 +30,7 @@
 #include <SensorQMI8658.hpp>
 #include <TouchDrvCSTXXX.hpp>
 
-// ---- Board pin map (verified against Clawdmeter's port for this board) ----
+// ---- Board pin map (Waveshare ESP32-S3-Touch-AMOLED-2.16) ----
 #define LCD_CS       12
 #define LCD_SCLK     38
 #define LCD_SDIO0     4
@@ -259,8 +259,8 @@ bool vg_imu_init(void) {
         s_imu_ok = false;
         return false;
     }
-    // Clawdmeter runs this at 21 Hz because it only needs a rotation quadrant.
-    // Flying needs a fresh sample every frame.
+    // A UI app can get away with ~20 Hz here because it only wants a rotation
+    // quadrant. Flying needs a fresh sample every frame.
     s_imu.configAccelerometer(SensorQMI8658::ACC_RANGE_4G,
                               SensorQMI8658::ACC_ODR_250Hz,
                               SensorQMI8658::LPF_MODE_2);
@@ -321,8 +321,7 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         if (tx[i] == 0 && ty[i] == 0) continue;
 
         // The controller is configured swap+mirror, which lands its output a
-        // quarter turn off the panel; this undoes that (same transform as
-        // Clawdmeter's touch_to_panel).
+        // quarter turn off the panel; this undoes that.
         uint16_t px = (uint16_t)ty[i];
         uint16_t py = (uint16_t)(SCR_H - 1 - tx[i]);
 
