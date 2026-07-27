@@ -3,9 +3,13 @@
 A wireframe **dogfight sim** for the **Waveshare ESP32-S3-Touch-AMOLED-2.16**
 (480x480 CO5300 AMOLED, CST9220 touch, QMI8658 IMU, AXP2101 PMU).
 
-Old-school vector graphics on black at **~70 fps**. You fly forever, hunt an
-enemy fighter, and trade heat-seeking missiles with it — throttling constantly
-to tighten your turn when something is chasing you and to run when it isn't.
+Old-school vector graphics on black at **~70 fps**. You hunt an enemy fighter and
+trade heat-seeking missiles with it — throttling constantly to tighten your turn
+when something is chasing you and to run when it isn't.
+
+This README describes what is **built**. The game being built *around* it — a
+sixteen-entrant knockout tournament with four ship classes and a repair economy —
+is specified in **[DESIGN.md](DESIGN.md)**.
 
 ---
 

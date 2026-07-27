@@ -5,7 +5,7 @@
 // ===========================================================================
 
 // --- speed -----------------------------------------------------------------
-// The central tactical trade. Top speed outruns a missile (200) outright, but
+// The central tactical trade. Top speed outruns a missile (340) outright, but
 // nothing useful can be done up there: the turn rate collapses and a lock takes
 // far longer to acquire than the geometry will hold. Fast is how you SURVIVE
 // and disengage; slow is the only way to FIGHT.
