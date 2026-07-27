@@ -1,0 +1,18 @@
+# PlatformIO build output, downloaded toolchains and library dependencies.
+# ~40 MB and fully reproducible from platformio.ini.
+.pio/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Build artefacts, if ever produced outside .pio
+*.bin
+*.elf
+*.map
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

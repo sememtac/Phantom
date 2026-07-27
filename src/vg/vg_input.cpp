@@ -1,0 +1,290 @@
+#include "vg_input.h"
+#include "vg_config.h"
+#include "vg_port.h"
+#include <Arduino.h>
+#include <math.h>
+
+// Logs any single-frame throttle jump large enough to be physically impossible,
+// with the raw contact list. Cheap, and it fires only on the fault.
+#define VG_DEBUG_THROTTLE 1
+
+// ---- throttle ----
+static float s_throttle = 0.55f;
+// The throttle is owned by a specific contact, tracked the same way the
+// steering finger is. Without this, ANY point that happens to land in the left
+// strip drives it -- including a spurious one -- and the setting jumps.
+static bool  s_thr_active = false;
+static float s_thr_x = 0, s_thr_y = 0;
+
+// ---- steering ----
+static bool  s_steer_active = false;
+static float s_steer_ox = 0, s_steer_oy = 0;   // virtual-joystick origin
+static float s_steer_x  = 0, s_steer_y  = 0;   // current position
+static float s_steer_px = 0, s_steer_py = 0;   // previous position (trackball)
+static float s_steer_age = 0;                  // seconds held
+static float s_steer_moved = 0;                // max distance from origin, px
+static float s_yaw = 0, s_pitch = 0;           // smoothed deflection
+static bool  s_prev_steer_contact = false;
+static bool  s_prev_fire_btn      = false;
+
+// ---- tilt (STEER_MODE 2 only) ----
+static float s_ax = 0, s_ay = 0, s_az = 1;
+static float s_nx = 0, s_ny = 0, s_nz = 1;
+static bool  s_have_sample = false;
+
+void vg_input_init(void) {
+    s_throttle = 0.55f;
+    s_thr_active = false;
+    s_steer_active = false;
+    s_prev_steer_contact = false;
+    s_yaw = s_pitch = 0;
+    s_have_sample = false;
+}
+
+void vg_input_calibrate(void) {
+#if STEER_MODE == 2
+    float sx = 0, sy = 0, sz = 0;
+    int   n  = 0;
+    for (int i = 0; i < 12; i++) {
+        float ax, ay, az;
+        if (vg_imu_read(&ax, &ay, &az)) { sx += ax; sy += ay; sz += az; n++; }
+        delay(6);
+    }
+    if (n > 0) {
+        s_nx = sx / n; s_ny = sy / n; s_nz = sz / n;
+        s_ax = s_nx;   s_ay = s_ny;   s_az = s_nz;
+        s_have_sample = true;
+    }
+    Serial.printf("vg_input: neutral = %.3f %.3f %.3f (%d samples)\n",
+                  s_nx, s_ny, s_nz, n);
+#endif
+    s_yaw = s_pitch = 0;
+    s_steer_active = false;
+}
+
+// Deadzone, normalise to full deflection, then a mild expo so small movements
+// give fine control while the outer travel still reaches full rate.
+static inline float shape(float d, float dead, float full) {
+    float a = fabsf(d);
+    if (a <= dead) return 0.0f;
+    float v = (a - dead) / (full - dead);
+    if (v > 1.0f) v = 1.0f;
+    v = v * v * 0.45f + v * 0.55f;
+    return d > 0 ? v : -v;
+}
+
+void vg_input_update(float dt, VgInput* out) {
+    uint16_t xs[VG_MAX_TOUCH], ys[VG_MAX_TOUCH];
+    int n = vg_touch_read(xs, ys);
+
+    // ---- partition contacts into throttle side and steering side ----
+    int zone[VG_MAX_TOUCH];
+    int nzone = 0;
+    int other[VG_MAX_TOUCH];
+    int nother = 0;
+    for (int i = 0; i < n; i++) {
+        if (xs[i] <= THROTTLE_ZONE_X1) {
+            if (nzone < VG_MAX_TOUCH) zone[nzone++] = i;
+        } else if (nother < VG_MAX_TOUCH) {
+            other[nother++] = i;
+        }
+    }
+
+    // ---- throttle ----
+    // Ownership with two guards. Nearest-match alone is NOT enough: when the
+    // real thumb lifts, a spurious contact appearing in the same frame becomes
+    // the only candidate in the zone and inherits the control, which is exactly
+    // how the throttle used to snap to zero on release.
+    int thr_i = -1;
+
+    if (s_thr_active) {
+        // Retain: nearest candidate, but only if it could plausibly BE our
+        // thumb one frame later.
+        float best = 1e30f;
+        int   cand = -1;
+        for (int k = 0; k < nzone; k++) {
+            float dx = (float)xs[zone[k]] - s_thr_x;
+            float dy = (float)ys[zone[k]] - s_thr_y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < best) { best = d2; cand = zone[k]; }
+        }
+        if (cand >= 0 && best <= THROTTLE_MAX_JUMP * THROTTLE_MAX_JUMP) thr_i = cand;
+        else s_thr_active = false;
+    }
+
+    bool fresh_grab = false;
+    if (!s_thr_active) {
+        // Acquire: must land ON the slider, not merely somewhere down the left
+        // edge. A contact that fails this leaves the throttle exactly as it was.
+        for (int k = 0; k < nzone; k++) {
+            uint16_t y = ys[zone[k]];
+            if (y >= THROTTLE_ZONE_Y0 && y <= THROTTLE_ZONE_Y1) {
+                thr_i = zone[k];
+                s_thr_active = true;
+                fresh_grab   = true;
+                break;
+            }
+        }
+    }
+
+    float prev_throttle = s_throttle;
+
+    if (thr_i >= 0) {
+        s_thr_x = (float)xs[thr_i];
+        s_thr_y = (float)ys[thr_i];
+        float t = ((float)THROTTLE_BOT - s_thr_y) /
+                  (float)(THROTTLE_BOT - THROTTLE_TOP);
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        // Snap to the thumb. A slider that lags the finger feels broken; the
+        // smoothing that matters happens in the flight model instead.
+        s_throttle = t;
+    }
+
+#if VG_DEBUG_THROTTLE
+    // Only an anomaly if the value jumped while a contact was ALREADY holding
+    // the throttle -- a thumb cannot drag that far in one frame. A fresh grab
+    // legitimately snaps to wherever it landed, so it is not reported.
+    if (!fresh_grab && fabsf(s_throttle - prev_throttle) > 0.35f) {
+        Serial.printf("THR JUMP %.2f->%.2f | n=%d thr_i=%d nzone=%d |",
+                      (double)prev_throttle, (double)s_throttle, n, thr_i, nzone);
+        for (int i = 0; i < n; i++) Serial.printf(" (%u,%u)", xs[i], ys[i]);
+        Serial.println();
+    }
+#else
+    (void)prev_throttle;
+#endif
+
+    // ---- pick the steering contact ----
+    // The controller does not give stable IDs across reads, so track the
+    // steering finger as whichever current contact is nearest to where it was.
+    int steer_i = -1;
+    if (nother > 0) {
+        if (s_steer_active) {
+            float best = 1e30f;
+            for (int k = 0; k < nother; k++) {
+                float dx = (float)xs[other[k]] - s_steer_x;
+                float dy = (float)ys[other[k]] - s_steer_y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < best) { best = d2; steer_i = other[k]; }
+            }
+        } else {
+            steer_i = other[0];
+            s_steer_active = true;
+            s_steer_ox = s_steer_x = s_steer_px = (float)xs[steer_i];
+            s_steer_oy = s_steer_y = s_steer_py = (float)ys[steer_i];
+            s_steer_age = 0;
+            s_steer_moved = 0;
+        }
+    }
+
+    // Firing moved to a hardware button, so a contact on the steering side is
+    // now unambiguously steering -- no tap-versus-drag discrimination, and no
+    // reason to hold still for fear of loosing a missile.
+    if (steer_i >= 0) {
+        s_steer_px = s_steer_x;
+        s_steer_py = s_steer_y;
+        s_steer_x  = (float)xs[steer_i];
+        s_steer_y  = (float)ys[steer_i];
+        s_steer_age += dt;
+    } else if (s_steer_active) {
+        s_steer_active = false;
+    }
+
+    // ---- steering ----
+    float target_yaw = 0, target_pitch = 0;
+
+#if STEER_MODE == 0
+    if (steer_i >= 0) {
+        float dx = s_steer_x - s_steer_ox;
+        float dy = s_steer_y - s_steer_oy;
+#if STEER_RECENTER
+        float len = sqrtf(dx * dx + dy * dy);
+        if (len > STEER_RANGE) {
+            float k = (len - STEER_RANGE) / len;
+            s_steer_ox += dx * k;
+            s_steer_oy += dy * k;
+            dx = s_steer_x - s_steer_ox;
+            dy = s_steer_y - s_steer_oy;
+        }
+#endif
+        // Pointer-style, like an FPS look control: the nose goes where the
+        // finger goes. Drag toward the top-right and the ship aims up-right.
+        // (Screen y grows downward, so dy is used unnegated here.)
+        target_yaw   = shape(dx, STEER_DEADZONE, STEER_RANGE);
+        target_pitch = shape(dy, STEER_DEADZONE, STEER_RANGE) * STEER_PITCH_SIGN;
+    }
+
+#elif STEER_MODE == 1
+    if (steer_i >= 0 && s_steer_age > dt * 0.5f) {
+        // The game applies yaw_in * TURN_RATE * dt, so undo that here to make
+        // the turn proportional to distance travelled rather than to time.
+        float inv = 1.0f / (TURN_RATE * (dt > 1e-4f ? dt : 1e-4f));
+        target_yaw   = (s_steer_x - s_steer_px) * TRACKBALL_RAD_PER_PX * inv;
+        target_pitch = (s_steer_y - s_steer_py) * TRACKBALL_RAD_PER_PX * inv
+                       * STEER_PITCH_SIGN;
+        if (target_yaw   >  1) target_yaw   =  1;
+        if (target_yaw   < -1) target_yaw   = -1;
+        if (target_pitch >  1) target_pitch =  1;
+        if (target_pitch < -1) target_pitch = -1;
+    }
+
+#else  // STEER_MODE == 2, tilt
+    float ax, ay, az;
+    if (vg_imu_read(&ax, &ay, &az)) {
+        if (!s_have_sample) { s_ax = ax; s_ay = ay; s_az = az; s_have_sample = true; }
+        else {
+            float k = dt * TILT_LERP;
+            if (k > 1.0f) k = 1.0f;
+            s_ax += (ax - s_ax) * k;
+            s_ay += (ay - s_ay) * k;
+            s_az += (az - s_az) * k;
+        }
+    }
+    {
+        float dx = s_ax - s_nx;
+        float dy = s_ay - s_ny;
+#if TILT_SWAP_AXES
+        target_yaw   = shape(dy, TILT_DEADZONE, TILT_FULL) * TILT_YAW_SIGN;
+        target_pitch = shape(dx, TILT_DEADZONE, TILT_FULL) * TILT_PITCH_SIGN;
+#else
+        target_yaw   = shape(dx, TILT_DEADZONE, TILT_FULL) * TILT_YAW_SIGN;
+        target_pitch = shape(dy, TILT_DEADZONE, TILT_FULL) * TILT_PITCH_SIGN;
+#endif
+    }
+#endif
+
+    float k = dt * STEER_LERP;
+    if (k > 1.0f) k = 1.0f;
+    s_yaw   += (target_yaw   - s_yaw)   * k;
+    s_pitch += (target_pitch - s_pitch) * k;
+
+    bool steer_contact = (nother > 0);
+
+    out->pitch     = s_pitch;
+    out->yaw       = s_yaw;
+    out->throttle  = s_throttle;
+
+    // Launch on the press EDGE, not while held: one press, one missile. Holding
+    // would empty the rack in three seconds, which is the opposite of the
+    // deliberate, committed shot the lock mechanic is built around. No debounce
+    // needed -- PLAYER_FIRE_GAP already swallows any contact chatter.
+    const bool fire_btn = (vg_buttons_read() & FIRE_BUTTON_MASK) != 0;
+    out->fire_btn  = fire_btn;
+    out->fire_edge = fire_btn && !s_prev_fire_btn;
+    s_prev_fire_btn = fire_btn;
+
+    out->tap_edge  = steer_contact && !s_prev_steer_contact;
+    out->any_touch = (n > 0);
+
+    out->steering  = s_steer_active;
+    out->steer_ox  = s_steer_ox;
+    out->steer_oy  = s_steer_oy;
+    out->steer_x   = s_steer_x;
+    out->steer_y   = s_steer_y;
+
+    out->raw_ax = s_ax;
+    out->raw_ay = s_ay;
+    out->raw_az = s_az;
+
+    s_prev_steer_contact = steer_contact;
+}

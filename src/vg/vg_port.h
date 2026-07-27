@@ -1,0 +1,74 @@
+#pragma once
+#include <stdint.h>
+
+// ===========================================================================
+// PORTING SEAM
+//
+// This is the ONLY interface between the game and the host firmware. Every
+// hardware touch -- panel, touchscreen, IMU -- goes through these functions.
+// No other vg_*.cpp file includes a driver header.
+//
+// Standalone builds use vg_port_arduino_gfx.cpp, which drives the CO5300 and
+// CST9220 directly via Arduino_GFX + SensorLib.
+//
+// To fold the game into Clawdmeter: drop vg_port_arduino_gfx.cpp from the
+// build and add a vg_port_clawdmeter.cpp implementing these same functions on
+// top of display_hal_draw_bitmap() / touch_hal_read() / the QMI8658. Nothing
+// else in the game changes.
+//
+// Note for that port: Clawdmeter's imu_hal only exposes a rotation quadrant at
+// ~10 Hz, which is far too coarse to fly with. The port will need a raw
+// accelerometer read at >=100 Hz (see vg_imu_read below).
+// ===========================================================================
+
+// ---- Panel -----------------------------------------------------------------
+
+bool vg_panel_init(void);
+
+// Blit a full-width band of `h` rows at row `y`. Pixels are RGB565, row-major,
+// SCR_W pixels per row. Called NUM_BANDS times per frame.
+//
+// ASYNCHRONOUS: this queues the DMA and returns while it is still in flight, so
+// the caller can rasterise the next band into its *other* buffer meanwhile.
+// Contract:
+//   - `pixels` must stay untouched until a later push_band or vg_panel_wait
+//     returns; the implementation blocks on the previous transfer before
+//     starting a new one, so alternating two buffers is safe.
+//   - Callers must vg_panel_wait() before reusing the buffer of the last band
+//     pushed.
+void vg_panel_push_band(int y, int h, const uint16_t* pixels);
+
+// Block until any queued band transfer has completed.
+void vg_panel_wait(void);
+
+void vg_panel_brightness(uint8_t level);
+
+// ---- Touch -----------------------------------------------------------------
+
+#define VG_MAX_TOUCH 5
+
+bool vg_touch_init(void);
+
+// Fills xs/ys with up to VG_MAX_TOUCH active points in PANEL coordinates
+// (origin top-left, +x right, +y down) and returns the count. The game needs
+// more than one point so the throttle can be held while firing.
+int  vg_touch_read(uint16_t* xs, uint16_t* ys);
+
+// ---- Buttons ---------------------------------------------------------------
+
+#define VG_BTN_A 0x01   // GPIO 0  (BOOT)
+#define VG_BTN_B 0x02   // GPIO 18
+
+void vg_buttons_init(void);
+
+// Bitmask of buttons currently held. The hardware is active-low; that is
+// normalised here so nothing above the seam has to know.
+uint8_t vg_buttons_read(void);
+
+// ---- IMU -------------------------------------------------------------------
+
+bool vg_imu_init(void);
+
+// Raw accelerometer in g. Returns false if no new sample is available; the
+// caller keeps its previous value in that case.
+bool vg_imu_read(float* ax, float* ay, float* az);

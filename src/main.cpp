@@ -1,0 +1,109 @@
+// PHANTOM - standalone entry point.
+//
+// This file exists only for the standalone build. When the game is folded into
+// Clawdmeter, its launcher calls the same four functions per frame instead:
+//   vg_input_update() -> vg_game_update() -> vg_render_frame() -> vg_rast_flush()
+
+#include <Arduino.h>
+#include "vg/vg_port.h"
+#include "vg/vg_raster.h"
+#include "vg/vg_input.h"
+#include "vg/vg_game.h"
+#include "vg/vg_render.h"
+
+// Set to 1 to stream raw accelerometer axes, for working out which way the
+// board should tilt (see TILT_* in vg_config.h).
+#define VG_DEBUG_TILT 0
+
+static bool s_halted = false;
+
+void setup(void) {
+    Serial.begin(115200);
+    delay(300);
+    Serial.println("\n=== PHANTOM ===");
+
+    if (!vg_panel_init()) {
+        Serial.println("FATAL: no panel");
+        s_halted = true;
+        return;
+    }
+    if (!vg_rast_init()) {
+        Serial.println("FATAL: rasteriser allocation failed");
+        s_halted = true;
+        return;
+    }
+
+    // Non-fatal: without an IMU you can still fly straight and shoot, and
+    // without touch you can still watch the attract loop. Better to boot
+    // degraded than to show a black screen.
+    if (!vg_imu_init())   Serial.println("WARN: no IMU - tilt steering disabled");
+    if (!vg_touch_init()) Serial.println("WARN: no touch - input disabled");
+    vg_buttons_init();
+
+    vg_input_init();
+    vg_game_init();
+    vg_input_calibrate();
+
+    Serial.println("setup complete");
+}
+
+void loop(void) {
+    if (s_halted) { delay(1000); return; }
+
+    static uint32_t last_us   = 0;
+    static float    fps       = 30.0f;
+    static uint32_t report_ms = 0;
+    static uint32_t acc_input = 0, acc_update = 0, acc_submit = 0, acc_flush = 0;
+    static uint32_t frames    = 0;
+
+    uint32_t now = micros();
+    if (last_us == 0) last_us = now;
+    float dt = (now - last_us) * 1e-6f;
+    last_us = now;
+    // A stalled frame must not teleport the world through an asteroid.
+    if (dt < 0.0005f) dt = 0.0005f;
+    if (dt > 0.10f)   dt = 0.10f;
+
+    uint32_t t0 = micros();
+    VgInput in;
+    vg_input_update(dt, &in);
+
+    uint32_t t1 = micros();
+    vg_game_update(dt, &in);
+
+    uint32_t t2 = micros();
+    vg_render_frame(&in, fps);
+
+    uint32_t t3 = micros();
+    vg_rast_flush();
+    uint32_t t4 = micros();
+
+    float inst = 1.0f / dt;
+    fps += (inst - fps) * 0.08f;
+
+    acc_input  += t1 - t0;
+    acc_update += t2 - t1;
+    acc_submit += t3 - t2;
+    acc_flush  += t4 - t3;
+    frames++;
+
+    uint32_t ms = millis();
+    if (ms - report_ms >= 2000) {
+        report_ms = ms;
+        Serial.printf("%.1f fps | in %luus upd %luus submit %luus blit %luus | prims %d%s\n",
+                      (double)fps,
+                      (unsigned long)(acc_input  / frames),
+                      (unsigned long)(acc_update / frames),
+                      (unsigned long)(acc_submit / frames),
+                      (unsigned long)(acc_flush  / frames),
+                      vg_rast_prim_count(),
+                      vg_rast_overflowed() ? " OVERFLOW" : "");
+#if VG_DEBUG_TILT
+        Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
+                      (double)in.raw_ax, (double)in.raw_ay, (double)in.raw_az,
+                      (double)in.pitch, (double)in.yaw, (double)in.throttle);
+#endif
+        acc_input = acc_update = acc_submit = acc_flush = 0;
+        frames = 0;
+    }
+}
