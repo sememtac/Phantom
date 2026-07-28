@@ -75,16 +75,20 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->alive = true;
     c->spec  = spec;
     c->hue   = hue;
-    c->scale = 74.0f;
+    c->scale = 110.0f;
 
-    // Well out to one side, crossing. Closest approach lands around 430 units,
-    // which at this speed asks the camera for roughly 1.9 rad/s of pan -- just
-    // inside what the flight model can actually turn. The whip at the midpoint
-    // is therefore right at the edge of keeping up, and that strain IS the shot.
-    c->pos   = v3(sx * -1900.0f, 150.0f, 430.0f);
-    c->fwd   = vnorm(v3(sx * 1.0f, -0.055f, 0.030f));
+    // Well out to one side, crossing at a distance. Closest approach is about
+    // 950 units: far enough that the whole ship is in frame with space around
+    // it rather than filling the canopy, and the model is scaled up to suit so
+    // the silhouette still reads.
+    //
+    // That distance also sets the pan. At this speed it asks for about 1.1
+    // rad/s against a turn rate near 2.3, so the camera holds the subject
+    // comfortably and sweeps rather than snatches.
+    c->pos   = v3(sx * -2400.0f, 190.0f, 950.0f);
+    c->fwd   = vnorm(v3(sx * 1.0f, -0.045f, 0.025f));
     c->up    = v3(0, 1, 0);
-    c->speed = 850.0f;
+    c->speed = 1050.0f;
 
     // Banked hard into its own crossing.
     c->roll_vis = sx * 0.62f;
@@ -144,9 +148,10 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     vg.comms_tag[2] = s->tag[2];
     vg.comms_tag[3] = 0;
     vg.comms_pri = (uint8_t)ev;
-    // A last transmission is left up longer. It is the only line the player
-    // cannot provoke a second time.
-    vg.comms_t = (ev == VOICE_DEATH) ? 3.6f : 2.4f;
+    // A last transmission is left up far longer. It is the only line the player
+    // cannot provoke a second time, and the round is already decided -- there is
+    // nothing it can be competing with.
+    vg.comms_t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -517,6 +522,16 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         c->pos = mat3_apply(R, c->pos);
         c->fwd = vnorm(mat3_apply(R, c->fwd));
         c->up  = vnorm(mat3_apply(R, c->up));
+        // The ribbon has to ride the same rotation as the ship that laid it.
+        // Missing this is why the cutscene ships appeared to emit nothing: the
+        // camera pans at up to two radians a second during a pass, so within a
+        // few frames the stored points were left pointing into an old view
+        // frame -- swung behind the near plane and culled before they could be
+        // drawn. The trail was always there; it was just no longer in front.
+        for (int t = 0; t < c->trail_n; t++) {
+            int idx = (c->trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
+            c->trail[idx] = mat3_apply(R, c->trail[idx]);
+        }
     }
 
     for (int i = 0; i < MAX_ENEMIES; i++) {

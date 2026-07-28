@@ -162,9 +162,19 @@ enum VgState : uint8_t {
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f
 
-// Beat between the opponent dying and the round ending, so the last thing they
-// say gets heard out. The player cannot be hurt during it.
-#define KILL_BEAT       4.4f
+// After the opponent goes down. Two distinct beats, and they do different jobs.
+//
+// KILL_SPEECH is how long their last transmission stays up. It is the only line
+// in the game the player cannot provoke a second time, so it is given room.
+//
+// KILL_REFLECT is the silence afterwards -- cockpit, wreckage, nobody talking.
+// Cutting from a death straight to a scorecard is what makes a kill feel like a
+// score, and the quiet is the only thing that stops it.
+//
+// The player is invulnerable for both, and free to fly through what is left.
+#define KILL_SPEECH     5.6f
+#define KILL_REFLECT    4.6f
+#define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 
 // Victory sequence schedule. The state machine owns it because it decides when
 // the state ends; the overlay only draws to it. Each beat finishes before the
