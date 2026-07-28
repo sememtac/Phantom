@@ -72,6 +72,14 @@ bool vg_rast_overflowed(void);
 uint32_t vg_rast_raster_us(void);
 uint32_t vg_rast_wait_us(void);
 
+// ...and the raster half split by stage, because the primitive COUNT cannot
+// distinguish a long antialiased span from a triangle fill covering a third of
+// the screen, and neither shows against a fixed backdrop cost.
+uint32_t vg_rast_sky_us(void);
+uint32_t vg_rast_prim_us(void);
+uint32_t vg_rast_scan_us(void);
+int      vg_rast_tri_count(void);
+
 // Scale an RGB565 colour per channel by f in [0,1]. Used for distance fade and
 // for fading debris out.
 uint16_t vg_dim(uint16_t c, float f);

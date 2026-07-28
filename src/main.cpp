@@ -55,6 +55,7 @@ void loop(void) {
     static uint32_t report_ms = 0;
     static uint32_t acc_input = 0, acc_update = 0, acc_submit = 0, acc_flush = 0;
     static uint32_t acc_rast = 0, acc_wait = 0;
+    static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t frames    = 0;
 
     uint32_t now = micros();
@@ -88,6 +89,9 @@ void loop(void) {
     acc_flush  += t4 - t3;
     acc_rast   += vg_rast_raster_us();
     acc_wait   += vg_rast_wait_us();
+    acc_sky    += vg_rast_sky_us();
+    acc_prim   += vg_rast_prim_us();
+    acc_scan   += vg_rast_scan_us();
     frames++;
 
     uint32_t ms = millis();
@@ -96,16 +100,20 @@ void loop(void) {
         // rast is CPU spent building bands; wait is time stalled on the panel
         // DMA. Only the amount by which rast exceeds the transfer window costs
         // frame time, so those two numbers are what any optimisation is aimed at.
-        Serial.printf("%.1f fps | in %luus upd %luus submit %luus blit %luus "
-                      "(rast %luus wait %luus) | prims %d%s\n",
+        Serial.printf("%.1f fps | in %lu upd %lu sub %lu blit %lu "
+                      "| rast %lu = sky %lu prim %lu scan %lu "
+                      "| P %d T %d%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
                       (unsigned long)(acc_submit / frames),
                       (unsigned long)(acc_flush  / frames),
                       (unsigned long)(acc_rast   / frames),
-                      (unsigned long)(acc_wait   / frames),
+                      (unsigned long)(acc_sky    / frames),
+                      (unsigned long)(acc_prim   / frames),
+                      (unsigned long)(acc_scan   / frames),
                       vg_rast_prim_count(),
+                      vg_rast_tri_count(),
                       vg_rast_overflowed() ? " OVERFLOW" : "");
 #if VG_DEBUG_TILT
         Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
@@ -114,6 +122,7 @@ void loop(void) {
 #endif
         acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = 0;
+        acc_sky   = acc_prim = acc_scan = 0;
         frames = 0;
     }
 }

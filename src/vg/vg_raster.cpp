@@ -39,6 +39,12 @@ int         vg_prim_live(void) { return s_count; }
 static uint8_t s_line_aa = 1;
 void vg_line_aa_mode(bool on) { s_line_aa = on ? 1 : 0; }
 
+// Triangles are counted apart from everything else because their cost has
+// nothing to do with how many there are -- one face of a close asteroid can
+// cover more pixels than the entire rest of the frame.
+static int s_tri_count = 0;
+int vg_rast_tri_count(void) { return s_tri_count; }
+
 bool vg_rast_init(void) {
     if (!vg_prim_init()) return false;
     if (!vg_band_init()) return false;
@@ -51,7 +57,7 @@ bool vg_rast_init(void) {
     return true;
 }
 
-void vg_rast_begin_frame(void) { s_count = 0; s_overflow = false; }
+void vg_rast_begin_frame(void) { s_count = 0; s_overflow = false; s_tri_count = 0; }
 int  vg_rast_prim_count(void)  { return s_count; }
 bool vg_rast_overflowed(void)  { return s_overflow; }
 
@@ -370,6 +376,7 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     Prim* p = push();
     if (!p) return;
     p->type  = PRIM_TRI;
+    s_tri_count++;
     p->x0 = TCLAMP(x0); p->y0 = TCLAMP(y0);
     p->x1 = TCLAMP(x1); p->y1 = TCLAMP(y1);
     p->x2 = TCLAMP(x2); p->y2 = TCLAMP(y2);

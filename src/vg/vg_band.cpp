@@ -271,14 +271,29 @@ static inline void band_scanlines(uint16_t* band, int by0) {
 
 // ---------------------------------------------------------------------------
 
+// Raster cost, split three ways. Guessing which of these dominates has now been
+// wrong twice: the primitive count alone cannot tell a long antialiased span
+// from a triangle fill covering a third of the screen, and neither shows up
+// against a constant backdrop cost. So measure all three.
+static uint32_t s_sky_us = 0, s_prim_us = 0, s_scan_us = 0;
+
+uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
+uint32_t vg_rast_prim_us(void) { return s_prim_us; }
+uint32_t vg_rast_scan_us(void) { return s_scan_us; }
+
 static void draw_band(int band_index, uint16_t* band) {
     const int by0 = band_index * BAND_H;
     const int by1 = by0 + BAND_H - 1;
+
+    const uint32_t t_sky = micros();
 
     // The backdrop fill REPLACES the clear rather than adding to it, so its net
     // cost is only what it exceeds a memset by.
     if (vg_sky_ready()) vg_sky_fill_band(band, by0);
     else                memset(band, 0, SCR_W * BAND_H * 2);
+
+    const uint32_t t_prim = micros();
+    s_sky_us += t_prim - t_sky;
 
     const Prim* prims = vg_prim_list();
     const int   n     = vg_prim_live();
@@ -332,6 +347,8 @@ static void draw_band(int band_index, uint16_t* band) {
             break;
         }
     }
+
+    s_prim_us += micros() - t_prim;
 }
 
 static uint32_t s_raster_us = 0;
@@ -350,6 +367,7 @@ void vg_rast_flush(void) {
     s_wait_us = micros() - w0;
 
     uint32_t raster = 0;
+    s_sky_us = s_prim_us = s_scan_us = 0;
 
     for (int b = 0; b < NUM_BANDS; b++) {
         uint16_t* buf = s_band[b & 1];
@@ -364,7 +382,9 @@ void vg_rast_flush(void) {
         // Over the finished band, so the backdrop and the instruments drawn on
         // top of it are striped alike. Baking it into the backdrop texture
         // instead silently skipped every vector element.
+        const uint32_t t_scan = micros();
         band_scanlines(buf, b * BAND_H);
+        s_scan_us += micros() - t_scan;
         raster += micros() - r0;
 
         // Queues and returns: the next iteration rasterises into the other
