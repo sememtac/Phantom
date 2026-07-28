@@ -510,8 +510,8 @@ static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     // Barely a deviation at all -- just enough that the path is not a dead
     // straight line. Two terms per axis on periods with no common multiple, so
     // it drifts without ever visibly repeating.
-    Vec3 want = v3(0.045f * sinf(t * 0.081f) + 0.022f * sinf(t * 0.031f),
-                   0.038f * sinf(t * 0.063f) + 0.018f * sinf(t * 0.023f),
+    Vec3 want = v3(0.026f * sinf(t * 0.047f) + 0.013f * sinf(t * 0.019f),
+                   0.022f * sinf(t * 0.038f) + 0.011f * sinf(t * 0.015f),
                    1.0f);
 
     // Ride the centreline of the tube. Clearance is at its maximum -- the tube
@@ -525,9 +525,18 @@ static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     float off = 1.0f - clear / ARENA_TORUS_RMIN;   // 0 dead centre, 1 at the wall
     if (off < 0.0f) off = 0.0f;
     if (off > 1.0f) off = 1.0f;
-    // Squared, so the correction is almost nothing near the middle and firms up
-    // smoothly further out. A linear term hunts around the centreline.
-    want = vadd(want, vmul(inward, off * off * 1.6f));
+
+    // Position term alone is an undamped spring: it pulls toward the axis, sails
+    // through it, and the camera ends up orbiting the centreline forever. That
+    // slow circling was most of what read as the camera rocking.
+    //
+    // So damp it. We travel along +z in view space, so the inward direction's
+    // own z component IS how fast we are already closing on the axis -- subtract
+    // it and the approach settles instead of overshooting.
+    float corr = off * off * 1.5f - inward.z * 1.1f;
+    if (corr < -0.20f) corr = -0.20f;
+    if (corr >  1.20f) corr =  1.20f;
+    want = vadd(want, vmul(inward, corr));
 
     want = vnorm(want);
 
@@ -604,9 +613,9 @@ static void menu_world(float dt) {
     // untouched, so the autopilot is not fighting a control input -- the camera
     // simply lies over as it travels. Two incommensurate periods again, and a
     // deliberately lazy lerp, so it reads as drift rather than as a wobble.
-    float roll = 0.30f * sinf(vg.state_t * 0.061f)
-               + 0.14f * sinf(vg.state_t * 0.027f);
-    float kr = dt * 0.35f;
+    float roll = 0.15f * sinf(vg.state_t * 0.037f)
+               + 0.07f * sinf(vg.state_t * 0.016f);
+    float kr = dt * 0.20f;
     if (kr > 1.0f) kr = 1.0f;
     vg.bank += (roll - vg.bank) * kr;
 

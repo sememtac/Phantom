@@ -150,7 +150,7 @@ static const char* const STORY[] = {
 #define TITLE_Y       150     // where the game title lives, and where the crawl ends
 #define TITLE_SCALE   7
 
-#define STORY_DELAY   5.0f    // title held before the crawl begins
+#define STORY_DELAY   10.0f   // title held before the crawl begins
 #define STORY_SPEED   30.0f   // px per second
 #define STORY_LINE_H  27
 #define STORY_START_Y 500     // first line begins just off the bottom
@@ -175,9 +175,12 @@ static float title_alpha(void) {
     const float s = ct - STORY_DELAY;
     if (s > STORY_DUR)                 return 1.0f;
 
-    float out = s / 1.6f;                          // dissolve away as it starts
+    // The landing is the whole point of the sequence, so it gets a long, slow
+    // resolve -- the word is legible in both forms throughout the overlap and
+    // simply firms up into the title rather than swapping over.
+    float out = s / 2.6f;                          // dissolve away as it starts
     if (out > 1.0f) out = 1.0f;
-    float in = (s - (STORY_DUR - 2.0f)) / 2.0f;    // reassemble as it lands
+    float in = (s - (STORY_DUR - 6.0f)) / 6.0f;    // reassemble as it lands
     if (in < 0.0f) in = 0.0f;
     if (in > 1.0f) in = 1.0f;
 
