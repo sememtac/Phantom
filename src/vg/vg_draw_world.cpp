@@ -39,20 +39,29 @@ static void draw_motes(const VgCam& cam) {
     const int      w      = (f > MOTE_THICK_AT) ? 2 : 1;
     const uint16_t col    = vg_dim(COL_MOTE, 0.14f + 0.86f * f);
 
+    // Dust, and only ever drawn at speed -- which makes it part of the exact
+    // condition where the frame is tightest. Every mote is a short streak, two
+    // primitives once it thickens, and there is no such thing as a visible
+    // stair-step on a two-pixel speck moving at 460 units a second.
+    vg_line_aa_mode(false);
     for (int i = 0; i < NUM_MOTES; i++) {
         Vec3 p = vg.mote[i];
         if (p.z < NEAR_Z) continue;
         vg_edge_w(cam, p, v3(p.x, p.y, p.z + streak), col, w);
     }
+    vg_line_aa_mode(true);
 }
 
 static void draw_debris(const VgCam& cam) {
+    // Fragments live under a second and tumble the whole time.
+    vg_line_aa_mode(false);
     for (int i = 0; i < MAX_DEBRIS; i++) {
         const Debris* d = &vg.deb[i];
         if (!d->alive) continue;
         float f = d->life / d->life0;
         vg_edge(cam, d->pos, vadd(d->pos, d->seg), vg_dim(COL_DEBRIS, f));
     }
+    vg_line_aa_mode(true);
 }
 
 // ---------------------------------------------------------------------------

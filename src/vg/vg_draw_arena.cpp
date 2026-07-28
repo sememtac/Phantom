@@ -8,6 +8,10 @@
 // completely different: hundreds of procedurally generated segments a frame, all
 // of it landing in `submit`, which is the stage that actually costs frame time.
 
+// Fade level above which a grid segment still earns antialiasing. Everything
+// dimmer than this is a distant hairline and takes the cheap path.
+#define ARENA_AA_FADE  0.62f
+
 // One grid segment, already in view space, faded by distance. The player sits at
 // the origin, so a view-space point's length IS its distance from the ship.
 static void arena_seg(const VgCam& cam, Vec3 a, Vec3 b, uint16_t base) {
@@ -38,6 +42,16 @@ static void arena_seg(const VgCam& cam, Vec3 a, Vec3 b, uint16_t base) {
             col = vg_mix(col, COL_DANGER, danger * near_w);
     }
 
+    // Antialias only the near, bright part of the structure. Measured: an AA
+    // span costs ~13.6us against roughly a tenth of that for a Bresenham one,
+    // and the grid is by far the largest primitive source in the frame -- ~700
+    // primitives crossing open space against ~150 in the attract loop, which is
+    // the whole of the dip from 69 to 47 fps.
+    //
+    // The far half of the grid is already faded to a dim hairline by the
+    // distance term above, where a stair-step is not resolvable anyway. The
+    // wall you are actually flying at keeps its smooth edges.
+    vg_line_aa_mode(f > ARENA_AA_FADE);
     vg_edge(cam, a, b, col);
 }
 
@@ -126,4 +140,7 @@ void vg_draw_arena_grid(const VgCam& cam) {
             arena_line(cam, false, v, 0.0f, TAU, segs, col_struct);
         }
     }
+
+    // arena_seg leaves the flag wherever the last segment put it.
+    vg_line_aa_mode(true);
 }
