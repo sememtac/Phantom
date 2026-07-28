@@ -1,6 +1,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_tourney.h"
+#include "vg_voice.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -147,14 +148,11 @@ static const char* const STORY[] = {
 };
 #define STORY_LINES ((int)(sizeof(STORY) / sizeof(STORY[0])))
 
-// Once a tournament has been taken, the rumour circulating the hangar bays is
-// about YOU. Same paragraph, one line changed -- and the crawl stops being
-// exposition and becomes your own reputation read back to you. That single
-// substitution is the entire point of the name.
-static const char* story_line(int i) {
-    if (vg.champion && i == STORY_LINES - 3) return "THEY CALL YOU...";
-    return STORY[i];
-}
+// The crawl never changes. It is the legend as the hangar bays tell it, and the
+// legend is always about someone else -- that is what a rumour is. "THEY CALL
+// YOU" is earned exactly once, on the victory screen, and showing it here too
+// would spend the line before the player has done anything to deserve it.
+static const char* story_line(int i) { return STORY[i]; }
 
 #define TITLE_Y       150     // where the game title lives, and where the crawl ends
 #define TITLE_SCALE   7
@@ -286,6 +284,34 @@ void vg_draw_overlays(void) {
         break;
     }
 
+    // Launch cutscene. Each fighter is named while it is on screen, and the
+    // gaps between passes are hard cuts -- a black frame with a tear across it,
+    // which is what sells a change of shot on a display with no camera.
+    case VG_INTRO: {
+        const float t = vg.state_t;
+        const bool  cut = (t > INTRO_YOU_END && t < INTRO_OPP_START) ||
+                          (t > INTRO_OPP_END && t < INTRO_END);
+        if (cut) {
+            vg_fill_rect(0, 0, SCR_W, SCR_H, COL_BLACK);
+            const int ty = 120 + (int)(fmodf(t * 900.0f, 240.0f));
+            vg_fill_rect(0, ty, SCR_W, 3, INK_TRACE);
+            break;
+        }
+        if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
+            centred(360, vg.callsign, INK_MAX, 5);
+            centred(414, vg.spec->name, INK_BRIGHT, 2);
+        } else if (t > INTRO_OPP_START && t < INTRO_OPP_END) {
+            const Entrant* o = vg_tourney_opponent();
+            if (o) {
+                centred(360, o->is_phantom ? "PHANTOM" : o->tag, INK_MAX, 5);
+                snprintf(buf, sizeof(buf), "%s   %s",
+                         vg_spec(o->cls)->name, vg_voice_archetype(o->voice));
+                centred(414, buf, INK_BRIGHT, 2);
+            }
+        }
+        break;
+    }
+
     case VG_ROUND_WON:
         centred(160, "ROUND WON", INK_MAX, 5);
         snprintf(buf, sizeof(buf), "HULL %d/%d",
@@ -353,14 +379,19 @@ void vg_draw_overlays(void) {
         centred(258, buf, INK_MAX, 3);
         break;
 
+    // No instruments -- there is no cockpit left to report from. What is on
+    // screen is the wreck, the tumble, and the system telling you what happened.
     case VG_OVER:
-        centred(160, "ELIMINATED", COL_DANGER, 5);
-        snprintf(buf, sizeof(buf), "OUT IN THE %s", vg_tourney_round_name(vt.round));
-        centred(226, buf, COL_HUD, 2);
-        snprintf(buf, sizeof(buf), "SCORE %d", vg.score);
-        centred(262, buf, COL_HUD_DIM, 2);
-        if (vg.state_t > 1.2f && fmodf(vg.state_t, 1.0f) < 0.6f)
-            centred(316, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
+        centred(150, "SIGNAL LOST", COL_DANGER, 5);
+        snprintf(buf, sizeof(buf), "%s   HULL BREACH", vg.callsign);
+        centred(214, buf, COL_HUD, 2);
+        snprintf(buf, sizeof(buf), "ELIMINATED IN THE %s",
+                 vg_tourney_round_name(vt.round));
+        centred(246, buf, COL_HUD_DIM, 2);
+        snprintf(buf, sizeof(buf), "BANK %d CR", vg.credits);
+        centred(278, buf, INK_FAINT, 2);
+        if (vg.state_t > 2.2f && fmodf(vg.state_t, 1.0f) < 0.6f)
+            centred(330, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
         break;
 
     default:

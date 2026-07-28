@@ -54,6 +54,48 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
     }
 }
 
+// Fly a ship across the view for the launch cutscene. `u` runs 0..1 over the
+// pass. It approaches from far out on one side and crosses close, which is the
+// only way to read a wireframe silhouette -- held at distance it is four pixels
+// and a trail, and held close it fills the screen before you can see its shape.
+static void cine_pass(const ShipSpec* spec, float hue, float u, bool mirror) {
+    Ship* c = &vg.cine;
+    const float sx = mirror ? 1.0f : -1.0f;
+
+    const Vec3 from = v3(sx * -1150.0f, -240.0f, 2700.0f);
+    const Vec3 to   = v3(sx *   460.0f,   90.0f,  680.0f);
+
+    c->alive  = true;
+    c->spec   = spec;
+    c->hue    = hue;
+    c->pos    = vadd(from, vmul(vsub(to, from), u));
+    c->fwd    = vnorm(vsub(to, from));
+    c->up     = v3(0, 1, 0);
+    // Fast enough that the exhaust plume is lit, and banked, because a ship
+    // holding wings-level through a fly-past looks parked rather than flown.
+    c->speed  = spec->speed_min + (spec->speed_max - spec->speed_min) * 0.72f;
+    c->roll_vis = sx * 0.55f;
+
+    // Its own ribbon, laid down as it goes, so it arrives trailing rather than
+    // appearing with one already attached.
+    c->trail_acc += 0.016f;
+    if (c->trail_acc >= SHIP_TRAIL_DT) {
+        c->trail_acc = 0;
+        c->trail_head = (uint8_t)((c->trail_head + 1) % SHIP_TRAIL);
+        c->trail[c->trail_head]   = c->pos;
+        c->trail_p[c->trail_head] = 200;
+        if (c->trail_n < SHIP_TRAIL) c->trail_n++;
+    }
+    vg.cine_on = true;
+}
+
+static void cine_clear(void) {
+    vg.cine_on          = false;
+    vg.cine.trail_n     = 0;
+    vg.cine.trail_head  = 0;
+    vg.cine.trail_acc   = 0;
+}
+
 void vg_comms_say(const Ship* s, VoiceEvent ev) {
     if (!s) return;
     // VoiceEvent is ordered by weight -- taunt, fire, hurt, death -- so the
@@ -90,9 +132,11 @@ static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->trail_n    = 0;
     s->trail_head = 0;
 
-    // Out ahead but off-axis, so a fight opens with a merge rather than with
-    // someone already on someone's tail.
-    Vec3 dir = vnorm(v3(vg_frand(-0.7f, 0.7f), vg_frand(-0.5f, 0.5f), 1.0f));
+    // Anywhere along the tunnel, ahead or behind, rather than parked in front.
+    // The z sign is a coin flip: half the time the match opens with an empty
+    // scope and a contact somewhere back down the torus.
+    Vec3 dir = vnorm(v3(vg_frand(-0.5f, 0.5f), vg_frand(-0.4f, 0.4f),
+                        (vg_frand01() < 0.5f) ? 1.0f : -1.0f));
     s->alive        = true;
     s->pos          = vg_arena_clamp_inside(
                           vmul(dir, ENEMY_SPAWN_DIST * vg_frand(0.8f, 1.25f)),
@@ -122,7 +166,11 @@ void vg_clear_player_hit(void) { s_player_hit = false; }
 void vg_damage_player(float amount) {
     // Brief post-hit invulnerability, so one bad moment cannot cascade into three
     // hits before you have had a chance to react.
-    if (vg.state == VG_HIT) return;
+    //
+    // VG_KILL is the same idea stretched: the round is decided and the loser is
+    // mid-sentence, so a stray round still in the air must not be able to take
+    // the win back after the fact.
+    if (vg.state == VG_HIT || vg.state == VG_KILL) return;
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
     vg.hit_flash = 0.6f;
@@ -265,10 +313,12 @@ void vg_match_start(void) {
     for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
 
-    vg.state       = VG_PLAYING;
+    vg.state       = VG_INTRO;
     vg.state_t     = 0;
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
     vg.bank        = 0;
+    vg.cine_on     = false;
+    vg.hud_boot    = 0;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
     vg.trail_n     = 0;
@@ -430,6 +480,17 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         if (vg.trail_n < SHIP_TRAIL) vg.trail_n++;
     }
 
+    // The cutscene ship rides the ROTATION but not the translation. During the
+    // death sequence that holds the wreck at a fixed distance while the camera
+    // turns around it, which is the whole shot -- applying dz as well would
+    // simply leave it behind at the player's last cruising speed.
+    if (vg.cine_on) {
+        Ship* c = &vg.cine;
+        c->pos = mat3_apply(R, c->pos);
+        c->fwd = vnorm(mat3_apply(R, c->fwd));
+        c->up  = vnorm(mat3_apply(R, c->up));
+    }
+
     for (int i = 0; i < MAX_ENEMIES; i++) {
         Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
@@ -507,6 +568,7 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.msl_event_t -= dt;
         if (vg.msl_event_t <= 0) vg.msl_event = MSL_NONE;
     }
+    if (vg.hud_boot > 0) vg.hud_boot -= dt;
     if (vg.comms_t > 0) {
         vg.comms_t -= dt;
         if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
@@ -800,6 +862,54 @@ void vg_game_update(float dt, const VgInput* in) {
         break;
     }
 
+    case VG_INTRO: {
+        // The camera is nobody's cockpit yet, so it drifts the way the title
+        // card does. The fighters are flown past it, not by it.
+        menu_world(dt);
+
+        const float t = vg.state_t;
+        if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
+            cine_pass(vg.spec, vg.trail_hue,
+                      (t - INTRO_DRIFT) / (INTRO_YOU_END - INTRO_DRIFT), false);
+        } else if (t > INTRO_OPP_START && t < INTRO_OPP_END) {
+            const Ship* o = &vg.enemy[0];
+            cine_pass(o->spec, o->hue,
+                      (t - INTRO_OPP_START) / (INTRO_OPP_END - INTRO_OPP_START), true);
+        } else {
+            // Between passes the ribbon has to go too, or the cut lands on a
+            // stranded trail with nothing on the end of it.
+            cine_clear();
+        }
+
+        if (t > INTRO_END || tap_up) {
+            cine_clear();
+            vg.state    = VG_PLAYING;
+            vg.state_t  = 0;
+            vg.hud_boot = HUD_BOOT_TIME;
+            vg.roll     = 0;
+            vg.bank     = 0;
+            vg.taunt_t  = 1.6f;
+            vg_input_calibrate();
+        }
+        break;
+    }
+
+    case VG_KILL: {
+        // The world keeps running -- wreckage still tumbles, their last trail
+        // still fades -- but nothing can touch the player. The only job of this
+        // state is to let the dead pilot finish talking.
+        world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_update_missiles(dt);
+        update_threat();
+        if (vg.fire_gap > 0) vg.fire_gap -= dt;
+        if (vg.state_t > KILL_BEAT) {
+            award_purse();
+            vg.state   = VG_ROUND_WON;
+            vg.state_t = 0;
+        }
+        break;
+    }
+
     case VG_BRACKET: {
         menu_world(dt);
         if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
@@ -921,6 +1031,27 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg_player_was_hit()) {
                 vg.state   = (vg.health > 0.0f) ? VG_HIT : VG_OVER;
                 vg.state_t = 0;
+                if (vg.state == VG_OVER) {
+                    // Your own ship, left drifting just ahead of the camera.
+                    // There is no third-person view in a renderer where the
+                    // player IS the origin, so the wreck is placed in front and
+                    // the camera set tumbling around it -- which reads as being
+                    // thrown clear, and gives the scene something to be about.
+                    Ship* c = &vg.cine;
+                    c->alive    = true;
+                    c->spec     = vg.spec;
+                    c->hue      = vg.trail_hue;
+                    c->pos      = v3(vg_frand(-40.0f, 40.0f),
+                                     vg_frand(-30.0f, 30.0f), 235.0f);
+                    c->fwd      = vnorm(v3(0.35f, 0.12f, 1.0f));
+                    c->up       = v3(0, 1, 0);
+                    c->speed    = 0.0f;
+                    c->roll_vis = 0.4f;
+                    c->trail_n  = 0;
+                    c->hit_flash = 0.0f;
+                    vg.cine_on  = true;
+                    vg_spawn_debris(c->pos, 30.0f, 18);
+                }
                 break;
             }
 
@@ -928,11 +1059,10 @@ void vg_game_update(float dt, const VgInput* in) {
             for (int i = 0; i < MAX_ENEMIES; i++)
                 if (vg.enemy[i].alive) opponent_alive = true;
             if (!opponent_alive) {
-                // Paid on the kill, not on the bracket advance, so the ROUND WON
-                // card can show the purse -- and because vg_tourney_resolve is
-                // what moves the round counter the payout reads off.
-                award_purse();
-                vg.state   = VG_ROUND_WON;
+                // Not straight to the scorecard. They are still talking, and
+                // cutting to a purse over the top of a dying pilot is the whole
+                // difference between a tournament and a spreadsheet.
+                vg.state   = VG_KILL;
                 vg.state_t = 0;
             }
         } else if (vg.state_t > 1.2f) {
@@ -943,11 +1073,20 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_OVER: {
-        world_step(dt, in->pitch * 0.3f, in->yaw * 0.3f, 0.0f, 0.35f);
-        for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+        // Dead men do not steer. Input is ignored entirely and the camera
+        // tumbles on all three axes around the wreck it was thrown from --
+        // slowly, and slowing further, like something that has stopped being a
+        // ship and started being debris.
+        const float decay = 1.0f / (1.0f + vg.state_t * 0.55f);
+        world_step(dt,
+                   0.16f * decay * sinf(vg.state_t * 0.63f),
+                   0.21f * decay * sinf(vg.state_t * 0.41f + 1.1f),
+                   0.30f * decay * dt,
+                   0.0f);
         vg_update_missiles(dt);
+
         // Knocked out is knocked out: back to the main menu, not a restart.
-        if (vg.state_t > 1.2f && tap_up) enter_attract();
+        if (vg.state_t > 2.2f && tap_up) { cine_clear(); enter_attract(); }
         break;
     }
     }

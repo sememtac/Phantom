@@ -72,9 +72,35 @@ void vg_render_frame(const VgInput* in, float fps) {
     float warp = HUD_WARP_SPEED_MIN + (1.0f - HUD_WARP_SPEED_MIN) * sn;
     warp = floorf(warp * HUD_WARP_STEPS + 0.5f) / HUD_WARP_STEPS;
 
-    vg_hud_warp(true, warp);
-    vg_draw_hud(cam, in, fps);
-    vg_hud_warp(false, 1.0f);
+    // Instruments come up as a hologram catching: mostly absent at first,
+    // flickering in, solid by the end. Driven by dropping whole frames rather
+    // than by dimming, because a projector that is not holding sync loses the
+    // image outright and a fade just looks like a brightness slider.
+    bool draw_instruments = true;
+    if (vg.hud_boot > 0.0f) {
+        const float p = 1.0f - vg.hud_boot / HUD_BOOT_TIME;   // 0..1 settled
+        // Bucketed so the flicker has a rate of its own instead of strobing at
+        // whatever the frame rate happens to be.
+        const uint32_t bucket = (uint32_t)(vg.state_t * 40.0f);
+        uint32_t h = bucket * 2654435761u;
+        h ^= h >> 15;
+        draw_instruments = ((h % 100u) < (uint32_t)(p * p * 118.0f));
+    }
+
+    if (draw_instruments) {
+        vg_hud_warp(true, warp);
+        vg_draw_hud(cam, in, fps);
+        vg_hud_warp(false, 1.0f);
+    }
+
+    // A scan bar running down the screen while it settles. One rectangle, and
+    // it is what makes the flicker read as a projector finding its picture
+    // rather than as a rendering fault.
+    if (vg.hud_boot > 0.0f) {
+        const float p  = 1.0f - vg.hud_boot / HUD_BOOT_TIME;
+        const int   sy = (int)(fmodf(vg.state_t * 620.0f, (float)SCR_H));
+        vg_fill_rect(0, sy, SCR_W, 2, vg_dim(INK_BRIGHT, 1.0f - p));
+    }
 
     // Everything past here stays FLAT: the steering ring has to sit exactly under
     // the finger, and the markers have to line up with what they point at. A

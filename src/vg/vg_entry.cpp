@@ -194,8 +194,6 @@ void vg_draw_entry(void) {
         vg_fill_rect(mx - 7, ENT_HUE_Y - 9, 15, ENT_HUE_H + 18, COL_BLACK);
         vg_fill_rect(mx - 5, ENT_HUE_Y - 7, 11, ENT_HUE_H + 14, INK_MAX);
         vg_fill_rect(mx - 2, ENT_HUE_Y - 4,  5, ENT_HUE_H + 8,  hue);
-    } else {
-        centred(ENT_HUE_Y + 18, "TAP TRAIL TO CHANGE COLOUR", INK, 2);
     }
 
     vg_button(ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H, "NEXT", true, true);

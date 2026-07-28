@@ -131,13 +131,31 @@ enum VgState : uint8_t {
     VG_SELECT,            // ship selection -- once per tournament, then locked
     VG_REPAIR,            // spend credits on hull, reached from the bracket
     VG_BRACKET,           // the tournament map
+    VG_INTRO,             // launch cutscene: both fighters introduced
     VG_PLAYING,
     VG_HIT,               // brief invulnerable pause after taking a hit
+    VG_KILL,              // opponent is down and talking; player cannot be hurt
     VG_PAUSE,
     VG_ROUND_WON,         // beat between winning a match and the bracket redraw
     VG_OVER,              // knocked out -- the run is finished
     VG_WON                // took the whole tournament
 };
+
+// --- launch cutscene schedule ----------------------------------------------
+// Camera adrift, then each fighter flown across the view in turn, with a hard
+// cut between them. Skippable, because the fifth time through it is furniture.
+#define INTRO_DRIFT     1.4f
+#define INTRO_YOU_END   3.9f
+#define INTRO_OPP_START 4.2f
+#define INTRO_OPP_END   6.7f
+#define INTRO_END       7.0f
+
+// How long the instruments take to come up once the cockpit is back.
+#define HUD_BOOT_TIME   1.5f
+
+// Beat between the opponent dying and the round ending, so the last thing they
+// say gets heard out. The player cannot be hurt during it.
+#define KILL_BEAT       4.4f
 
 // Victory sequence schedule. The state machine owns it because it decides when
 // the state ends; the overlay only draws to it. Each beat finishes before the
@@ -148,10 +166,12 @@ enum VgState : uint8_t {
 #define WON_RETURN     15.0f    // name has stood alone; back to the menu
 
 // Menu states run the attract autopilot underneath and draw no instruments.
+// States that carry no instruments. The cutscene and the death sequence are in
+// here for the same reason the menus are: there is no cockpit to report from.
 static inline bool vg_state_is_menu(VgState s) {
     return s == VG_ATTRACT || s == VG_ENTRY   || s == VG_SELECT ||
-           s == VG_BRACKET || s == VG_REPAIR  ||
-           s == VG_ROUND_WON || s == VG_WON;
+           s == VG_BRACKET || s == VG_REPAIR  || s == VG_INTRO  ||
+           s == VG_ROUND_WON || s == VG_WON   || s == VG_OVER;
 }
 
 struct VgGame {
@@ -229,6 +249,15 @@ struct VgGame {
     uint8_t  trail_head;
     uint8_t  trail_p[SHIP_TRAIL];
     Vec3     trail[SHIP_TRAIL];
+
+    // A ship nobody is flying: the one shown crossing the view during the
+    // launch cutscene, and the wreck the camera tumbles around after a death.
+    // Kept apart from the enemy array so neither the AI nor the collision pass
+    // can ever see it.
+    Ship     cine;
+    bool     cine_on;
+
+    float    hud_boot;     // >0 while the instruments are coming up
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
 

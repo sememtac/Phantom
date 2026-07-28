@@ -348,8 +348,18 @@ void vg_draw_world(const VgCam& cam) {
     draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
                     v3(0, 0, 0), vg.trail_hue);
 
+    // Nobody is flying this one: the fighter crossing the view during the launch
+    // cutscene, or the player's own wreck after a death.
+    if (vg.cine_on) {
+        draw_ship_trail(cam, vg.cine.trail, vg.cine.trail_p,
+                        vg.cine.trail_n, vg.cine.trail_head,
+                        vg.cine.pos, vg.cine.hue);
+    }
+
     for (int i = 0; i < MAX_ENEMIES; i++)
         if (vg.enemy[i].alive) draw_enemy(cam, &vg.enemy[i]);
+
+    if (vg.cine_on) draw_enemy(cam, &vg.cine);
 
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);

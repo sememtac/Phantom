@@ -73,7 +73,6 @@ static void stat_bar(int x, int y, int w, float t, uint16_t col) {
 
 void vg_draw_select(void) {
     centred(38, "SELECT SHIP", INK_MAX, 3);
-    centred(72, "LOCKED FOR THE TOURNAMENT", INK_FAINT, 1);
 
     for (int i = 0; i < SHIP_CLASSES; i++) {
         const ShipSpec* s   = vg_spec((ShipClass)i);

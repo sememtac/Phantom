@@ -67,7 +67,14 @@
 
 #define ENEMY_SCALE          7.0f
 #define ENEMY_HIT_RADIUS     16.0f
-#define ENEMY_SPAWN_DIST     1300.0f
+// Far enough that a match opens with a search rather than a merge. At 1300 the
+// two of you were on top of each other before the HUD had finished coming up;
+// out here you have to hunt, the radar earns its place, and the first contact
+// is something you flew to rather than something you woke up in.
+//
+// They will find each other regardless -- the AI closes on the player, so the
+// distance costs a few seconds of approach, not a stalemate.
+#define ENEMY_SPAWN_DIST     2900.0f
 #define ENEMY_EVADE_RANGE    540.0f   // break when a missile gets this close
 
 // Enemies aim at a point offset from the player rather than at the player, so
