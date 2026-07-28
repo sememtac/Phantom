@@ -1,5 +1,6 @@
 #include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_voice.h"
 #include "vg_arena.h"
 #include <stdio.h>
 #include <math.h>
@@ -63,6 +64,30 @@ static void draw_health(void) {
     for (int i = 1; i < 5; i++)
         vg_fill_rect(x + 4 + (w - 8) * i / 5, y + 4, 2, h - 8, INK_ONFILL);
 
+}
+
+// Radio traffic from the other pilot. Callsign in inverse video, message beside
+// it -- the panel idiom, so it reads as an instrument rather than a subtitle.
+//
+// Sits below the reticle and above the radar, the one band of the HUD that is
+// empty in every state. Anywhere higher and it would sit across the lock box
+// exactly when someone is most likely to be talking.
+static void draw_comms(void) {
+    if (!vg.comms_line || vg.comms_t <= 0.0f) return;
+
+    const int   y  = 300;
+    const int   tw = vg_text_width(vg.comms_tag, 2);
+    const int   mw = vg_text_width(vg.comms_line, 2);
+    const int   x  = (SCR_W - (tw + 14 + mw)) / 2;
+
+    // A last transmission blinks. Brightness and blink are the whole vocabulary
+    // here, and a death is the one line worth interrupting the player for.
+    const bool  dying = (vg.comms_pri == (uint8_t)VOICE_DEATH);
+    if (dying && fmodf(vg.comms_t, 0.44f) < 0.16f) return;
+
+    vg_fill_rect(x - 5, y - 4, tw + 10, 22, dying ? INK_MAX : INK);
+    vg_text(x, y, vg.comms_tag, INK_ONFILL, 2);
+    vg_text(x + tw + 14, y, vg.comms_line, dying ? INK_MAX : INK_BRIGHT, 2);
 }
 
 static void draw_throttle(void) {
@@ -347,6 +372,7 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     char buf[40];
 
     draw_health();
+    draw_comms();
 
     snprintf(buf, sizeof(buf), "%d", vg.score);
     vg_text(SCR_W - 30 - vg_text_width(buf, 3), 20, buf, COL_HUD, 3);

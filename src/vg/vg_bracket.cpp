@@ -2,6 +2,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_tourney.h"
+#include "vg_voice.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -239,6 +240,11 @@ void vg_draw_bracket(void) {
         const int tx = (SCR_W - tw) / 2 + 6;
         vg_fill_rect(tx - 14, 40, 6, 24, vg_hue_col(opp->hue));
         vg_text(tx, 42, buf, INK_MAX, 3);
+
+        // Who they are, under what they fly. The ship tells you how the fight
+        // will go; this tells you what you are going to have to listen to.
+        const char* a = vg_voice_archetype(opp->voice);
+        vg_text((SCR_W - vg_text_width(a, 1)) / 2, 68, a, INK_FAINT, 1);
     }
 
     // --- footer ---

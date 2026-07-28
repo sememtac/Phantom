@@ -1,5 +1,6 @@
 #pragma once
 #include "vg_game.h"
+#include "vg_voice.h"
 
 // Internal contract between the simulation modules. Not part of the public API
 // in vg_game.h, which is what the renderer and main loop see.
@@ -30,6 +31,10 @@ Vec3  vg_mote_spawn(float zmin, float zmax);
 // --- vg_game.cpp (shared with the modules above) ---------------------------
 
 void vg_spawn_debris(Vec3 at, float radius, int count);
+
+// Put one of this pilot's lines on the radio. Higher-priority events displace
+// lower ones and never the other way round, so a death is always heard out.
+void vg_comms_say(const Ship* s, VoiceEvent ev);
 void vg_damage_player(float amount);
 bool vg_player_was_hit(void);
 void vg_clear_player_hit(void);

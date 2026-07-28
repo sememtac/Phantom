@@ -54,6 +54,25 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
     }
 }
 
+void vg_comms_say(const Ship* s, VoiceEvent ev) {
+    if (!s) return;
+    // VoiceEvent is ordered by weight -- taunt, fire, hurt, death -- so the
+    // enum value doubles as the priority and a strict '>' means an equal event
+    // still refreshes. Two hits in a row should read as two.
+    if (vg.comms_t > 0.0f && vg.comms_pri > (uint8_t)ev) return;
+
+    vg.comms_line = vg_voice_line(s->voice, ev,
+                                  (uint32_t)(vg_frand01() * 997.0f));
+    vg.comms_tag[0] = s->tag[0];
+    vg.comms_tag[1] = s->tag[1];
+    vg.comms_tag[2] = s->tag[2];
+    vg.comms_tag[3] = 0;
+    vg.comms_pri = (uint8_t)ev;
+    // A last transmission is left up longer. It is the only line the player
+    // cannot provoke a second time.
+    vg.comms_t = (ev == VOICE_DEATH) ? 3.6f : 2.4f;
+}
+
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     Ship* s = &vg.enemy[i];
 
@@ -274,9 +293,21 @@ void vg_match_start(void) {
     // the old "keep a fight going" respawn belonged to an endless survival mode
     // and would make a knockout round unwinnable.
     const Entrant* opp = vg_tourney_opponent();
-    if (opp) spawn_enemy(0, opp->cls,
-                         ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
-    else     spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
+    if (opp) {
+        spawn_enemy(0, opp->cls,
+                    ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
+        vg.enemy[0].voice = opp->voice;
+        for (int i = 0; i < 4; i++) vg.enemy[0].tag[i] = opp->tag[i];
+    } else {
+        spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
+    }
+
+    // They open the match. The first thing you learn about an opponent should
+    // be what kind of person they are, not what they are flying.
+    vg.comms_line = nullptr;
+    vg.comms_t    = 0;
+    vg.comms_pri  = 0;
+    vg.taunt_t    = 1.4f;
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) spawn_asteroid();
 
@@ -468,6 +499,10 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     if (vg.msl_event_t > 0) {
         vg.msl_event_t -= dt;
         if (vg.msl_event_t <= 0) vg.msl_event = MSL_NONE;
+    }
+    if (vg.comms_t > 0) {
+        vg.comms_t -= dt;
+        if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
     }
 }
 
@@ -841,6 +876,18 @@ void vg_game_update(float dt, const VgInput* in) {
         }
         if (in->fire_edge) player_fire();
         if (playing && in->alt_edge) { vg.state = VG_PAUSE; vg.state_t = 0; break; }
+
+        // Unprompted chatter, on a long timer and only when the radio is idle.
+        // Taunts are flavour; letting one interrupt a hit or a kill would turn
+        // the most informative channel on the HUD into noise.
+        vg.taunt_t -= dt;
+        if (vg.taunt_t <= 0.0f) {
+            vg.taunt_t = vg_frand(12.0f, 21.0f);
+            if (vg.comms_t <= 0.0f) {
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                    if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
+            }
+        }
 
 #if ENABLE_ASTEROIDS
         // Keep the field topped up as a speed cue.

@@ -87,6 +87,9 @@ static void hit_enemy(int index, float dmg) {
     if (!s->alive) return;
     s->hull -= dmg;
     s->hit_flash = 0.2f;
+    // Said before the ship is cleared, so a dying pilot still has a tag to
+    // transmit under.
+    vg_comms_say(s, (s->hull <= 0.0f) ? VOICE_DEATH : VOICE_HURT);
     if (s->hull <= 0.0f) {
         vg_spawn_debris(s->pos, 22.0f, 14);
         s->alive = false;

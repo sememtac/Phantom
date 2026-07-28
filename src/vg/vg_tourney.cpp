@@ -1,5 +1,6 @@
 #include "vg_tourney.h"
 #include "vg_sim.h"
+#include "vg_voice.h"
 #include <string.h>
 
 Tourney vt;
@@ -88,6 +89,13 @@ void vg_tourney_begin(ShipClass player_class) {
         if (d > 0.5f) d = 1.0f - d;
         if (d < 0.06f) { h += 0.13f; if (h >= 1.0f) h -= 1.0f; }
         e->hue = h;
+
+        // Personality is independent of everything else -- ship, seeding and
+        // hue are all rolled separately, so a BUTCHER is as likely to be the
+        // sixteenth seed in a CHARIOT as the second in a BALLISTA. Tying them
+        // together would make the bracket predictable from one glance.
+        e->voice = (uint8_t)((uint32_t)(vg_frand01() * (float)vg_voice_count())
+                             % (uint32_t)vg_voice_count());
     }
 
     // --- seed 2..16 by rating, then lay them into the bracket ---

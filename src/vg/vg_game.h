@@ -61,6 +61,12 @@ struct Ship {
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
+    // Who is flying it. Carried on the ship rather than looked up through the
+    // bracket, because a missile detonating has to name the pilot it just
+    // killed and has no business knowing what a tournament is.
+    char    tag[4];
+    uint8_t voice;
+
     // Identity, and the ribbon that carries it. trail_p is the throttle setting
     // each point was laid down at, 0..255 -- what makes the contrail lengthen
     // under power and persist after the ship has backed off.
@@ -198,6 +204,14 @@ struct VgGame {
 
     MslEvent msl_event;
     float    msl_event_t;  // counts down; the banner shows while positive
+
+    // Radio. One line at a time, held by priority so a death cry is never
+    // stepped on by the next round going wide.
+    char        comms_tag[4];
+    const char* comms_line;
+    float       comms_t;
+    uint8_t     comms_pri;
+    float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around
     // a fixed camera, so a hard turn sweeps your own track into view -- you can
