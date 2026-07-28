@@ -68,45 +68,52 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
 // It is drawn many times its combat size. At ENEMY_SCALE a fighter is about
 // five pixels across at any distance the near plane will allow, which is fine
 // for a contact and useless for a subject.
-static void cine_pass(const ShipSpec* spec, float hue, float u, bool mirror) {
+static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     Ship* c = &vg.cine;
-    const float sx = mirror ? 1.0f : -1.0f;
+    const float sx = mirror ? -1.0f : 1.0f;
 
-    // Held just off centre and drifting slowly across it, the way a long lens
-    // never quite keeps up. Dead centre for four seconds reads as a screenshot.
-    const float lat = sx * (120.0f - 220.0f * u);
-    const float ver = -34.0f + 46.0f * u;
-    // Closes gently. The whole arrival happens in the last third, so the shot
-    // has somewhere to go rather than being one static frame.
-    const float dep = 620.0f - 250.0f * u * u;
+    c->alive = true;
+    c->spec  = spec;
+    c->hue   = hue;
+    c->scale = 74.0f;
 
-    c->alive  = true;
-    c->spec   = spec;
-    c->hue    = hue;
-    c->scale  = 96.0f;
-    c->pos    = v3(lat, ver, dep);
-    // Nose along its own travel, so the model is seen three-quarter on rather
-    // than in plan -- that is the angle the silhouette actually reads from.
-    c->fwd    = vnorm(v3(sx * -0.30f, 0.06f, 1.0f));
-    c->up     = v3(0, 1, 0);
-    // Fast enough that the exhaust plume is lit, and banked, because a ship
-    // holding wings-level through a pass looks parked rather than flown.
-    c->speed  = spec->speed_min + (spec->speed_max - spec->speed_min) * 0.72f;
-    c->roll_vis = sx * (0.30f + 0.22f * sinf(u * 3.14159f));
+    // Well out to one side, crossing. Closest approach lands around 430 units,
+    // which at this speed asks the camera for roughly 1.9 rad/s of pan -- just
+    // inside what the flight model can actually turn. The whip at the midpoint
+    // is therefore right at the edge of keeping up, and that strain IS the shot.
+    c->pos   = v3(sx * -1900.0f, 150.0f, 430.0f);
+    c->fwd   = vnorm(v3(sx * 1.0f, -0.055f, 0.030f));
+    c->up    = v3(0, 1, 0);
+    c->speed = 850.0f;
 
-    // Its own ribbon, laid down as it goes, so it arrives trailing rather than
-    // appearing with one already attached.
-    // Trail laid from the engine rather than the hull centre, or at this model
-    // size the ribbon starts somewhere inside the ship.
-    c->trail_acc += 0.016f;
-    if (c->trail_acc >= SHIP_TRAIL_DT) {
+    // Banked hard into its own crossing.
+    c->roll_vis = sx * 0.62f;
+
+    c->trail_n    = 0;
+    c->trail_head = 0;
+    c->trail_acc  = 0;
+    vg.cine_on    = true;
+}
+
+// Advance along its own track, and lay ribbon. Runs AFTER world_step, which has
+// already turned both the ship and the background by this frame's camera pan.
+static void cine_fly(float dt) {
+    Ship* c = &vg.cine;
+    c->pos = vadd(c->pos, vmul(c->fwd, c->speed * dt));
+
+    // Sampled twice as often as a combat trail: this one is crossing the frame
+    // at 850 units a second, and at the normal rate the ribbon would be a row
+    // of disconnected dashes rather than a streak.
+    c->trail_acc += dt;
+    if (c->trail_acc >= SHIP_TRAIL_DT * 0.5f) {
         c->trail_acc = 0;
         c->trail_head = (uint8_t)((c->trail_head + 1) % SHIP_TRAIL);
-        c->trail[c->trail_head]   = vsub(c->pos, vmul(c->fwd, c->scale * 1.2f));
-        c->trail_p[c->trail_head] = 200;
+        // From the engine, not the hull centre -- at this model size the ribbon
+        // would otherwise start somewhere inside the ship.
+        c->trail[c->trail_head]   = vsub(c->pos, vmul(c->fwd, c->scale * 1.3f));
+        c->trail_p[c->trail_head] = 255;    // full burn, so the colour carries
         if (c->trail_n < SHIP_TRAIL) c->trail_n++;
     }
-    vg.cine_on = true;
 }
 
 static void cine_clear(void) {
@@ -884,25 +891,50 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_INTRO: {
-        // The camera is nobody's cockpit yet, so it drifts the way the title
-        // card does. The fighters are flown past it, not by it.
-        menu_world(dt);
-
         const float t = vg.state_t;
-        if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
-            cine_pass(vg.spec, vg.trail_hue,
-                      (t - INTRO_DRIFT) / (INTRO_YOU_END - INTRO_DRIFT), false);
-        } else if (t > INTRO_OPP_START && t < INTRO_OPP_END) {
-            const Ship* o = &vg.enemy[0];
-            cine_pass(o->spec, o->hue,
-                      (t - INTRO_OPP_START) / (INTRO_OPP_END - INTRO_OPP_START), true);
-        } else {
-            // Between passes the ribbon has to go too, or the cut lands on a
-            // stranded trail with nothing on the end of it.
-            cine_clear();
+
+        // Which shot we are in. Each cut re-anchors: the ship is launched fresh
+        // from the opposite side on a new line, so the second setup reads as a
+        // different camera in a different place rather than a repeat.
+        static int s_shot = 0;
+        const int  shot = (t > INTRO_OPP_START && t < INTRO_OPP_END) ? 2
+                        : (t > INTRO_DRIFT     && t < INTRO_YOU_END) ? 1 : 0;
+
+        if (shot != s_shot) {
+            s_shot = shot;
+            if (shot == 1) cine_launch(vg.spec, vg.trail_hue, false);
+            else if (shot == 2) cine_launch(vg.enemy[0].spec, vg.enemy[0].hue, true);
+            // Between shots the ribbon goes too, or the cut lands on a stranded
+            // trail with nothing on the end of it.
+            else cine_clear();
         }
 
+        float pitch_in = 0.0f, yaw_in = 0.0f;
+        if (vg.cine_on) {
+            // Steer the view onto the ship. Gain is deliberately high so the
+            // input saturates the moment it is more than about twenty degrees
+            // off-axis -- from there the camera pans at its own maximum rate
+            // and visibly lags through the closest approach, which is what an
+            // operator swinging a long lens actually does.
+            const Vec3 w = vnorm(vg.cine.pos);
+            yaw_in   =  w.x * 3.2f;
+            pitch_in = -w.y * 3.2f;
+            if (yaw_in   >  1.0f) yaw_in   =  1.0f;
+            if (yaw_in   < -1.0f) yaw_in   = -1.0f;
+            if (pitch_in >  1.0f) pitch_in =  1.0f;
+            if (pitch_in < -1.0f) pitch_in = -1.0f;
+        } else {
+            attract_autopilot(t, &pitch_in, &yaw_in);
+        }
+
+        // Throttle zero: the camera is anchored, not flying. world_step still
+        // rotates the whole world by the pan, which is what carries the arena
+        // and the starfield across behind the subject.
+        world_step(dt, pitch_in, yaw_in, 0.0f, 0.0f);
+        if (vg.cine_on) cine_fly(dt);
+
         if (t > INTRO_END || tap_up) {
+            s_shot = 0;
             cine_clear();
             vg.state    = VG_PLAYING;
             vg.state_t  = 0;
