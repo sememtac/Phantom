@@ -75,23 +75,25 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->alive = true;
     c->spec  = spec;
     c->hue   = hue;
-    c->scale = 110.0f;
+    c->scale = 128.0f;
 
-    // Well out to one side, crossing at a distance. Closest approach is about
-    // 950 units: far enough that the whole ship is in frame with space around
-    // it rather than filling the canopy, and the model is scaled up to suit so
-    // the silhouette still reads.
+    // Runs AWAY down the tunnel rather than across the view.
     //
-    // That distance also sets the pan. At this speed it asks for about 1.1
-    // rad/s against a turn rate near 2.3, so the camera holds the subject
-    // comfortably and sweeps rather than snatches.
-    c->pos   = v3(sx * -2400.0f, 190.0f, 950.0f);
-    c->fwd   = vnorm(v3(sx * 1.0f, -0.045f, 0.025f));
+    // Crossing laterally was wrong twice over. It read as a ship going sideways
+    // past a corridor instead of flying along one, and it put the ship outside
+    // the 62 degree field of view at both ends of the pass -- which is the
+    // appearing and disappearing: launched at 68 degrees off-axis, invisible
+    // until the camera had swung round to it, and gone again before the end.
+    //
+    // Departing keeps it in front by construction. It starts near, close to the
+    // centre of frame, and recedes -- so it is always at a shallow angle and
+    // never has to be chased into the corner of the screen.
+    c->pos   = v3(sx * 250.0f, 80.0f, 540.0f);
+    c->fwd   = vnorm(v3(sx * 0.26f, -0.04f, 1.0f));
     c->up    = v3(0, 1, 0);
-    c->speed = 1050.0f;
+    c->speed = 620.0f;
 
-    // Banked hard into its own crossing.
-    c->roll_vis = sx * 0.62f;
+    c->roll_vis = sx * 0.5f;
 
     c->trail_n    = 0;
     c->trail_head = 0;
@@ -99,10 +101,44 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     vg.cine_on    = true;
 }
 
+// Move the whole shot somewhere else. The two fighters are launched from
+// separate places, and cutting between them without relocating showed the same
+// stretch of tunnel twice -- which reads as the pair starting on top of each
+// other rather than a corridor apart.
+//
+// The camera is the origin and cannot be moved, so the world is moved instead:
+// a long jump down the tube and a hard turn, which is indistinguishable from
+// having travelled there.
+static void cine_relocate(void) {
+    const Mat3 R = mat3_euler(vg_frand(-0.55f, 0.55f), vg_frand(-1.4f, 1.4f), 0.0f);
+    const float dz = vg_frand(2600.0f, 4400.0f);
+
+    vg_arena_step(R, dz);
+    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+
+    for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
+    // Motes are near-field, so there is nothing to carry over -- re-seed them
+    // rather than dragging the old dust to the new location.
+    for (int i = 0; i < NUM_MOTES; i++) vg.mote[i] = vg_mote_spawn(MOTE_Z_MIN, MOTE_Z_MAX);
+
+    // The backdrop is at infinity, so only the turn applies to it.
+    vg_sky_step(vg_frand(-0.9f, 0.9f), vg_frand(-1.6f, 1.6f), vg.bank);
+}
+
 // Advance along its own track, and lay ribbon. Runs AFTER world_step, which has
 // already turned both the ship and the background by this frame's camera pan.
+static float s_cine_turn = 0.0f;   // lazy arc, set at launch
+
 static void cine_fly(float dt) {
     Ship* c = &vg.cine;
+
+    // A slow curving climb rather than a straight line. Nothing in this game
+    // flies straight, and a ship holding a ruled course through a four second
+    // shot reads as a model on a wire.
+    const Mat3 T = mat3_euler(-0.13f * dt, s_cine_turn * dt, 0.0f);
+    c->fwd = vnorm(mat3_apply(T, c->fwd));
+    c->roll_vis += ((s_cine_turn > 0 ? 0.75f : -0.75f) - c->roll_vis) * dt * 0.8f;
+
     c->pos = vadd(c->pos, vmul(c->fwd, c->speed * dt));
 
     // Sampled twice as often as a combat trail: this one is crossing the frame
@@ -266,8 +302,14 @@ static void player_fire(void) {
     rail ^= 1;
     Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
 
-    vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)), vg.lock_target,
-                      vg.spec);
+    // Only spend the round if a missile actually left the rail. With every slot
+    // in the air this silently charged the player for nothing at all, and since
+    // no missile existed there was no outcome to report either -- a shot that
+    // vanished in both directions.
+    if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
+                           vg.lock_target, vg.spec))
+        return;
+
     vg.missiles--;
     vg.fire_gap = PLAYER_FIRE_GAP;
 }
@@ -612,7 +654,18 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     if (vg.hit_flash > 0) vg.hit_flash -= dt;
     if (vg.msl_event_t > 0) {
         vg.msl_event_t -= dt;
-        if (vg.msl_event_t <= 0) vg.msl_event = MSL_NONE;
+        if (vg.msl_event_t <= 0) {
+            if (vg.msl_qn > 0) {
+                vg.msl_event = vg.msl_queue[0];
+                for (int i = 1; i < vg.msl_qn; i++) vg.msl_queue[i - 1] = vg.msl_queue[i];
+                vg.msl_qn--;
+                // Held briefly when more are stacked up, so a salvo reports
+                // itself out promptly instead of trailing the fight.
+                vg.msl_event_t = vg.msl_qn ? MSL_BANNER_FAST : MSL_BANNER;
+            } else {
+                vg.msl_event = MSL_NONE;
+            }
+        }
     }
     if (vg.hud_boot > 0) vg.hud_boot -= dt;
     if (vg.comms_t > 0) {
@@ -923,9 +976,17 @@ void vg_game_update(float dt, const VgInput* in) {
                         : (t > INTRO_DRIFT     && t < INTRO_YOU_END) ? 1 : 0;
 
         if (shot != s_shot) {
+            const bool was_first = (s_shot == 1);
             s_shot = shot;
-            if (shot == 1) cine_launch(vg.spec, vg.trail_hue, false);
-            else if (shot == 2) cine_launch(vg.enemy[0].spec, vg.enemy[0].hue, true);
+            if (shot == 1) {
+                s_cine_turn = 0.30f;
+                cine_launch(vg.spec, vg.trail_hue, false);
+            } else if (shot == 2) {
+                // Only once, on the way in to the second setup.
+                if (was_first || s_shot == 2) cine_relocate();
+                s_cine_turn = -0.30f;
+                cine_launch(vg.enemy[0].spec, vg.enemy[0].hue, true);
+            }
             // Between shots the ribbon goes too, or the cut lands on a stranded
             // trail with nothing on the end of it.
             else cine_clear();

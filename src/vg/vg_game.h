@@ -94,6 +94,11 @@ enum MslEvent : uint8_t {
     MSL_DESTROYED
 };
 
+// How long an outcome holds. Shortened when others are waiting, so a burst of
+// four resolves in about two and a half seconds rather than five.
+#define MSL_BANNER      1.10f
+#define MSL_BANNER_FAST 0.62f
+
 struct Missile {
     bool    alive;
     bool    from_player;
@@ -251,6 +256,11 @@ struct VgGame {
 
     MslEvent msl_event;
     float    msl_event_t;  // counts down; the banner shows while positive
+    // Every round the player fires must resolve into something the player is
+    // told. A single slot dropped outcomes whenever two shots landed close
+    // together, so pending ones queue behind the one on screen instead.
+    MslEvent msl_queue[6];
+    uint8_t  msl_qn;
 
     // Radio. One line at a time, held by priority so a death cry is never
     // stepped on by the next round going wide.

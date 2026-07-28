@@ -6,11 +6,13 @@
 // pull so many degrees per second -- and on the seeker cone that turns falling
 // behind that limit into a permanent miss rather than an endless chase.
 
-void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
+bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
                        const ShipSpec* spec) {
     Missile* m = nullptr;
     for (int i = 0; i < MAX_MISSILES; i++) if (!vg.msl[i].alive) { m = &vg.msl[i]; break; }
-    if (!m) return;
+    // Reported rather than swallowed. The caller has to know, because it is
+    // about to charge the player a round for a missile that does not exist.
+    if (!m) return false;
 
     m->alive       = true;
     m->from_player = from_player;
@@ -25,6 +27,7 @@ void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->trail_acc   = 0;
     m->trail_n     = 0;
     m->trail_head  = 0;
+    return true;
 }
 
 static inline void trail_push(Missile* m) {
@@ -54,13 +57,20 @@ static bool missile_target(const Missile* m, Vec3* pos, Vec3* vel) {
 // Report what one of OUR rounds did. Only the player's, and only the strongest
 // result: a kill should not be overwritten by a second missile missing the
 // wreckage a frame later.
+// Every round the player fires resolves into something the player is told.
+// Nothing is ever dropped: if a banner is already up, this one waits behind it.
+//
+// The old version discarded any outcome weaker than the one showing, which is
+// why shots sometimes vanished without a word -- fire three, kill with the
+// second, and the third's miss was silently thrown away.
 static void report(MslEvent e) {
-    // Only a STRICTLY better outcome is protected -- a kill must not be
-    // downgraded by a second round missing the wreckage. An equal outcome
-    // refreshes the banner, so two misses in quick succession read as two.
-    if (vg.msl_event_t > 0.0f && vg.msl_event > e) return;
-    vg.msl_event   = e;
-    vg.msl_event_t = 1.1f;
+    if (vg.msl_event_t <= 0.0f) {
+        vg.msl_event   = e;
+        vg.msl_event_t = MSL_BANNER;
+        return;
+    }
+    if (vg.msl_qn < (uint8_t)(sizeof(vg.msl_queue) / sizeof(vg.msl_queue[0])))
+        vg.msl_queue[vg.msl_qn++] = e;
 }
 
 static void detonate(Missile* m, bool hit) {
