@@ -249,7 +249,12 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
         float f   = age * age * pw;
         if (f < SHIP_TRAIL_MIN) f = SHIP_TRAIL_MIN;
 
-        vg_edge_w(cam, prev, cur, vg_dim(col, f), (f > 0.55f) ? 2 : 1);
+        // Single-width throughout. A thick stroke is not one primitive drawn
+        // fatter -- vg_line_w emits a separate offset copy per pixel of width --
+        // so the bright head of every ribbon was costing double, and submit
+        // bills per primitive whether or not the rasteriser ever hides. With
+        // three ships trailing, that head was several hundred primitives.
+        vg_edge_w(cam, prev, cur, vg_dim(col, f), 1);
         prev = cur;
 
         // Level of detail along the ribbon: full resolution near the engine
@@ -291,7 +296,10 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
         int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
         Vec3 cur = m->trail[idx];
         float f = 1.0f - (float)t / (float)m->trail_n;
-        int w = (f > 0.66f) ? 3 : (f > 0.33f) ? 2 : 1;
+        // Was 3 at the head. Three offset copies per segment on every missile in
+        // the air is the densest geometry in the frame, and it buys very little
+        // on a stroke that is already the brightest thing on screen.
+        int w = (f > 0.66f) ? 2 : 1;
         vg_edge_w(cam, prev, cur, vg_dim(trail_col, f * f), w);
         prev = cur;
     }

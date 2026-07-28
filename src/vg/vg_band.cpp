@@ -260,11 +260,17 @@ static inline void band_scanlines(uint16_t* band, int by0) {
         // Rows are 960 bytes and the buffer is 16-byte aligned, so this is
         // always 4-byte aligned. The zero test still pays off wherever the
         // backdrop is dark.
+        // Unrolled four ways. Measured at ~3.3ms a frame -- 20% of a 60fps
+        // budget -- for 38,400 words of work that is five operations each, so
+        // most of it was loop overhead rather than the arithmetic. SCR_W/2 is
+        // 240, divisible by 4, so no remainder handling is needed.
         uint32_t* p = (uint32_t*)&band[y * SCR_W];
-        for (int i = 0; i < SCR_W / 2; i++) {
-            uint32_t v = p[i];
-            if (!v) continue;
-            p[i] = scanline_pair(v);
+        for (int i = 0; i < SCR_W / 2; i += 4) {
+            uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
+            if (a) p[i]     = scanline_pair(a);
+            if (b) p[i + 1] = scanline_pair(b);
+            if (c) p[i + 2] = scanline_pair(c);
+            if (d) p[i + 3] = scanline_pair(d);
         }
     }
 }
