@@ -181,7 +181,7 @@ void vg_game_init(void) {
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
     vg_sky_init();
-    vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
+    vg_sky_generate(SKY_MENU, esp_random());   // we boot straight into the menu
 
     vg.state       = VG_ATTRACT;
     vg.credits     = CREDIT_START;
@@ -598,7 +598,15 @@ int vg_last_purse(void) { return s_last_purse; }
 // leaving the loser's missiles and wreckage flying through the attract loop --
 // and a missile whose seeker had broken draws in the dead-seeker grey, which is
 // exactly the stray grey lines that were turning up on the menu.
+// Out of combat the backdrop is always the menu one. Regenerating costs ~60ms,
+// which is invisible at a screen change and is the price of not carrying a
+// second full texture just to avoid it.
+static void use_menu_sky(void) {
+    vg_sky_generate(SKY_MENU, esp_random());
+}
+
 static void enter_attract(void) {
+    use_menu_sky();
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive   = false;
@@ -770,6 +778,9 @@ void vg_game_update(float dt, const VgInput* in) {
         menu_world(dt);
         if (vg.state_t > 2.4f) {
             vg_tourney_resolve(true);
+            // Back out of combat, so back to the menu sky -- the bracket and
+            // the repair screen are not a fight.
+            use_menu_sky();
             if (vt.complete) {
                 vg.state = VG_WON;
             } else {

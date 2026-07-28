@@ -21,7 +21,15 @@ enum SkyKind : uint8_t {
     SKY_NEBULA = 0,   // drifting fBm cloud
     SKY_GALAXY,       // barred spiral, warm core and cooler arms
     SKY_CLUSTER,      // knots of unresolved starlight in faint haze
-    SKY_KINDS
+
+    // Count of the IN-GAME backdrops, and the modulus a match rolls against.
+    // Anything at or past this is never picked for combat.
+    SKY_KINDS,
+
+    // Menu only. The backdrop the player actually sits and looks at, so it is
+    // allowed to be the loudest of the set -- combat backdrops are deliberately
+    // restrained so they never compete with a contact at range.
+    SKY_MENU
 };
 
 const char* vg_sky_name(void);

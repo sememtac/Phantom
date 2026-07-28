@@ -246,6 +246,77 @@ static void gen_cluster(uint32_t seed) {
     }
 }
 
+// --- menu backdrop ---------------------------------------------------------
+//
+// A galactic plane seen edge-on: a luminous core ridge with dust lanes bitten
+// out of it and a colour run from a hot gold core, through magenta, into deep
+// indigo at the edges. This is the one the player sits in front of for minutes
+// at a time rather than glances past mid-turn, so it carries far more contrast
+// and saturation than any of the combat skies would be allowed.
+//
+// The ridge is a cosine of (tx*ax + ty*ay) with INTEGER ax, ay. That is what
+// keeps it seamless: any smooth periodic function of an integer lattice
+// direction completes a whole number of cycles across the texture and therefore
+// wraps exactly. An arbitrary straight line would leave a visible join, which is
+// the same trap the nebula's noise fields fell into.
+static void gen_menu(uint32_t seed) {
+    const float TAU = 6.28318531f;
+    const int   ax  = 1 + (int)(hash2(3, 11, seed) % 2u);   // 1..2
+    const int   ay  = 2 + (int)(hash2(7,  5, seed) % 2u);   // 2..3
+
+    for (int ty = 0; ty < SKY_TEX_SIZE; ty++) {
+        for (int tx = 0; tx < SKY_TEX_SIZE; tx++) {
+            const int i = (ty << SKY_TEX_BITS) + tx;
+
+            // Bend the plane with a slow field so it is not a ruled stripe. The
+            // warp is added to the phase, so it stays periodic and still tiles.
+            const float warp = fbm_tex(tx, ty, seed + 1301u, 3, 2) - 0.5f;
+            const float u    = (float)(tx * ax + ty * ay) / (float)SKY_TEX_SIZE
+                             + warp * 0.55f;
+
+            // Integer powers by multiplication, not powf. Two powf calls per
+            // texel over 16k texels cost more than every noise octave in the
+            // function put together -- 229ms to generate against ~60ms for the
+            // combat skies, which is a visible hitch on each menu transition.
+            const float band = 0.5f + 0.5f * cosf(u * TAU);  // 1 along the plane
+            const float b2    = band * band;
+            const float ridge = b2 * band;                   // band^3
+
+            // Turbulence, so the band has structure along its length.
+            float turb = fbm_tex(tx, ty, seed + 88u, 5, 4);
+            turb = (turb - 0.34f) * 2.4f;
+            if (turb < 0.0f) turb = 0.0f; else if (turb > 1.0f) turb = 1.0f;
+
+            // Dust lanes bitten out of the bright core. This is the single
+            // detail that makes it read as a galaxy rather than a smear.
+            float dust = fbm_tex(tx, ty, seed + 6607u, 4, 3);
+            dust = (dust - 0.46f) * 3.0f;
+            if (dust < 0.0f) dust = 0.0f; else if (dust > 1.0f) dust = 1.0f;
+
+            float dens = ridge * (0.34f + 0.66f * turb) * (1.0f - 0.72f * dust);
+
+            // The very spine of the ridge blows out toward white. ridge^3 is
+            // band^9 -- a hard, narrow highlight right along the centreline.
+            const float r3   = ridge * ridge * ridge;
+            const float core = r3 * (0.45f + 0.55f * turb)
+                             * (1.0f - 0.85f * dust);
+
+            const float lvl = dens * SKY_MAX_LEVEL;
+            const float cl  = core * SKY_MAX_LEVEL;
+
+            float r = lvl * (0.30f + 0.85f * ridge) + cl * 0.95f;
+            float g = lvl * (0.09f + 0.34f * ridge) + cl * 0.78f;
+            float b = lvl * (0.78f - 0.26f * ridge) + cl * 0.52f;
+
+            if (r > SKY_MAX_LEVEL) r = SKY_MAX_LEVEL;
+            if (g > SKY_MAX_LEVEL) g = SKY_MAX_LEVEL;
+            if (b > SKY_MAX_LEVEL) b = SKY_MAX_LEVEL;
+
+            s_tex[i] = pack565_swapped(r, g, b);
+        }
+    }
+}
+
 // --- nebula ----------------------------------------------------------------
 
 static void gen_nebula(uint32_t seed) {
@@ -294,6 +365,7 @@ const char* vg_sky_name(void) {
     switch (s_kind) {
     case SKY_GALAXY:  return "GALAXY";
     case SKY_CLUSTER: return "CLUSTER";
+    case SKY_MENU:    return "CORE";
     default:          return "NEBULA";
     }
 }
@@ -302,12 +374,15 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     if (!s_tex) return;
 
     uint32_t t0 = millis();
-    s_kind = (kind < SKY_KINDS) ? kind : SKY_NEBULA;
 
-    switch (s_kind) {
-    case SKY_GALAXY:  gen_galaxy(seed);  break;
-    case SKY_CLUSTER: gen_cluster(seed); break;
-    default:          gen_nebula(seed);  break;
+    // SKY_KINDS sits inside the enum as a count, so it is a reachable value and
+    // not a valid kind -- the switch has to select the generator and the label
+    // together rather than sanitising the input first.
+    switch (kind) {
+    case SKY_GALAXY:  s_kind = SKY_GALAXY;  gen_galaxy(seed);  break;
+    case SKY_CLUSTER: s_kind = SKY_CLUSTER; gen_cluster(seed); break;
+    case SKY_MENU:    s_kind = SKY_MENU;    gen_menu(seed);    break;
+    default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
     // Report what actually landed in the texture. A backdrop that is silently
