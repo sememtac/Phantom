@@ -49,6 +49,25 @@
 // dim smudge rather than the thing you are meant to sit and look at.
 #define SKY_MENU_LEVEL  0.92f
 
+// Sampling scale and pan rate, set per backdrop at generation time.
+//
+// The clouds want the defaults: they are unbounded fields, so panning through
+// them is the whole point and a tile boundary is nothing to look at.
+//
+// The black hole is the opposite. It is a single object, and flying a lap of
+// the torus means yawing continuously through 360 degrees, which pans the sky
+// through several tile widths and produces a procession of black holes sliding
+// past. So it does not pan at all: an object at that distance would not shift
+// no matter how far you flew, and holding the sample centred on it means the
+// repeats can never be reached.
+static float s_scale = SKY_SCALE;
+static float s_pan   = SKY_PAN_PER_RAD;
+
+// Bigger than the combat skies, and this is close to the ceiling. The lensed
+// arcs sit at ~20 texels; much past this and they cross the top and bottom
+// edges, which crops the one feature that makes it read as a black hole.
+#define SKY_MENU_SCALE  0.088f
+
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
@@ -418,6 +437,18 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
+    if (s_kind == SKY_MENU) {
+        s_scale = SKY_MENU_SCALE;
+        s_pan   = 0.0f;                       // fixed at infinity; see above
+        // Park the sample on the hole itself. The fill maps screen centre to
+        // (s_u, s_v), so this is what puts it in the middle of the view -- and
+        // with no pan it stays there for good.
+        s_u = s_v = (float)(SKY_TEX_SIZE / 2);
+    } else {
+        s_scale = SKY_SCALE;
+        s_pan   = SKY_PAN_PER_RAD;
+    }
+
     // Report what actually landed in the texture. A backdrop that is silently
     // all-black looks identical to one that is not being drawn at all, and
     // telling those apart by eye cost a flash cycle once already.
@@ -449,8 +480,8 @@ void vg_sky_step(float d_pitch, float d_yaw, float bank) {
     // texture space through the bank rotation. Accumulating straight into u/v
     // was only correct while bank was zero -- it quietly ignored roll, and would
     // now be 90 degrees out as well.
-    const float pan_x = d_yaw   * SKY_PAN_PER_RAD;   // logical +x
-    const float pan_y = d_pitch * SKY_PAN_PER_RAD;   // logical +y (screen down)
+    const float pan_x = d_yaw   * s_pan;   // logical +x
+    const float pan_y = d_pitch * s_pan;   // logical +y (screen down)
 
     const float cb = cosf(bank), sb = sinf(bank);
     s_u += pan_x * cb - pan_y * sb;
@@ -484,10 +515,10 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
 
     // 16.16 fixed point: the inner loop is two adds, two shift-masks and a
     // 32-bit store. Floats here would not survive the per-pixel budget.
-    const int32_t dux = (int32_t)( cb * SKY_SCALE * 65536.0f);
-    const int32_t dvx = (int32_t)( sb * SKY_SCALE * 65536.0f);
-    const int32_t duy = (int32_t)(-sb * SKY_SCALE * 65536.0f);
-    const int32_t dvy = (int32_t)( cb * SKY_SCALE * 65536.0f);
+    const int32_t dux = (int32_t)( cb * s_scale * 65536.0f);
+    const int32_t dvx = (int32_t)( sb * s_scale * 65536.0f);
+    const int32_t duy = (int32_t)(-sb * s_scale * 65536.0f);
+    const int32_t dvy = (int32_t)( cb * s_scale * 65536.0f);
 
     const int32_t u_org = (int32_t)(s_u * 65536.0f);
     const int32_t v_org = (int32_t)(s_v * 65536.0f);
