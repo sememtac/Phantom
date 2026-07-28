@@ -225,24 +225,30 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
     vg_line_aa_mode(false);
     const uint16_t col = vg_hue_col(hue);
     Vec3 prev = from;
-    for (int t = 0; t < n; t++) {
+    for (int t = 0; t < n; ) {
         int   idx = (head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
         Vec3  cur = trail[idx];
 
-        // Age fade, scaled by the throttle this point was laid down at. Idle
-        // segments drop under the floor almost immediately, so the ribbon is
-        // visibly short at low power and long under full throttle -- and a burst
-        // of speed stays lit in the tail after the ship has already backed off.
+        // Age fade, scaled by the throttle this point was laid down at, so a
+        // burst of speed stays lit in the tail long after the ship has backed
+        // off. Clamped rather than skipped: every segment is drawn, so the
+        // ribbon is unbroken from the engine to the far end no matter how the
+        // throttle was worked.
         float age = 1.0f - (float)t / (float)n;
         float pw  = SHIP_TRAIL_IDLE +
                     (1.0f - SHIP_TRAIL_IDLE) * ((float)power[idx] * (1.0f / 255.0f));
         float f   = age * age * pw;
+        if (f < SHIP_TRAIL_MIN) f = SHIP_TRAIL_MIN;
 
-        // Skipped, not broken out of: power varies along the ribbon, so a bright
-        // older stretch can follow a dim recent one and breaking would cut it.
-        if (f >= SHIP_TRAIL_FLOOR)
-            vg_edge_w(cam, prev, cur, vg_dim(col, f), (f > 0.55f) ? 2 : 1);
+        vg_edge_w(cam, prev, cur, vg_dim(col, f), (f > 0.55f) ? 2 : 1);
         prev = cur;
+
+        // Level of detail along the ribbon: full resolution near the engine
+        // where the curve is being read, coarser further back where it is
+        // dimmer and usually farther away. This is what lets the trail be
+        // nearly twice as long without nearly twice the primitives, and it
+        // stays continuous because each segment starts where the last ended.
+        t += (t < 28) ? 1 : (t < 72) ? 2 : 3;
     }
     vg_line_aa_mode(true);
 }

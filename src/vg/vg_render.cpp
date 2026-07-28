@@ -16,9 +16,10 @@ void vg_draw_steer_indicator(const VgInput* in);
 void vg_draw_target_markers(const VgCam& cam);
 void vg_draw_threat_indicator(const VgCam& cam);
 
-// Frame rate, bottom left, in every state including the menus. Held clear of
-// the rounded corner by SCR_SAFE, and drawn last so nothing can cover it -- the
-// whole point is to be able to read it while something else is going wrong.
+// Frame rate, bottom left, during flight only. The menus sit comfortably above
+// 60 and have nothing to report; the number is there to be read while something
+// is actually costing frame time. Held clear of the rounded corner by SCR_SAFE
+// and drawn last so nothing can cover it.
 static void draw_fps(float fps) {
     char buf[16];
     snprintf(buf, sizeof(buf), "%d FPS", (int)(fps + 0.5f));
@@ -47,7 +48,6 @@ void vg_render_frame(const VgInput* in, float fps) {
         case VG_REPAIR:  vg_draw_repair();   break;
         default:         vg_draw_overlays(); break;
         }
-        draw_fps(fps);
         return;
     }
 

@@ -114,7 +114,13 @@
 //
 // Segments behind the near plane reject on a single z compare, so the extra
 // length is nearly free until it is actually on screen.
-#define SHIP_TRAIL           100      // sample points per ship
-#define SHIP_TRAIL_DT        0.045f   // seconds between samples (~4.5s of tail)
-#define SHIP_TRAIL_IDLE      0.12f    // emission strength at zero throttle
-#define SHIP_TRAIL_FLOOR     0.06f    // below this a segment is not worth drawing
+#define SHIP_TRAIL           140      // sample points per ship
+#define SHIP_TRAIL_DT        0.055f   // seconds between samples (~7.7s of tail)
+
+// A contrail is CONTINUOUS. Throttle sets how brightly it burns, never whether
+// it exists -- an engine at idle still leaves a thin line. Segments used to be
+// dropped once age and power faded them below a floor, and because power varies
+// along the ribbon that punched holes in the middle of it wherever the pilot had
+// eased off. So the floor is now a brightness clamp, not a skip.
+#define SHIP_TRAIL_IDLE      0.30f    // emission strength at zero throttle
+#define SHIP_TRAIL_MIN       0.09f    // dimmest a segment may get -- never zero
