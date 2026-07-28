@@ -1,6 +1,8 @@
 #include "vg_sim.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
+#include "vg_tourney.h"
+#include "vg_screens.h"
 #include <Arduino.h>
 #include <esp_random.h>
 #include <math.h>
@@ -51,14 +53,11 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
     }
 }
 
-static void spawn_enemy(int i) {
+static void spawn_enemy(int i, ShipClass cls, float skill) {
     Ship* s = &vg.enemy[i];
 
-    // Random class for now, so all four turn up as opponents and can be felt
-    // from the receiving end. The tournament will assign these from the bracket.
-    ShipClass cls = (ShipClass)((uint32_t)(vg_frand01() * SHIP_CLASSES) % SHIP_CLASSES);
     s->spec  = vg_spec(cls);
-    s->skill = ENEMY_SKILL;
+    s->skill = skill;
 
     // Out ahead but off-axis, so a fight opens with a merge rather than with
     // someone already on someone's tail.
@@ -204,7 +203,20 @@ void vg_game_select_ship(ShipClass c) {
     vg.missiles   = vg.spec->magazine;
 }
 
-void vg_game_start(void) {
+void vg_tournament_begin(ShipClass c) {
+    vg.ship       = c;
+    vg.spec       = vg_spec(c);
+    // The only place hull is ever restored, until credits exist. Damage taken in
+    // the round of 16 is still on the ship in the final.
+    vg.health_max = vg.spec->hull;
+    vg.health     = vg.health_max;
+    vg.score      = 0;
+    vg.kills      = 0;
+
+    vg_tourney_begin(c);
+}
+
+void vg_match_start(void) {
     for (int i = 0; i < MAX_ENEMIES;   i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
     for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;
@@ -212,13 +224,8 @@ void vg_game_start(void) {
 
     vg.state       = VG_PLAYING;
     vg.state_t     = 0;
-    vg.score       = 0;
-    vg.kills       = 0;
-    // Full hull at the start of a run. Between tournament rounds this will be
-    // whatever the player could afford to repair instead.
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
-    vg.health      = vg.health_max;
     vg.difficulty  = 1.0f;
     vg.throttle    = 0.5f;
     vg.bank        = 0;
@@ -239,7 +246,13 @@ void vg_game_start(void) {
     vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
 
-    spawn_enemy(0);
+    // One opponent, taken from the bracket. A match is strictly one on one --
+    // the old "keep a fight going" respawn belonged to an endless survival mode
+    // and would make a knockout round unwinnable.
+    const Entrant* opp = vg_tourney_opponent();
+    if (opp) spawn_enemy(0, opp->cls, ENEMY_SKILL * (0.75f + 0.35f * opp->rating));
+    else     spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL);
+
     for (int i = 0; i < AST_TARGET_COUNT; i++) spawn_asteroid();
 
     vg_input_calibrate();
@@ -460,26 +473,110 @@ static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     *pitch_in = p;
 }
 
+// Every menu state flies the same idle scene underneath, so the tournament map
+// and the ship select sit over moving space rather than a dead background.
+static void menu_world(float dt) {
+    float pitch_in, yaw_in;
+    attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
+    world_step(dt, pitch_in, yaw_in, 0.42f);
+
+    vg.spawn_t -= dt;
+    if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
+    vg_update_missiles(dt);
+}
+
 void vg_game_update(float dt, const VgInput* in) {
     vg.state_t += dt;
 
     vg.difficulty = 1.0f + (float)vg.kills * 0.35f;
     if (vg.difficulty > 4.0f) vg.difficulty = 4.0f;
 
+    // A menu tap is a contact that lifts WITHOUT travelling. Resolved here
+    // rather than in the input layer because the bracket needs one contact to
+    // serve as both a pan drag and a button press, and only the consumer can
+    // know which it turned out to be.
+    static bool  s_held = false;
+    static float s_press_x = 0, s_press_y = 0, s_travel = 0;
+    bool  tap_up = false;
+    float tap_x = 0, tap_y = 0;
+
+    if (in->menu_edge) { s_press_x = in->menu_x; s_press_y = in->menu_y; s_travel = 0; }
+    if (in->menu_held) s_travel += fabsf(in->menu_dx) + fabsf(in->menu_dy);
+    if (s_held && !in->menu_held && s_travel < MENU_TAP_SLOP) {
+        tap_up = true;
+        tap_x  = s_press_x;
+        tap_y  = s_press_y;
+    }
+    s_held = in->menu_held;
+
     switch (vg.state) {
 
     case VG_ATTRACT: {
-        float pitch_in, yaw_in;
-        attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
-        world_step(dt, pitch_in, yaw_in, 0.42f);
+        menu_world(dt);
+        if (tap_up) { vg.state = VG_SELECT; vg.state_t = 0; }
+        break;
+    }
 
-        vg.spawn_t -= dt;
-        if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
-        vg_update_missiles(dt);
-        // Temporary ship select: the +/- key cycles classes on the title card.
+    case VG_SELECT: {
+        menu_world(dt);
+        // The +/- key cycles as well as the cards, since it is already wired and
+        // is the fastest way to feel the difference between classes.
         if (in->alt_edge)
             vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
-        if (in->tap_edge) vg_game_start();
+        if (tap_up) {
+            int card = vg_select_card_at(tap_x, tap_y);
+            if (card >= 0) {
+                vg_game_select_ship((ShipClass)card);
+            } else if (vg_select_confirm_at(tap_x, tap_y)) {
+                vg_tournament_begin(vg.ship);
+                vg_bracket_focus_player();
+                vg.state   = VG_BRACKET;
+                vg.state_t = 0;
+            }
+        }
+        break;
+    }
+
+    case VG_BRACKET: {
+        menu_world(dt);
+        if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
+        if (tap_up && vg_bracket_ready_at(tap_x, tap_y)) vg_match_start();
+        break;
+    }
+
+    case VG_PAUSE: {
+        // No world step: paused means paused.
+        if (in->alt_edge) { vg.state = VG_PLAYING; vg.state_t = 0; }
+        if (tap_up) {
+            if (vg_pause_resume_at(tap_x, tap_y)) {
+                vg.state = VG_PLAYING;
+                vg.state_t = 0;
+            } else if (vg_pause_quit_at(tap_x, tap_y)) {
+                vg.state = VG_ATTRACT;
+                vg.state_t = 0;
+            }
+        }
+        break;
+    }
+
+    case VG_ROUND_WON: {
+        menu_world(dt);
+        if (vg.state_t > 2.4f) {
+            vg_tourney_resolve(true);
+            if (vt.complete) {
+                vg.state = VG_WON;
+            } else {
+                vg_bracket_focus_player();
+                vg.state = VG_BRACKET;
+            }
+            vg.state_t = 0;
+        }
+        break;
+    }
+
+    case VG_WON: {
+        menu_world(dt);
+        if (vg.state_t > 1.5f && tap_up) { vg.state = VG_ATTRACT; vg.state_t = 0; }
         break;
     }
 
@@ -507,6 +604,7 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
         }
         if (in->fire_edge) player_fire();
+        if (playing && in->alt_edge) { vg.state = VG_PAUSE; vg.state_t = 0; break; }
 
 #if ENABLE_ASTEROIDS
         // Keep the field topped up as a speed cue.
@@ -519,19 +617,23 @@ void vg_game_update(float dt, const VgInput* in) {
         }
 #endif
 
-        // Keep a fight going: replace losses, and add a wingman as it heats up.
-        int alive_enemies = 0;
-        for (int i = 0; i < MAX_ENEMIES; i++) if (vg.enemy[i].alive) alive_enemies++;
-        int want = (vg.kills >= 3 && MAX_ENEMIES > 1) ? 2 : 1;
-        if (alive_enemies < want) {
-            for (int i = 0; i < MAX_ENEMIES; i++)
-                if (!vg.enemy[i].alive) { spawn_enemy(i); break; }
-        }
-
         if (playing) {
             collide_player();
+
+            // Player death is resolved FIRST, which is what makes a mutual kill
+            // a loss: you died, so you do not advance, regardless of whether the
+            // opponent went down in the same frame.
             if (vg_player_was_hit()) {
                 vg.state   = (vg.health > 0.0f) ? VG_HIT : VG_OVER;
+                vg.state_t = 0;
+                break;
+            }
+
+            bool opponent_alive = false;
+            for (int i = 0; i < MAX_ENEMIES; i++)
+                if (vg.enemy[i].alive) opponent_alive = true;
+            if (!opponent_alive) {
+                vg.state   = VG_ROUND_WON;
                 vg.state_t = 0;
             }
         } else if (vg.state_t > 1.2f) {
@@ -545,7 +647,8 @@ void vg_game_update(float dt, const VgInput* in) {
         world_step(dt, in->pitch * 0.3f, in->yaw * 0.3f, 0.35f);
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
         vg_update_missiles(dt);
-        if (vg.state_t > 4.0f || (vg.state_t > 1.0f && in->tap_edge)) vg_game_start();
+        // Knocked out is knocked out: back to the main menu, not a restart.
+        if (vg.state_t > 1.2f && tap_up) { vg.state = VG_ATTRACT; vg.state_t = 0; }
         break;
     }
     }

@@ -27,6 +27,8 @@ static float s_yaw = 0, s_pitch = 0;           // smoothed deflection
 static bool  s_prev_steer_contact = false;
 static bool  s_prev_fire_btn      = false;
 static bool  s_prev_alt_btn       = false;
+static bool  s_prev_touch         = false;
+static float s_menu_x = 0, s_menu_y = 0;
 
 // ---- tilt (STEER_MODE 2 only) ----
 static float s_ax = 0, s_ay = 0, s_az = 1;
@@ -282,6 +284,25 @@ void vg_input_update(float dt, VgInput* out) {
 
     out->tap_edge  = steer_contact && !s_prev_steer_contact;
     out->any_touch = (n > 0);
+
+    // ---- menu pointer ----
+    // Contact 0 rather than the steering contact, so a menu button under the
+    // left edge is still reachable. Delta is zeroed on the press frame: the
+    // previous position belongs to a lift that may have been anywhere.
+    const bool touched = (n > 0);
+    const float mx = touched ? (float)xs[0] : s_menu_x;
+    const float my = touched ? (float)ys[0] : s_menu_y;
+
+    out->menu_edge = touched && !s_prev_touch;
+    out->menu_held = touched;
+    out->menu_x    = mx;
+    out->menu_y    = my;
+    out->menu_dx   = (touched && s_prev_touch) ? (mx - s_menu_x) : 0.0f;
+    out->menu_dy   = (touched && s_prev_touch) ? (my - s_menu_y) : 0.0f;
+
+    s_menu_x     = mx;
+    s_menu_y     = my;
+    s_prev_touch = touched;
 
     out->steering  = s_steer_active;
     out->steer_ox  = s_steer_ox;

@@ -19,8 +19,17 @@ struct VgInput {
 
     bool  alt_edge;     // press edge of the second hardware button (menus)
 
-    bool  tap_edge;     // first frame of any new steering-side contact (menus)
+    bool  tap_edge;     // first frame of any new steering-side contact
     bool  any_touch;
+
+    // Menu pointer. Menus want ANY contact anywhere -- including the throttle
+    // strip -- plus its position and frame delta, none of which the steering
+    // fields can supply: those deliberately ignore the left edge and self-centre
+    // on release.
+    bool  menu_edge;    // press edge of any contact
+    bool  menu_held;
+    float menu_x, menu_y;
+    float menu_dx, menu_dy;   // movement since last frame, 0 on the press frame
 
     // Steering state, for the on-screen indicator.
     bool  steering;

@@ -90,12 +90,32 @@ struct Debris {
     float life, life0;
 };
 
+// Screen flow:
+//
+//   ATTRACT --tap--> SELECT --confirm--> BRACKET --ready--> PLAYING
+//                                           ^                  |
+//                        won a round, not the final            |
+//                                           +------ ROUND_WON -+
+//
+// PLAYING drops to PAUSE on the alt button (quit from there returns to
+// ATTRACT), to OVER when the player dies, and to WON on taking the final.
 enum VgState : uint8_t {
     VG_ATTRACT = 0,
+    VG_SELECT,            // ship selection -- once per tournament, then locked
+    VG_BRACKET,           // the tournament map
     VG_PLAYING,
     VG_HIT,               // brief invulnerable pause after taking a hit
-    VG_OVER
+    VG_PAUSE,
+    VG_ROUND_WON,         // beat between winning a match and the bracket redraw
+    VG_OVER,              // knocked out -- the run is finished
+    VG_WON                // took the whole tournament
 };
+
+// Menu states run the attract autopilot underneath and draw no instruments.
+static inline bool vg_state_is_menu(VgState s) {
+    return s == VG_ATTRACT || s == VG_SELECT || s == VG_BRACKET ||
+           s == VG_ROUND_WON || s == VG_WON;
+}
 
 struct VgGame {
     VgState  state;
@@ -174,6 +194,13 @@ extern const uint8_t vg_ship_fin[SHIP_FIN_EDGES][2];
 Mat3 vg_ship_basis(const Ship* s);
 
 void vg_game_init(void);
-void vg_game_start(void);
+
+// Begin a fresh tournament with the chosen ship: full hull, new bracket.
+void vg_tournament_begin(ShipClass c);
+
+// Set up the next match against whoever the bracket says. Hull is NOT restored
+// here -- damage carries between rounds, and only credits will ever undo it.
+void vg_match_start(void);
+
 void vg_game_select_ship(ShipClass c);
 void vg_game_update(float dt, const VgInput* in);

@@ -1,6 +1,7 @@
 #include "vg_render.h"
 #include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_screens.h"
 #include <math.h>
 
 // Frame orchestration only. Every actual drawing routine lives in a vg_draw_*
@@ -25,8 +26,14 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_arena_grid(cam);
     vg_draw_world(cam);
 
-    if (vg.state == VG_ATTRACT) {
-        vg_draw_overlays();
+    // Menus fly the idle scene underneath but carry no instruments -- a HUD on
+    // the ship-select screen would be reporting on a fight that is not happening.
+    if (vg_state_is_menu(vg.state)) {
+        switch (vg.state) {
+        case VG_SELECT:  vg_draw_select();   break;
+        case VG_BRACKET: vg_draw_bracket();  break;
+        default:         vg_draw_overlays(); break;
+        }
         return;
     }
 
@@ -59,4 +66,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_threat_indicator(cam);
 
     vg_draw_overlays();
+
+    // Last of all, over everything including the instruments.
+    if (vg.state == VG_PAUSE) vg_draw_pause();
 }

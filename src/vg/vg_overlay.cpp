@@ -1,5 +1,6 @@
 #include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_tourney.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -78,11 +79,28 @@ void vg_draw_overlays(void) {
 
     switch (vg.state) {
     case VG_ATTRACT:
-        draw_glitch_title("PHANTOM", 150, 7);
-        // Temporary ship select, until the entry screen exists.
-        centred(250, vg.spec->name, INK_BRIGHT, 4);
+        draw_glitch_title("PHANTOM", 170, 7);
         if (fmodf(vg.state_t, 1.2f) < 0.8f)
-            centred(300, "TOUCH TO START", INK_MAX, 3);
+            centred(290, "TOUCH TO START", INK_MAX, 3);
+        break;
+
+    case VG_ROUND_WON:
+        centred(180, "ROUND WON", INK_MAX, 5);
+        snprintf(buf, sizeof(buf), "HULL %d/%d",
+                 (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
+        centred(250, buf, INK_BRIGHT, 3);
+        // No repair between rounds yet, so this number only ever goes down --
+        // which is exactly the pressure the credit economy is meant to relieve.
+        centred(296, "DAMAGE CARRIES TO THE NEXT ROUND", INK_FAINT, 1);
+        break;
+
+    case VG_WON:
+        draw_glitch_title("CHAMPION", 150, 6);
+        snprintf(buf, sizeof(buf), "%s  HULL %d/%d", vg.spec->name,
+                 (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
+        centred(240, buf, INK_BRIGHT, 2);
+        if (vg.state_t > 1.5f && fmodf(vg.state_t, 1.0f) < 0.6f)
+            centred(300, "TAP TO CONTINUE", INK_MAX, 2);
         break;
 
     case VG_HIT:
@@ -94,13 +112,13 @@ void vg_draw_overlays(void) {
         break;
 
     case VG_OVER:
-        centred(170, "GAME OVER", COL_DANGER, 5);
+        centred(160, "ELIMINATED", COL_DANGER, 5);
+        snprintf(buf, sizeof(buf), "OUT IN THE %s", vg_tourney_round_name(vt.round));
+        centred(226, buf, COL_HUD, 2);
         snprintf(buf, sizeof(buf), "SCORE %d", vg.score);
-        centred(236, buf, COL_HUD, 3);
-        snprintf(buf, sizeof(buf), "KILLS %d", vg.kills);
-        centred(272, buf, COL_HUD_DIM, 2);
-        if (vg.state_t > 1.0f && fmodf(vg.state_t, 1.0f) < 0.6f)
-            centred(316, "TAP TO RESTART", COL_STAR_BRIGHT, 2);
+        centred(262, buf, COL_HUD_DIM, 2);
+        if (vg.state_t > 1.2f && fmodf(vg.state_t, 1.0f) < 0.6f)
+            centred(316, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
         break;
 
     default:

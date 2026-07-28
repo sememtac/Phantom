@@ -283,18 +283,26 @@ The load-bearing refactor is **`ShipSpec`**. Every row of the spec table is
 currently a `#define` in `cfg_flight.h` or `cfg_combat.h`. They become fields on
 a struct, and both the player and the AI read from the same one.
 
-1. `ShipSpec` struct; player and enemy both carry one. Fly all four types.
-   Nothing else works until this lands, and it is independently testable — you
-   find out whether CHARIOT is actually fun before a line of tournament code
-   exists.
-2. Hull as an absolute pool; regen removed; proximity falloff on damage.
-3. Callsign entry (a three-character letter wheel, not a keyboard) and trail
-   colour selection.
-4. Ship trails — a ring buffer of past positions per ship, drawn as a polyline
+1. **Done.** `ShipSpec` struct; player and enemy both carry one. Fly all four
+   types. Nothing else works until this lands, and it is independently testable
+   — you find out whether CHARIOT is actually fun before a line of tournament
+   code exists.
+2. **Done.** Hull as an absolute pool; regen removed; proximity falloff on
+   damage.
+3. **Done.** Tournament state machine: bracket generation, seeding, simulation,
+   advance. Matches are strictly 1v1 and end on a death.
+4. **Done.** Bracket sheet rendering and panning, ship select, pause menu, and
+   the screen flow that joins them.
+5. Callsign entry (a three-character letter wheel, not a keyboard) and trail
+   colour selection. Entrants currently carry generated callsigns; the player is
+   the placeholder `YOU`.
+6. Ship trails — a ring buffer of past positions per ship, drawn as a polyline
    fading to black. New work, but cheap, and it fits the existing edge pipeline.
-5. Tournament state machine: bracket generation, seeding, simulation, advance.
-6. Bracket sheet rendering and panning.
-7. Credit economy and the repair screen.
+   Trail colour is meaningless until this exists, which is why the bracket shows
+   callsign and class but no hue yet.
+7. Credit economy and the repair screen. **Until this lands the game is harsher
+   than designed**: hull carries across all four rounds with no way at all to
+   restore it.
 8. NVS persistence.
 
 ### Trail colour and the palette rule

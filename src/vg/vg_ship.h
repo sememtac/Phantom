@@ -33,6 +33,8 @@ enum ShipClass : uint8_t {
 
 struct ShipSpec {
     const char* name;
+    const char* tagline;       // one line for the select screen -- the quality
+                               // the class is named for, in the player's terms
 
     // --- airframe ------------------------------------------------------------
     float speed_min;           // world units/sec at zero throttle
