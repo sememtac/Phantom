@@ -506,16 +506,37 @@ static void collide_player(void) {
 // Attract autopilot: a slow weave, plus a pull back toward the middle whenever
 // the wall closes in. Without that second term it flies straight out through the
 // side of the tunnel within a few seconds.
-static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
-    Vec3 want = v3(0.30f * sinf(t * 0.31f), 0.22f * sinf(t * 0.23f), 1.0f);
+// Distance off the tube wall the camera tries to hold. Flying down the dead
+// centre shows only far geometry in every direction; running a band close to
+// the surface is what makes the ring sweep past near enough to read as a
+// structure you are travelling through.
+#define ATTRACT_HOLD_CLEAR   380.0f
 
-    Vec3  pl    = vg_arena_local_of(v3(0, 0, 0));
-    float clear = vg_arena_clearance(pl);
-    if (clear < ARENA_ATTRACT_MARGIN) {
-        Vec3 inward = vg_arena_dir_to_view(vg_arena_inward(pl));
+static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
+    // A long, lazy arc rather than a weave. Two terms per axis on periods with
+    // no common multiple, so the path drifts and never visibly repeats.
+    Vec3 want = v3(0.13f * sinf(t * 0.107f) + 0.06f * sinf(t * 0.041f),
+                   0.10f * sinf(t * 0.083f) + 0.05f * sinf(t * 0.029f),
+                   1.0f);
+
+    // Steer to a held distance from the wall rather than only fleeing it: too
+    // close pushes in, too far pulls back out. Same term does both jobs, so
+    // there is no discontinuity when it engages.
+    Vec3  pl     = vg_arena_local_of(v3(0, 0, 0));
+    float clear  = vg_arena_clearance(pl);
+    Vec3  inward = vg_arena_dir_to_view(vg_arena_inward(pl));
+
+    float err = (ATTRACT_HOLD_CLEAR - clear) / ATTRACT_HOLD_CLEAR;
+    if (err >  1.0f) err =  1.0f;
+    if (err < -1.0f) err = -1.0f;
+    want = vadd(want, vmul(inward, err * 0.85f));
+
+    // Hard override if it ever does get genuinely close -- the elegant version
+    // must still never fly the title card into a wall.
+    if (clear < ARENA_ATTRACT_MARGIN)
         want = vadd(want, vmul(inward,
                     2.2f * (ARENA_ATTRACT_MARGIN - clear) / ARENA_ATTRACT_MARGIN));
-    }
+
     want = vnorm(want);
 
     // +yaw turns the nose right, +pitch drops it, hence the sign on y.
@@ -555,12 +576,47 @@ static void award_purse(void) {
 
 int vg_last_purse(void) { return s_last_purse; }
 
+// Returning to the title card has to take the finished run with it. Quitting
+// from the pause menu and being knocked out both used to just set the state,
+// leaving the loser's missiles and wreckage flying through the attract loop --
+// and a missile whose seeker had broken draws in the dead-seeker grey, which is
+// exactly the stray grey lines that were turning up on the menu.
+static void enter_attract(void) {
+    for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
+    for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive   = false;
+    for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive   = false;
+
+    vg.trail_n     = 0;
+    vg.trail_head  = 0;
+    vg.trail_acc   = 0;
+    vg.msl_event   = MSL_NONE;
+    vg.msl_event_t = 0;
+    vg.threat      = false;
+    vg.lock_target = -1;
+    vg.locked      = false;
+    vg.hit_flash   = 0;
+    vg.shake       = 0;
+
+    vg.state   = VG_ATTRACT;
+    vg.state_t = 0;
+}
+
 // Every menu state flies the same idle scene underneath, so the tournament map
 // and the ship select sit over moving space rather than a dead background.
 static void menu_world(float dt) {
     float pitch_in, yaw_in;
     attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
-    world_step(dt, pitch_in, yaw_in, 0.42f);
+    world_step(dt, pitch_in, yaw_in, 0.30f);
+
+    // Slow compound roll, applied to the visual bank only. The flight model is
+    // untouched, so the autopilot is not fighting a control input -- the camera
+    // simply lies over as it travels. Two incommensurate periods again, and a
+    // deliberately lazy lerp, so it reads as drift rather than as a wobble.
+    float roll = 0.62f * sinf(vg.state_t * 0.129f)
+               + 0.30f * sinf(vg.state_t * 0.057f);
+    float kr = dt * 0.7f;
+    if (kr > 1.0f) kr = 1.0f;
+    vg.bank += (roll - vg.bank) * kr;
 
     vg.spawn_t -= dt;
     if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
@@ -690,8 +746,7 @@ void vg_game_update(float dt, const VgInput* in) {
                 vg.state = VG_PLAYING;
                 vg.state_t = 0;
             } else if (vg_pause_quit_at(tap_x, tap_y)) {
-                vg.state = VG_ATTRACT;
-                vg.state_t = 0;
+                enter_attract();
             }
         }
         break;
@@ -714,7 +769,7 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_WON: {
         menu_world(dt);
-        if (vg.state_t > 1.5f && tap_up) { vg.state = VG_ATTRACT; vg.state_t = 0; }
+        if (vg.state_t > 1.5f && tap_up) enter_attract();
         break;
     }
 
@@ -790,7 +845,7 @@ void vg_game_update(float dt, const VgInput* in) {
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
         vg_update_missiles(dt);
         // Knocked out is knocked out: back to the main menu, not a restart.
-        if (vg.state_t > 1.2f && tap_up) { vg.state = VG_ATTRACT; vg.state_t = 0; }
+        if (vg.state_t > 1.2f && tap_up) enter_attract();
         break;
     }
     }

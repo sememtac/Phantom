@@ -112,6 +112,76 @@ static void draw_missile_banner(void) {
     vg_rect(bx - 7, by - 7, bw + 14, bh + 14, col);
 }
 
+// ---------------------------------------------------------------------------
+// Backstory
+//
+// Wrapped by hand rather than at runtime: the font is fixed width, the screen
+// is a known 480, and a word-wrapper would be more code than the text it wraps.
+// Uppercase throughout because the 5x7 face has no lower case.
+// ---------------------------------------------------------------------------
+
+static const char* const STORY[] = {
+    "IN THE DISTANT FUTURE, THE",
+    "INTERGALACTIC FEDERATION OF",
+    "TERRA SANCTIONED A BRUTAL",
+    "NEW PROGRAM: A FIGHT-TO-THE-",
+    "DEATH SPACE COMBAT TOURNAMENT",
+    "DESIGNED TO BOOST VIEWERSHIP",
+    "AND TAX REVENUES.",
+    "",
+    "YOU ARE ONE OF THE FEW",
+    "CONTESTANTS WHO HAS SURVIVED",
+    "TO REACH THE FINAL STAGES.",
+    "",
+    "BUT A DARK RUMOR CIRCULATES",
+    "THROUGH THE HANGAR BAYS.",
+    "WHISPERS OF AN ELITE PILOT",
+    "WHO MERCILESSLY HUNTS DOWN",
+    "THE INEXPERIENCED.",
+    "",
+    "THEY CALL HIM...",
+    "",
+    "PHANTOM",
+};
+#define STORY_LINES ((int)(sizeof(STORY) / sizeof(STORY[0])))
+
+#define STORY_DELAY   5.0f    // seconds of stillness before it starts
+#define STORY_SPEED   24.0f   // px per second
+#define STORY_LINE_H  27
+#define STORY_TOP     256     // clear of the title card
+#define STORY_BOT     462
+#define STORY_FADE    46      // px of fade at each end of the window
+
+static void draw_story(void) {
+    if (vg.state_t < STORY_DELAY) return;
+
+    // Loops with a gap of blank travel after the last line, so it reads as a
+    // repeating transmission rather than snapping back to the top.
+    const float span   = (float)(STORY_LINES * STORY_LINE_H + 340);
+    const float scroll = fmodf((vg.state_t - STORY_DELAY) * STORY_SPEED, span);
+
+    for (int i = 0; i < STORY_LINES; i++) {
+        if (!STORY[i][0]) continue;
+
+        const int y = STORY_BOT + i * STORY_LINE_H - (int)scroll;
+        if (y < STORY_TOP || y > STORY_BOT) continue;
+
+        // Fade in and out at the window edges. Without it lines appear and
+        // vanish mid-air, which reads as a glitch rather than as motion.
+        float f = 1.0f;
+        if (y < STORY_TOP + STORY_FADE)
+            f = (float)(y - STORY_TOP) / (float)STORY_FADE;
+        else if (y > STORY_BOT - STORY_FADE)
+            f = (float)(STORY_BOT - y) / (float)STORY_FADE;
+        if (f < 0.0f) f = 0.0f;
+
+        // The name lands bigger and brighter -- it is the title of the game and
+        // the thing the whole paragraph has been walking toward.
+        const bool last = (i == STORY_LINES - 1);
+        centred(y, STORY[i], vg_dim(last ? INK_MAX : INK_BRIGHT, f), last ? 3 : 2);
+    }
+}
+
 void vg_draw_overlays(void) {
     char buf[40];
 
@@ -120,9 +190,14 @@ void vg_draw_overlays(void) {
 
     switch (vg.state) {
     case VG_ATTRACT:
-        draw_glitch_title("PHANTOM", 170, 7);
-        if (fmodf(vg.state_t, 1.2f) < 0.8f)
-            centred(290, "TOUCH TO START", INK_MAX, 3);
+        draw_glitch_title("PHANTOM", 150, 7);
+        // The prompt tucks up under the title once the crawl starts, so the
+        // lower half of the screen belongs to the story.
+        if (fmodf(vg.state_t, 1.2f) < 0.8f) {
+            if (vg.state_t < STORY_DELAY) centred(250, "TOUCH TO START", INK_MAX, 3);
+            else                          centred(212, "TOUCH TO START", INK_BRIGHT, 2);
+        }
+        draw_story();
         break;
 
     case VG_ROUND_WON:
