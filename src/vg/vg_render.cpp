@@ -2,6 +2,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_screens.h"
+#include <stdio.h>
 #include <math.h>
 
 // Frame orchestration only. Every actual drawing routine lives in a vg_draw_*
@@ -14,6 +15,16 @@ void vg_draw_lock_box(const VgCam& cam);
 void vg_draw_steer_indicator(const VgInput* in);
 void vg_draw_target_markers(const VgCam& cam);
 void vg_draw_threat_indicator(const VgCam& cam);
+
+// Frame rate, bottom left, in every state including the menus. Held clear of
+// the rounded corner by SCR_SAFE, and drawn last so nothing can cover it -- the
+// whole point is to be able to read it while something else is going wrong.
+static void draw_fps(float fps) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d FPS", (int)(fps + 0.5f));
+    vg_text(SCR_SAFE, SCR_H - SCR_SAFE - 14, buf,
+            fps >= 59.0f ? INK_BRIGHT : INK_FAINT, 2);
+}
 
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y);
@@ -36,6 +47,7 @@ void vg_render_frame(const VgInput* in, float fps) {
         case VG_REPAIR:  vg_draw_repair();   break;
         default:         vg_draw_overlays(); break;
         }
+        draw_fps(fps);
         return;
     }
 
@@ -71,4 +83,6 @@ void vg_render_frame(const VgInput* in, float fps) {
 
     // Last of all, over everything including the instruments.
     if (vg.state == VG_PAUSE) vg_draw_pause();
+
+    draw_fps(fps);
 }

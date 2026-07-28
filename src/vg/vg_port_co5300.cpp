@@ -55,6 +55,16 @@
 #define LCD_HOST     SPI2_HOST
 #define LCD_CLOCK_HZ 80000000
 
+// Set the address window ONCE per frame and stream the fifteen bands into it as
+// memory-continue writes, instead of re-windowing before every band. The window
+// commands are polled transactions and each costs far more in driver overhead
+// than the few bits it puts on the wire -- 30 of them per frame was ~0.5 ms.
+//
+// Requires the controller to implement RAMWRC (0x3C). If it does not, bands 1..14
+// restart at the top of the window and the display shows only the first band
+// repeated -- unmistakable, and this flag is the single-line revert.
+#define LCD_STREAM_FRAME 1
+
 // CO5300 registers
 #define CO_SLPOUT    0x11
 #define CO_INVOFF    0x20
@@ -62,6 +72,7 @@
 #define CO_CASET     0x2A
 #define CO_PASET     0x2B
 #define CO_RAMWR     0x2C
+#define CO_RAMWRC    0x3C     // write memory continue -- resumes where 0x2C left off
 #define CO_MADCTL    0x36
 #define CO_PIXFMT    0x3A
 #define CO_BRIGHT    0x51
@@ -135,7 +146,17 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     // move until the previous band's pixels have finished landing. So drain
     // first; this is also what makes the caller's buffer ping-pong safe.
     vg_panel_wait();
+
+#if LCD_STREAM_FRAME
+    // One window for the whole screen, then fourteen continuations. The
+    // controller keeps its own write pointer, so each band simply carries on
+    // from where the last one stopped.
+    const bool first = (y == 0);
+    if (first) co_window(0, 0, SCR_W - 1, SCR_H - 1);
+#else
+    const bool first = true;
     co_window(0, y, SCR_W - 1, y + h - 1);
+#endif
 
     spi_transaction_t* t = &s_tx[s_tx_slot];
     s_tx_slot ^= 1;
@@ -143,7 +164,7 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     memset(t, 0, sizeof(*t));
     t->flags     = SPI_TRANS_MODE_QIO;   // data on 4 lines; cmd/addr single
     t->cmd       = 0x32;
-    t->addr      = ((uint32_t)CO_RAMWR) << 8;
+    t->addr      = ((uint32_t)(first ? CO_RAMWR : CO_RAMWRC)) << 8;
     t->length    = (size_t)SCR_W * (size_t)h * 16;   // bits
     t->tx_buffer = pixels;
 
@@ -169,10 +190,12 @@ static void panel_clear(void) {
 }
 
 bool vg_panel_init(void) {
-    // Shared I2C for touch + IMU. 400 kHz keeps the per-frame touch read down
-    // around 0.5 ms; at the 100 kHz default it costs several percent of a frame.
+    // Shared I2C for touch + IMU. The per-frame touch read is pure frame time --
+    // measured at ~0.93 ms at 400 kHz, which is 6% of a 16.67 ms budget for
+    // reading a handful of registers. Fast-mode plus cuts it to roughly a third
+    // of that. If touch ever goes unreliable, this is the first thing to halve.
     Wire.begin(IIC_SDA, IIC_SCL);
-    Wire.setClock(400000);
+    Wire.setClock(1000000);
 
     pinMode(LCD_RESET, OUTPUT);
     digitalWrite(LCD_RESET, HIGH); delay(10);

@@ -103,7 +103,18 @@
 // That also bounds the cost: the buffer is long, but only the segments bright
 // enough to see are ever projected, and the band rasteriser only stays free
 // while it hides under the DMA blit.
-#define SHIP_TRAIL           40       // sample points per ship
-#define SHIP_TRAIL_DT        0.045f   // seconds between samples (~1.8s of tail)
+// Length matters more than it looks. Your OWN trail streams straight back along
+// -z, so it is behind the camera and invisible -- turning only swings it
+// sideways, to z near zero, where it is still clipped. A point laid down t
+// seconds ago only comes round in FRONT of you once you have turned more than
+// half a circle since laying it, i.e. once turn_rate * t exceeds pi. At 1.9
+// rad/s a 1.8s tail reached 3.4 rad and barely grazed that, which is why the
+// player's ribbon never appeared. 4.5s reaches 8.5 rad -- more than a full
+// revolution -- so a hard turn now wraps the trail right across the canopy.
+//
+// Segments behind the near plane reject on a single z compare, so the extra
+// length is nearly free until it is actually on screen.
+#define SHIP_TRAIL           100      // sample points per ship
+#define SHIP_TRAIL_DT        0.045f   // seconds between samples (~4.5s of tail)
 #define SHIP_TRAIL_IDLE      0.12f    // emission strength at zero throttle
 #define SHIP_TRAIL_FLOOR     0.06f    // below this a segment is not worth drawing
