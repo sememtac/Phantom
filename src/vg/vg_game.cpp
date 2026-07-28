@@ -58,31 +58,51 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
 // pass. It approaches from far out on one side and crosses close, which is the
 // only way to read a wireframe silhouette -- held at distance it is four pixels
 // and a trail, and held close it fills the screen before you can see its shape.
+// A TRACKING shot, not a fly-past. The camera cannot be aimed -- the player is
+// the origin, so there is nothing to aim -- but that cuts both ways: the ship's
+// position is authored directly in view space, so holding it near the centre of
+// frame IS the camera following it. What sells the movement is everything else,
+// because the arena and the starfield keep sweeping behind a subject that does
+// not.
+//
+// It is drawn many times its combat size. At ENEMY_SCALE a fighter is about
+// five pixels across at any distance the near plane will allow, which is fine
+// for a contact and useless for a subject.
 static void cine_pass(const ShipSpec* spec, float hue, float u, bool mirror) {
     Ship* c = &vg.cine;
     const float sx = mirror ? 1.0f : -1.0f;
 
-    const Vec3 from = v3(sx * -1150.0f, -240.0f, 2700.0f);
-    const Vec3 to   = v3(sx *   460.0f,   90.0f,  680.0f);
+    // Held just off centre and drifting slowly across it, the way a long lens
+    // never quite keeps up. Dead centre for four seconds reads as a screenshot.
+    const float lat = sx * (120.0f - 220.0f * u);
+    const float ver = -34.0f + 46.0f * u;
+    // Closes gently. The whole arrival happens in the last third, so the shot
+    // has somewhere to go rather than being one static frame.
+    const float dep = 620.0f - 250.0f * u * u;
 
     c->alive  = true;
     c->spec   = spec;
     c->hue    = hue;
-    c->pos    = vadd(from, vmul(vsub(to, from), u));
-    c->fwd    = vnorm(vsub(to, from));
+    c->scale  = 96.0f;
+    c->pos    = v3(lat, ver, dep);
+    // Nose along its own travel, so the model is seen three-quarter on rather
+    // than in plan -- that is the angle the silhouette actually reads from.
+    c->fwd    = vnorm(v3(sx * -0.30f, 0.06f, 1.0f));
     c->up     = v3(0, 1, 0);
     // Fast enough that the exhaust plume is lit, and banked, because a ship
-    // holding wings-level through a fly-past looks parked rather than flown.
+    // holding wings-level through a pass looks parked rather than flown.
     c->speed  = spec->speed_min + (spec->speed_max - spec->speed_min) * 0.72f;
-    c->roll_vis = sx * 0.55f;
+    c->roll_vis = sx * (0.30f + 0.22f * sinf(u * 3.14159f));
 
     // Its own ribbon, laid down as it goes, so it arrives trailing rather than
     // appearing with one already attached.
+    // Trail laid from the engine rather than the hull centre, or at this model
+    // size the ribbon starts somewhere inside the ship.
     c->trail_acc += 0.016f;
     if (c->trail_acc >= SHIP_TRAIL_DT) {
         c->trail_acc = 0;
         c->trail_head = (uint8_t)((c->trail_head + 1) % SHIP_TRAIL);
-        c->trail[c->trail_head]   = c->pos;
+        c->trail[c->trail_head]   = vsub(c->pos, vmul(c->fwd, c->scale * 1.2f));
         c->trail_p[c->trail_head] = 200;
         if (c->trail_n < SHIP_TRAIL) c->trail_n++;
     }
@@ -128,6 +148,7 @@ static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->spec       = vg_spec(cls);
     s->skill      = skill;
     s->hue        = hue;
+    s->scale      = ENEMY_SCALE;
     s->trail_acc  = 0;
     s->trail_n    = 0;
     s->trail_head = 0;
@@ -1041,11 +1062,12 @@ void vg_game_update(float dt, const VgInput* in) {
                     c->alive    = true;
                     c->spec     = vg.spec;
                     c->hue      = vg.trail_hue;
-                    c->pos      = v3(vg_frand(-40.0f, 40.0f),
-                                     vg_frand(-30.0f, 30.0f), 235.0f);
+                    c->pos      = v3(vg_frand(-70.0f, 70.0f),
+                                     vg_frand(-50.0f, 50.0f), 640.0f);
                     c->fwd      = vnorm(v3(0.35f, 0.12f, 1.0f));
                     c->up       = v3(0, 1, 0);
                     c->speed    = 0.0f;
+                    c->scale    = 84.0f;
                     c->roll_vis = 0.4f;
                     c->trail_n  = 0;
                     c->hit_flash = 0.0f;

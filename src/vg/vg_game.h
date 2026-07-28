@@ -67,6 +67,12 @@ struct Ship {
     char    tag[4];
     uint8_t voice;
 
+    // Model size. Combat ships all fly at ENEMY_SCALE; the cutscene ship is
+    // blown up so a hero shot can be framed without putting the camera inside
+    // the near plane. At combat scale a fighter is about five pixels across at
+    // any distance you could safely hold it, which is a contact, not a subject.
+    float   scale;
+
     // Identity, and the ribbon that carries it. trail_p is the throttle setting
     // each point was laid down at, 0..255 -- what makes the contrail lengthen
     // under power and persist after the ship has backed off.
@@ -144,11 +150,14 @@ enum VgState : uint8_t {
 // --- launch cutscene schedule ----------------------------------------------
 // Camera adrift, then each fighter flown across the view in turn, with a hard
 // cut between them. Skippable, because the fifth time through it is furniture.
-#define INTRO_DRIFT     1.4f
-#define INTRO_YOU_END   3.9f
-#define INTRO_OPP_START 4.2f
-#define INTRO_OPP_END   6.7f
-#define INTRO_END       7.0f
+// Paced to settle the player rather than to get out of the way. Two seconds of
+// empty space first, then four and a half on each fighter -- long enough to
+// look at it, which is the point of introducing it at all.
+#define INTRO_DRIFT     2.2f
+#define INTRO_YOU_END   6.6f
+#define INTRO_OPP_START 7.0f
+#define INTRO_OPP_END  11.4f
+#define INTRO_END      11.8f
 
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f

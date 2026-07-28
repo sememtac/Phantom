@@ -167,7 +167,7 @@ static void draw_enemy(const VgCam& cam, const Ship* s) {
     Mat3 B = vg_ship_basis(s);
     Vec3 wv[SHIP_VERTS];
     for (int i = 0; i < SHIP_VERTS; i++)
-        wv[i] = vadd(s->pos, vmul(mat3_apply(B, vg_ship_verts[i]), ENEMY_SCALE));
+        wv[i] = vadd(s->pos, vmul(mat3_apply(B, vg_ship_verts[i]), s->scale));
 
     bool front[SHIP_FACES];
     for (int f = 0; f < SHIP_FACES; f++) {
@@ -209,8 +209,8 @@ static void draw_enemy(const VgCam& cam, const Ship* s) {
     float t = (s->speed - s->spec->speed_min)
             / (s->spec->speed_max - s->spec->speed_min);
     if (t < 0) t = 0; else if (t > 1) t = 1;
-    Vec3 tail  = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f)), ENEMY_SCALE));
-    Vec3 flame = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f - 1.6f * t)), ENEMY_SCALE));
+    Vec3 tail  = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f)), s->scale));
+    Vec3 flame = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f - 1.6f * t)), s->scale));
     vg_edge(cam, tail, flame, vg_dim(COL_EXHAUST, 0.4f + 0.6f * t));
 }
 
