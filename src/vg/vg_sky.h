@@ -35,6 +35,17 @@ enum SkyKind : uint8_t {
 
 const char* vg_sky_name(void);
 
+// Where the match is being held, e.g. "VELA NEBULA". Composed from the same
+// seed that built the texture, so the name and the sky are the same place.
+const char* vg_sky_place(void);
+
+// 0..1. Below 1 the backdrop is dissolved in by rows rather than dimmed --
+// dimming would mean touching every pixel of every frame, which is the one
+// thing the fill exists to avoid. Skipped rows are cleared instead, so a
+// partial reveal is cheaper than a full one, not dearer.
+void  vg_sky_set_reveal(float r);
+float vg_sky_reveal(void);
+
 // Allocates the texture pair. Returns false if internal SRAM is short, in which
 // case the renderer falls back to a plain black clear.
 bool vg_sky_init(void);

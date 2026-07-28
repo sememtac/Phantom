@@ -376,7 +376,10 @@ void vg_match_start(void) {
     // fly along; the inside of a sphere is uniform in every direction. The sphere
     // stays implemented in vg_arena.cpp for when there is a roster of maps.
     vg_arena_init(ARENA_TORUS);
+    // The venue. Generated here and then dissolved in across the cutscene, so
+    // the match arrives somewhere rather than simply starting.
     vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
+    vg_sky_set_reveal(0.0f);
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
 
     // One opponent, taken from the bracket. A match is strictly one on one --
@@ -907,6 +910,10 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_INTRO: {
         const float t = vg.state_t;
+
+        // The venue materialises during the opening drift, so the first shot is
+        // of somewhere arriving rather than of somewhere already there.
+        vg_sky_set_reveal(t / (INTRO_DRIFT * 0.85f));
 
         // Which shot we are in. Each cut re-anchors: the ship is launched fresh
         // from the opposite side on a new line, so the second setup reads as a

@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 // 128x128 RGB565, byte-swapped to match the panel storage convention. 32 KB.
@@ -413,6 +414,31 @@ static void gen_nebula(uint32_t seed) {
 
 static SkyKind s_kind = SKY_NEBULA;
 
+static float s_reveal = 1.0f;
+void  vg_sky_set_reveal(float r) { s_reveal = (r < 0.0f) ? 0.0f : (r > 1.0f ? 1.0f : r); }
+float vg_sky_reveal(void)        { return s_reveal; }
+
+// Somewhere to have a fight. Proper noun plus the kind of thing the backdrop
+// actually is, so the name is never at odds with what is on screen.
+static char s_place[24];
+
+const char* vg_sky_place(void) { return s_place; }
+
+static void name_place(uint32_t seed) {
+    static const char* const PROPER[] = {
+        "VELA", "CARINA", "ORION", "LYRA", "DRACO", "HYDRA", "CYGNUS", "AURIGA",
+        "TUCANA", "NORMA", "PYXIS", "SERPENS", "VOLANS", "MENSA", "INDUS", "ARA",
+        "CORVUS", "GRUS", "LEPUS", "MUSCA", "OCTANS", "PICTOR", "RETICULUM", "SEXTANS",
+    };
+    const int n = (int)(sizeof(PROPER) / sizeof(PROPER[0]));
+    const char* p = PROPER[(seed >> 7) % (uint32_t)n];
+    const char* k = (s_kind == SKY_GALAXY)  ? "GALAXY"
+                  : (s_kind == SKY_CLUSTER) ? "CLUSTER"
+                  : (s_kind == SKY_MENU)    ? "SINGULARITY"
+                                            : "NEBULA";
+    snprintf(s_place, sizeof(s_place), "%s %s", p, k);
+}
+
 const char* vg_sky_name(void) {
     switch (s_kind) {
     case SKY_GALAXY:  return "GALAXY";
@@ -436,6 +462,9 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     case SKY_MENU:    s_kind = SKY_MENU;    gen_blackhole(seed); break;
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
+
+    name_place(seed);
+    s_reveal = 1.0f;      // callers that want a dissolve ask for it afterwards
 
     if (s_kind == SKY_MENU) {
         s_scale = SKY_MENU_SCALE;
@@ -537,8 +566,19 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // per band against a 0.768ms DMA window, every cycle here costs frame time.
     const int32_t du8 = dux * 8, dv8 = dvx * 8;
 
+    // Ordered row dissolve. A bit-reversed sequence rather than a straight
+    // threshold, so the backdrop materialises evenly across the screen instead
+    // of wiping in from the top -- which would read as a loading bar.
+    static const uint8_t ORDER[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
+
     for (int row = 0; row < BAND_H; row++) {
         const int sy = band_y0 + row;
+
+        if (s_reveal < 1.0f &&
+            (float)(ORDER[sy & 7] + 1) * (1.0f / 8.0f) > s_reveal) {
+            memset(&band[row * SCR_W], 0, SCR_W * 2);
+            continue;
+        }
 
         int32_t u = u_org + dux * (int32_t)(-(int)SCR_CX) + duy * (int32_t)(sy - (int)SCR_CY);
         int32_t v = v_org + dvx * (int32_t)(-(int)SCR_CX) + dvy * (int32_t)(sy - (int)SCR_CY);

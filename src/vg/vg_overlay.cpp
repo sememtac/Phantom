@@ -2,6 +2,7 @@
 #include "vg_game.h"
 #include "vg_tourney.h"
 #include "vg_voice.h"
+#include "vg_sky.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -297,6 +298,21 @@ void vg_draw_overlays(void) {
             vg_fill_rect(0, ty, SCR_W, 3, INK_TRACE);
             break;
         }
+        // Where this is happening, held over the opening drift and handed off
+        // to the first fighter. A venue card, the way a broadcast would open.
+        if (t < INTRO_DRIFT + 0.9f) {
+            float a = t / 0.7f;
+            if (a > 1.0f) a = 1.0f;
+            if (t > INTRO_DRIFT) {
+                const float out = 1.0f - (t - INTRO_DRIFT) / 0.9f;
+                if (out < a) a = out;
+            }
+            if (a > 0.01f) {
+                centred(196, vg_sky_place(), vg_dim(INK_MAX, a), 4);
+                centred(244, vg_tourney_round_name(vt.round), vg_dim(INK_BRIGHT, a), 2);
+            }
+        }
+
         if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
             centred(360, vg.callsign, INK_MAX, 5);
             centred(414, vg.spec->name, INK_BRIGHT, 2);
