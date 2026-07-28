@@ -173,7 +173,11 @@ struct VgGame {
     float    throttle_vis;
     float    speed;
     float    agility;     // turn-rate multiplier from throttle
-    float    bank;        // cosmetic roll
+    float    bank;        // cosmetic roll, applied at projection only
+    // TRUE roll, folded into the world transform, so it composes with pitch and
+    // yaw instead of merely rotating the finished image. Accumulated because the
+    // backdrop is not carried by that transform and has to be told the total.
+    float    roll;
     float    shake;
     float    shake_x, shake_y;
     float    hit_flash;

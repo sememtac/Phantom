@@ -232,6 +232,8 @@ void vg_match_start(void) {
 
     vg.state       = VG_PLAYING;
     vg.state_t     = 0;
+    vg.roll        = 0;          // the menu leaves the world tumbling; fly level
+    vg.bank        = 0;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
     vg.trail_n     = 0;
@@ -281,7 +283,13 @@ void vg_match_start(void) {
 // fragment -- plus the arena and the backdrop.
 // ---------------------------------------------------------------------------
 
-static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in) {
+// `roll_in` is a rotation about the view axis for THIS frame, in radians. It
+// goes into the world transform rather than into the camera, which is the whole
+// difference between a tumble and a rotated picture: once it is in R, the next
+// frame's pitch and yaw act in the rolled frame and the path actually
+// corkscrews. Flight passes zero -- the player's roll stays cosmetic.
+static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
+                       float throttle_in) {
     float k = dt * THROTTLE_LERP;
     if (k > 1.0f) k = 1.0f;
     vg.throttle += (throttle_in - vg.throttle) * k;
@@ -309,15 +317,23 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
     float yaw   = yaw_in   * rate * dt;
     float pitch = pitch_in * rate * dt;
 
-    Mat3  R  = mat3_euler(-pitch, -yaw, 0.0f);
+    vg.roll += roll_in;
+    if (vg.roll >  6.28318531f) vg.roll -= 6.28318531f;
+    if (vg.roll < -6.28318531f) vg.roll += 6.28318531f;
+
+    Mat3  R  = mat3_euler(-pitch, -yaw, roll_in);
     float dz = vg.speed * dt;
 
     // The arena is static in the world, so it rides exactly the same transform.
     vg_arena_step(R, dz);
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
 
-    // The backdrop is at infinity, so only rotation moves it.
-    vg_sky_step(pitch, yaw, vg.bank);
+    // The backdrop is at infinity, so only rotation moves it -- and it does NOT
+    // ride R, so it has to be handed the total apparent roll by hand: the true
+    // roll now baked into world positions, plus the cosmetic bank that the
+    // projection will add on top. Miss either term and the nebula slides against
+    // the starfield.
+    vg_sky_step(pitch, yaw, vg.bank + vg.roll);
 
     float kb = dt * BANK_LERP;
     if (kb > 1.0f) kb = 1.0f;
@@ -510,8 +526,8 @@ static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     // Barely a deviation at all -- just enough that the path is not a dead
     // straight line. Two terms per axis on periods with no common multiple, so
     // it drifts without ever visibly repeating.
-    Vec3 want = v3(0.026f * sinf(t * 0.047f) + 0.013f * sinf(t * 0.019f),
-                   0.022f * sinf(t * 0.038f) + 0.011f * sinf(t * 0.015f),
+    Vec3 want = v3(0.040f * sinf(t * 0.047f) + 0.019f * sinf(t * 0.019f),
+                   0.034f * sinf(t * 0.038f) + 0.016f * sinf(t * 0.015f),
                    1.0f);
 
     // Ride the centreline of the tube. Clearance is at its maximum -- the tube
@@ -607,17 +623,14 @@ static void enter_attract(void) {
 static void menu_world(float dt) {
     float pitch_in, yaw_in;
     attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
-    world_step(dt, pitch_in, yaw_in, 0.30f);
 
-    // Slow compound roll, applied to the visual bank only. The flight model is
-    // untouched, so the autopilot is not fighting a control input -- the camera
-    // simply lies over as it travels. Two incommensurate periods again, and a
-    // deliberately lazy lerp, so it reads as drift rather than as a wobble.
-    float roll = 0.15f * sinf(vg.state_t * 0.037f)
-               + 0.07f * sinf(vg.state_t * 0.016f);
-    float kr = dt * 0.20f;
-    if (kr > 1.0f) kr = 1.0f;
-    vg.bank += (roll - vg.bank) * kr;
+    // Continuous roll rather than an oscillation. Something adrift does not rock
+    // back to level -- it keeps going, slowly, and that is also what makes the
+    // third axis unmistakable. About two minutes per revolution, breathing a
+    // little so it never reads as a motor.
+    const float roll_rate = 0.052f + 0.020f * sinf(vg.state_t * 0.023f);
+
+    world_step(dt, pitch_in, yaw_in, roll_rate * dt, 0.30f);
 
     vg.spawn_t -= dt;
     if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
@@ -780,7 +793,7 @@ void vg_game_update(float dt, const VgInput* in) {
 
         vg_clear_player_hit();
 
-        world_step(dt, in->pitch, in->yaw, in->throttle);
+        world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
 
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
 
@@ -842,7 +855,7 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_OVER: {
-        world_step(dt, in->pitch * 0.3f, in->yaw * 0.3f, 0.35f);
+        world_step(dt, in->pitch * 0.3f, in->yaw * 0.3f, 0.0f, 0.35f);
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
         vg_update_missiles(dt);
         // Knocked out is knocked out: back to the main menu, not a restart.
