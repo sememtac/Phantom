@@ -94,7 +94,16 @@
 // pixels of wireframe, but its trail is a long stroke in a hue you can name --
 // so colour becomes IFF, which is the one job hue is allowed to do here.
 //
-// Kept short on purpose. Each ship's ribbon costs a segment per sample and the
-// band rasteriser only stays free while it hides under the DMA blit.
-#define SHIP_TRAIL           22       // sample points per ship
-#define SHIP_TRAIL_DT        0.050f   // seconds between samples (~1.1s of tail)
+// Length is driven by THROTTLE, the way a real contrail thickens when an engine
+// is working. Each sample stores the power setting it was laid down at, and a
+// segment is skipped once age has faded it below the ink floor -- so a ship at
+// idle leaves a stub, a ship at full throttle streams a long ribbon, and a burst
+// of speed stays visible in the tail after the ship has already slowed.
+//
+// That also bounds the cost: the buffer is long, but only the segments bright
+// enough to see are ever projected, and the band rasteriser only stays free
+// while it hides under the DMA blit.
+#define SHIP_TRAIL           40       // sample points per ship
+#define SHIP_TRAIL_DT        0.045f   // seconds between samples (~1.8s of tail)
+#define SHIP_TRAIL_IDLE      0.12f    // emission strength at zero throttle
+#define SHIP_TRAIL_FLOOR     0.06f    // below this a segment is not worth drawing

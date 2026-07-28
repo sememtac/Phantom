@@ -362,7 +362,8 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
         vg.trail_head = (uint8_t)((vg.trail_head + 1) % SHIP_TRAIL);
         // The player is nailed to the origin, so their track is seeded there and
         // is carried backwards by the transform above like everything else.
-        vg.trail[vg.trail_head] = v3(0, 0, 0);
+        vg.trail[vg.trail_head]   = v3(0, 0, 0);
+        vg.trail_p[vg.trail_head] = (uint8_t)(vg.throttle * 255.0f);
         if (vg.trail_n < SHIP_TRAIL) vg.trail_n++;
     }
 
@@ -385,6 +386,12 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
             s->trail_acc = 0;
             s->trail_head = (uint8_t)((s->trail_head + 1) % SHIP_TRAIL);
             s->trail[s->trail_head] = s->pos;
+            // Their throttle, read back out of their speed -- so an enemy
+            // extending at full power streams exactly the way the player does.
+            float tp = (s->speed - s->spec->speed_min)
+                     / (s->spec->speed_max - s->spec->speed_min);
+            if (tp < 0.0f) tp = 0.0f; else if (tp > 1.0f) tp = 1.0f;
+            s->trail_p[s->trail_head] = (uint8_t)(tp * 255.0f);
             if (s->trail_n < SHIP_TRAIL) s->trail_n++;
         }
         // Backstop: the AI steers away from the wall, but never let one escape

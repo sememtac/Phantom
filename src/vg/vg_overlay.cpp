@@ -84,17 +84,32 @@ static void draw_missile_banner(void) {
     switch (vg.msl_event) {
     case MSL_DESTROYED: s = "DESTROYED"; col = INK_MAX;    break;
     case MSL_HIT:       s = "HIT";       col = INK_BRIGHT; break;
-    default:            s = "MISSED";    col = INK_FAINT;  break;
+    default:            s = "MISSED";    col = INK;        break;
     }
 
-    // Blinks for the first moment, then holds -- inversion and blink are how
-    // this interface shouts, so a kill announces itself without a second hue.
+    // Blinks for the first moment, then holds. Inversion and blink are how this
+    // interface shouts, so a kill announces itself without spending a hue.
     if (vg.msl_event > MSL_MISSED && vg.msl_event_t > 0.75f &&
         fmodf(vg.msl_event_t, 0.16f) < 0.08f)
         return;
 
-    const int scale = (vg.msl_event == MSL_DESTROYED) ? 4 : 3;
-    centred(186, s, col, scale);
+    // Solid block with the label knocked out of it, the way an aircraft caution
+    // annunciator reads. It is the strongest thing a single-hue interface can
+    // do, which suits a message the player must not miss mid-turn.
+    const int scale = 3;
+    const int tw    = vg_text_width(s, scale);
+    const int bw    = tw + 40;
+    const int bh    = 7 * scale + 20;
+    const int bx    = (SCR_W - bw) / 2;
+    const int by    = 178;
+
+    vg_fill_rect(bx, by, bw, bh, col);
+    // INK_ONFILL rather than COL_BLACK: vg_text discards colour 0 outright, so
+    // a black label would leave nothing but the block.
+    vg_text(bx + 20, by + 10, s, INK_ONFILL, scale);
+
+    // Outer rule, standing off the block -- the bracketed-caution motif.
+    vg_rect(bx - 7, by - 7, bw + 14, bh + 14, col);
 }
 
 void vg_draw_overlays(void) {

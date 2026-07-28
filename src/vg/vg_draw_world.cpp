@@ -215,7 +215,8 @@ static void draw_enemy(const VgCam& cam, const Ship* s) {
 // Drawn newest-first with a quadratic fade, and stroked thick only at the head:
 // the near end is the part that carries the ship's current heading, and the tail
 // only needs to say where it came from.
-static void draw_ship_trail(const VgCam& cam, const Vec3* trail, int n, int head,
+static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
+                            const uint8_t* power, int n, int head,
                             Vec3 from, float hue) {
     if (n < 2) return;
     const uint16_t col = vg_hue_col(hue);
@@ -223,8 +224,20 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail, int n, int head
     for (int t = 0; t < n; t++) {
         int   idx = (head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
         Vec3  cur = trail[idx];
-        float f   = 1.0f - (float)t / (float)n;
-        vg_edge_w(cam, prev, cur, vg_dim(col, f * f), (f > 0.7f) ? 2 : 1);
+
+        // Age fade, scaled by the throttle this point was laid down at. Idle
+        // segments drop under the floor almost immediately, so the ribbon is
+        // visibly short at low power and long under full throttle -- and a burst
+        // of speed stays lit in the tail after the ship has already backed off.
+        float age = 1.0f - (float)t / (float)n;
+        float pw  = SHIP_TRAIL_IDLE +
+                    (1.0f - SHIP_TRAIL_IDLE) * ((float)power[idx] * (1.0f / 255.0f));
+        float f   = age * age * pw;
+
+        // Skipped, not broken out of: power varies along the ribbon, so a bright
+        // older stretch can follow a dim recent one and breaking would cut it.
+        if (f >= SHIP_TRAIL_FLOOR)
+            vg_edge_w(cam, prev, cur, vg_dim(col, f), (f > 0.55f) ? 2 : 1);
         prev = cur;
     }
 }
@@ -287,12 +300,12 @@ void vg_draw_world(const VgCam& cam) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (s->alive)
-            draw_ship_trail(cam, s->trail, s->trail_n, s->trail_head,
+            draw_ship_trail(cam, s->trail, s->trail_p, s->trail_n, s->trail_head,
                             s->pos, s->hue);
     }
     // The player's own, streaming from the origin. Invisible dead ahead, but a
     // hard turn sweeps it into view -- so you can see the arc you just flew.
-    draw_ship_trail(cam, vg.trail, vg.trail_n, vg.trail_head,
+    draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
                     v3(0, 0, 0), vg.trail_hue);
 
     for (int i = 0; i < MAX_ENEMIES; i++)

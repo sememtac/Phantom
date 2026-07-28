@@ -123,9 +123,11 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
         // Inverse video for you -- hierarchy is still brightness and inversion.
         vg_fill_rect(sx, sy, BOX_W, BOX_H, INK_BRIGHT);
         vg_fill_rect(sx, sy, 4, BOX_H, hue);
-        vg_text(sx + 7, sy + 4, e->tag, COL_BLACK, 2);
+        // INK_ONFILL, not COL_BLACK: vg_text treats colour 0 as invisible, so a
+        // black label renders as nothing and the slot reads as a solid block.
+        vg_text(sx + 7, sy + 4, e->tag, INK_ONFILL, 2);
         char pc[2] = { vg_spec(e->cls)->name[0], 0 };
-        vg_text(sx + 45, sy + 7, pc, COL_BLACK, 1);
+        vg_text(sx + 45, sy + 7, pc, INK_ONFILL, 1);
         return;
     }
 

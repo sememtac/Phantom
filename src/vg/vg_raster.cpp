@@ -381,6 +381,9 @@ int vg_text_width(const char* s, int scale) {
     return n > 0 ? (n * 6 - 1) * scale : 0;
 }
 
+// NOTE: colour 0 means INVISIBLE here, not black -- passing COL_BLACK draws
+// nothing at all. Inverse video (dark glyphs on a lit fill) must use INK_ONFILL,
+// which is the palette entry that exists for exactly that.
 void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
     if (!color || scale <= 0) return;
     const int gh = 7 * scale;

@@ -61,11 +61,14 @@ struct Ship {
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
-    // Identity, and the ribbon that carries it.
+    // Identity, and the ribbon that carries it. trail_p is the throttle setting
+    // each point was laid down at, 0..255 -- what makes the contrail lengthen
+    // under power and persist after the ship has backed off.
     float   hue;
     float   trail_acc;
     uint8_t trail_n;
     uint8_t trail_head;
+    uint8_t trail_p[SHIP_TRAIL];
     Vec3    trail[SHIP_TRAIL];
 };
 
@@ -193,6 +196,7 @@ struct VgGame {
     float    trail_acc;
     uint8_t  trail_n;
     uint8_t  trail_head;
+    uint8_t  trail_p[SHIP_TRAIL];
     Vec3     trail[SHIP_TRAIL];
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
