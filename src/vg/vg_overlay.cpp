@@ -158,11 +158,23 @@ static const char* const STORY[] = {
 #define STORY_BOT     468
 #define STORY_FADE    52      // px of fade at each end of the window
 #define STORY_HOLD    6.0f    // title held again after the crawl lands
+#define TITLE_IN      1.6f    // handoff, AFTER the word has landed
 
 // Travel needed to carry the last line from its start position up to the title.
 #define STORY_RUN   ((float)(STORY_START_Y + (STORY_LINES - 1) * STORY_LINE_H - TITLE_Y))
 #define STORY_DUR   (STORY_RUN / STORY_SPEED)
-#define STORY_CYCLE (STORY_DELAY + STORY_DUR + STORY_HOLD)
+#define STORY_CYCLE (STORY_DELAY + STORY_DUR + TITLE_IN + STORY_HOLD)
+
+// Progress of the handoff: 0 for the whole crawl, ramping to 1 over TITLE_IN
+// once the word has come to rest on the title's position. Everything about the
+// swap hangs off this one value, so the word cannot start dissolving before it
+// has finished arriving.
+static float handoff(float s) {
+    float h = (s - STORY_DUR) / TITLE_IN;
+    if (h < 0.0f) h = 0.0f;
+    if (h > 1.0f) h = 1.0f;
+    return h;
+}
 
 // How present the title is, 0..1. It steps out of the way for the crawl and
 // comes back exactly as the crawl's own PHANTOM arrives in its place -- the two
@@ -173,26 +185,29 @@ static float title_alpha(void) {
     if (ct < STORY_DELAY)              return 1.0f;
 
     const float s = ct - STORY_DELAY;
-    if (s > STORY_DUR)                 return 1.0f;
+    if (s > STORY_DUR + TITLE_IN)      return 1.0f;
 
-    // Long enough to read as a resolve rather than a cut, short enough that the
-    // landing still lands. Six seconds turned it into a wait.
     float out = s / 1.8f;                          // dissolve away as it starts
     if (out > 1.0f) out = 1.0f;
-    float in = (s - (STORY_DUR - 3.0f)) / 3.0f;    // reassemble as it lands
-    if (in < 0.0f) in = 0.0f;
-    if (in > 1.0f) in = 1.0f;
 
-    float a = (1.0f - out) + in;
+    // Reassembles only once the crawl has come to rest. Overlapping this with
+    // the approach meant the word was brightening and dissolving at the same
+    // time and never actually reached full -- the arrival has to complete
+    // before anything competes with it.
+    const float a = (1.0f - out) + handoff(s);
     return (a > 1.0f) ? 1.0f : a;
 }
 
 static void draw_story(void) {
     const float ct = fmodf(vg.state_t, STORY_CYCLE);
-    if (ct < STORY_DELAY || ct > STORY_DELAY + STORY_DUR) return;
+    if (ct < STORY_DELAY || ct > STORY_DELAY + STORY_DUR + TITLE_IN) return;
 
-    const float scroll = (ct - STORY_DELAY) * STORY_SPEED;
-    const float ta     = title_alpha();
+    const float s = ct - STORY_DELAY;
+    const float h = handoff(s);
+
+    // Travel is pinned once the word lands, so it holds station on the title
+    // while the handoff plays rather than sliding off the top of the screen.
+    const float scroll = ((s < STORY_DUR) ? s : STORY_DUR) * STORY_SPEED;
 
     for (int i = 0; i < STORY_LINES; i++) {
         if (!STORY[i][0]) continue;
@@ -220,8 +235,8 @@ static void draw_story(void) {
         // That leaves the last stretch clear for the crossfade, so the two
         // effects read as one continuous arrival rather than fighting.
         if (i == STORY_LINES - 1) {
-            const float FADE_FROM = 460.0f;                    // invisible here
-            const float FADE_TO   = (float)(TITLE_Y + 100);    // full here
+            const float FADE_FROM = 460.0f;             // invisible here
+            const float FADE_TO   = (float)TITLE_Y;     // full exactly on the title
 
             float r = (FADE_FROM - (float)y) / (FADE_FROM - FADE_TO);
             if (r < 0.0f) r = 0.0f;
@@ -230,13 +245,17 @@ static void draw_story(void) {
             // hard edge -- a linear ramp is visible as a ramp.
             r = r * r * (3.0f - 2.0f * r);
 
-            const float la = r * (1.0f - ta);
+            // Reaches full at the instant it comes to rest on the title's
+            // position, then hands over. The two are never both climbing.
+            const float la = r * (1.0f - h);
             if (la > 0.01f)
                 centred(y, STORY[i], vg_dim(INK_BRIGHT, la), TITLE_SCALE);
             continue;
         }
 
-        centred(y, STORY[i], vg_dim(INK_BRIGHT, f), 2);
+        // The rest of the text clears out during the handoff, so the reveal is
+        // not left sharing the screen with the tail of the paragraph.
+        centred(y, STORY[i], vg_dim(INK_BRIGHT, f * (1.0f - h)), 2);
     }
 }
 
