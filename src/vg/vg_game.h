@@ -161,6 +161,11 @@ struct VgGame {
     // bank, and losing it would defeat the point of a meta-currency.
     int      credits;
 
+    // Set once a tournament has been taken, and never cleared. The rumour in
+    // the hangar bays is about YOU from then on -- the intro crawl changes to
+    // match, which is the whole point of the name.
+    bool     champion;
+
     float    health;       // absolute hull points remaining
     float    health_max;   // ...out of this, from the chosen class
 

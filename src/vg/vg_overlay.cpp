@@ -147,6 +147,15 @@ static const char* const STORY[] = {
 };
 #define STORY_LINES ((int)(sizeof(STORY) / sizeof(STORY[0])))
 
+// Once a tournament has been taken, the rumour circulating the hangar bays is
+// about YOU. Same paragraph, one line changed -- and the crawl stops being
+// exposition and becomes your own reputation read back to you. That single
+// substitution is the entire point of the name.
+static const char* story_line(int i) {
+    if (vg.champion && i == STORY_LINES - 3) return "THEY CALL YOU...";
+    return STORY[i];
+}
+
 #define TITLE_Y       150     // where the game title lives, and where the crawl ends
 #define TITLE_SCALE   7
 
@@ -210,7 +219,7 @@ static void draw_story(void) {
     const float scroll = ((s < STORY_DUR) ? s : STORY_DUR) * STORY_SPEED;
 
     for (int i = 0; i < STORY_LINES; i++) {
-        if (!STORY[i][0]) continue;
+        if (!story_line(i)[0]) continue;
 
         const int y = STORY_START_Y + i * STORY_LINE_H - (int)scroll;
         if (y < STORY_TOP || y > STORY_BOT) continue;
@@ -249,13 +258,13 @@ static void draw_story(void) {
             // position, then hands over. The two are never both climbing.
             const float la = r * (1.0f - h);
             if (la > 0.01f)
-                centred(y, STORY[i], vg_dim(INK_BRIGHT, la), TITLE_SCALE);
+                centred(y, story_line(i), vg_dim(INK_BRIGHT, la), TITLE_SCALE);
             continue;
         }
 
         // The rest of the text clears out during the handoff, so the reveal is
         // not left sharing the screen with the tail of the paragraph.
-        centred(y, STORY[i], vg_dim(INK_BRIGHT, f * (1.0f - h)), 2);
+        centred(y, story_line(i), vg_dim(INK_BRIGHT, f * (1.0f - h)), 2);
     }
 }
 
@@ -288,14 +297,46 @@ void vg_draw_overlays(void) {
         centred(320, buf, INK_FAINT, 2);
         break;
 
-    case VG_WON:
-        draw_glitch_title("CHAMPION", 150, 6, 1.0f);
-        snprintf(buf, sizeof(buf), "%s  HULL %d/%d", vg.spec->name,
-                 (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
-        centred(240, buf, INK_BRIGHT, 2);
-        if (vg.state_t > 1.5f && fmodf(vg.state_t, 1.0f) < 0.6f)
-            centred(300, "TAP TO CONTINUE", INK_MAX, 2);
+    // Winning closes the loop the intro opened. The crawl says a rumour goes
+    // round the hangar bays about an elite pilot nobody has seen -- take the
+    // tournament and the screen tells you, in the crawl's own words and the
+    // title's own lettering, that the rumour is now about you.
+    case VG_WON: {
+        const float t = vg.state_t;
+
+        // The result, which then gets out of the way.
+        if (t < 4.6f) {
+            float a = (t > 3.6f) ? (1.0f - (t - 3.6f)) : 1.0f;
+            if (a < 0.0f) a = 0.0f;
+            draw_glitch_title("CHAMPION", 128, 6, a);
+            snprintf(buf, sizeof(buf), "%s   %s", vg.callsign, vg.spec->name);
+            centred(212, buf, vg_dim(INK_BRIGHT, a), 3);
+            snprintf(buf, sizeof(buf), "BANK %d CR", vg.credits);
+            centred(254, buf, vg_dim(INK_FAINT, a), 2);
+        }
+
+        // The hangar bays find a name for you.
+        if (t > 4.4f) {
+            float a = t - 4.4f;
+            if (a > 1.0f) a = 1.0f;
+            centred(104, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK_FAINT, a), 1);
+            centred(128, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 2);
+        }
+
+        // And it is the one you have been flying under all along. Same word,
+        // same size, same glitch treatment as the title card -- so the payoff
+        // is recognition rather than information.
+        if (t > 6.4f) {
+            float a = (t - 6.4f) / 2.2f;
+            if (a > 1.0f) a = 1.0f;
+            a = a * a * (3.0f - 2.0f * a);
+            draw_glitch_title("PHANTOM", 178, TITLE_SCALE, a);
+        }
+
+        if (t > 9.4f && fmodf(t, 1.0f) < 0.6f)
+            centred(320, "TAP TO CONTINUE", INK_MAX, 2);
         break;
+    }
 
     case VG_HIT:
         if (fmodf(vg.state_t, 0.5f) < 0.3f)

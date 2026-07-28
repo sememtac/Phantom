@@ -782,7 +782,8 @@ void vg_game_update(float dt, const VgInput* in) {
             // the repair screen are not a fight.
             use_menu_sky();
             if (vt.complete) {
-                vg.state = VG_WON;
+                vg.champion = true;
+                vg.state    = VG_WON;
             } else {
                 vg_bracket_focus_player();
                 vg.state = VG_BRACKET;
@@ -794,7 +795,10 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_WON: {
         menu_world(dt);
-        if (vg.state_t > 1.5f && tap_up) enter_attract();
+        // Held until the name is on screen. A stray tap in the first seconds of
+        // a win would skip the one moment the whole story was built toward, and
+        // there is no prompt before then to invite one.
+        if (vg.state_t > 7.6f && tap_up) enter_attract();
         break;
     }
 
