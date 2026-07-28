@@ -293,17 +293,60 @@ a struct, and both the player and the AI read from the same one.
    advance. Matches are strictly 1v1 and end on a death.
 4. **Done.** Bracket sheet rendering and panning, ship select, pause menu, and
    the screen flow that joins them.
-5. Callsign entry (a three-character letter wheel, not a keyboard) and trail
-   colour selection. Entrants currently carry generated callsigns; the player is
-   the placeholder `YOU`.
-6. Ship trails — a ring buffer of past positions per ship, drawn as a polyline
-   fading to black. New work, but cheap, and it fits the existing edge pipeline.
-   Trail colour is meaningless until this exists, which is why the bracket shows
-   callsign and class but no hue yet.
-7. Credit economy and the repair screen. **Until this lands the game is harsher
-   than designed**: hull carries across all four rounds with no way at all to
-   restore it.
-8. NVS persistence.
+5. **Done.** Callsign entry — three letter wheels rather than a keyboard, and a
+   hue-only colour picker. Saturation and value are pinned, because a chooser
+   that exposed either would let a player select a trail they cannot see.
+6. **Done.** Ship trails, driven by throttle: each sample stores the power it
+   was laid down at, so a ship at idle leaves a stub, a ship at full throttle
+   streams a long ribbon, and a burst of speed stays lit in the tail after the
+   ship has slowed. Level of detail along the ribbon keeps a 7.7s trail from
+   costing 7.7s worth of primitives.
+7. **Done.** Credit economy and the repair screen.
+8. **Done.** NVS persistence: credits, callsign, ship, trail colour and champion
+   status. Hull is deliberately excluded — it belongs to a run, not to the
+   player.
+
+Built since, beyond the original plan:
+
+9. **Pilot voices.** Six archetypes, three lines each across taunt / fire / hurt
+   / death. See below.
+10. **The narrative loop.** Winning sets a permanent flag, and the intro crawl's
+    closing line changes from "THEY CALL HIM…" to "THEY CALL YOU…". The rumour
+    the game opens with becomes a rumour about you.
+11. **A menu-only backdrop** — a lensed supermassive black hole, fixed at
+    infinity so it never pans, with its own brightness ceiling since the menu
+    has no HUD to protect.
+
+Still open: sound, more arena shapes, a gun for close-in work, and TE sync.
+
+### Pilot voices
+
+Fifteen generated strangers with three-letter tags is a spreadsheet. What makes
+them opponents is that they talk at you, at the four moments you are already
+paying attention: when they size you up, when they shoot, when you hurt them,
+and when you kill them.
+
+Six archetypes — **BUTCHER**, **ZEALOT**, **OPERATOR**, **HUNTER**, **REVENANT**,
+**PALADIN** — with three lines each. Enough that a sixteen-entrant bracket does
+not repeat itself inside a round, few enough that each stays a recognisable
+person rather than a bag of lines.
+
+The death lines carry the setting. The IFT runs this for viewing figures and tax
+revenue; a game that opens by saying so and then has pilots politely explode is
+not telling the truth about itself. So they die badly, and they die on the radio
+where the player has to listen to it.
+
+Two rules hold the system together:
+
+- **Priority is the enum order** — taunt, fire, hurt, death — so a death cry can
+  never be stepped on by the next round going wide, while an equal event still
+  refreshes and two hits read as two.
+- **Personality is rolled independently** of ship, seeding and hue. Tying them
+  together would make the whole bracket readable at a glance.
+
+Lines are capped at 26 characters, which is what fits beside a callsign tag at
+readable size. The limit does the writing a favour: radio chatter under fire is
+clipped, not composed.
 
 ### Trail colour and the palette rule
 

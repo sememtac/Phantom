@@ -7,9 +7,9 @@ Old-school vector graphics on black at **~70 fps**. You hunt an enemy fighter an
 trade heat-seeking missiles with it — throttling constantly to tighten your turn
 when something is chasing you and to run when it isn't.
 
-This README describes what is **built**. The game being built *around* it — a
-sixteen-entrant knockout tournament with four ship classes and a repair economy —
-is specified in **[DESIGN.md](DESIGN.md)**.
+This README describes the **engine**. The game on top of it — a sixteen-entrant
+knockout tournament with four ship classes, a repair economy and a roster of
+pilots who talk back — is specified in **[DESIGN.md](DESIGN.md)**.
 
 ---
 
@@ -583,7 +583,6 @@ All in `vg_config.h`. The ones that actually change how it plays:
   (`0x35`). If tearing shows, either enable TE and wait on it, or cap the frame
   rate.
 - **A gun** for close-in work, once the missile duel feels right.
-- High score persistence (NVS).
 
 ## License
 
