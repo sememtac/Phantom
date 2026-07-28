@@ -506,36 +506,28 @@ static void collide_player(void) {
 // Attract autopilot: a slow weave, plus a pull back toward the middle whenever
 // the wall closes in. Without that second term it flies straight out through the
 // side of the tunnel within a few seconds.
-// Distance off the tube wall the camera tries to hold. Flying down the dead
-// centre shows only far geometry in every direction; running a band close to
-// the surface is what makes the ring sweep past near enough to read as a
-// structure you are travelling through.
-#define ATTRACT_HOLD_CLEAR   380.0f
-
 static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
-    // A long, lazy arc rather than a weave. Two terms per axis on periods with
-    // no common multiple, so the path drifts and never visibly repeats.
-    Vec3 want = v3(0.13f * sinf(t * 0.107f) + 0.06f * sinf(t * 0.041f),
-                   0.10f * sinf(t * 0.083f) + 0.05f * sinf(t * 0.029f),
+    // Barely a deviation at all -- just enough that the path is not a dead
+    // straight line. Two terms per axis on periods with no common multiple, so
+    // it drifts without ever visibly repeating.
+    Vec3 want = v3(0.045f * sinf(t * 0.081f) + 0.022f * sinf(t * 0.031f),
+                   0.038f * sinf(t * 0.063f) + 0.018f * sinf(t * 0.023f),
                    1.0f);
 
-    // Steer to a held distance from the wall rather than only fleeing it: too
-    // close pushes in, too far pulls back out. Same term does both jobs, so
-    // there is no discontinuity when it engages.
+    // Ride the centreline of the tube. Clearance is at its maximum -- the tube
+    // radius -- exactly on the central circle, so the shortfall from that IS
+    // the off-centre distance, and steering inward in proportion to it settles
+    // the camera onto the ring's axis and keeps it there.
     Vec3  pl     = vg_arena_local_of(v3(0, 0, 0));
     float clear  = vg_arena_clearance(pl);
     Vec3  inward = vg_arena_dir_to_view(vg_arena_inward(pl));
 
-    float err = (ATTRACT_HOLD_CLEAR - clear) / ATTRACT_HOLD_CLEAR;
-    if (err >  1.0f) err =  1.0f;
-    if (err < -1.0f) err = -1.0f;
-    want = vadd(want, vmul(inward, err * 0.85f));
-
-    // Hard override if it ever does get genuinely close -- the elegant version
-    // must still never fly the title card into a wall.
-    if (clear < ARENA_ATTRACT_MARGIN)
-        want = vadd(want, vmul(inward,
-                    2.2f * (ARENA_ATTRACT_MARGIN - clear) / ARENA_ATTRACT_MARGIN));
+    float off = 1.0f - clear / ARENA_TORUS_RMIN;   // 0 dead centre, 1 at the wall
+    if (off < 0.0f) off = 0.0f;
+    if (off > 1.0f) off = 1.0f;
+    // Squared, so the correction is almost nothing near the middle and firms up
+    // smoothly further out. A linear term hunts around the centreline.
+    want = vadd(want, vmul(inward, off * off * 1.6f));
 
     want = vnorm(want);
 
@@ -612,9 +604,9 @@ static void menu_world(float dt) {
     // untouched, so the autopilot is not fighting a control input -- the camera
     // simply lies over as it travels. Two incommensurate periods again, and a
     // deliberately lazy lerp, so it reads as drift rather than as a wobble.
-    float roll = 0.62f * sinf(vg.state_t * 0.129f)
-               + 0.30f * sinf(vg.state_t * 0.057f);
-    float kr = dt * 0.7f;
+    float roll = 0.30f * sinf(vg.state_t * 0.061f)
+               + 0.14f * sinf(vg.state_t * 0.027f);
+    float kr = dt * 0.35f;
     if (kr > 1.0f) kr = 1.0f;
     vg.bank += (roll - vg.bank) * kr;
 

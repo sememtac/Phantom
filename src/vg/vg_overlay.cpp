@@ -35,7 +35,9 @@ static uint32_t glitch_hash(uint32_t x) {
 // ghost separates sideways like a mistimed signal, occasional letters corrupt,
 // and tear bars cut across. Driven entirely by hashing a time bucket, so it needs
 // no per-frame state and repeats deterministically.
-static void draw_glitch_title(const char* s, int y, int scale) {
+static void draw_glitch_title(const char* s, int y, int scale, float a) {
+    if (a <= 0.01f) return;
+
     const uint32_t bucket = (uint32_t)(vg.state_t * 9.0f);
     const bool     glitch = (glitch_hash(bucket) % 100u) < 22u;
 
@@ -45,12 +47,12 @@ static void draw_glitch_title(const char* s, int y, int scale) {
     const int x0  = (SCR_W - vg_text_width(s, scale)) / 2;
 
     if (!glitch) {
-        vg_text(x0, y, s, INK_BRIGHT, scale);
+        vg_text(x0, y, s, vg_dim(INK_BRIGHT, a), scale);
         return;
     }
 
     int gx = (int)(glitch_hash(bucket * 7u) % 13u) - 6;
-    vg_text(x0 + gx, y, s, INK_TRACE, scale);
+    vg_text(x0 + gx, y, s, vg_dim(INK_TRACE, a), scale);
 
     for (int i = 0; i < n; i++) {
         uint32_t h  = glitch_hash(bucket * 31u + (uint32_t)i);
@@ -59,7 +61,7 @@ static void draw_glitch_title(const char* s, int y, int scale) {
         char     c  = s[i];
         if (((h >> 16) % 11u) == 0u) c = (char)('A' + ((h >> 20) % 26u));
         char one[2] = { c, 0 };
-        vg_text(x0 + i * adv + dx, y + dy, one, INK_MAX, scale);
+        vg_text(x0 + i * adv + dx, y + dy, one, vg_dim(INK_MAX, a), scale);
     }
 
     int bars = (int)(glitch_hash(bucket * 13u) % 3u);
@@ -68,7 +70,7 @@ static void draw_glitch_title(const char* s, int y, int scale) {
         int      ty = y + (int)(h % (uint32_t)(7 * scale));
         int      tw = 70 + (int)((h >> 8) % 190u);
         int      tx = (int)((h >> 16) % (uint32_t)(SCR_W - tw));
-        vg_fill_rect(tx, ty, tw, 2, INK);
+        vg_fill_rect(tx, ty, tw, 2, vg_dim(INK, a));
     }
 }
 
@@ -145,25 +147,55 @@ static const char* const STORY[] = {
 };
 #define STORY_LINES ((int)(sizeof(STORY) / sizeof(STORY[0])))
 
-#define STORY_DELAY   5.0f    // seconds of stillness before it starts
-#define STORY_SPEED   24.0f   // px per second
+#define TITLE_Y       150     // where the game title lives, and where the crawl ends
+#define TITLE_SCALE   7
+
+#define STORY_DELAY   5.0f    // title held before the crawl begins
+#define STORY_SPEED   30.0f   // px per second
 #define STORY_LINE_H  27
-#define STORY_TOP     256     // clear of the title card
-#define STORY_BOT     462
-#define STORY_FADE    46      // px of fade at each end of the window
+#define STORY_START_Y 500     // first line begins just off the bottom
+#define STORY_TOP     28      // the crawl owns the whole screen
+#define STORY_BOT     468
+#define STORY_FADE    52      // px of fade at each end of the window
+#define STORY_HOLD    6.0f    // title held again after the crawl lands
+
+// Travel needed to carry the last line from its start position up to the title.
+#define STORY_RUN   ((float)(STORY_START_Y + (STORY_LINES - 1) * STORY_LINE_H - TITLE_Y))
+#define STORY_DUR   (STORY_RUN / STORY_SPEED)
+#define STORY_CYCLE (STORY_DELAY + STORY_DUR + STORY_HOLD)
+
+// How present the title is, 0..1. It steps out of the way for the crawl and
+// comes back exactly as the crawl's own PHANTOM arrives in its place -- the two
+// are the same word at the same size in the same spot, so the handoff reads as
+// the scrolling line settling into the title rather than as a cut.
+static float title_alpha(void) {
+    const float ct = fmodf(vg.state_t, STORY_CYCLE);
+    if (ct < STORY_DELAY)              return 1.0f;
+
+    const float s = ct - STORY_DELAY;
+    if (s > STORY_DUR)                 return 1.0f;
+
+    float out = s / 1.6f;                          // dissolve away as it starts
+    if (out > 1.0f) out = 1.0f;
+    float in = (s - (STORY_DUR - 2.0f)) / 2.0f;    // reassemble as it lands
+    if (in < 0.0f) in = 0.0f;
+    if (in > 1.0f) in = 1.0f;
+
+    float a = (1.0f - out) + in;
+    return (a > 1.0f) ? 1.0f : a;
+}
 
 static void draw_story(void) {
-    if (vg.state_t < STORY_DELAY) return;
+    const float ct = fmodf(vg.state_t, STORY_CYCLE);
+    if (ct < STORY_DELAY || ct > STORY_DELAY + STORY_DUR) return;
 
-    // Loops with a gap of blank travel after the last line, so it reads as a
-    // repeating transmission rather than snapping back to the top.
-    const float span   = (float)(STORY_LINES * STORY_LINE_H + 340);
-    const float scroll = fmodf((vg.state_t - STORY_DELAY) * STORY_SPEED, span);
+    const float scroll = (ct - STORY_DELAY) * STORY_SPEED;
+    const float ta     = title_alpha();
 
     for (int i = 0; i < STORY_LINES; i++) {
         if (!STORY[i][0]) continue;
 
-        const int y = STORY_BOT + i * STORY_LINE_H - (int)scroll;
+        const int y = STORY_START_Y + i * STORY_LINE_H - (int)scroll;
         if (y < STORY_TOP || y > STORY_BOT) continue;
 
         // Fade in and out at the window edges. Without it lines appear and
@@ -175,10 +207,20 @@ static void draw_story(void) {
             f = (float)(STORY_BOT - y) / (float)STORY_FADE;
         if (f < 0.0f) f = 0.0f;
 
-        // The name lands bigger and brighter -- it is the title of the game and
-        // the thing the whole paragraph has been walking toward.
-        const bool last = (i == STORY_LINES - 1);
-        centred(y, STORY[i], vg_dim(last ? INK_MAX : INK_BRIGHT, f), last ? 3 : 2);
+        // The closing line is set at title size and hands over to the real
+        // title as it arrives, so it is faded out by exactly the amount the
+        // title has faded in. Its top-edge fade is suppressed for the same
+        // reason -- it must not dim on approach, it must become the title.
+        if (i == STORY_LINES - 1) {
+            float la = (1.0f - ta);
+            if (la > f) la = f;
+            if (y <= TITLE_Y + STORY_FADE) la = 1.0f - ta;
+            if (la > 0.01f)
+                centred(y, STORY[i], vg_dim(INK_BRIGHT, la), TITLE_SCALE);
+            continue;
+        }
+
+        centred(y, STORY[i], vg_dim(INK_BRIGHT, f), 2);
     }
 }
 
@@ -189,16 +231,16 @@ void vg_draw_overlays(void) {
     if (vg.state == VG_PLAYING || vg.state == VG_HIT) draw_missile_banner();
 
     switch (vg.state) {
-    case VG_ATTRACT:
-        draw_glitch_title("PHANTOM", 150, 7);
-        // The prompt tucks up under the title once the crawl starts, so the
-        // lower half of the screen belongs to the story.
-        if (fmodf(vg.state_t, 1.2f) < 0.8f) {
-            if (vg.state_t < STORY_DELAY) centred(250, "TOUCH TO START", INK_MAX, 3);
-            else                          centred(212, "TOUCH TO START", INK_BRIGHT, 2);
-        }
+    case VG_ATTRACT: {
+        // Title and prompt fade out together and leave the whole screen to the
+        // crawl, then fade back in as the crawl's own PHANTOM arrives.
+        const float ta = title_alpha();
+        draw_glitch_title("PHANTOM", TITLE_Y, TITLE_SCALE, ta);
+        if (ta > 0.01f && fmodf(vg.state_t, 1.2f) < 0.8f)
+            centred(250, "TOUCH TO START", vg_dim(INK_MAX, ta), 3);
         draw_story();
         break;
+    }
 
     case VG_ROUND_WON:
         centred(160, "ROUND WON", INK_MAX, 5);
@@ -212,7 +254,7 @@ void vg_draw_overlays(void) {
         break;
 
     case VG_WON:
-        draw_glitch_title("CHAMPION", 150, 6);
+        draw_glitch_title("CHAMPION", 150, 6, 1.0f);
         snprintf(buf, sizeof(buf), "%s  HULL %d/%d", vg.spec->name,
                  (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
         centred(240, buf, INK_BRIGHT, 2);
