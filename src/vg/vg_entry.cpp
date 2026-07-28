@@ -61,10 +61,20 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
     if (in->menu_edge) {
         s_accum    = 0.0f;
         s_drag_col = column_at(in->menu_x, in->menu_y);
+        // Generous grab pad. The ramp is a coarse choice and the fingertip
+        // covers most of its height, so demanding a hit inside a 54px strip made
+        // it feel stuck rather than precise. Once latched the drag tracks x
+        // alone, so the finger may wander off the bar entirely.
         s_hue_drag = s_hue_open &&
                      vg_in_rect(in->menu_x, in->menu_y,
-                                ENT_HUE_X, ENT_HUE_Y, ENT_HUE_W, ENT_HUE_H);
-        if (s_hue_drag) set_hue_from(in->menu_x);
+                                ENT_HUE_X - ENT_HUE_PAD,
+                                ENT_HUE_Y - ENT_HUE_PAD,
+                                ENT_HUE_W + 2 * ENT_HUE_PAD,
+                                ENT_HUE_H + 2 * ENT_HUE_PAD);
+        if (s_hue_drag) {
+            s_drag_col = -1;          // the ramp wins over any wheel underneath
+            set_hue_from(in->menu_x);
+        }
     }
 
     if (in->menu_held) {
@@ -102,8 +112,11 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
         } else if (vg_in_rect(tx, ty, ENT_TRAIL_X, ENT_TRAIL_Y,
                               ENT_TRAIL_W, ENT_TRAIL_H)) {
             s_hue_open = !s_hue_open;
-        } else if (s_hue_open && vg_in_rect(tx, ty, ENT_HUE_X, ENT_HUE_Y,
-                                            ENT_HUE_W, ENT_HUE_H)) {
+        } else if (s_hue_open &&
+                   vg_in_rect(tx, ty, ENT_HUE_X - ENT_HUE_PAD,
+                              ENT_HUE_Y - ENT_HUE_PAD,
+                              ENT_HUE_W + 2 * ENT_HUE_PAD,
+                              ENT_HUE_H + 2 * ENT_HUE_PAD)) {
             set_hue_from(tx);
         } else if (vg_in_rect(tx, ty, ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H)) {
             commit();
@@ -166,14 +179,16 @@ void vg_draw_entry(void) {
             vg_fill_rect(ENT_HUE_X + i, ENT_HUE_Y, 2, ENT_HUE_H,
                          vg_hue_col((float)i / (float)ENT_HUE_W));
 
+        // A wide handle, not a hairline: it has to be findable under a thumb.
         int mx = ENT_HUE_X + (int)(vg.trail_hue * (float)ENT_HUE_W);
-        vg_fill_rect(mx - 2, ENT_HUE_Y - 6, 5, ENT_HUE_H + 12, INK_MAX);
-        vg_fill_rect(mx - 1, ENT_HUE_Y - 4, 3, ENT_HUE_H + 8,  hue);
+        if (mx < ENT_HUE_X + 7)               mx = ENT_HUE_X + 7;
+        if (mx > ENT_HUE_X + ENT_HUE_W - 7)   mx = ENT_HUE_X + ENT_HUE_W - 7;
+        vg_fill_rect(mx - 7, ENT_HUE_Y - 9, 15, ENT_HUE_H + 18, COL_BLACK);
+        vg_fill_rect(mx - 5, ENT_HUE_Y - 7, 11, ENT_HUE_H + 14, INK_MAX);
+        vg_fill_rect(mx - 2, ENT_HUE_Y - 4,  5, ENT_HUE_H + 8,  hue);
     } else {
-        centred(ENT_HUE_Y + 12, "TAP TRAIL TO CHANGE COLOUR", INK_FAINT, 1);
+        centred(ENT_HUE_Y + 18, "TAP TRAIL TO CHANGE COLOUR", INK, 2);
     }
 
-    vg_fill_rect(ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H, INK_BRIGHT);
-    vg_text(ENT_GO_X + (ENT_GO_W - vg_text_width("NEXT", 3)) / 2,
-            ENT_GO_Y + (ENT_GO_H - 21) / 2, "NEXT", COL_BLACK, 3);
+    vg_button(ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H, "NEXT", true, true);
 }

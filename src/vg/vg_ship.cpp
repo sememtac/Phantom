@@ -17,7 +17,7 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // The reference ship, and the one an average player should have a good time
     // with having never picked anything else.
     {
-        "AEGIS", "NO WEAKNESS. NO EDGE.",
+        "AEGIS", "NO WEAKNESS, NO EDGE",
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 110.0f,
@@ -30,7 +30,7 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // damage, so only correct geometry pays. Slightly slower than AEGIS and four
     // rounds instead of six, so a wasted shot is felt twice.
     {
-        "LANCE", "HIT CLEAN OR NOT AT ALL.",
+        "LANCE", "CLEAN HITS ONLY",
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 95.0f,
@@ -43,7 +43,7 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // does. Keeps far more of its agility at full throttle than anything else,
     // which is what lets it run circles -- paid for with a 70-point hull.
     {
-        "CHARIOT", "FLY FAST. FIRE OFTEN. DIE EASY.",
+        "CHARIOT", "FAST, LOUD, FRAGILE",
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 70.0f,
@@ -57,7 +57,7 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // on a six second reload, and it loses almost all its agility at speed, so
     // anything fast that gets inside 2800 is its whole problem.
     {
-        "BALLISTA", "KILL THEM BEFORE THEY SEE YOU.",
+        "BALLISTA", "KILL THEM FIRST",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,

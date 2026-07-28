@@ -28,7 +28,7 @@
 // Viewport: the strip of screen the map is drawn into, below the header and
 // above the ready button.
 #define VIEW_Y0     84
-#define VIEW_H      312
+#define VIEW_H      286
 
 static float s_pan_x = 0.0f;
 static float s_pan_y = 0.0f;
@@ -216,41 +216,48 @@ void vg_draw_bracket(void) {
 
     // --- header ---
     vg_fill_rect(0, 0, SCR_W, VIEW_Y0 - 2, COL_BLACK);
-    vg_text((SCR_W - vg_text_width(vg_tourney_round_name(vt.round), 3)) / 2, 14,
-            vg_tourney_round_name(vt.round), INK_MAX, 3);
+
+    // Round on the left, bank on the right, the match you are about to fly
+    // across the middle at full size. Credits are a number the player is
+    // constantly deciding against, so they get a fixed corner and stay there.
+    vg_text(10, 8, vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
+
+    snprintf(buf, sizeof(buf), "%d CR", vg.credits);
+    vg_text(SCR_W - 10 - vg_text_width(buf, 3), 4, buf, INK_MAX, 3);
 
     if (opp) {
         snprintf(buf, sizeof(buf), "VS %s  %s", opp->tag, vg_spec(opp->cls)->name);
-        vg_text((SCR_W - vg_text_width(buf, 2)) / 2, 48, buf, INK_BRIGHT, 2);
+        vg_text((SCR_W - vg_text_width(buf, 3)) / 2, 38, buf, INK_MAX, 3);
+        // The opponent's colour, beside their name -- the same stripe that marks
+        // them on the sheet and the same one that will be behind their ship.
+        vg_fill_rect(14, 44, 34, 10, vg_hue_col(opp->hue));
     }
 
     // --- footer ---
     vg_fill_rect(0, VIEW_Y0 + VIEW_H, SCR_W, SCR_H - VIEW_Y0 - VIEW_H, COL_BLACK);
 
     const int hurt = (int)(vg.health_max - vg.health + 0.5f);
+    const int hp   = (int)(vg.health + 0.5f);
+    const int hmax = (int)(vg.health_max + 0.5f);
 
-    snprintf(buf, sizeof(buf), "%s  HULL %d/%d   CREDITS %d", vg.spec->name,
-             (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f), vg.credits);
-    vg_text((SCR_W - vg_text_width(buf, 1)) / 2, VIEW_Y0 + VIEW_H + 2, buf,
-            INK_FAINT, 1);
+    // Your ship and what is left of it, centred and at full size. This is the
+    // number every decision on this screen is really about, and it was
+    // previously set faint at the smallest scale, where it was unreadable.
+    snprintf(buf, sizeof(buf), "%s  %d/%d", vg.spec->name, hp, hmax);
+    const int fy = VIEW_Y0 + VIEW_H + 6;
+    vg_text((SCR_W - vg_text_width(buf, 3)) / 2, fy, buf,
+            hurt > 0 ? INK_MAX : INK_BRIGHT, 3);
+
+    // Player colour beside it, matching the stripe on their bracket slot.
+    vg_fill_rect(14, fy + 6, 34, 10, vg_hue_col(vg.trail_hue));
 
     if (CANVAS_W > SCR_W)
-        vg_text(8, VIEW_Y0 + VIEW_H + 2, "DRAG", INK_FAINT, 1);
+        vg_text(SCR_W - 44, fy + 7, "DRAG", INK_FAINT, 1);
 
-    // REPAIR only lights up when there is both damage to undo and money to do it
+    // REPAIR only lights when there is both damage to undo and money to do it
     // with, so the button itself answers "can I afford this".
     const bool can_repair = hurt > 0 && vg.credits >= CREDIT_PER_HULL;
-    if (can_repair) {
-        vg_fill_rect(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, INK);
-        vg_text(BRK_REP_X + (BRK_REP_W - vg_text_width("REPAIR", 3)) / 2,
-                BRK_REP_Y + (BRK_REP_H - 21) / 2, "REPAIR", COL_BLACK, 3);
-    } else {
-        vg_rect(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, INK_TRACE);
-        vg_text(BRK_REP_X + (BRK_REP_W - vg_text_width("REPAIR", 3)) / 2,
-                BRK_REP_Y + (BRK_REP_H - 21) / 2, "REPAIR", INK_TRACE, 3);
-    }
-
-    vg_fill_rect(BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H, INK_BRIGHT);
-    vg_text(BRK_GO_X + (BRK_GO_W - vg_text_width("READY", 3)) / 2,
-            BRK_GO_Y + (BRK_GO_H - 21) / 2, "READY", COL_BLACK, 3);
+    vg_button(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, "REPAIR",
+              false, can_repair);
+    vg_button(BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H, "READY", true, true);
 }

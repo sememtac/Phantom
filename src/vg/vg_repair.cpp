@@ -68,18 +68,6 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
     vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
 }
 
-static void button(int x, int y, int w, int h, const char* label, bool live) {
-    if (live) {
-        vg_fill_rect(x, y, w, h, INK_BRIGHT);
-        vg_text(x + (w - vg_text_width(label, 3)) / 2, y + (h - 21) / 2,
-                label, COL_BLACK, 3);
-    } else {
-        vg_rect(x, y, w, h, INK_TRACE);
-        vg_text(x + (w - vg_text_width(label, 3)) / 2, y + (h - 21) / 2,
-                label, INK_TRACE, 3);
-    }
-}
-
 void vg_draw_repair(void) {
     char buf[48];
 
@@ -131,14 +119,16 @@ void vg_draw_repair(void) {
     centred(REP_SLIDE_Y + REP_SLIDE_H + 14, buf, INK_BRIGHT, 3);
 
     snprintf(buf, sizeof(buf), "%d CR PER POINT", CREDIT_PER_HULL);
-    centred(REP_BUY_Y + REP_BUY_H + 16, buf, INK_FAINT, 1);
+    centred(REP_BUY_Y + REP_BUY_H + 12, buf, INK, 2);
 
-    button(REP_BUY_X,  REP_BUY_Y,  REP_BUY_W,  REP_BUY_H,  "BUY",  s_buy > 0);
-    button(REP_BACK_X, REP_BACK_Y, REP_BACK_W, REP_BACK_H, "BACK", true);
+    vg_button(REP_BUY_X,  REP_BUY_Y,  REP_BUY_W,  REP_BUY_H,  "BUY",
+              s_buy > 0, s_buy > 0);
+    vg_button(REP_BACK_X, REP_BACK_Y, REP_BACK_W, REP_BACK_H, "BACK",
+              false, true);
 
     if (cap == 0) {
         const char* why = (vg.health >= vg.health_max) ? "HULL INTACT"
                                                        : "NOT ENOUGH CREDITS";
-        centred(REP_SLIDE_Y + REP_SLIDE_H + 52, why, INK_FAINT, 2);
+        centred(REP_SLIDE_Y + REP_SLIDE_H + 48, why, INK_BRIGHT, 2);
     }
 }

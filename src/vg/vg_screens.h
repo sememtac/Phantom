@@ -41,9 +41,12 @@
 #define ENT_TRAIL_W     280
 #define ENT_TRAIL_H     46
 #define ENT_HUE_X       40
-#define ENT_HUE_Y       348
+#define ENT_HUE_Y       342
 #define ENT_HUE_W       400
-#define ENT_HUE_H       38
+#define ENT_HUE_H       54
+// Acquiring the ramp should not demand precision -- the slider is a coarse
+// choice and the finger covers most of it.
+#define ENT_HUE_PAD     26
 #define ENT_GO_X        150
 #define ENT_GO_Y        408
 #define ENT_GO_W        180
@@ -103,6 +106,16 @@ void vg_bracket_pan(float dx, float dy);
 void vg_bracket_focus_player(void);            // centre on the next match
 
 // --- drawing ---------------------------------------------------------------
+
+// The one button in the game. Drawn in the same idiom as the instrument panels:
+// sunk into a dark well, framed, with corner ticks. A primary action is marked
+// by a brighter frame and a bright key line under the label -- NOT by filling
+// the whole rectangle, because a solid slab reads as a block rather than a
+// control and throws away the frame that makes the rest of the interface look
+// built.
+void vg_button(int x, int y, int w, int h, const char* label,
+               bool primary, bool live);
+
 void vg_draw_select(void);
 void vg_draw_pause(void);
 void vg_draw_bracket(void);

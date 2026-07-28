@@ -9,18 +9,39 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
     vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
 }
 
-// A button in the AmberConsole idiom: hierarchy is brightness and inverse video,
-// never hue. Selected means the fill and the text swap places.
-static void button(int x, int y, int w, int h, const char* label, bool hot) {
-    if (hot) {
-        vg_fill_rect(x, y, w, h, INK_BRIGHT);
-        vg_text(x + (w - vg_text_width(label, 3)) / 2, y + (h - 21) / 2,
-                label, COL_BLACK, 3);
-    } else {
-        vg_rect(x, y, w, h, INK_TRACE);
-        vg_text(x + (w - vg_text_width(label, 3)) / 2, y + (h - 21) / 2,
-                label, INK_BRIGHT, 3);
-    }
+void vg_button(int x, int y, int w, int h, const char* label,
+               bool primary, bool live) {
+    const uint16_t frame = !live    ? INK_TRACE
+                         : primary  ? INK_BRIGHT
+                                    : INK;
+    const uint16_t ink   = !live    ? INK_TRACE
+                         : primary  ? INK_MAX
+                                    : INK_BRIGHT;
+
+    // Same dark well the instrument panels sit in, so thin strokes keep their
+    // contrast against a lit nebula.
+    vg_fill_rect(x, y, w, h, INK_WELL);
+
+    const int s = 2;
+    vg_fill_rect(x,         y,         w, s, frame);
+    vg_fill_rect(x,         y + h - s, w, s, frame);
+    vg_fill_rect(x,         y,         s, h, frame);
+    vg_fill_rect(x + w - s, y,         s, h, frame);
+
+    // Corner ticks: short heavier runs at each corner. Cheap, and it is what
+    // stops a plain rectangle reading as a placeholder.
+    const int t = 10;
+    vg_fill_rect(x,             y,             t, 4, frame);
+    vg_fill_rect(x + w - t,     y,             t, 4, frame);
+    vg_fill_rect(x,             y + h - 4,     t, 4, frame);
+    vg_fill_rect(x + w - t,     y + h - 4,     t, 4, frame);
+
+    const int lw = vg_text_width(label, 3);
+    vg_text(x + (w - lw) / 2, y + (h - 21) / 2 - 3, label, ink, 3);
+
+    // Key line under the label marks the primary action without filling the box.
+    if (primary && live)
+        vg_fill_rect(x + (w - lw) / 2, y + (h - 21) / 2 + 22, lw, 3, INK_BRIGHT);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,25 +88,28 @@ void vg_draw_select(void) {
             vg_fill_rect(SEL_CARD_X, y, 6, SEL_CARD_H, INK_BRIGHT);
         }
 
-        vg_text(SEL_CARD_X + 16, y + 9, s->name, sel ? INK_MAX : INK_BRIGHT, 3);
-        vg_text(SEL_CARD_X + 16, y + 40, s->tagline, INK_FAINT, 1);
+        vg_text(SEL_CARD_X + 16, y + 8, s->name, sel ? INK_MAX : INK_BRIGHT, 3);
+        // The description is the reason to pick one of these, so it is set at
+        // reading size and on the bright ramp rather than tucked away faint.
+        vg_text(SEL_CARD_X + 16, y + 40, s->tagline,
+                sel ? INK_BRIGHT : INK, 2);
 
         // SPD / HUL / DMG / VOL, each normalised against the strongest class so
         // the bars are comparable down the column.
-        const int bx = SEL_CARD_X + 262, bw = 130;
+        const int bx = SEL_CARD_X + 300, bw = 100;
         stat_bar(bx, y + 8,  bw, (s->speed_max - 300.0f) / 180.0f,  INK_BRIGHT);
         stat_bar(bx, y + 22, bw, s->hull / 120.0f,                  INK_BRIGHT);
         stat_bar(bx, y + 36, bw, s->msl_damage / 44.0f,             INK_BRIGHT);
         stat_bar(bx, y + 50, bw,
                  ((float)s->magazine / s->reload) / 9.0f,           INK_BRIGHT);
 
-        vg_text(bx - 34, y + 8,  "SPD", INK_FAINT, 1);
-        vg_text(bx - 34, y + 22, "HUL", INK_FAINT, 1);
-        vg_text(bx - 34, y + 36, "DMG", INK_FAINT, 1);
-        vg_text(bx - 34, y + 50, "VOL", INK_FAINT, 1);
+        vg_text(bx - 26, y + 7,  "SPD", INK, 1);
+        vg_text(bx - 26, y + 21, "HUL", INK, 1);
+        vg_text(bx - 26, y + 35, "DMG", INK, 1);
+        vg_text(bx - 26, y + 49, "VOL", INK, 1);
     }
 
-    button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H, "ENTER", true);
+    vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H, "ENTER", true, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,8 +131,8 @@ void vg_draw_pause(void) {
 
     centred(140, "PAUSED", INK_MAX, 5);
 
-    button(PAU_BTN_X, PAU_RESUME_Y, PAU_BTN_W, PAU_BTN_H, "RESUME", false);
-    button(PAU_BTN_X, PAU_QUIT_Y,   PAU_BTN_W, PAU_BTN_H, "QUIT",   false);
+    vg_button(PAU_BTN_X, PAU_RESUME_Y, PAU_BTN_W, PAU_BTN_H, "RESUME", true,  true);
+    vg_button(PAU_BTN_X, PAU_QUIT_Y,   PAU_BTN_W, PAU_BTN_H, "QUIT",   false, true);
 
     centred(370, "QUIT ABANDONS THE TOURNAMENT", INK_FAINT, 1);
     centred(392, "+/- RESUMES", INK_FAINT, 1);
