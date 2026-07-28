@@ -83,3 +83,33 @@
 #define COL_RADAR_RIM        INK_FAINT
 #define COL_RADAR_BOGEY      VGC(0xF800)       // enemy fighter: red
 #define COL_RADAR_MSL        VGC(0xFDA0)       // incoming missile: yellow-orange
+
+// --- identity --------------------------------------------------------------
+// The single sanctioned exception to "hierarchy is brightness, never hue".
+// Hue is reserved for IDENTITY and is spent on nothing else: every instrument,
+// readout and piece of arena geometry stays on the amber ramp, and the only
+// coloured things are the trails and markers that say WHO someone is. Used for
+// exactly one thing, the rule gets stronger rather than weaker.
+//
+// Full saturation and value, because the player only picks the hue -- a chooser
+// that also exposed saturation would let someone select an invisible trail.
+static inline uint16_t vg_hue_col(float h) {
+    h -= (float)(int)h;
+    if (h < 0.0f) h += 1.0f;
+    float x = h * 6.0f;
+    int   i = (int)x;
+    float f = x - (float)i;
+    float r, g, b;
+    switch (i % 6) {
+    case 0:  r = 1;     g = f;     b = 0;     break;
+    case 1:  r = 1 - f; g = 1;     b = 0;     break;
+    case 2:  r = 0;     g = 1;     b = f;     break;
+    case 3:  r = 0;     g = 1 - f; b = 1;     break;
+    case 4:  r = f;     g = 0;     b = 1;     break;
+    default: r = 1;     g = 0;     b = 1 - f; break;
+    }
+    uint16_t c = (uint16_t)(((int)(r * 31.0f + 0.5f) << 11) |
+                            ((int)(g * 63.0f + 0.5f) <<  5) |
+                             (int)(b * 31.0f + 0.5f));
+    return VGC(c);
+}

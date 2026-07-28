@@ -22,6 +22,7 @@
 struct Entrant {
     char      tag[4];       // three characters and a NUL -- the callsign
     ShipClass cls;
+    float     hue;          // trail colour, 0..1 -- identity, and nothing else
     float     rating;       // seeding strength, and the odds in a simulated match
     bool      is_player;
 };

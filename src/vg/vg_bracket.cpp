@@ -53,6 +53,10 @@ bool vg_bracket_ready_at(float x, float y) {
     return vg_in_rect(x, y, BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H);
 }
 
+bool vg_bracket_repair_at(float x, float y) {
+    return vg_in_rect(x, y, BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H);
+}
+
 // Where a slot sits in canvas space. In round r each surviving entrant spans
 // 2^r of the eight base rows, so its centre is the middle of that span -- which
 // is what makes the tree converge on the final.
@@ -110,12 +114,18 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
 
     const Entrant* e = &vt.entrant[idx];
 
+    // Trail colour down the left edge. This is the one place the interface
+    // carries hue, and it earns it: colour here means WHO, exactly as it will
+    // when the same colour is streaming off their ship.
+    const uint16_t hue = alive ? vg_hue_col(e->hue) : INK_TRACE;
+
     if (e->is_player) {
-        // Inverse video for you. Brightness and inversion carry hierarchy here;
-        // hue is reserved for identity and is not spent on the bracket.
+        // Inverse video for you -- hierarchy is still brightness and inversion.
         vg_fill_rect(sx, sy, BOX_W, BOX_H, INK_BRIGHT);
-        vg_text(sx + 3, sy + 4, e->tag, COL_BLACK, 2);
-        vg_text(sx + 42, sy + 7, vg_spec(e->cls)->name, COL_BLACK, 1);
+        vg_fill_rect(sx, sy, 4, BOX_H, hue);
+        vg_text(sx + 7, sy + 4, e->tag, COL_BLACK, 2);
+        char pc[2] = { vg_spec(e->cls)->name[0], 0 };
+        vg_text(sx + 45, sy + 7, pc, COL_BLACK, 1);
         return;
     }
 
@@ -123,11 +133,12 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
     uint16_t ink   = alive ? (is_next_opp ? INK_MAX : INK_BRIGHT) : INK_FAINT;
 
     vg_rect(sx, sy, BOX_W, BOX_H, frame);
-    vg_text(sx + 3, sy + 4, e->tag, ink, 2);
+    vg_fill_rect(sx + 1, sy + 1, 3, BOX_H - 2, hue);
+    vg_text(sx + 7, sy + 4, e->tag, ink, 2);
     // One character of ship class: A / L / C / B. That is what makes the sheet
     // tactical -- seeing a BALLISTA two rounds out is something you can plan for.
     char cls[2] = { vg_spec(e->cls)->name[0], 0 };
-    vg_text(sx + 42, sy + 7, cls, ink, 1);
+    vg_text(sx + 45, sy + 7, cls, ink, 1);
 
     if (!alive) {
         // Struck through and dropped to the dim ink level: out, but still part
@@ -216,15 +227,30 @@ void vg_draw_bracket(void) {
     // --- footer ---
     vg_fill_rect(0, VIEW_Y0 + VIEW_H, SCR_W, SCR_H - VIEW_Y0 - VIEW_H, COL_BLACK);
 
-    snprintf(buf, sizeof(buf), "%s  HULL %d/%d", vg.spec->name,
-             (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
-    vg_text((SCR_W - vg_text_width(buf, 2)) / 2, VIEW_Y0 + VIEW_H + 6, buf,
-            INK_FAINT, 2);
+    const int hurt = (int)(vg.health_max - vg.health + 0.5f);
+
+    snprintf(buf, sizeof(buf), "%s  HULL %d/%d   CREDITS %d", vg.spec->name,
+             (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f), vg.credits);
+    vg_text((SCR_W - vg_text_width(buf, 1)) / 2, VIEW_Y0 + VIEW_H + 2, buf,
+            INK_FAINT, 1);
+
+    if (CANVAS_W > SCR_W)
+        vg_text(8, VIEW_Y0 + VIEW_H + 2, "DRAG", INK_FAINT, 1);
+
+    // REPAIR only lights up when there is both damage to undo and money to do it
+    // with, so the button itself answers "can I afford this".
+    const bool can_repair = hurt > 0 && vg.credits >= CREDIT_PER_HULL;
+    if (can_repair) {
+        vg_fill_rect(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, INK);
+        vg_text(BRK_REP_X + (BRK_REP_W - vg_text_width("REPAIR", 3)) / 2,
+                BRK_REP_Y + (BRK_REP_H - 21) / 2, "REPAIR", COL_BLACK, 3);
+    } else {
+        vg_rect(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, INK_TRACE);
+        vg_text(BRK_REP_X + (BRK_REP_W - vg_text_width("REPAIR", 3)) / 2,
+                BRK_REP_Y + (BRK_REP_H - 21) / 2, "REPAIR", INK_TRACE, 3);
+    }
 
     vg_fill_rect(BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H, INK_BRIGHT);
     vg_text(BRK_GO_X + (BRK_GO_W - vg_text_width("READY", 3)) / 2,
             BRK_GO_Y + (BRK_GO_H - 21) / 2, "READY", COL_BLACK, 3);
-
-    if (CANVAS_W > SCR_W)
-        vg_text(8, VIEW_Y0 + VIEW_H + 10, "DRAG TO PAN", INK_FAINT, 1);
 }

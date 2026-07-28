@@ -49,10 +49,12 @@ void vg_tourney_begin(ShipClass player_class) {
 
     // --- the player, always seed 1 ---
     Entrant* p = &vt.entrant[0];
-    // Placeholder until callsign entry exists. Three characters, like everyone
-    // else's, so the bracket layout is already correct.
-    strcpy(p->tag, "YOU");
+    p->tag[0]    = vg.callsign[0];
+    p->tag[1]    = vg.callsign[1];
+    p->tag[2]    = vg.callsign[2];
+    p->tag[3]    = 0;
     p->cls       = player_class;
+    p->hue       = vg.trail_hue;
     p->rating    = 1.0f;
     p->is_player = true;
 
@@ -75,6 +77,17 @@ void vg_tourney_begin(ShipClass player_class) {
         // player could read the whole tournament off the class glyphs.
         e->rating    = vg_frand(0.55f, 1.00f);
         e->is_player = false;
+
+        // Golden-ratio stepping spreads fifteen hues about as evenly as anything
+        // can, and keeping clear of the player's own colour matters more than
+        // any of them: your trail has to be the one you never mistake.
+        float h = (float)i * 0.6180339f;
+        h -= (float)(int)h;
+        float d = h - vg.trail_hue;
+        if (d < 0.0f) d = -d;
+        if (d > 0.5f) d = 1.0f - d;
+        if (d < 0.06f) { h += 0.13f; if (h >= 1.0f) h -= 1.0f; }
+        e->hue = h;
     }
 
     // --- seed 2..16 by rating, then lay them into the bracket ---

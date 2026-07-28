@@ -101,7 +101,9 @@ struct Debris {
 // ATTRACT), to OVER when the player dies, and to WON on taking the final.
 enum VgState : uint8_t {
     VG_ATTRACT = 0,
+    VG_ENTRY,             // callsign and trail colour
     VG_SELECT,            // ship selection -- once per tournament, then locked
+    VG_REPAIR,            // spend credits on hull, reached from the bracket
     VG_BRACKET,           // the tournament map
     VG_PLAYING,
     VG_HIT,               // brief invulnerable pause after taking a hit
@@ -113,7 +115,8 @@ enum VgState : uint8_t {
 
 // Menu states run the attract autopilot underneath and draw no instruments.
 static inline bool vg_state_is_menu(VgState s) {
-    return s == VG_ATTRACT || s == VG_SELECT || s == VG_BRACKET ||
+    return s == VG_ATTRACT || s == VG_ENTRY   || s == VG_SELECT ||
+           s == VG_BRACKET || s == VG_REPAIR  ||
            s == VG_ROUND_WON || s == VG_WON;
 }
 
@@ -128,6 +131,15 @@ struct VgGame {
     // The player's ship, chosen once and flown for a whole tournament.
     ShipClass       ship;
     const ShipSpec* spec;
+
+    // Identity. Three characters like every other entrant, and a hue -- the one
+    // thing in the game allowed to carry colour.
+    char     callsign[4];
+    float    trail_hue;      // 0..1
+
+    // Persistent across runs. NOT reset by starting a tournament: this is the
+    // bank, and losing it would defeat the point of a meta-currency.
+    int      credits;
 
     float    health;       // absolute hull points remaining
     float    health_max;   // ...out of this, from the chosen class
@@ -203,4 +215,7 @@ void vg_tournament_begin(ShipClass c);
 void vg_match_start(void);
 
 void vg_game_select_ship(ShipClass c);
+
+// Credits paid out for the most recent round win, for the ROUND WON card.
+int  vg_last_purse(void);
 void vg_game_update(float dt, const VgInput* in);

@@ -85,13 +85,14 @@ void vg_draw_overlays(void) {
         break;
 
     case VG_ROUND_WON:
-        centred(180, "ROUND WON", INK_MAX, 5);
+        centred(160, "ROUND WON", INK_MAX, 5);
         snprintf(buf, sizeof(buf), "HULL %d/%d",
                  (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
-        centred(250, buf, INK_BRIGHT, 3);
-        // No repair between rounds yet, so this number only ever goes down --
-        // which is exactly the pressure the credit economy is meant to relieve.
-        centred(296, "DAMAGE CARRIES TO THE NEXT ROUND", INK_FAINT, 1);
+        centred(232, buf, INK_BRIGHT, 3);
+        snprintf(buf, sizeof(buf), "+%d CR", vg_last_purse());
+        centred(276, buf, INK_MAX, 4);
+        snprintf(buf, sizeof(buf), "BANK %d", vg.credits);
+        centred(320, buf, INK_FAINT, 2);
         break;
 
     case VG_WON:

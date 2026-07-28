@@ -10,6 +10,7 @@
 //   cfg_combat.h   missiles, player weapons, enemy behaviour
 //   cfg_world.h    arena, asteroids, stars, motes, spawning and culling
 //   cfg_hud.h      HUD layout, radar geometry, touch zones, gestures
+//   cfg_econ.h     credit purses, repair pricing, the bank ceiling
 
 #include "cfg_display.h"
 #include "cfg_palette.h"
@@ -17,3 +18,4 @@
 #include "cfg_combat.h"
 #include "cfg_world.h"
 #include "cfg_hud.h"
+#include "cfg_econ.h"

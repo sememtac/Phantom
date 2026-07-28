@@ -180,6 +180,10 @@ void vg_game_init(void) {
     vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
 
     vg.state       = VG_ATTRACT;
+    vg.credits     = CREDIT_START;
+    vg.callsign[0] = 'A'; vg.callsign[1] = 'C'; vg.callsign[2] = 'E';
+    vg.callsign[3] = 0;
+    vg.trail_hue   = 0.52f;          // cyan by default: nothing else on screen is
     vg.ship        = SHIP_AEGIS;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
@@ -473,6 +477,32 @@ static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     *pitch_in = p;
 }
 
+// Purse for the round just won, plus a condition bonus scaled by hull remaining.
+// Flying well therefore pays twice -- you earn more AND need less repair -- but
+// the flat base dominates, so one scrappy match does not spiral the run.
+//
+// Called BEFORE vg_tourney_resolve, which is what advances the round counter.
+static int s_last_purse = 0;
+
+static void award_purse(void) {
+    static const int BASE[TOURNEY_ROUNDS] = {
+        CREDIT_R16, CREDIT_QF, CREDIT_SF, CREDIT_FINAL
+    };
+    const int r    = (vt.round < TOURNEY_ROUNDS) ? vt.round : TOURNEY_ROUNDS - 1;
+    const int base = BASE[r];
+
+    float cond = (vg.health_max > 0.0f) ? (vg.health / vg.health_max) : 0.0f;
+    if (cond < 0.0f) cond = 0.0f;
+    if (cond > 1.0f) cond = 1.0f;
+
+    s_last_purse = base + (int)((float)base * CREDIT_CONDITION_K * cond + 0.5f);
+
+    vg.credits += s_last_purse;
+    if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;
+}
+
+int vg_last_purse(void) { return s_last_purse; }
+
 // Every menu state flies the same idle scene underneath, so the tournament map
 // and the ship select sit over moving space rather than a dead background.
 static void menu_world(float dt) {
@@ -513,7 +543,29 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_ATTRACT: {
         menu_world(dt);
-        if (tap_up) { vg.state = VG_SELECT; vg.state_t = 0; }
+        if (tap_up) {
+            vg_entry_reset();
+            vg.state   = VG_ENTRY;
+            vg.state_t = 0;
+        }
+        break;
+    }
+
+    case VG_ENTRY: {
+        menu_world(dt);
+        if (vg_entry_update(in, tap_up, tap_x, tap_y)) {
+            vg.state   = VG_SELECT;
+            vg.state_t = 0;
+        }
+        break;
+    }
+
+    case VG_REPAIR: {
+        menu_world(dt);
+        if (vg_repair_update(in, tap_up, tap_x, tap_y)) {
+            vg.state   = VG_BRACKET;
+            vg.state_t = 0;
+        }
         break;
     }
 
@@ -540,7 +592,15 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_BRACKET: {
         menu_world(dt);
         if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
-        if (tap_up && vg_bracket_ready_at(tap_x, tap_y)) vg_match_start();
+        if (tap_up) {
+            if (vg_bracket_ready_at(tap_x, tap_y)) {
+                vg_match_start();
+            } else if (vg_bracket_repair_at(tap_x, tap_y)) {
+                vg_repair_reset();
+                vg.state   = VG_REPAIR;
+                vg.state_t = 0;
+            }
+        }
         break;
     }
 
@@ -633,6 +693,10 @@ void vg_game_update(float dt, const VgInput* in) {
             for (int i = 0; i < MAX_ENEMIES; i++)
                 if (vg.enemy[i].alive) opponent_alive = true;
             if (!opponent_alive) {
+                // Paid on the kill, not on the bracket advance, so the ROUND WON
+                // card can show the purse -- and because vg_tourney_resolve is
+                // what moves the round counter the payout reads off.
+                award_purse();
                 vg.state   = VG_ROUND_WON;
                 vg.state_t = 0;
             }

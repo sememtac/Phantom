@@ -30,8 +30,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // the ship-select screen would be reporting on a fight that is not happening.
     if (vg_state_is_menu(vg.state)) {
         switch (vg.state) {
+        case VG_ENTRY:   vg_draw_entry();    break;
         case VG_SELECT:  vg_draw_select();   break;
         case VG_BRACKET: vg_draw_bracket();  break;
+        case VG_REPAIR:  vg_draw_repair();   break;
         default:         vg_draw_overlays(); break;
         }
         return;
