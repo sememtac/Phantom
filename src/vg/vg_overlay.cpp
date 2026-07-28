@@ -175,12 +175,11 @@ static float title_alpha(void) {
     const float s = ct - STORY_DELAY;
     if (s > STORY_DUR)                 return 1.0f;
 
-    // The landing is the whole point of the sequence, so it gets a long, slow
-    // resolve -- the word is legible in both forms throughout the overlap and
-    // simply firms up into the title rather than swapping over.
-    float out = s / 2.6f;                          // dissolve away as it starts
+    // Long enough to read as a resolve rather than a cut, short enough that the
+    // landing still lands. Six seconds turned it into a wait.
+    float out = s / 1.8f;                          // dissolve away as it starts
     if (out > 1.0f) out = 1.0f;
-    float in = (s - (STORY_DUR - 6.0f)) / 6.0f;    // reassemble as it lands
+    float in = (s - (STORY_DUR - 3.0f)) / 3.0f;    // reassemble as it lands
     if (in < 0.0f) in = 0.0f;
     if (in > 1.0f) in = 1.0f;
 
