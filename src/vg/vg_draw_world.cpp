@@ -24,7 +24,8 @@ void vg_draw_starfield(const VgCam& cam) {
 // mote's tail lies further away than its head, and the streaks therefore splay
 // outward from the vanishing point exactly as they should.
 static void draw_motes(const VgCam& cam) {
-    float sn = (vg.speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN);
+    float sn = (vg.speed - vg.spec->speed_min)
+             / (vg.spec->speed_max - vg.spec->speed_min);
     if (sn <= MOTE_FADE_IN) return;
 
     float f = (sn - MOTE_FADE_IN) / (1.0f - MOTE_FADE_IN);
@@ -196,7 +197,8 @@ static void draw_enemy(const VgCam& cam, const Ship* s) {
         vg_edge(cam, wv[vg_ship_fin[e][0]], wv[vg_ship_fin[e][1]], col);
 
     // Exhaust: length tracks throttle, so you can read their energy state.
-    float t = (s->speed - ENEMY_SPEED_MIN) / (ENEMY_SPEED_MAX - ENEMY_SPEED_MIN);
+    float t = (s->speed - s->spec->speed_min)
+            / (s->spec->speed_max - s->spec->speed_min);
     if (t < 0) t = 0; else if (t > 1) t = 1;
     Vec3 tail  = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f)), ENEMY_SCALE));
     Vec3 flame = vadd(s->pos, vmul(mat3_apply(B, v3(0, 0, -1.1f - 1.6f * t)), ENEMY_SCALE));

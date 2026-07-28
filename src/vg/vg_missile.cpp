@@ -6,7 +6,8 @@
 // pull so many degrees per second -- and on the seeker cone that turns falling
 // behind that limit into a permanent miss rather than an endless chase.
 
-void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target) {
+void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
+                       const ShipSpec* spec) {
     Missile* m = nullptr;
     for (int i = 0; i < MAX_MISSILES; i++) if (!vg.msl[i].alive) { m = &vg.msl[i]; break; }
     if (!m) return;
@@ -14,9 +15,10 @@ void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target) {
     m->alive       = true;
     m->from_player = from_player;
     m->locked      = true;
+    m->spec        = spec;
     m->pos         = pos;
     m->dir         = vnorm(dir);
-    m->life        = MISSILE_LIFE;
+    m->life        = spec->msl_life;
     m->age         = 0;
     m->target      = target;
     m->last_range  = 1e9f;
@@ -54,12 +56,25 @@ static void detonate(Missile* m, bool hit) {
     m->alive = false;
 }
 
-static void hit_enemy(int index) {
+// Damage falls off with how close the fuse actually went off: full value dead
+// centre, down to the warhead's graze floor out at the rim. This is what makes
+// LANCE and CHARIOT different playstyles rather than different numbers -- a
+// narrow high-yield warhead demands correct geometry, a wide low-yield one
+// rewards volume. It reads off the ATTACKER's spec, because it is a distinction
+// about shooting, and it applies symmetrically to the player's own aim.
+static float impact_damage(const Missile* m, float range) {
+    const ShipSpec* w = m->spec;
+    float t = 1.0f - range / MISSILE_HIT_RADIUS;   // 1 at the centre, 0 at the rim
+    if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+    return w->msl_damage * (w->msl_graze_floor + (1.0f - w->msl_graze_floor) * t);
+}
+
+static void hit_enemy(int index, float dmg) {
     Ship* s = &vg.enemy[index];
     if (!s->alive) return;
-    s->hp--;
+    s->hull -= dmg;
     s->hit_flash = 0.2f;
-    if (s->hp <= 0) {
+    if (s->hull <= 0.0f) {
         vg_spawn_debris(s->pos, 22.0f, 14);
         s->alive = false;
         vg.kills++;
@@ -97,22 +112,28 @@ void vg_update_missiles(float dt) {
                     // bends the flight path into the arc you actually see.
                     Vec3 aim = tpos;
                     if (m->age > MISSILE_ARM_TIME) {
-                        float t_int = range / MISSILE_SPEED;
+                        float t_int = range / m->spec->msl_speed;
                         if (t_int > 1.2f) t_int = 1.2f;
                         aim = vadd(tpos, vmul(tvel, t_int));
                     }
                     m->dir = vg_turn_toward(m->dir, vsub(aim, m->pos),
-                                            MISSILE_TURN_RATE * dt);
+                                            m->spec->msl_turn * dt);
                 }
             }
 
             // Proximity fuse: once inside fuse range and the range starts opening
             // again, this is the closest we will ever get.
             if (range < MISSILE_HIT_RADIUS * 2.5f && range > m->last_range) {
-                bool hit = range < MISSILE_HIT_RADIUS;
+                // Score off the CLOSEST approach, not the current range. The fuse
+                // fires on the frame after the range starts opening again, so
+                // using `range` would charge every detonation a frame's worth of
+                // separation it never actually had -- which at 12 units per frame
+                // against an 18-unit radius is most of the falloff curve.
+                bool hit = m->last_range < MISSILE_HIT_RADIUS;
                 if (hit) {
-                    if (m->target < 0) vg_damage_player(DMG_MISSILE);
-                    else               hit_enemy(m->target);
+                    float dmg = impact_damage(m, m->last_range);
+                    if (m->target < 0) vg_damage_player(dmg);
+                    else               hit_enemy(m->target, dmg);
                 }
                 detonate(m, hit);
                 continue;
@@ -120,7 +141,7 @@ void vg_update_missiles(float dt) {
             m->last_range = range;
         }
 
-        m->pos = vadd(m->pos, vmul(m->dir, MISSILE_SPEED * dt));
+        m->pos = vadd(m->pos, vmul(m->dir, m->spec->msl_speed * dt));
 
         m->trail_acc += dt;
         if (m->trail_acc >= TRAIL_SAMPLE_DT) {

@@ -79,14 +79,17 @@ void vg_draw_overlays(void) {
     switch (vg.state) {
     case VG_ATTRACT:
         draw_glitch_title("PHANTOM", 150, 7);
+        // Temporary ship select, until the entry screen exists.
+        centred(250, vg.spec->name, INK_BRIGHT, 4);
         if (fmodf(vg.state_t, 1.2f) < 0.8f)
-            centred(285, "TOUCH TO START", INK_MAX, 3);
+            centred(300, "TOUCH TO START", INK_MAX, 3);
         break;
 
     case VG_HIT:
         if (fmodf(vg.state_t, 0.5f) < 0.3f)
             centred(200, "DAMAGE", COL_DANGER, 5);
-        snprintf(buf, sizeof(buf), "HULL %d", (int)(vg.health * 100.0f + 0.5f));
+        snprintf(buf, sizeof(buf), "HULL %d",
+                 (int)(vg.health / vg.health_max * 100.0f + 0.5f));
         centred(258, buf, INK_MAX, 3);
         break;
 

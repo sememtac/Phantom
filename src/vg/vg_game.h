@@ -3,6 +3,7 @@
 #include "vg_vec.h"
 #include "vg_config.h"
 #include "vg_input.h"
+#include "vg_ship.h"
 
 // The whole simulation lives in VIEW SPACE: the player is permanently at the
 // origin looking down +z, and the world rotates and translates around it. That
@@ -38,12 +39,19 @@ struct Asteroid {
 // the pair is re-orthonormalised every frame, which a matrix would not be.
 struct Ship {
     bool  alive;
+    // Which class this fighter is flying. Everything about its performance comes
+    // from here, so an NPC BALLISTA is the same ship the player can pick.
+    const ShipSpec* spec;
+    // Pilot quality, as a scale on turn rate. The bracket will eventually seed
+    // this per entrant; for now it is a constant that reproduces the difficulty
+    // the game had when enemies were strictly worse than the player.
+    float skill;
     Vec3  pos;
     Vec3  fwd;
     Vec3  up;
     float speed;
     float target_speed;
-    int   hp;
+    float hull;           // absolute points, counted down from spec->hull
     float fire_cd;
     float evade_t;        // >0 while breaking away from an incoming missile
     Vec3  evade_dir;
@@ -58,6 +66,10 @@ struct Missile {
     bool    alive;
     bool    from_player;
     bool    locked;       // false once the seeker has broken lock: goes ballistic
+    // The warhead that launched this round. A pointer into static storage, so it
+    // stays valid even after the ship that fired it has been destroyed -- which
+    // matters, because a missile routinely outlives its launcher.
+    const ShipSpec* spec;
     Vec3    pos;
     Vec3    dir;          // unit heading
     float   life;
@@ -93,8 +105,12 @@ struct VgGame {
     int      kills;
     float    difficulty;
 
-    float    health;       // 0..1 hull integrity; replaces discrete lives
-    float    combat_t;     // seconds since the last damage or tracking threat
+    // The player's ship, chosen once and flown for a whole tournament.
+    ShipClass       ship;
+    const ShipSpec* spec;
+
+    float    health;       // absolute hull points remaining
+    float    health_max;   // ...out of this, from the chosen class
 
     float    throttle;    // smoothed by the flight model, 0..1
     // A second, much faster-tracking copy of the same command, used only by the
@@ -159,4 +175,5 @@ Mat3 vg_ship_basis(const Ship* s);
 
 void vg_game_init(void);
 void vg_game_start(void);
+void vg_game_select_ship(ShipClass c);
 void vg_game_update(float dt, const VgInput* in);

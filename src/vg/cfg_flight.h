@@ -9,6 +9,11 @@
 // nothing useful can be done up there: the turn rate collapses and a lock takes
 // far longer to acquire than the geometry will hold. Fast is how you SURVIVE
 // and disengage; slow is the only way to FIGHT.
+//
+// THESE ARE REFERENCE VALUES ONLY -- they are AEGIS's numbers, kept here for
+// input calibration and for anything that needs a scale before a ship is known.
+// The values the simulation actually uses come from ShipSpec (vg_ship.h), so a
+// CHARIOT tops out at 460 and a BALLISTA at 340.
 #define SPEED_MIN            100.0f   // world units/sec at zero throttle
 #define SPEED_MAX            420.0f   // ...and at full throttle
 
@@ -61,21 +66,24 @@
 #define TILT_PITCH_SIGN      (1.0f)   // flip if up/down is reversed
 
 // --- hull ------------------------------------------------------------------
-// A single meter, not discrete lives. It self-repairs after a spell out of
-// combat, but ONLY while above the floor -- drop below and the damage is
-// permanent, so a bad fight leaves you crippled for the rest of the run.
-#define HEALTH_REGEN_DELAY   5.0f     // seconds clear of combat before repair
-#define HEALTH_REGEN_RATE    0.075f   // fraction per second (~13s for a full bar)
-#define HEALTH_REGEN_FLOOR   0.30f    // below this the hull will not self-repair
-#define HEALTH_LOW           0.30f    // meter blinks below this
-#define THREAT_COMBAT_RANGE  700.0f   // a tracking missile this close = in combat
+// An absolute pool of points, per ship class (see vg_ship.h), not a fraction --
+// so an AEGIS and a CHARIOT can differ. AEGIS carries 110.
+//
+// There is NO self-repair. Damage is permanent for an entire tournament and the
+// only way to undo it is to pay credits for it between rounds, which is what
+// makes the economy the difficulty curve rather than a side system. Removing
+// regen also closed the stalemate case: every hit now counts for good, so a
+// match strictly progresses toward a conclusion and needs no clock.
+#define HEALTH_LOW           0.30f    // meter blinks below this FRACTION of max
 
-#define DMG_MISSILE          0.34f
-#define DMG_ASTEROID         0.26f
-#define DMG_RAM              0.42f
-// Fatal. Flying into the world boundary ends the run outright, which is what
-// gives the high-speed escape option a real cost -- you are least able to turn
-// exactly when you are covering ground fastest.
-#define DMG_WALL             1.0f
+// Missile damage is not here -- it comes from the launching ship's warhead and
+// scales with how close the fuse went off (ShipSpec::msl_damage / graze_floor).
+// These are the collisions, in hull points against a ~100-point ship.
+#define DMG_ASTEROID         26.0f
+#define DMG_RAM              42.0f
+// Fatal outright, on any hull. Flying into the world boundary ends the run,
+// which is what gives the high-speed escape option a real cost -- you are least
+// able to turn exactly when you are covering ground fastest.
+#define DMG_WALL             1.0e9f
 
 #define SHIP_RADIUS          9.0f

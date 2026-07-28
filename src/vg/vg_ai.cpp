@@ -42,6 +42,17 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) return;
     if (s->hit_flash > 0) s->hit_flash -= dt;
 
+    // Everything below is expressed as a fraction of THIS ship's own capability
+    // rather than as an absolute, so a BALLISTA settles to a fighting speed at
+    // 2600 units and a CHARIOT at 1200 without the behaviour code knowing that
+    // ship classes exist. It is not per-archetype behaviour -- a BALLISTA still
+    // flies the same fight an AEGIS does, just from further out.
+    const ShipSpec* sp  = s->spec;
+    const float smin    = sp->speed_min;
+    const float smax    = sp->speed_max;
+    const float close_r = sp->lock_range * ENEMY_CLOSE_RANGE_K;
+    const float fire_r  = sp->lock_range * ENEMY_FIRE_RANGE_K;
+
     float  inc_range = 1e9f;
     const Missile* inc = incoming_for(index, &inc_range);
 
@@ -52,7 +63,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     if (eclear < ARENA_ENEMY_MARGIN) {
         desired = vg_arena_dir_to_view(vg_arena_inward(elocal));
-        s->target_speed = (ENEMY_SPEED_MIN + ENEMY_SPEED_MAX) * 0.5f;
+        s->target_speed = (smin + smax) * 0.5f;
         s->evade_t = 0;
         s->break_t = 0;
 
@@ -66,7 +77,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         }
         desired = s->evade_dir;
         // Bleed speed to tighten the break -- the same trick the player has.
-        s->target_speed = ENEMY_SPEED_MIN * 1.15f;
+        s->target_speed = smin * 1.15f;
 
     } else {
         s->evade_t = 0;
@@ -87,7 +98,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 s->offset_dir = vg_rand_unit();
             }
             desired = s->break_dir;
-            s->target_speed = ENEMY_SPEED_MAX;
+            s->target_speed = smax;
         } else {
             // Aim at a point BESIDE the player. A pursuit curve that converges
             // perfectly on its aim point then produces a firing pass rather than
@@ -96,9 +107,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             desired  = vsub(aim, s->pos);
             // Close fast, then bleed off to a speed they can actually fight at --
             // the same decision the player has to make.
-            s->target_speed = (range > ENEMY_CLOSE_RANGE)
-                              ? ENEMY_SPEED_MAX * 0.85f
-                              : ENEMY_SPEED_MIN + (ENEMY_SPEED_MAX - ENEMY_SPEED_MIN) * 0.35f;
+            s->target_speed = (range > close_r)
+                              ? smax * 0.85f
+                              : smin + (smax - smin) * 0.35f;
         }
     }
 
@@ -107,9 +118,11 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     // Same trade the player gets: bleeding speed buys turn rate. Without this
     // their evasive break is too lazy to ever defeat a seeker.
-    float snorm = (s->speed - ENEMY_SPEED_MIN) / (ENEMY_SPEED_MAX - ENEMY_SPEED_MIN);
+    float snorm = (s->speed - smin) / (smax - smin);
     if (snorm < 0) snorm = 0; else if (snorm > 1) snorm = 1;
-    float erate = ENEMY_TURN_RATE * (1.0f + 0.60f * (1.0f - snorm) - 0.25f * snorm);
+    float erate = sp->turn_rate * s->skill
+                * (1.0f + sp->agility_slow_bonus * (1.0f - snorm)
+                        - sp->agility_fast_malus * snorm);
 
     // Turn, and derive the visual bank from which way we are pulling.
     Vec3 before = s->fwd;
@@ -134,12 +147,12 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     s->fire_cd -= dt;
     Vec3  to      = vsub(v3(0, 0, 0), s->pos);
     float range   = vlen(to);
-    float fire_sn = (s->speed - ENEMY_SPEED_MIN) / (ENEMY_SPEED_MAX - ENEMY_SPEED_MIN);
+    float fire_sn = (s->speed - smin) / (smax - smin);
 
-    if (s->fire_cd <= 0 && range < ENEMY_FIRE_RANGE && range > 60.0f &&
+    if (s->fire_cd <= 0 && range < fire_r && range > 60.0f &&
         fire_sn < ENEMY_ENGAGE_SPEED &&
         vdot(s->fwd, vnorm(to)) > ENEMY_FIRE_COS) {
-        vg_launch_missile(false, vadd(s->pos, vmul(s->fwd, 4.0f)), s->fwd, -1);
-        s->fire_cd = ENEMY_FIRE_GAP * vg_frand(0.8f, 1.3f);
+        vg_launch_missile(false, vadd(s->pos, vmul(s->fwd, 4.0f)), s->fwd, -1, sp);
+        s->fire_cd = sp->reload * ENEMY_FIRE_GAP_K * vg_frand(0.8f, 1.3f);
     }
 }

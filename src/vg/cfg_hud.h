@@ -58,6 +58,8 @@
 // left/right arrangement was unknown; GPIO 18 turned out to be the +/- key.
 //   0x01 = BOOT   0x02 = +/-   0x03 = either
 #define FIRE_BUTTON_MASK     0x01
+// The other one. Menus only -- currently cycles the ship class on the title card.
+#define ALT_BUTTON_MASK      0x02
 
 // --- gestures --------------------------------------------------------------
 // A contact that lifts quickly without travelling counts as a tap, and fires.

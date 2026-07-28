@@ -46,7 +46,9 @@ static void draw_health(void) {
     const int x = 14, y = 16, w = 180, h = 26;
     hud_panel(x, y, w, h, "HULL");
 
-    float hp = vg.health;
+    // Hull is absolute points now, so the gauge shows the FRACTION -- a CHARIOT
+    // at 70/70 reads as full, same as an AEGIS at 110/110.
+    float hp = (vg.health_max > 0.0f) ? (vg.health / vg.health_max) : 0.0f;
     if (hp < 0.0f) hp = 0.0f;
     if (hp > 1.0f) hp = 1.0f;
 
@@ -61,10 +63,9 @@ static void draw_health(void) {
     for (int i = 1; i < 5; i++)
         vg_fill_rect(x + 4 + (w - 8) * i / 5, y + 4, 2, h - 8, INK_ONFILL);
 
-    // A repair in progress is worth showing -- it is the reward for disengaging.
-    if (vg.combat_t > HEALTH_REGEN_DELAY && hp >= HEALTH_REGEN_FLOOR && hp < 1.0f &&
-        fmodf(vg.state_t, 0.7f) < 0.45f)
-        vg_text(x + w + 8, y + 8, "RPR", INK_FAINT, 1);
+    // The ship's name sits beside the gauge. Which class you are flying changes
+    // what every other number on this HUD means, so it belongs on screen.
+    vg_text(x + w + 8, y + 8, vg.spec->name, INK_FAINT, 1);
 }
 
 static void draw_throttle(void) {
@@ -217,7 +218,7 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
-    float need = (vg.lock_need > 0.01f) ? vg.lock_need : PLAYER_LOCK_TIME;
+    float need = (vg.lock_need > 0.01f) ? vg.lock_need : vg.spec->lock_time;
     float prog = vg.lock_t / need;
     if (prog > 1.0f) prog = 1.0f;
 
@@ -250,7 +251,7 @@ void vg_draw_lock_box(const VgCam& cam) {
     if (bw < 38.0f)  bw = 38.0f;
     if (bw > 130.0f) bw = 130.0f;
 
-    float hp = (float)s->hp / (float)ENEMY_HP;
+    float hp = s->hull / s->spec->hull;
     if (hp < 0.0f) hp = 0.0f;
     if (hp > 1.0f) hp = 1.0f;
 
@@ -261,6 +262,9 @@ void vg_draw_lock_box(const VgCam& cam) {
     int fw = (int)((bw - 4.0f) * hp);
     if (fw > 0)
         vg_fill_rect(bx + 2, by + 2, fw, 4, vg_mix(COL_HEALTH_LOW, INK_BRIGHT, hp));
+
+    // What you are up against decides whether to close or extend, so name it.
+    vg_text(bx, by - 12, s->spec->name, INK_FAINT, 1);
 
     if (vg.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
 }
@@ -303,7 +307,7 @@ void vg_draw_target_markers(const VgCam& cam) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
-        if (vlen(s->pos) > PLAYER_LOCK_RANGE) continue;
+        if (vlen(s->pos) > vg.spec->lock_range) continue;
 
         uint16_t col = (i == vg.lock_target) ? INK_MAX : COL_HUD;
 
@@ -355,11 +359,20 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
 
     // Missile rack: one tick per round, hollow while rearming. Vertical on the
     // right edge to mirror the throttle and leave the bottom for the radar.
-    hud_panel(SCR_W - 40, 140, 30, PLAYER_MISSILES * 22 + 8, "MSL");
-    for (int i = 0; i < PLAYER_MISSILES; i++) {
-        int y = 148 + i * 22;
-        if (i < vg.missiles) vg_fill_rect(SCR_W - 34, y, 18, 16, INK_BRIGHT);
-        else                 vg_rect(SCR_W - 34, y, 18, 16, INK_TRACE);
+    // The rack fits itself to the magazine: BALLISTA carries three rounds and
+    // CHARIOT twelve, and at a fixed 22px pitch a twelve-round stack would run
+    // straight down through the radar.
+    const int mag   = vg.spec->magazine;
+    int       pitch = 22;
+    if (mag > 0 && mag * pitch > 250) pitch = 250 / mag;
+    int cell = pitch - 6;
+    if (cell < 6) cell = 6;
+
+    hud_panel(SCR_W - 40, 140, 30, mag * pitch + 8, "MSL");
+    for (int i = 0; i < mag; i++) {
+        int y = 148 + i * pitch;
+        if (i < vg.missiles) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
+        else                 vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
     }
 
     // Speed reads top-centre, right where the eye already is for the crosshair,

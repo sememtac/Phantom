@@ -26,6 +26,7 @@ static float s_steer_moved = 0;                // max distance from origin, px
 static float s_yaw = 0, s_pitch = 0;           // smoothed deflection
 static bool  s_prev_steer_contact = false;
 static bool  s_prev_fire_btn      = false;
+static bool  s_prev_alt_btn       = false;
 
 // ---- tilt (STEER_MODE 2 only) ----
 static float s_ax = 0, s_ay = 0, s_az = 1;
@@ -268,10 +269,16 @@ void vg_input_update(float dt, VgInput* out) {
     // would empty the rack in three seconds, which is the opposite of the
     // deliberate, committed shot the lock mechanic is built around. No debounce
     // needed -- PLAYER_FIRE_GAP already swallows any contact chatter.
-    const bool fire_btn = (vg_buttons_read() & FIRE_BUTTON_MASK) != 0;
+    const uint8_t btns = vg_buttons_read();
+
+    const bool fire_btn = (btns & FIRE_BUTTON_MASK) != 0;
     out->fire_btn  = fire_btn;
     out->fire_edge = fire_btn && !s_prev_fire_btn;
     s_prev_fire_btn = fire_btn;
+
+    const bool alt_btn = (btns & ALT_BUTTON_MASK) != 0;
+    out->alt_edge = alt_btn && !s_prev_alt_btn;
+    s_prev_alt_btn = alt_btn;
 
     out->tap_edge  = steer_contact && !s_prev_steer_contact;
     out->any_touch = (n > 0);

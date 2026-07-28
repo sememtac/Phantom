@@ -53,6 +53,13 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
 
 static void spawn_enemy(int i) {
     Ship* s = &vg.enemy[i];
+
+    // Random class for now, so all four turn up as opponents and can be felt
+    // from the receiving end. The tournament will assign these from the bracket.
+    ShipClass cls = (ShipClass)((uint32_t)(vg_frand01() * SHIP_CLASSES) % SHIP_CLASSES);
+    s->spec  = vg_spec(cls);
+    s->skill = ENEMY_SKILL;
+
     // Out ahead but off-axis, so a fight opens with a merge rather than with
     // someone already on someone's tail.
     Vec3 dir = vnorm(v3(vg_frand(-0.7f, 0.7f), vg_frand(-0.5f, 0.5f), 1.0f));
@@ -62,9 +69,9 @@ static void spawn_enemy(int i) {
                           ARENA_SPAWN_MARGIN);
     s->fwd          = vnorm(vsub(v3(0, 0, 0), s->pos));   // pointed at the player
     s->up           = v3(0, 1, 0);
-    s->speed        = (ENEMY_SPEED_MIN + ENEMY_SPEED_MAX) * 0.5f;
+    s->speed        = (s->spec->speed_min + s->spec->speed_max) * 0.5f;
     s->target_speed = s->speed;
-    s->hp           = ENEMY_HP;
+    s->hull         = s->spec->hull;
     s->fire_cd      = vg_frand(1.5f, 3.0f);
     s->evade_t      = 0;
     s->break_t      = 0;
@@ -88,7 +95,6 @@ void vg_damage_player(float amount) {
     if (vg.state == VG_HIT) return;
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
-    vg.combat_t  = 0.0f;              // repair clock restarts
     vg.hit_flash = 0.6f;
     vg.shake     = 1.0f;
     s_player_hit = true;
@@ -108,7 +114,7 @@ static void update_lock(float dt) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
         float range = vlen(s->pos);
-        if (range > PLAYER_LOCK_RANGE || range < 1.0f) continue;
+        if (range > vg.spec->lock_range || range < 1.0f) continue;
         float c = vdot(vnorm(s->pos), v3(0, 0, 1));   // player looks down +z
         if (c > best_c) { best_c = c; best = i; }
     }
@@ -116,10 +122,11 @@ static void update_lock(float dt) {
     // Lock time scales with speed. This is what puts a fast ship out of effective
     // engagement range, and because it is re-evaluated every frame, accelerating
     // away also drops a lock you had already earned.
-    float sn = (vg.speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN);
+    float sn = (vg.speed - vg.spec->speed_min)
+             / (vg.spec->speed_max - vg.spec->speed_min);
     if (sn < 0.0f) sn = 0.0f;
     if (sn > 1.0f) sn = 1.0f;
-    vg.lock_need = PLAYER_LOCK_TIME * (1.0f + LOCK_SPEED_PENALTY * sn);
+    vg.lock_need = vg.spec->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
 
     if (best < 0) {
         vg.lock_target = -1;
@@ -148,7 +155,8 @@ static void player_fire(void) {
     rail ^= 1;
     Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
 
-    vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)), vg.lock_target);
+    vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)), vg.lock_target,
+                      vg.spec);
     vg.missiles--;
     vg.fire_gap = PLAYER_FIRE_GAP;
 }
@@ -173,12 +181,27 @@ void vg_game_init(void) {
     vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
 
     vg.state       = VG_ATTRACT;
-    vg.health      = 1.0f;
+    vg.ship        = SHIP_AEGIS;
+    vg.spec        = vg_spec(vg.ship);
+    vg.health_max  = vg.spec->hull;
+    vg.health      = vg.health_max;
     vg.throttle    = 0.45f;
-    vg.speed       = SPEED_MIN;
+    vg.speed       = vg.spec->speed_min;
     vg.difficulty  = 1.0f;
-    vg.missiles    = PLAYER_MISSILES;
+    vg.missiles    = vg.spec->magazine;
     vg.lock_target = -1;
+}
+
+// Cycle the player's ship. Temporary: this is what the entry screen will do once
+// callsign and trail colour join it, but flying all four is the only way to find
+// out whether CHARIOT is actually fun, and that wants answering before any
+// tournament code exists.
+void vg_game_select_ship(ShipClass c) {
+    vg.ship       = (c < SHIP_CLASSES) ? c : SHIP_AEGIS;
+    vg.spec       = vg_spec(vg.ship);
+    vg.health_max = vg.spec->hull;
+    vg.health     = vg.health_max;
+    vg.missiles   = vg.spec->magazine;
 }
 
 void vg_game_start(void) {
@@ -191,15 +214,18 @@ void vg_game_start(void) {
     vg.state_t     = 0;
     vg.score       = 0;
     vg.kills       = 0;
-    vg.health      = 1.0f;
-    vg.combat_t    = HEALTH_REGEN_DELAY;
+    // Full hull at the start of a run. Between tournament rounds this will be
+    // whatever the player could afford to repair instead.
+    vg.spec        = vg_spec(vg.ship);
+    vg.health_max  = vg.spec->hull;
+    vg.health      = vg.health_max;
     vg.difficulty  = 1.0f;
     vg.throttle    = 0.5f;
     vg.bank        = 0;
     vg.shake       = 0;
     vg.hit_flash   = 0;
-    vg.missiles    = PLAYER_MISSILES;
-    vg.reload_t    = PLAYER_RELOAD;
+    vg.missiles    = vg.spec->magazine;
+    vg.reload_t    = vg.spec->reload;
     vg.fire_gap    = 0;
     vg.lock_target = -1;
     vg.lock_t      = 0;
@@ -238,7 +264,8 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
     // between outrunning a missile and not.
     if (fabsf(throttle_in - vg.throttle) < 0.002f) vg.throttle = throttle_in;
 
-    vg.speed = SPEED_MIN + (SPEED_MAX - SPEED_MIN) * vg.throttle;
+    vg.speed = vg.spec->speed_min
+             + (vg.spec->speed_max - vg.spec->speed_min) * vg.throttle;
 
     // Visual-only tracking of the same command, several times faster.
     float kv = dt * THROTTLE_VIS_LERP;
@@ -248,10 +275,10 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
 
     // Turn rate falls off with speed. Backing off tightens the turn; firewalling
     // it flattens you out. This is what makes the throttle a combat control.
-    vg.agility = 1.0f + AGILITY_SLOW_BONUS * (1.0f - vg.throttle)
-                      - AGILITY_FAST_MALUS * vg.throttle;
+    vg.agility = 1.0f + vg.spec->agility_slow_bonus * (1.0f - vg.throttle)
+                      - vg.spec->agility_fast_malus * vg.throttle;
 
-    float rate  = TURN_RATE * vg.agility;
+    float rate  = vg.spec->turn_rate * vg.agility;
     float yaw   = yaw_in   * rate * dt;
     float pitch = pitch_in * rate * dt;
 
@@ -449,6 +476,9 @@ void vg_game_update(float dt, const VgInput* in) {
         vg.spawn_t -= dt;
         if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
         vg_update_missiles(dt);
+        // Temporary ship select: the +/- key cycles classes on the title card.
+        if (in->alt_edge)
+            vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
         if (in->tap_edge) vg_game_start();
         break;
     }
@@ -467,22 +497,14 @@ void vg_game_update(float dt, const VgInput* in) {
         update_lock(dt);
         update_threat();
 
-        // Being hunted counts as combat even before anything connects, so the
-        // hull will not start knitting itself back together while a seeker is
-        // still chasing you.
-        vg.combat_t += dt;
-        if (vg.threat && vg.threat_range < THREAT_COMBAT_RANGE) vg.combat_t = 0.0f;
-
-        if (vg.combat_t > HEALTH_REGEN_DELAY &&
-            vg.health >= HEALTH_REGEN_FLOOR && vg.health < 1.0f) {
-            vg.health += HEALTH_REGEN_RATE * dt;
-            if (vg.health > 1.0f) vg.health = 1.0f;
-        }
+        // No hull regeneration. Damage taken here is carried for the rest of the
+        // tournament and only credits will undo it, which is what makes the
+        // repair economy the difficulty curve rather than a side system.
 
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
-        if (vg.missiles < PLAYER_MISSILES) {
+        if (vg.missiles < vg.spec->magazine) {
             vg.reload_t -= dt;
-            if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = PLAYER_RELOAD; }
+            if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
         }
         if (in->fire_edge) player_fire();
 

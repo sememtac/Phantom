@@ -36,7 +36,11 @@ void vg_clear_player_hit(void);
 
 // --- vg_missile.cpp --------------------------------------------------------
 
-void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target);
+// `spec` is the LAUNCHING ship's class: the round carries its warhead, seeker
+// agility and burn time with it, so a BALLISTA missile behaves like a BALLISTA
+// missile no matter who it is chasing.
+void vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
+                       const ShipSpec* spec);
 void vg_update_missiles(float dt);
 
 // --- vg_ai.cpp -------------------------------------------------------------

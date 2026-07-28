@@ -17,6 +17,8 @@ struct VgInput {
     bool  fire_btn;     // hardware fire button held
     bool  fire_edge;    // ...and its press edge, which is what launches
 
+    bool  alt_edge;     // press edge of the second hardware button (menus)
+
     bool  tap_edge;     // first frame of any new steering-side contact (menus)
     bool  any_touch;
 
