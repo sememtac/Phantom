@@ -26,9 +26,10 @@ enum SkyKind : uint8_t {
     // Anything at or past this is never picked for combat.
     SKY_KINDS,
 
-    // Menu only. The backdrop the player actually sits and looks at, so it is
-    // allowed to be the loudest of the set -- combat backdrops are deliberately
-    // restrained so they never compete with a contact at range.
+    // Menu only: a supermassive black hole, lensed disc and all. The backdrop
+    // the player actually sits and looks at, so it is allowed to be the loudest
+    // of the set -- combat backdrops are deliberately restrained so they never
+    // compete with a contact at range.
     SKY_MENU
 };
 

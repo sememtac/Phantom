@@ -42,6 +42,13 @@
 // foreground is just noise.
 #define SKY_MAX_LEVEL   0.52f
 
+// The menu gets its own, far higher ceiling. That cap above exists to protect
+// thin HUD strokes during a fight -- and the menu has no HUD, only the title
+// and the crawl, both of which are large text sitting mostly over the shadow.
+// Held to the combat ceiling the black hole came out at peak 61/125, which is a
+// dim smudge rather than the thing you are meant to sit and look at.
+#define SKY_MENU_LEVEL  0.92f
+
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
@@ -246,73 +253,99 @@ static void gen_cluster(uint32_t seed) {
     }
 }
 
-// --- menu backdrop ---------------------------------------------------------
+// --- menu backdrop: the black hole -----------------------------------------
 //
-// A galactic plane seen edge-on: a luminous core ridge with dust lanes bitten
-// out of it and a colour run from a hot gold core, through magenta, into deep
-// indigo at the edges. This is the one the player sits in front of for minutes
-// at a time rather than glances past mid-turn, so it carries far more contrast
-// and saturation than any of the combat skies would be allowed.
+// Gargantua. Four features, and it is unmistakable only if all four are there:
 //
-// The ridge is a cosine of (tx*ax + ty*ay) with INTEGER ax, ay. That is what
-// keeps it seamless: any smooth periodic function of an integer lattice
-// direction completes a whole number of cycles across the texture and therefore
-// wraps exactly. An arbitrary straight line would leave a visible join, which is
-// the same trap the nebula's noise fields fell into.
-static void gen_menu(uint32_t seed) {
-    const float TAU = 6.28318531f;
-    const int   ax  = 1 + (int)(hash2(3, 11, seed) % 2u);   // 1..2
-    const int   ay  = 2 + (int)(hash2(7,  5, seed) % 2u);   // 2..3
+//   1. the shadow      a hard black disc, larger than the horizon itself
+//   2. the photon ring a thin, near-white line hugging that edge
+//   3. the disc        seen almost edge-on, running out to either side
+//   4. the halo        the FAR side of the disc, lensed up over the top and
+//                      down under the bottom, closing into a ring
+//
+// (4) is the one that sells it. Without it this is a dot with a stripe; with
+// it, it reads as light being bent around a hole. It is painted as an annulus
+// weighted toward the vertical rather than ray-traced, which is nowhere near
+// the real null geodesics but lands in the same place visually at this size.
+//
+// Everything is measured with wrap_delta, so the whole construction tiles even
+// though it is a single localised object.
+//
+// This suits the panel better than the noise backdrops do, incidentally: it is
+// almost entirely LOW frequency -- a big dark disc and broad smooth arcs -- and
+// low frequency is exactly what survives a 10x nearest-neighbour upscale.
+static void gen_blackhole(uint32_t seed) {
+    const int   cx = SKY_TEX_SIZE / 2;
+    const int   cy = SKY_TEX_SIZE / 2;
+
+    const float R_SHADOW = (float)SKY_TEX_SIZE * 0.115f;   // ~15 texels
+    const float R_PHOTON = R_SHADOW * 1.08f;
+    const float R_HALO   = R_SHADOW * 1.36f;
+    const float HALO_W   = R_SHADOW * 0.20f;
+    // Must not go below about a texel and a half. At 0.055 this worked out to
+    // 0.81 texels -- narrower than the grid it is drawn on, so the sampler
+    // landed off the peak and the ring came out dim and broken instead of the
+    // hard white rim that defines the edge of the shadow. The texture reported
+    // it too: peak 61/125 where a saturated ring should read near 95.
+    const float PHOTON_W = R_SHADOW * 0.125f;
+    const float DISC_H   = (float)SKY_TEX_SIZE * 0.017f;   // half-thickness
+    const float DISC_R   = R_SHADOW * 2.3f;                // radial falloff
 
     for (int ty = 0; ty < SKY_TEX_SIZE; ty++) {
         for (int tx = 0; tx < SKY_TEX_SIZE; tx++) {
-            const int i = (ty << SKY_TEX_BITS) + tx;
+            const int   i  = (ty << SKY_TEX_BITS) + tx;
+            const float dx = wrap_delta(tx, cx);
+            const float dy = wrap_delta(ty, cy);
+            const float r  = sqrtf(dx * dx + dy * dy);
 
-            // Bend the plane with a slow field so it is not a ruled stripe. The
-            // warp is added to the phase, so it stays periodic and still tiles.
-            const float warp = fbm_tex(tx, ty, seed + 1301u, 3, 2) - 0.5f;
-            const float u    = (float)(tx * ax + ty * ay) / (float)SKY_TEX_SIZE
-                             + warp * 0.55f;
+            // Faint dust so the surrounding sky is not dead black.
+            float haze = fbm_tex(tx, ty, seed + 313u, 4, 3);
+            haze = (haze - 0.54f) * 1.3f;
+            if (haze < 0.0f) haze = 0.0f;
+            float lum = haze * 0.10f;
 
-            // Integer powers by multiplication, not powf. Two powf calls per
-            // texel over 16k texels cost more than every noise octave in the
-            // function put together -- 229ms to generate against ~60ms for the
-            // combat skies, which is a visible hitch on each menu transition.
-            const float band = 0.5f + 0.5f * cosf(u * TAU);  // 1 along the plane
-            const float b2    = band * band;
-            const float ridge = b2 * band;                   // band^3
+            // The disc, edge-on: a thin band running out to both sides, thrown
+            // brighter on one side than the other. Real relativistic beaming is
+            // far more violent than this; a hint of it stops the image reading
+            // as symmetrical clip art.
+            const float band  = expf(-(dy * dy) / (2.0f * DISC_H * DISC_H));
+            const float reach = 1.0f / (1.0f + (r / DISC_R) * (r / DISC_R));
+            lum += band * reach * ((dx < 0.0f) ? 1.15f : 0.62f);
 
-            // Turbulence, so the band has structure along its length.
-            float turb = fbm_tex(tx, ty, seed + 88u, 5, 4);
-            turb = (turb - 0.34f) * 2.4f;
-            if (turb < 0.0f) turb = 0.0f; else if (turb > 1.0f) turb = 1.0f;
+            // The halo: the far side of the disc bent over and under. Weighted
+            // by |dy|/r so it piles up above and below and thins at the sides,
+            // which is where the near disc already is.
+            const float hd   = (r - R_HALO) / HALO_W;
+            const float vert = (r > 0.001f) ? (dy < 0.0f ? -dy : dy) / r : 0.0f;
+            lum += expf(-hd * hd) * (0.30f + 0.70f * vert) * 0.85f;
 
-            // Dust lanes bitten out of the bright core. This is the single
-            // detail that makes it read as a galaxy rather than a smear.
-            float dust = fbm_tex(tx, ty, seed + 6607u, 4, 3);
-            dust = (dust - 0.46f) * 3.0f;
-            if (dust < 0.0f) dust = 0.0f; else if (dust > 1.0f) dust = 1.0f;
+            // Photon ring.
+            const float pd = (r - R_PHOTON) / PHOTON_W;
+            lum += expf(-pd * pd) * 1.15f;
 
-            float dens = ridge * (0.34f + 0.66f * turb) * (1.0f - 0.72f * dust);
+            // The shadow. Nothing comes out, and the edge is softened over a
+            // texel and a half so a ~300px black disc does not upscale into a
+            // visible polygon.
+            if (r < R_SHADOW) {
+                const float e = R_SHADOW - r;
+                lum *= (e > 1.5f) ? 0.0f : (1.0f - e / 1.5f);
+            }
 
-            // The very spine of the ridge blows out toward white. ridge^3 is
-            // band^9 -- a hard, narrow highlight right along the centreline.
-            const float r3   = ridge * ridge * ridge;
-            const float core = r3 * (0.45f + 0.55f * turb)
-                             * (1.0f - 0.85f * dust);
+            if (lum > 1.0f) lum = 1.0f;
 
-            const float lvl = dens * SKY_MAX_LEVEL;
-            const float cl  = core * SKY_MAX_LEVEL;
+            // Gargantua is gold, whitening only at the very hottest parts. The
+            // squared term keeps blue out of everything but the photon ring,
+            // which is what stops it looking like a generic glow.
+            const float w = lum * lum;
+            float R = lum * SKY_MENU_LEVEL;
+            float G = (lum * 0.60f + w * 0.38f) * SKY_MENU_LEVEL;
+            float B = (lum * 0.13f + w * w * 0.72f) * SKY_MENU_LEVEL;
 
-            float r = lvl * (0.30f + 0.85f * ridge) + cl * 0.95f;
-            float g = lvl * (0.09f + 0.34f * ridge) + cl * 0.78f;
-            float b = lvl * (0.78f - 0.26f * ridge) + cl * 0.52f;
+            if (R > SKY_MENU_LEVEL) R = SKY_MENU_LEVEL;
+            if (G > SKY_MENU_LEVEL) G = SKY_MENU_LEVEL;
+            if (B > SKY_MENU_LEVEL) B = SKY_MENU_LEVEL;
 
-            if (r > SKY_MAX_LEVEL) r = SKY_MAX_LEVEL;
-            if (g > SKY_MAX_LEVEL) g = SKY_MAX_LEVEL;
-            if (b > SKY_MAX_LEVEL) b = SKY_MAX_LEVEL;
-
-            s_tex[i] = pack565_swapped(r, g, b);
+            s_tex[i] = pack565_swapped(R, G, B);
         }
     }
 }
@@ -365,7 +398,7 @@ const char* vg_sky_name(void) {
     switch (s_kind) {
     case SKY_GALAXY:  return "GALAXY";
     case SKY_CLUSTER: return "CLUSTER";
-    case SKY_MENU:    return "CORE";
+    case SKY_MENU:    return "GARGANTUA";
     default:          return "NEBULA";
     }
 }
@@ -381,7 +414,7 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     switch (kind) {
     case SKY_GALAXY:  s_kind = SKY_GALAXY;  gen_galaxy(seed);  break;
     case SKY_CLUSTER: s_kind = SKY_CLUSTER; gen_cluster(seed); break;
-    case SKY_MENU:    s_kind = SKY_MENU;    gen_menu(seed);    break;
+    case SKY_MENU:    s_kind = SKY_MENU;    gen_blackhole(seed); break;
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
