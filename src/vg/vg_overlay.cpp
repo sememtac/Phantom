@@ -209,14 +209,28 @@ static void draw_story(void) {
             f = (float)(STORY_BOT - y) / (float)STORY_FADE;
         if (f < 0.0f) f = 0.0f;
 
-        // The closing line is set at title size and hands over to the real
-        // title as it arrives, so it is faded out by exactly the amount the
-        // title has faded in. Its top-edge fade is suppressed for the same
-        // reason -- it must not dim on approach, it must become the title.
+        // The closing line is set at title size and hands over to the real title
+        // as it arrives, so it is faded out by exactly the amount the title has
+        // faded in. The window's own edge fade is bypassed entirely -- it must
+        // not dim on approach, it has to become the title.
+        //
+        // On the way up it eases in from nothing instead of riding the screen
+        // fully lit: the word materialises out of empty space over about seven
+        // seconds, reaching full strength a hundred pixels short of its landing.
+        // That leaves the last stretch clear for the crossfade, so the two
+        // effects read as one continuous arrival rather than fighting.
         if (i == STORY_LINES - 1) {
-            float la = (1.0f - ta);
-            if (la > f) la = f;
-            if (y <= TITLE_Y + STORY_FADE) la = 1.0f - ta;
+            const float FADE_FROM = 460.0f;                    // invisible here
+            const float FADE_TO   = (float)(TITLE_Y + 100);    // full here
+
+            float r = (FADE_FROM - (float)y) / (FADE_FROM - FADE_TO);
+            if (r < 0.0f) r = 0.0f;
+            if (r > 1.0f) r = 1.0f;
+            // Smoothstep, so it neither snaps on at the start nor arrives on a
+            // hard edge -- a linear ramp is visible as a ramp.
+            r = r * r * (3.0f - 2.0f * r);
+
+            const float la = r * (1.0f - ta);
             if (la > 0.01f)
                 centred(y, STORY[i], vg_dim(INK_BRIGHT, la), TITLE_SCALE);
             continue;
