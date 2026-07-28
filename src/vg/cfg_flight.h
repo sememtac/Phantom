@@ -87,3 +87,14 @@
 #define DMG_WALL             1.0e9f
 
 #define SHIP_RADIUS          9.0f
+
+// --- trails ----------------------------------------------------------------
+// Every fighter drags a coloured ribbon of where it has been. This is what makes
+// trail colour a mechanic rather than decoration: at range a contact is four
+// pixels of wireframe, but its trail is a long stroke in a hue you can name --
+// so colour becomes IFF, which is the one job hue is allowed to do here.
+//
+// Kept short on purpose. Each ship's ribbon costs a segment per sample and the
+// band rasteriser only stays free while it hides under the DMA blit.
+#define SHIP_TRAIL           22       // sample points per ship
+#define SHIP_TRAIL_DT        0.050f   // seconds between samples (~1.1s of tail)

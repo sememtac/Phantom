@@ -9,6 +9,13 @@
 #define SCR_CX               240.0f
 #define SCR_CY               240.0f
 
+// The panel is a rounded square: the corners are cut, and anything anchored
+// hard against an edge loses its first characters. Text and controls that sit
+// against a border get inset by this much. World rendering is unaffected --
+// losing a few pixels of starfield to the bezel does not matter, losing the
+// first digit of the credit balance does.
+#define SCR_SAFE             38
+
 // --- orientation -----------------------------------------------------------
 // Canonical orientation is the three hardware buttons pointing UP. The panel
 // scans with them on the left, so everything is drawn through a quarter turn

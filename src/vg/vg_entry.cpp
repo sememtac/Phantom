@@ -65,7 +65,15 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
         // covers most of its height, so demanding a hit inside a 54px strip made
         // it feel stuck rather than precise. Once latched the drag tracks x
         // alone, so the finger may wander off the bar entirely.
-        s_hue_drag = s_hue_open &&
+        //
+        // The pad must NOT swallow the TRAIL button above it. It did, and the
+        // result was that closing the picker set the hue from wherever the
+        // button had been pressed -- which for a centred tap is mid-ramp, so
+        // every close snapped the colour to cyan.
+        const bool on_trail_btn = vg_in_rect(in->menu_x, in->menu_y,
+                                             ENT_TRAIL_X, ENT_TRAIL_Y,
+                                             ENT_TRAIL_W, ENT_TRAIL_H);
+        s_hue_drag = s_hue_open && !on_trail_btn &&
                      vg_in_rect(in->menu_x, in->menu_y,
                                 ENT_HUE_X - ENT_HUE_PAD,
                                 ENT_HUE_Y - ENT_HUE_PAD,
@@ -114,9 +122,9 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
             s_hue_open = !s_hue_open;
         } else if (s_hue_open &&
                    vg_in_rect(tx, ty, ENT_HUE_X - ENT_HUE_PAD,
-                              ENT_HUE_Y - ENT_HUE_PAD,
+                              ENT_HUE_Y,
                               ENT_HUE_W + 2 * ENT_HUE_PAD,
-                              ENT_HUE_H + 2 * ENT_HUE_PAD)) {
+                              ENT_HUE_H + ENT_HUE_PAD)) {
             set_hue_from(tx);
         } else if (vg_in_rect(tx, ty, ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H)) {
             commit();

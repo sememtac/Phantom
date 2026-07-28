@@ -220,17 +220,23 @@ void vg_draw_bracket(void) {
     // Round on the left, bank on the right, the match you are about to fly
     // across the middle at full size. Credits are a number the player is
     // constantly deciding against, so they get a fixed corner and stay there.
-    vg_text(10, 8, vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
+    //
+    // Both are held SCR_SAFE clear of the border: the panel is a rounded square
+    // and anything pinned to an edge loses its leading characters to the corner.
+    vg_text(SCR_SAFE, 12, vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
 
     snprintf(buf, sizeof(buf), "%d CR", vg.credits);
-    vg_text(SCR_W - 10 - vg_text_width(buf, 3), 4, buf, INK_MAX, 3);
+    vg_text(SCR_W - SCR_SAFE - vg_text_width(buf, 3), 8, buf, INK_MAX, 3);
 
     if (opp) {
+        // Colour column butted against the callsign rather than parked at the
+        // screen edge: the point of the swatch is to bind a hue to a NAME, and
+        // it only does that if the two are touching.
         snprintf(buf, sizeof(buf), "VS %s  %s", opp->tag, vg_spec(opp->cls)->name);
-        vg_text((SCR_W - vg_text_width(buf, 3)) / 2, 38, buf, INK_MAX, 3);
-        // The opponent's colour, beside their name -- the same stripe that marks
-        // them on the sheet and the same one that will be behind their ship.
-        vg_fill_rect(14, 44, 34, 10, vg_hue_col(opp->hue));
+        const int tw = vg_text_width(buf, 3);
+        const int tx = (SCR_W - tw) / 2 + 6;
+        vg_fill_rect(tx - 14, 40, 6, 24, vg_hue_col(opp->hue));
+        vg_text(tx, 42, buf, INK_MAX, 3);
     }
 
     // --- footer ---
@@ -245,14 +251,11 @@ void vg_draw_bracket(void) {
     // previously set faint at the smallest scale, where it was unreadable.
     snprintf(buf, sizeof(buf), "%s  %d/%d", vg.spec->name, hp, hmax);
     const int fy = VIEW_Y0 + VIEW_H + 6;
-    vg_text((SCR_W - vg_text_width(buf, 3)) / 2, fy, buf,
-            hurt > 0 ? INK_MAX : INK_BRIGHT, 3);
-
-    // Player colour beside it, matching the stripe on their bracket slot.
-    vg_fill_rect(14, fy + 6, 34, 10, vg_hue_col(vg.trail_hue));
-
-    if (CANVAS_W > SCR_W)
-        vg_text(SCR_W - 44, fy + 7, "DRAG", INK_FAINT, 1);
+    const int fw = vg_text_width(buf, 3);
+    const int fx = (SCR_W - fw) / 2 + 6;
+    // Your own colour, butted against your ship the same way.
+    vg_fill_rect(fx - 14, fy - 2, 6, 24, vg_hue_col(vg.trail_hue));
+    vg_text(fx, fy, buf, hurt > 0 ? INK_MAX : INK_BRIGHT, 3);
 
     // REPAIR only lights when there is both damage to undo and money to do it
     // with, so the button itself answers "can I afford this".

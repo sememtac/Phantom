@@ -205,6 +205,30 @@ static void draw_enemy(const VgCam& cam, const Ship* s) {
     vg_edge(cam, tail, flame, vg_dim(COL_EXHAUST, 0.4f + 0.6f * t));
 }
 
+// A ship's ribbon: where it has been, in the hue that identifies it.
+//
+// This is the whole justification for hue existing in a single-colour interface.
+// At range a fighter is four pixels of wireframe and every one of them looks
+// alike; its trail is a long stroke in a colour you can name, so colour answers
+// "who is that" before the shape ever resolves.
+//
+// Drawn newest-first with a quadratic fade, and stroked thick only at the head:
+// the near end is the part that carries the ship's current heading, and the tail
+// only needs to say where it came from.
+static void draw_ship_trail(const VgCam& cam, const Vec3* trail, int n, int head,
+                            Vec3 from, float hue) {
+    if (n < 2) return;
+    const uint16_t col = vg_hue_col(hue);
+    Vec3 prev = from;
+    for (int t = 0; t < n; t++) {
+        int   idx = (head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
+        Vec3  cur = trail[idx];
+        float f   = 1.0f - (float)t / (float)n;
+        vg_edge_w(cam, prev, cur, vg_dim(col, f * f), (f > 0.7f) ? 2 : 1);
+        prev = cur;
+    }
+}
+
 static void draw_missile(const VgCam& cam, const Missile* m) {
     const bool friendly = m->from_player;
 
@@ -258,6 +282,19 @@ void vg_draw_world(const VgCam& cam) {
 
     // Ships after the rocks and never occluded by them: losing the bandit behind
     // scenery in a dogfight is worse than the small inconsistency.
+    // Trails go down before the hulls so a ribbon passing in front of its own
+    // ship does not draw over the thing it belongs to.
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        const Ship* s = &vg.enemy[i];
+        if (s->alive)
+            draw_ship_trail(cam, s->trail, s->trail_n, s->trail_head,
+                            s->pos, s->hue);
+    }
+    // The player's own, streaming from the origin. Invisible dead ahead, but a
+    // hard turn sweeps it into view -- so you can see the arc you just flew.
+    draw_ship_trail(cam, vg.trail, vg.trail_n, vg.trail_head,
+                    v3(0, 0, 0), vg.trail_hue);
+
     for (int i = 0; i < MAX_ENEMIES; i++)
         if (vg.enemy[i].alive) draw_enemy(cam, &vg.enemy[i]);
 

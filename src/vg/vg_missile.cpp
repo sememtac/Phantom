@@ -51,8 +51,18 @@ static bool missile_target(const Missile* m, Vec3* pos, Vec3* vel) {
     return true;
 }
 
+// Report what one of OUR rounds did. Only the player's, and only the strongest
+// result: a kill should not be overwritten by a second missile missing the
+// wreckage a frame later.
+static void report(MslEvent e) {
+    if (vg.msl_event_t > 0.0f && vg.msl_event >= e) return;
+    vg.msl_event   = e;
+    vg.msl_event_t = 1.1f;
+}
+
 static void detonate(Missile* m, bool hit) {
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);
+    if (m->from_player && !hit) report(MSL_MISSED);
     m->alive = false;
 }
 
@@ -132,8 +142,15 @@ void vg_update_missiles(float dt) {
                 bool hit = m->last_range < MISSILE_HIT_RADIUS;
                 if (hit) {
                     float dmg = impact_damage(m, m->last_range);
-                    if (m->target < 0) vg_damage_player(dmg);
-                    else               hit_enemy(m->target, dmg);
+                    if (m->target < 0) {
+                        vg_damage_player(dmg);
+                    } else {
+                        bool was_alive = vg.enemy[m->target].alive;
+                        hit_enemy(m->target, dmg);
+                        if (m->from_player)
+                            report((was_alive && !vg.enemy[m->target].alive)
+                                   ? MSL_DESTROYED : MSL_HIT);
+                    }
                 }
                 detonate(m, hit);
                 continue;

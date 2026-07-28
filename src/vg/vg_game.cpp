@@ -53,11 +53,15 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
     }
 }
 
-static void spawn_enemy(int i, ShipClass cls, float skill) {
+static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     Ship* s = &vg.enemy[i];
 
-    s->spec  = vg_spec(cls);
-    s->skill = skill;
+    s->spec       = vg_spec(cls);
+    s->skill      = skill;
+    s->hue        = hue;
+    s->trail_acc  = 0;
+    s->trail_n    = 0;
+    s->trail_head = 0;
 
     // Out ahead but off-axis, so a fight opens with a merge rather than with
     // someone already on someone's tail.
@@ -228,6 +232,11 @@ void vg_match_start(void) {
 
     vg.state       = VG_PLAYING;
     vg.state_t     = 0;
+    vg.msl_event   = MSL_NONE;
+    vg.msl_event_t = 0;
+    vg.trail_n     = 0;
+    vg.trail_head  = 0;
+    vg.trail_acc   = 0;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
     vg.difficulty  = 1.0f;
@@ -254,8 +263,9 @@ void vg_match_start(void) {
     // the old "keep a fight going" respawn belonged to an endless survival mode
     // and would make a knockout round unwinnable.
     const Entrant* opp = vg_tourney_opponent();
-    if (opp) spawn_enemy(0, opp->cls, ENEMY_SKILL * (0.75f + 0.35f * opp->rating));
-    else     spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL);
+    if (opp) spawn_enemy(0, opp->cls,
+                         ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
+    else     spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) spawn_asteroid();
 
@@ -338,6 +348,24 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
             a->alive = false;
     }
 
+    // Trails are world geometry, so every stored point rides the same transform
+    // the objects do -- otherwise a ribbon would smear sideways the moment you
+    // manoeuvred instead of staying pinned to the track that was actually flown.
+    vg.trail_acc += dt;
+    for (int t = 0; t < vg.trail_n; t++) {
+        int idx = (vg.trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
+        vg.trail[idx] = mat3_apply(R, vg.trail[idx]);
+        vg.trail[idx].z -= dz;
+    }
+    if (vg.trail_acc >= SHIP_TRAIL_DT) {
+        vg.trail_acc = 0;
+        vg.trail_head = (uint8_t)((vg.trail_head + 1) % SHIP_TRAIL);
+        // The player is nailed to the origin, so their track is seeded there and
+        // is carried backwards by the transform above like everything else.
+        vg.trail[vg.trail_head] = v3(0, 0, 0);
+        if (vg.trail_n < SHIP_TRAIL) vg.trail_n++;
+    }
+
     for (int i = 0; i < MAX_ENEMIES; i++) {
         Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
@@ -346,6 +374,19 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
         s->up  = vnorm(mat3_apply(R, s->up));
         s->pos = vadd(s->pos, vmul(s->fwd, s->speed * dt));
         s->pos.z -= dz;
+
+        for (int t = 0; t < s->trail_n; t++) {
+            int idx = (s->trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
+            s->trail[idx] = mat3_apply(R, s->trail[idx]);
+            s->trail[idx].z -= dz;
+        }
+        s->trail_acc += dt;
+        if (s->trail_acc >= SHIP_TRAIL_DT) {
+            s->trail_acc = 0;
+            s->trail_head = (uint8_t)((s->trail_head + 1) % SHIP_TRAIL);
+            s->trail[s->trail_head] = s->pos;
+            if (s->trail_n < SHIP_TRAIL) s->trail_n++;
+        }
         // Backstop: the AI steers away from the wall, but never let one escape
         // the world if it cuts a turn too fine.
         s->pos = vg_arena_clamp_inside(s->pos, ENEMY_HIT_RADIUS);
@@ -392,6 +433,10 @@ static void world_step(float dt, float pitch_in, float yaw_in, float throttle_in
     }
 
     if (vg.hit_flash > 0) vg.hit_flash -= dt;
+    if (vg.msl_event_t > 0) {
+        vg.msl_event_t -= dt;
+        if (vg.msl_event_t <= 0) vg.msl_event = MSL_NONE;
+    }
 }
 
 // ---------------------------------------------------------------------------

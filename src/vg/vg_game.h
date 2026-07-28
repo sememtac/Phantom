@@ -60,6 +60,23 @@ struct Ship {
     Vec3  offset_dir;     // stable lateral offset for the aim point
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
+
+    // Identity, and the ribbon that carries it.
+    float   hue;
+    float   trail_acc;
+    uint8_t trail_n;
+    uint8_t trail_head;
+    Vec3    trail[SHIP_TRAIL];
+};
+
+// What a player missile did, shown briefly in the middle of the screen. A
+// proximity-fused seeker is otherwise ambiguous -- a detonation nearby looks
+// identical whether it took a third of their hull or nothing at all.
+enum MslEvent : uint8_t {
+    MSL_NONE = 0,
+    MSL_MISSED,
+    MSL_HIT,
+    MSL_DESTROYED
 };
 
 struct Missile {
@@ -166,6 +183,17 @@ struct VgGame {
     float    lock_t;           // time held inside the nose cone
     float    lock_need;        // time required at the current speed
     bool     locked;
+
+    MslEvent msl_event;
+    float    msl_event_t;  // counts down; the banner shows while positive
+
+    // The player's own ribbon. Visible because the world counter-rotates around
+    // a fixed camera, so a hard turn sweeps your own track into view -- you can
+    // see the arc you just flew.
+    float    trail_acc;
+    uint8_t  trail_n;
+    uint8_t  trail_head;
+    Vec3     trail[SHIP_TRAIL];
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
 

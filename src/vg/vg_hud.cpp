@@ -63,9 +63,6 @@ static void draw_health(void) {
     for (int i = 1; i < 5; i++)
         vg_fill_rect(x + 4 + (w - 8) * i / 5, y + 4, 2, h - 8, INK_ONFILL);
 
-    // The ship's name sits beside the gauge. Which class you are flying changes
-    // what every other number on this HUD means, so it belongs on screen.
-    vg_text(x + w + 8, y + 8, vg.spec->name, INK_FAINT, 1);
 }
 
 static void draw_throttle(void) {

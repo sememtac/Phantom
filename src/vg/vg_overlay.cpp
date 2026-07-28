@@ -72,10 +72,36 @@ static void draw_glitch_title(const char* s, int y, int scale) {
     }
 }
 
+// What the last player missile did. A proximity fuse is otherwise ambiguous --
+// a detonation off the target's wing looks identical whether it took a third of
+// their hull or nothing at all, and with damage now scaling by how close it went
+// off, "nothing at all" is a real outcome the player needs to see.
+static void draw_missile_banner(void) {
+    if (vg.msl_event == MSL_NONE || vg.msl_event_t <= 0.0f) return;
+
+    const char* s;
+    uint16_t    col;
+    switch (vg.msl_event) {
+    case MSL_DESTROYED: s = "DESTROYED"; col = INK_MAX;    break;
+    case MSL_HIT:       s = "HIT";       col = INK_BRIGHT; break;
+    default:            s = "MISSED";    col = INK_FAINT;  break;
+    }
+
+    // Blinks for the first moment, then holds -- inversion and blink are how
+    // this interface shouts, so a kill announces itself without a second hue.
+    if (vg.msl_event > MSL_MISSED && vg.msl_event_t > 0.75f &&
+        fmodf(vg.msl_event_t, 0.16f) < 0.08f)
+        return;
+
+    const int scale = (vg.msl_event == MSL_DESTROYED) ? 4 : 3;
+    centred(186, s, col, scale);
+}
+
 void vg_draw_overlays(void) {
     char buf[40];
 
     draw_damage_vignette();
+    if (vg.state == VG_PLAYING || vg.state == VG_HIT) draw_missile_banner();
 
     switch (vg.state) {
     case VG_ATTRACT:
