@@ -69,13 +69,17 @@ static void draw_health(void) {
 // Radio traffic from the other pilot. Callsign in inverse video, message beside
 // it -- the panel idiom, so it reads as an instrument rather than a subtitle.
 //
-// Sits below the reticle and above the radar, the one band of the HUD that is
-// empty in every state. Anywhere higher and it would sit across the lock box
-// exactly when someone is most likely to be talking.
+// Aligned with the TOP of the throttle strip, which is as low as it can sit and
+// still be read. It was below the reticle, which is the emptiest band of the
+// HUD and looked like the obvious home for it -- but on a device this size the
+// hands wrap the bottom corners to hold it, and a thumb reaching for the
+// throttle covers anything down there. Nobody grips a screen by its top edge,
+// so the upper half is the part that is reliably visible.
 static void draw_comms(void) {
     if (!vg.comms_line || vg.comms_t <= 0.0f) return;
 
-    const int   y  = 300;
+    // +4 so the tag block's top edge, not its baseline, lines up with the strip.
+    const int   y  = THROTTLE_TOP + 4;
     const int   tw = vg_text_width(vg.comms_tag, 2);
     const int   mw = vg_text_width(vg.comms_line, 2);
     const int   x  = (SCR_W - (tw + 14 + mw)) / 2;
