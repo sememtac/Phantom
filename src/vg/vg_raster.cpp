@@ -36,6 +36,9 @@ bool vg_prim_init(void) {
 const Prim* vg_prim_list(void) { return s_prims; }
 int         vg_prim_live(void) { return s_count; }
 
+static uint8_t s_line_aa = 1;
+void vg_line_aa_mode(bool on) { s_line_aa = on ? 1 : 0; }
+
 bool vg_rast_init(void) {
     if (!vg_prim_init()) return false;
     if (!vg_band_init()) return false;
@@ -210,6 +213,7 @@ static void line_raw(float x0, float y0, float x1, float y1, uint16_t color) {
     Prim* p = push();
     if (!p) return;
     p->type  = PRIM_LINE;
+    p->aa    = s_line_aa;
     p->x0    = (int16_t)lrintf(x0);
     p->y0    = (int16_t)lrintf(y0);
     p->x1    = (int16_t)lrintf(x1);

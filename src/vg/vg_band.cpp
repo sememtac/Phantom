@@ -110,16 +110,19 @@ static void band_line_aa(uint16_t* band, int by0, int by1,
     if (steep)   { int t; t=x0; x0=y0; y0=t; t=x1; x1=y1; y1=t; }
     if (x0 > x1) { int t; t=x0; x0=x1; x1=t; t=y0; y0=y1; y1=t; }
 
-    const int   dx   = x1 - x0;
-    const float grad = (dx == 0) ? 0.0f : (float)(y1 - y0) / (float)dx;
+    const int dx = x1 - x0;
 
-    // Both axes are already clipped to the band and the screen, so the running
-    // coordinate never goes negative and a plain cast is a valid floor.
-    float inter = (float)y0;
+    // 16.16 fixed point rather than a float accumulator. The old version paid a
+    // float add, a float-to-int conversion and a float multiply per pixel; this
+    // is an integer add and two shifts, and the coverage falls straight out of
+    // the fraction bits with no rounding step at all.
+    const int32_t grad  = (dx == 0) ? 0
+                        : (int32_t)(((int32_t)(y1 - y0) << 16) / dx);
+    int32_t       inter = (int32_t)y0 << 16;
+
     for (int x = x0; x <= x1; x++) {
-        int      iy = (int)inter;
-        uint32_t f  = (uint32_t)((inter - (float)iy) * 32.0f);
-        if (f > 32u) f = 32u;
+        const int      iy = inter >> 16;
+        const uint32_t f  = ((uint32_t)inter >> 11) & 31u;
 
         if (steep) {
             plot_aa(band, by0, by1, iy,     x, src, 32u - f);
@@ -132,6 +135,26 @@ static void band_line_aa(uint16_t* band, int by0, int by1,
     }
 }
 #endif // VG_LINE_AA
+
+// Bresenham, but clipped only in y -- the fast path used for trails and other
+// dim one-pixel geometry. Unlike band_line above it cannot assume x stays in
+// range, because a caller that skipped AA still went through the same clip.
+static inline void band_line_fast(uint16_t* band, int by0, int by1,
+                                  int x0, int y0, int x1, int y1, uint16_t color) {
+    int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    int x = x0, y = y0;
+    for (;;) {
+        if (y >= by0 && y <= by1 && (unsigned)x < (unsigned)SCR_W)
+            band[(y - by0) * SCR_W + x] = color;
+        if (x == x1 && y == y1) break;
+        int e2 = err << 1;
+        if (e2 >= dy) { err += dy; x += sx; }
+        if (e2 <= dx) { err += dx; y += sy; }
+    }
+}
 
 // Scanline-fill a triangle, clipped to the band's rows. Spans are clamped
 // horizontally rather than the vertices being clipped, which keeps the edge
@@ -281,7 +304,8 @@ static void draw_band(int band_index, uint16_t* band) {
             if (ix0 < 0) ix0 = 0; else if (ix0 > SCR_W - 1) ix0 = SCR_W - 1;
             if (ix1 < 0) ix1 = 0; else if (ix1 > SCR_W - 1) ix1 = SCR_W - 1;
 #if VG_LINE_AA
-            band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+            if (p->aa) band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+            else       band_line_fast(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
 #else
             band_line(band, by0, ix0, iy0, ix1, iy1, p->color);
 #endif
@@ -310,22 +334,43 @@ static void draw_band(int band_index, uint16_t* band) {
     }
 }
 
+static uint32_t s_raster_us = 0;
+static uint32_t s_wait_us   = 0;
+
+uint32_t vg_rast_raster_us(void) { return s_raster_us; }
+uint32_t vg_rast_wait_us(void)   { return s_wait_us; }
+
 void vg_rast_flush(void) {
     // Drain the LAST band of the previous frame before touching its buffer
     // again. Waiting here rather than at the end of the loop means that final
     // transfer overlaps this frame's input and simulation, which are already
     // done by the time we get here.
+    const uint32_t w0 = micros();
     vg_panel_wait();
+    s_wait_us = micros() - w0;
+
+    uint32_t raster = 0;
 
     for (int b = 0; b < NUM_BANDS; b++) {
         uint16_t* buf = s_band[b & 1];
+
+        // Timed WITHOUT the push: vg_panel_push_band blocks on the previous
+        // transfer, so folding it in here would charge us for the DMA we are
+        // trying to hide under. What this counter measures is the CPU work that
+        // has to fit inside the transfer window, which is the number that
+        // actually decides the frame rate.
+        const uint32_t r0 = micros();
         draw_band(b, buf);
         // Over the finished band, so the backdrop and the instruments drawn on
         // top of it are striped alike. Baking it into the backdrop texture
         // instead silently skipped every vector element.
         band_scanlines(buf, b * BAND_H);
+        raster += micros() - r0;
+
         // Queues and returns: the next iteration rasterises into the other
         // buffer while this one is on the wire.
         vg_panel_push_band(b * BAND_H, BAND_H, buf);
     }
+
+    s_raster_us = raster;
 }

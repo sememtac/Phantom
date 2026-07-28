@@ -54,6 +54,7 @@ void loop(void) {
     static float    fps       = 30.0f;
     static uint32_t report_ms = 0;
     static uint32_t acc_input = 0, acc_update = 0, acc_submit = 0, acc_flush = 0;
+    static uint32_t acc_rast = 0, acc_wait = 0;
     static uint32_t frames    = 0;
 
     uint32_t now = micros();
@@ -85,17 +86,25 @@ void loop(void) {
     acc_update += t2 - t1;
     acc_submit += t3 - t2;
     acc_flush  += t4 - t3;
+    acc_rast   += vg_rast_raster_us();
+    acc_wait   += vg_rast_wait_us();
     frames++;
 
     uint32_t ms = millis();
     if (ms - report_ms >= 2000) {
         report_ms = ms;
-        Serial.printf("%.1f fps | in %luus upd %luus submit %luus blit %luus | prims %d%s\n",
+        // rast is CPU spent building bands; wait is time stalled on the panel
+        // DMA. Only the amount by which rast exceeds the transfer window costs
+        // frame time, so those two numbers are what any optimisation is aimed at.
+        Serial.printf("%.1f fps | in %luus upd %luus submit %luus blit %luus "
+                      "(rast %luus wait %luus) | prims %d%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
                       (unsigned long)(acc_submit / frames),
                       (unsigned long)(acc_flush  / frames),
+                      (unsigned long)(acc_rast   / frames),
+                      (unsigned long)(acc_wait   / frames),
                       vg_rast_prim_count(),
                       vg_rast_overflowed() ? " OVERFLOW" : "");
 #if VG_DEBUG_TILT
@@ -104,6 +113,7 @@ void loop(void) {
                       (double)in.pitch, (double)in.yaw, (double)in.throttle);
 #endif
         acc_input = acc_update = acc_submit = acc_flush = 0;
+        acc_rast  = acc_wait = 0;
         frames = 0;
     }
 }

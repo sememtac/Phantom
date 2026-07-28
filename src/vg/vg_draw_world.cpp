@@ -219,6 +219,10 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
                             const uint8_t* power, int n, int head,
                             Vec3 from, float hue) {
     if (n < 2) return;
+    // Trails are the single largest primitive source in a fight and the one
+    // place antialiasing buys nothing: every segment is dim, one or two pixels
+    // wide, and moving fast enough that no step survives long enough to see.
+    vg_line_aa_mode(false);
     const uint16_t col = vg_hue_col(hue);
     Vec3 prev = from;
     for (int t = 0; t < n; t++) {
@@ -240,6 +244,7 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
             vg_edge_w(cam, prev, cur, vg_dim(col, f), (f > 0.55f) ? 2 : 1);
         prev = cur;
     }
+    vg_line_aa_mode(true);
 }
 
 static void draw_missile(const VgCam& cam, const Missile* m) {
@@ -255,6 +260,10 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
     // Trail, newest first, fading toward the tail. This is the arc, and it is the
     // thing the player is meant to read, so it is stroked thick at the head and
     // tapered to a single pixel at the tail rather than drawn as a hairline.
+    // Same reasoning as the ship ribbons, and more so: a 3px-wide stroke is
+    // already three primitives per segment, so this is the densest geometry in
+    // the frame and the least able to show a stair-step.
+    vg_line_aa_mode(false);
     Vec3 prev = m->pos;
     for (int t = 0; t < m->trail_n; t++) {
         int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
@@ -264,6 +273,7 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
         vg_edge_w(cam, prev, cur, vg_dim(trail_col, f * f), w);
         prev = cur;
     }
+    vg_line_aa_mode(true);
 
     // Body: a short, fat, bright segment along the heading. Screen-space width is
     // constant with range, which is deliberate -- a missile inbound from distance

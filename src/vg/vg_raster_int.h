@@ -24,7 +24,9 @@ struct Prim {
     int16_t  ymin, ymax;
     uint16_t color;
     uint8_t  type;
-    uint8_t  pad;
+    // PRIM_LINE only: draw antialiased. Rides in what was padding, so per-line
+    // quality selection costs no memory and no extra cache traffic.
+    uint8_t  aa;
 };
 
 // --- owned by vg_raster.cpp ---

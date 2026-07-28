@@ -28,6 +28,15 @@ void vg_rast_begin_frame(void);
 // from game state (speed) rather than it being a fixed stylistic constant.
 void vg_hud_warp(bool on, float scale);
 
+// Line quality, bracketed the same way as the warp. Antialiasing costs roughly
+// an order of magnitude more per pixel than a Bresenham span -- two blends, two
+// byte swaps and two bounds tests against a single store -- so it is worth
+// paying for instruments, hulls and arena structure, and pointless for dim,
+// one-pixel, fast-moving trails where nobody can resolve a step anyway.
+//
+// Defaults to on; anything that turns it off must turn it back on.
+void vg_line_aa_mode(bool on);
+
 // Screen space, origin top-left. Off-screen geometry is clipped (and fully
 // off-screen geometry dropped) at submit time, so the per-band inner loops
 // never see wild coordinates.
@@ -55,6 +64,13 @@ void vg_rast_flush(void);
 
 int  vg_rast_prim_count(void);
 bool vg_rast_overflowed(void);
+
+// Frame cost, split. `blit` on its own conflates two very different things: CPU
+// spent rasterising bands, and time stalled waiting on the panel DMA. Only the
+// first is ours to optimise, and only the amount by which it EXCEEDS the DMA
+// window costs frame time at all.
+uint32_t vg_rast_raster_us(void);
+uint32_t vg_rast_wait_us(void);
 
 // Scale an RGB565 colour per channel by f in [0,1]. Used for distance fade and
 // for fading debris out.
