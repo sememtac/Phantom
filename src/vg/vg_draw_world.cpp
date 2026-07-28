@@ -256,11 +256,18 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
 static void draw_missile(const VgCam& cam, const Missile* m) {
     const bool friendly = m->from_player;
 
+    // Your rounds fly in your colour. Hue is identity here and a missile you
+    // launched is yours, so the same stripe that marks you on the bracket is
+    // what streaks away from the rail. A broken seeker drops to the dead tone
+    // regardless -- that is state, not identity, and it matters more than
+    // whose missile it was.
+    const uint16_t mine = vg_hue_col(vg.trail_hue);
+
     uint16_t trail_col = !m->locked ? COL_TRAIL_DEAD
-                       : friendly   ? COL_TRAIL_FRIEND
+                       : friendly   ? vg_dim(mine, 0.75f)
                                     : COL_TRAIL_HOSTILE;
     uint16_t head_col  = !m->locked ? COL_STAR_MID
-                       : friendly   ? COL_MSL_FRIEND
+                       : friendly   ? mine
                                     : COL_MSL_HOSTILE;
 
     // Trail, newest first, fading toward the tail. This is the arc, and it is the

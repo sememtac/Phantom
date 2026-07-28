@@ -55,7 +55,10 @@ static bool missile_target(const Missile* m, Vec3* pos, Vec3* vel) {
 // result: a kill should not be overwritten by a second missile missing the
 // wreckage a frame later.
 static void report(MslEvent e) {
-    if (vg.msl_event_t > 0.0f && vg.msl_event >= e) return;
+    // Only a STRICTLY better outcome is protected -- a kill must not be
+    // downgraded by a second round missing the wreckage. An equal outcome
+    // refreshes the banner, so two misses in quick succession read as two.
+    if (vg.msl_event_t > 0.0f && vg.msl_event > e) return;
     vg.msl_event   = e;
     vg.msl_event_t = 1.1f;
 }
@@ -173,6 +176,14 @@ void vg_update_missiles(float dt) {
             continue;
         }
 
-        if (vlen2(m->pos) > CULL_RADIUS * CULL_RADIUS) m->alive = false;
+        // Leaving the world silently was the missing MISSED. A round that breaks
+        // lock flies ballistic and can clear CULL_RADIUS long before its life
+        // expires -- especially a BALLISTA's, which burns for eighteen seconds --
+        // and this path just switched it off without ever telling the player
+        // what happened to it.
+        if (vlen2(m->pos) > CULL_RADIUS * CULL_RADIUS) {
+            if (m->from_player) report(MSL_MISSED);
+            m->alive = false;
+        }
     }
 }

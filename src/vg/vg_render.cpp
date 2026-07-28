@@ -21,8 +21,13 @@ void vg_draw_threat_indicator(const VgCam& cam);
 // is actually costing frame time. Held clear of the rounded corner by SCR_SAFE
 // and drawn last so nothing can cover it.
 static void draw_fps(float fps) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%d FPS", (int)(fps + 0.5f));
+    char buf[24];
+    // Primitive count rides alongside it. When the rate dips, the single most
+    // useful thing to know is whether the count went up with it -- geometry --
+    // or stayed flat, which points at per-pixel fill instead. Without that the
+    // two are indistinguishable from the outside.
+    snprintf(buf, sizeof(buf), "%d FPS  %dP",
+             (int)(fps + 0.5f), vg_rast_prim_count());
     vg_text(SCR_SAFE, SCR_H - SCR_SAFE - 14, buf,
             fps >= 59.0f ? INK_BRIGHT : INK_FAINT, 2);
 }
