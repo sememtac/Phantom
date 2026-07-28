@@ -595,6 +595,32 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_ATTRACT: {
         menu_world(dt);
+#if VG_BENCH
+        // Synthetic worst case: a full complement of fighters, all manoeuvring,
+        // trailing and shooting, plus the player's own rack cycling. Reproduces
+        // the primitive load of a heavy match without anyone touching the board.
+        {
+            int alive = 0;
+            for (int i = 0; i < MAX_ENEMIES; i++) if (vg.enemy[i].alive) alive++;
+            if (alive < MAX_ENEMIES) {
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                    if (!vg.enemy[i].alive) {
+                        spawn_enemy(i, (ShipClass)(i % SHIP_CLASSES), ENEMY_SKILL,
+                                    0.1f + 0.45f * (float)i);
+                        break;
+                    }
+            }
+            for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+            update_lock(dt);
+            if (vg.fire_gap > 0) vg.fire_gap -= dt;
+            if (vg.missiles < vg.spec->magazine) {
+                vg.reload_t -= dt;
+                if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
+            }
+            if (vg.locked) player_fire();
+            vg.health = vg.health_max;      // never let the load generator "die"
+        }
+#endif
         if (tap_up) {
             vg_entry_reset();
             vg.state   = VG_ENTRY;

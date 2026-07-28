@@ -16,6 +16,13 @@
 // first digit of the credit balance does.
 #define SCR_SAFE             38
 
+// Load generator. The attract loop tops out around 300 primitives; a real
+// dogfight runs 400-850, so every measurement of the case that actually matters
+// needed a human holding the board and flying. This fills the attract loop with
+// a full complement of fighters shooting at each other instead, so the worst
+// case can be measured hands-off and repeatably. Off in normal builds.
+#define VG_BENCH             0
+
 // --- orientation -----------------------------------------------------------
 // Canonical orientation is the three hardware buttons pointing UP. The panel
 // scans with them on the left, so everything is drawn through a quarter turn
