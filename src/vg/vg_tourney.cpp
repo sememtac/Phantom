@@ -37,7 +37,39 @@ const char* vg_tourney_round_name(uint8_t r) {
 // content -- the #2 seed going out in the first round is what makes the sheet
 // worth looking at, and it means the final is not knowable from the entry
 // screen.
+// Randomly swap the two halves at every node of the bracket tree.
+//
+// This moves where everyone SITS without changing who plays whom: swapping a
+// node's two sub-brackets leaves every pairing, every path and every round
+// intact, because the tree is symmetric about each node. So the player's slot
+// lands somewhere different each tournament while the escalation the seeding
+// provides -- 16, then the 8/9 winner, then the 4/5 side, then the 2 half --
+// survives untouched.
+//
+// Randomising the player's actual SEED would have moved their position too,
+// but by destroying that escalation: a sixteenth seed opens against the
+// strongest pilot in the draw and the difficulty curve runs backwards.
+static void shuffle_bracket(int8_t* slot, int lo, int n) {
+    if (n < 2) return;
+    const int h = n / 2;
+    shuffle_bracket(slot, lo, h);
+    shuffle_bracket(slot, lo + h, h);
+    if (vg_frand01() < 0.5f) {
+        for (int i = 0; i < h; i++) {
+            const int8_t t = slot[lo + i];
+            slot[lo + i]     = slot[lo + h + i];
+            slot[lo + h + i] = t;
+        }
+    }
+}
+
 static bool sim_match(const Entrant* a, const Entrant* b) {
+    // The legend does not go out early. It is the whole point of the story that
+    // it is waiting at the end, and an upset in the quarter-finals would spend
+    // the game's one narrative beat on a coin flip nobody watched.
+    if (a->is_phantom) return true;
+    if (b->is_phantom) return false;
+
     float sum = a->rating + b->rating;
     float p   = 0.5f + 0.5f * ((a->rating - b->rating) / (sum > 1e-3f ? sum : 1.0f)) * 2.4f;
     if (p < 0.12f) p = 0.12f;
@@ -94,8 +126,8 @@ void vg_tourney_begin(ShipClass player_class) {
         // hue are all rolled separately, so a BUTCHER is as likely to be the
         // sixteenth seed in a CHARIOT as the second in a BALLISTA. Tying them
         // together would make the bracket predictable from one glance.
-        e->voice = (uint8_t)((uint32_t)(vg_frand01() * (float)vg_voice_count())
-                             % (uint32_t)vg_voice_count());
+        e->voice = (uint8_t)((uint32_t)(vg_frand01() * (float)vg_voice_rollable())
+                             % (uint32_t)vg_voice_rollable());
     }
 
     // --- seed 2..16 by rating, then lay them into the bracket ---
@@ -115,14 +147,34 @@ void vg_tourney_begin(ShipClass player_class) {
     for (int s = 2; s <= TOURNEY_ENTRANTS; s++)
         seed_to_entrant[s] = (int8_t)order[s - 2];
 
+    // The legend takes the second seed, which puts it in the opposite half and
+    // therefore in the final -- but only until the name is yours.
+    if (!vg.champion) {
+        Entrant* ph = &vt.entrant[seed_to_entrant[2]];
+        ph->tag[0]     = 'P'; ph->tag[1] = 'H'; ph->tag[2] = 'M'; ph->tag[3] = 0;
+        ph->voice      = (uint8_t)vg_voice_phantom();
+        ph->rating     = 1.0f;
+        // Hue 0 is pure red -- the one colour the rest of the roster's
+        // golden-ratio spread never lands on, so the legend's trail is
+        // unmistakable the instant it comes into view.
+        ph->hue        = 0.0f;
+        ph->is_phantom = true;
+    }
+
     for (int i = 0; i < TOURNEY_ENTRANTS; i++)
         vt.slot[0][i] = seed_to_entrant[SEED_ORDER[i]];
+
+    // Move everybody's seat without moving anybody's opponent.
+    shuffle_bracket(vt.slot[0], 0, TOURNEY_ENTRANTS);
 
     for (int r = 1; r <= TOURNEY_ROUNDS; r++)
         for (int i = 0; i < TOURNEY_ENTRANTS; i++) vt.slot[r][i] = -1;
 
     vt.round      = 0;
-    vt.player_pos = 0;      // SEED_ORDER[0] == 1, so the player starts at slot 0
+    // No longer slot 0: the shuffle has moved everyone, so find the player.
+    vt.player_pos = 0;
+    for (int i = 0; i < TOURNEY_ENTRANTS; i++)
+        if (vt.slot[0][i] == 0) { vt.player_pos = (uint8_t)i; break; }
     vt.player_out = false;
     vt.complete   = false;
 }

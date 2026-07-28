@@ -235,7 +235,10 @@ void vg_draw_bracket(void) {
         // Colour column butted against the callsign rather than parked at the
         // screen edge: the point of the swatch is to bind a hue to a NAME, and
         // it only does that if the two are touching.
-        snprintf(buf, sizeof(buf), "VS %s  %s", opp->tag, vg_spec(opp->cls)->name);
+        // The legend gets its full name here. Three characters is what fits in a
+        // bracket slot, not what the player should read on the way into a final.
+        snprintf(buf, sizeof(buf), "VS %s  %s",
+                 opp->is_phantom ? "PHANTOM" : opp->tag, vg_spec(opp->cls)->name);
         const int tw = vg_text_width(buf, 3);
         const int tx = (SCR_W - tw) / 2 + 6;
         vg_fill_rect(tx - 14, 40, 6, 24, vg_hue_col(opp->hue));

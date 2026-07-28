@@ -57,11 +57,41 @@ const PilotVoice vg_pilot_voice[] = {
     { "IT WAS AN HONOUR",         "MY HELMET IS FULL",        "REMEMBER MY NAME"         },
 }},
 
+// --- the legend: never rolled, only ever met in a final -------------------
+// Says almost nothing, and what it says is not about you. The other five talk
+// because they want something from the crowd; this one has stopped noticing
+// there is a crowd.
+{ "PHANTOM", {
+    { "YOU SHOULD NOT BE HERE",   "I REMEMBER BEING NEW",     "NO ONE WATCHES THE END"   },
+    { "STOP",                     "IT IS ALREADY DONE",       "DO NOT LOOK"              },
+    { "SO. YOU ARE REAL",         "IT HAS BEEN A LONG TIME",  "GOOD"                     },
+    { "TAKE IT. TAKE THE NAME",   "I WAS TIRED. THANK YOU",   "NOW THEY WILL HUNT YOU"   },
+}},
+
 };
 
 #define VOICE_COUNT ((int)(sizeof(vg_pilot_voice) / sizeof(vg_pilot_voice[0])))
 
-int vg_voice_count(void) { return VOICE_COUNT; }
+// PHANTOM is the last entry and is excluded from the roll.
+int vg_voice_rollable(void) { return VOICE_COUNT - 1; }
+int vg_voice_phantom(void)  { return VOICE_COUNT - 1; }
+
+// Reactions to fighting a reigning champion. Shared across archetypes rather
+// than written per personality: what changes is who you are, not who they are,
+// so the same recognition works in any mouth.
+static const char* const VS_CHAMPION[] = {
+    "SO YOU ARE THE PHANTOM",
+    "THE GHOST BLEEDS TOO",
+    "I KILL LEGENDS TODAY",
+    "THEY SAY YOU CANNOT DIE",
+    "YOUR NAME BUYS NOTHING",
+    "A GHOST. HOW EXCITING",
+};
+#define VS_CHAMPION_N ((int)(sizeof(VS_CHAMPION) / sizeof(VS_CHAMPION[0])))
+
+const char* vg_voice_champion_line(uint32_t pick) {
+    return VS_CHAMPION[pick % VS_CHAMPION_N];
+}
 
 const char* vg_voice_line(uint8_t voice, VoiceEvent ev, uint32_t pick) {
     if (voice >= VOICE_COUNT) voice = 0;

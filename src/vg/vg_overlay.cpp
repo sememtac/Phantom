@@ -301,12 +301,15 @@ void vg_draw_overlays(void) {
     // round the hangar bays about an elite pilot nobody has seen -- take the
     // tournament and the screen tells you, in the crawl's own words and the
     // title's own lettering, that the rumour is now about you.
+    // Four beats, each finishing before the next begins. Overlapping them was
+    // the mistake the intro crawl made first: two things fading at once means
+    // neither is ever fully present, and the moment has nothing to land on.
     case VG_WON: {
         const float t = vg.state_t;
 
-        // The result, which then gets out of the way.
-        if (t < 4.6f) {
-            float a = (t > 3.6f) ? (1.0f - (t - 3.6f)) : 1.0f;
+        // 1. The result, which then gets out of the way entirely.
+        if (t < WON_RUMOR_IN) {
+            float a = (t > 3.0f) ? (1.0f - (t - 3.0f)) : 1.0f;
             if (a < 0.0f) a = 0.0f;
             draw_glitch_title("CHAMPION", 128, 6, a);
             snprintf(buf, sizeof(buf), "%s   %s", vg.callsign, vg.spec->name);
@@ -315,26 +318,30 @@ void vg_draw_overlays(void) {
             centred(254, buf, vg_dim(INK_FAINT, a), 2);
         }
 
-        // The hangar bays find a name for you.
-        if (t > 4.4f) {
-            float a = t - 4.4f;
+        // 2. The rumour arrives, and is left alone long enough to be read.
+        // 3. Then it withdraws as the name takes its place.
+        if (t > WON_RUMOR_IN) {
+            float a = (t - WON_RUMOR_IN) / 1.4f;
             if (a > 1.0f) a = 1.0f;
-            centred(104, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK_FAINT, a), 1);
-            centred(128, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 2);
+            if (t > WON_NAME_IN) {
+                const float out = 1.0f - (t - WON_NAME_IN) / 1.5f;
+                if (out < a) a = out;
+            }
+            if (a > 0.01f) {
+                centred(214, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK_FAINT, a), 1);
+                centred(238, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 2);
+            }
         }
 
-        // And it is the one you have been flying under all along. Same word,
-        // same size, same glitch treatment as the title card -- so the payoff
-        // is recognition rather than information.
-        if (t > 6.4f) {
-            float a = (t - 6.4f) / 2.2f;
+        // 4. And it is the word that has been on the title card all along.
+        // Same size, same position, same glitch treatment -- so the payoff is
+        // recognition rather than information.
+        if (t > WON_NAME_IN) {
+            float a = (t - WON_NAME_IN) / 2.4f;
             if (a > 1.0f) a = 1.0f;
             a = a * a * (3.0f - 2.0f * a);
-            draw_glitch_title("PHANTOM", 178, TITLE_SCALE, a);
+            draw_glitch_title("PHANTOM", TITLE_Y, TITLE_SCALE, a);
         }
-
-        if (t > 9.4f && fmodf(t, 1.0f) < 0.6f)
-            centred(320, "TAP TO CONTINUE", INK_MAX, 2);
         break;
     }
 

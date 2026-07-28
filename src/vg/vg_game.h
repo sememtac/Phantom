@@ -139,6 +139,14 @@ enum VgState : uint8_t {
     VG_WON                // took the whole tournament
 };
 
+// Victory sequence schedule. The state machine owns it because it decides when
+// the state ends; the overlay only draws to it. Each beat finishes before the
+// next begins -- overlapping them means neither is ever fully present and the
+// moment has nothing to land on.
+#define WON_RUMOR_IN    4.2f    // result has cleared; the rumour fades up
+#define WON_NAME_IN     8.8f    // rumour has been read; the name takes over
+#define WON_RETURN     15.0f    // name has stood alone; back to the menu
+
 // Menu states run the attract autopilot underneath and draw no instruments.
 static inline bool vg_state_is_menu(VgState s) {
     return s == VG_ATTRACT || s == VG_ENTRY   || s == VG_SELECT ||

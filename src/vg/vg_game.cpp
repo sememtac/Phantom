@@ -61,8 +61,15 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // still refreshes. Two hits in a row should read as two.
     if (vg.comms_t > 0.0f && vg.comms_pri > (uint8_t)ev) return;
 
-    vg.comms_line = vg_voice_line(s->voice, ev,
-                                  (uint32_t)(vg_frand01() * 997.0f));
+    const uint32_t pick = (uint32_t)(vg_frand01() * 997.0f);
+
+    // Once the name is yours, rivals sometimes stop taunting and start
+    // recognising. Taunts only -- a pilot bleeding out does not pause to admire
+    // your reputation, and their own last words matter more than your legend.
+    if (ev == VOICE_TAUNT && vg.champion && (pick & 1u))
+        vg.comms_line = vg_voice_champion_line(pick >> 1);
+    else
+        vg.comms_line = vg_voice_line(s->voice, ev, pick);
     vg.comms_tag[0] = s->tag[0];
     vg.comms_tag[1] = s->tag[1];
     vg.comms_tag[2] = s->tag[2];
@@ -844,10 +851,15 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_WON: {
         menu_world(dt);
-        // Held until the name is on screen. A stray tap in the first seconds of
-        // a win would skip the one moment the whole story was built toward, and
-        // there is no prompt before then to invite one.
-        if (vg.state_t > 7.6f && tap_up) enter_attract();
+        // Returns on its own. The sequence ends by handing the player back to
+        // the title card, where the crawl now says the rumour is about them --
+        // so the payoff is not the win screen, it is the menu behind it having
+        // quietly changed. A prompt would invite a tap that skips exactly that.
+        //
+        // Tapping is allowed only once the name is fully up, so an impatient
+        // hand cannot cut the one moment the whole story was built toward.
+        if (vg.state_t > WON_RETURN ||
+            (vg.state_t > WON_NAME_IN + 2.6f && tap_up)) enter_attract();
         break;
     }
 

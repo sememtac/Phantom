@@ -36,7 +36,17 @@ struct PilotVoice {
 };
 
 extern const PilotVoice vg_pilot_voice[];
-int vg_voice_count(void);
+
+// How many archetypes a generated rival may be given. The legend's own voice
+// sits past this and is never rolled -- there is only ever one Phantom, and it
+// is either the entrant waiting in the final or it is you.
+int vg_voice_rollable(void);
+int vg_voice_phantom(void);
+
+// Once the player has taken a tournament the rivals know who they are up
+// against, and some of them say so. Mixed into taunts only -- a pilot bleeding
+// out does not stop to admire your reputation.
+const char* vg_voice_champion_line(uint32_t pick);
 
 // `pick` is any changing value; it is reduced modulo the line count, so callers
 // can pass a frame counter or a random draw without caring about the range.

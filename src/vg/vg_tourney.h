@@ -26,6 +26,10 @@ struct Entrant {
     uint8_t   voice;        // which pilot archetype does the talking
     float     rating;       // seeding strength, and the odds in a simulated match
     bool      is_player;
+    // The legend from the opening crawl, seeded to meet you in the final and
+    // guaranteed to get there. Absent once you have taken a tournament, because
+    // from then on the name is yours.
+    bool      is_phantom;
 };
 
 struct Tourney {
