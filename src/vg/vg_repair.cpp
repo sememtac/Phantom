@@ -1,6 +1,7 @@
 #include "vg_screens.h"
 #include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_save.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -52,6 +53,10 @@ bool vg_repair_update(const VgInput* in, bool tap, float tx, float ty) {
                 vg.health  += (float)s_buy;
                 if (vg.health > vg.health_max) vg.health = vg.health_max;
                 s_buy = 0;
+                // Bank the spend. Hull is not persisted -- it belongs to a run,
+                // not to the player -- so a reboot mid-tournament costs the
+                // repair. Recording the deduction is the honest half of that.
+                vg_save_store();
             }
         } else if (vg_in_rect(tx, ty, REP_BACK_X, REP_BACK_Y,
                               REP_BACK_W, REP_BACK_H)) {

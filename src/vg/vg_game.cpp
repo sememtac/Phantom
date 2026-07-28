@@ -3,6 +3,7 @@
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
+#include "vg_save.h"
 #include <Arduino.h>
 #include <esp_random.h>
 #include <math.h>
@@ -197,6 +198,10 @@ void vg_game_init(void) {
     vg.difficulty  = 1.0f;
     vg.missiles    = vg.spec->magazine;
     vg.lock_target = -1;
+
+    // Last, so anything restored overwrites the defaults just set rather than
+    // being overwritten by them.
+    vg_save_load();
 }
 
 // Cycle the player's ship. Temporary: this is what the entry screen will do once
@@ -222,6 +227,10 @@ void vg_tournament_begin(ShipClass c) {
     vg.kills      = 0;
 
     vg_tourney_begin(c);
+
+    // Identity is settled at this point -- callsign, colour and ship are locked
+    // for the whole tournament, so this is the moment they are worth keeping.
+    vg_save_store();
 }
 
 void vg_match_start(void) {
@@ -589,6 +598,10 @@ static void award_purse(void) {
 
     vg.credits += s_last_purse;
     if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;
+
+    // Banked immediately. Losing a purse to a flat battery between the kill and
+    // the next screen would be the single most annoying way to lose progress.
+    vg_save_store();
 }
 
 int vg_last_purse(void) { return s_last_purse; }
@@ -784,6 +797,7 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vt.complete) {
                 vg.champion = true;
                 vg.state    = VG_WON;
+                vg_save_store();      // the name sticks from here on
             } else {
                 vg_bracket_focus_player();
                 vg.state = VG_BRACKET;

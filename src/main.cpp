@@ -38,6 +38,9 @@ void setup(void) {
     // degraded than to show a black screen.
     if (!vg_imu_init())   Serial.println("WARN: no IMU - tilt steering disabled");
     if (!vg_touch_init()) Serial.println("WARN: no touch - input disabled");
+    // Also non-fatal: without storage the game forgets between power cycles,
+    // which is worse than persisting and far better than refusing to boot.
+    if (!vg_store_init()) Serial.println("WARN: no NVS - progress will not persist");
     vg_buttons_init();
 
     vg_input_init();

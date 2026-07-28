@@ -65,6 +65,19 @@ void vg_buttons_init(void);
 // normalised here so nothing above the seam has to know.
 uint8_t vg_buttons_read(void);
 
+// ---- Persistent storage ----------------------------------------------------
+//
+// One small blob, deliberately not a key/value API. The game has exactly one
+// record worth keeping, and a blob keeps versioning in a single place instead
+// of scattering it across a dozen key names that then have to agree.
+//
+// All three may fail without consequence: a board with no usable storage simply
+// forgets between power cycles, which is worse than persisting but far better
+// than refusing to boot.
+bool vg_store_init(void);
+bool vg_store_load(void* data, unsigned len);   // false if nothing stored yet
+bool vg_store_save(const void* data, unsigned len);
+
 // ---- IMU -------------------------------------------------------------------
 
 bool vg_imu_init(void);

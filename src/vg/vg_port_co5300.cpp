@@ -29,6 +29,7 @@
 #include <esp_heap_caps.h>
 #include <SensorQMI8658.hpp>
 #include <TouchDrvCSTXXX.hpp>
+#include <Preferences.h>
 
 // ---- Board pin map (Waveshare ESP32-S3-Touch-AMOLED-2.16) ----
 #define LCD_CS       12
@@ -274,6 +275,38 @@ uint8_t vg_buttons_read(void) {
 
 // ---------------------------------------------------------------------------
 // IMU
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Persistent storage (NVS)
+// ---------------------------------------------------------------------------
+
+static Preferences s_prefs;
+static bool        s_store_ok = false;
+
+bool vg_store_init(void) {
+    // Read/write. The Arduino core has already brought NVS up by this point;
+    // if the partition is missing or full this returns false and the game runs
+    // on perfectly well, just forgetfully.
+    s_store_ok = s_prefs.begin("phantom", false);
+    if (!s_store_ok) Serial.println("vg_store_init: NVS unavailable");
+    return s_store_ok;
+}
+
+bool vg_store_load(void* data, unsigned len) {
+    if (!s_store_ok) return false;
+    // Check first. Asking for a key that is not there is the normal state of a
+    // brand new device, but Preferences logs it at ERROR level, which puts a
+    // frightening line in the boot output of a board that is working perfectly.
+    if (!s_prefs.isKey("save")) return false;
+    return s_prefs.getBytes("save", data, len) == len;
+}
+
+bool vg_store_save(const void* data, unsigned len) {
+    if (!s_store_ok) return false;
+    return s_prefs.putBytes("save", data, len) == len;
+}
+
 // ---------------------------------------------------------------------------
 
 bool vg_imu_init(void) {
