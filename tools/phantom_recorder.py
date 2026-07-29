@@ -19,13 +19,16 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from phantom_link import (FPS, HEIGHT, WIDTH, Desync, PhantomLink, list_ports,
                           subsample_ppm)
 
-PREVIEW = 240
+PREVIEW = 240        # pixels
+
+AMBER  = "#ffae1e"
+GROUND = "#0d0700"
 
 
 class Recorder(tk.Tk):
@@ -33,49 +36,88 @@ class Recorder(tk.Tk):
         super().__init__()
         self.title("Phantom Recorder")
         self.resizable(False, False)
-        self.configure(bg="#0d0700")
+        self.configure(bg=GROUND)
 
         self.worker = None
         self.stop_flag = threading.Event()
         self.q = queue.Queue()
         self.frames = []
+        self.last_output = None
         self.out_dir = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos"))
         self.seconds = tk.StringVar(value="10")
 
+        self._build_menu()
         self._build()
         self.after(60, self._pump)
+
+    # -- menus --------------------------------------------------------------
+
+    def _build_menu(self):
+        bar = tk.Menu(self)
+
+        f = tk.Menu(bar, tearoff=0)
+        f.add_command(label="Choose Output Folder...", accelerator="Ctrl+O",
+                      command=self._browse)
+        f.add_command(label="Open Output Folder", command=self._open_folder)
+        f.add_command(label="Show Last Recording", command=self._show_last)
+        f.add_separator()
+        f.add_command(label="Exit", accelerator="Alt+F4", command=self.destroy)
+        bar.add_cascade(label="File", menu=f)
+
+        c = tk.Menu(bar, tearoff=0)
+        c.add_command(label="Record / Stop", accelerator="Ctrl+R", command=self._toggle)
+        c.add_command(label="Refresh Ports", accelerator="F5", command=self._refresh)
+        bar.add_cascade(label="Capture", menu=c)
+
+        h = tk.Menu(bar, tearoff=0)
+        h.add_command(label="About", command=self._about)
+        bar.add_cascade(label="Help", menu=h)
+
+        self.config(menu=bar)
+        self.bind("<Control-o>", lambda e: self._browse())
+        self.bind("<Control-r>", lambda e: self._toggle())
+        self.bind("<F5>", lambda e: self._refresh())
 
     # -- layout -------------------------------------------------------------
 
     def _build(self):
-        pad = dict(padx=10, pady=4)
-        amber, ground = "#ffae1e", "#0d0700"
+        pad = dict(padx=8, pady=3)
 
-        self.preview = tk.Label(self, bg="black", width=PREVIEW, height=PREVIEW)
-        self.preview.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 6))
+        # A CANVAS, not a Label. Label width/height are in TEXT UNITS until an
+        # image is attached, so asking a bare Label for width=240 requests a
+        # widget 240 CHARACTERS wide -- which is how the first build opened at a
+        # size that would not fit on a television. Canvas measures in pixels.
+        self.canvas = tk.Canvas(self, width=PREVIEW, height=PREVIEW,
+                                bg="black", highlightthickness=1,
+                                highlightbackground="#4a2f08")
+        self.canvas.grid(row=0, column=0, columnspan=3, padx=8, pady=(8, 4))
+        self._img_id = None
 
-        tk.Label(self, text="Port", fg=amber, bg=ground).grid(row=1, column=0, sticky="e", **pad)
-        self.port = ttk.Combobox(self, width=28, state="readonly")
-        self.port.grid(row=1, column=1, sticky="w", **pad)
-        ttk.Button(self, text="Refresh", command=self._refresh).grid(row=1, column=2, **pad)
+        tk.Label(self, text="Port", fg=AMBER, bg=GROUND).grid(row=1, column=0, sticky="e", **pad)
+        self.port = ttk.Combobox(self, width=22, state="readonly")
+        self.port.grid(row=1, column=1, sticky="ew", **pad)
+        ttk.Button(self, text="Refresh", width=8, command=self._refresh).grid(row=1, column=2, **pad)
 
-        tk.Label(self, text="Folder", fg=amber, bg=ground).grid(row=2, column=0, sticky="e", **pad)
-        tk.Entry(self, textvariable=self.out_dir, width=31).grid(row=2, column=1, sticky="w", **pad)
-        ttk.Button(self, text="Browse", command=self._browse).grid(row=2, column=2, **pad)
+        tk.Label(self, text="Folder", fg=AMBER, bg=GROUND).grid(row=2, column=0, sticky="e", **pad)
+        tk.Entry(self, textvariable=self.out_dir, width=24).grid(row=2, column=1, sticky="ew", **pad)
+        ttk.Button(self, text="Browse", width=8, command=self._browse).grid(row=2, column=2, **pad)
 
-        tk.Label(self, text="Seconds", fg=amber, bg=ground).grid(row=3, column=0, sticky="e", **pad)
-        tk.Entry(self, textvariable=self.seconds, width=8).grid(row=3, column=1, sticky="w", **pad)
+        tk.Label(self, text="Seconds", fg=AMBER, bg=GROUND).grid(row=3, column=0, sticky="e", **pad)
+        tk.Entry(self, textvariable=self.seconds, width=6).grid(row=3, column=1, sticky="w", **pad)
 
         self.btn = ttk.Button(self, text="Record", command=self._toggle)
-        self.btn.grid(row=4, column=0, columnspan=3, sticky="ew", padx=10, pady=(8, 2))
+        self.btn.grid(row=4, column=0, columnspan=3, sticky="ew", padx=8, pady=(6, 2))
 
-        self.bar = ttk.Progressbar(self, mode="determinate", length=380)
-        self.bar.grid(row=5, column=0, columnspan=3, padx=10, pady=2)
+        self.bar = ttk.Progressbar(self, mode="determinate")
+        self.bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
-        self.status = tk.Label(self, text="idle", fg=amber, bg=ground, anchor="w")
-        self.status.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(2, 10))
+        self.status = tk.Label(self, text="idle", fg=AMBER, bg=GROUND,
+                               anchor="w", width=1)
+        self.status.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
 
         self._refresh()
+
+    # -- helpers ------------------------------------------------------------
 
     def _refresh(self):
         ports = list_ports()
@@ -88,6 +130,39 @@ class Recorder(tk.Tk):
         d = filedialog.askdirectory(initialdir=self.out_dir.get())
         if d:
             self.out_dir.set(d)
+
+    def _reveal(self, path):
+        if sys.platform.startswith("win"):
+            os.startfile(path)                                   # noqa: S606
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+
+    def _open_folder(self):
+        d = self.out_dir.get()
+        if os.path.isdir(d):
+            self._reveal(d)
+        else:
+            messagebox.showwarning("Phantom Recorder", "That folder does not exist.")
+
+    def _show_last(self):
+        if self.last_output and os.path.exists(self.last_output):
+            self._reveal(os.path.dirname(self.last_output) if os.path.isfile(self.last_output)
+                         else self.last_output)
+        else:
+            messagebox.showinfo("Phantom Recorder", "Nothing recorded yet this session.")
+
+    def _about(self):
+        messagebox.showinfo(
+            "About Phantom Recorder",
+            "Records Phantom off the ESP32-S3 over USB.\n\n"
+            f"Capture is not real time. While armed, the firmware steps its\n"
+            f"simulation at a fixed {FPS} fps however long each frame takes, so the\n"
+            "board runs slow and the recording plays back smooth.\n\n"
+            "Expect roughly five seconds of waiting per second of footage.\n\n"
+            "mp4 output needs ffmpeg on PATH; without it a PPM sequence is\n"
+            "written instead.")
 
     # -- capture ------------------------------------------------------------
 
@@ -157,9 +232,13 @@ class Recorder(tk.Tk):
                     rate = n / max(0.001, elapsed)
                     eta = (want - n) / max(0.01, rate)
                     self.status.config(
-                        text=f"{n}/{want} frames   {rate:.1f}/s captured   ~{eta:.0f}s left")
+                        text=f"{n}/{want}   {rate:.1f}/s   ~{eta:.0f}s left")
                     self._img = tk.PhotoImage(data=base64.b64encode(ppm))
-                    self.preview.config(image=self._img, width=PREVIEW, height=PREVIEW)
+                    if self._img_id is None:
+                        self._img_id = self.canvas.create_image(0, 0, anchor="nw",
+                                                                image=self._img)
+                    else:
+                        self.canvas.itemconfig(self._img_id, image=self._img)
                 elif msg[0] == "error":
                     self.status.config(text=f"error: {msg[1]}")
                 elif msg[0] == "done":
@@ -192,6 +271,7 @@ class Recorder(tk.Tk):
                 p.stdin.write(f)
             p.stdin.close()
             p.wait()
+            self.last_output = path
             self.status.config(text=f"wrote {os.path.basename(path)}  ({n} frames)")
         else:
             d = os.path.join(self.out_dir.get(), f"phantom-{stamp}")
@@ -200,7 +280,8 @@ class Recorder(tk.Tk):
                 with open(os.path.join(d, f"f{i:05d}.ppm"), "wb") as fh:
                     fh.write(b"P6\n%d %d\n255\n" % (WIDTH, HEIGHT))
                     fh.write(f)
-            self.status.config(text=f"ffmpeg not found -- wrote {n} PPMs to {os.path.basename(d)}")
+            self.last_output = d
+            self.status.config(text=f"no ffmpeg -- wrote {n} PPMs to {os.path.basename(d)}")
 
 
 if __name__ == "__main__":
