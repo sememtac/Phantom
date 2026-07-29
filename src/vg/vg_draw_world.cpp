@@ -147,16 +147,26 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     }
 }
 
-static void draw_enemy(const VgCam& cam, const Ship* s) {
-    if (s->pos.z + ENEMY_SCALE * 3.0f < NEAR_Z) return;
+// `hero` marks the cutscene ship: drawn on the amber ramp rather than in threat
+// red, and faded over a far longer range because it is meant to be looked at
+// from a distance the combat curve would have written off as a contact.
+static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
+    // Both of these MUST use the ship's own scale, not the combat constant.
+    // Measuring a 128-unit cutscene model as if it were a 7-unit fighter put it
+    // under the two-pixel threshold at around z=1400 and switched it to the
+    // single-point path -- so it appeared, flew a little way, and became one
+    // invisible dot while its trail carried on streaking across the screen.
+    if (s->pos.z + s->scale * 3.0f < NEAR_Z) return;
 
     float z    = s->pos.z > NEAR_Z ? s->pos.z : NEAR_Z;
-    float rpx  = FOCAL * ENEMY_SCALE / z;
-    float fade = 1.3f - z / 700.0f;
+    float rpx  = FOCAL * s->scale / z;
+    float fade = hero ? (1.30f - z / 3400.0f) : (1.3f - z / 700.0f);
     if (fade > 1.0f)  fade = 1.0f;
     if (fade < 0.35f) fade = 0.35f;
 
-    uint16_t col = (s->hit_flash > 0) ? COL_ENEMY_HIT : vg_dim(COL_ENEMY, fade);
+    uint16_t col = hero ? vg_dim(INK_BRIGHT, fade)
+                        : ((s->hit_flash > 0) ? COL_ENEMY_HIT
+                                              : vg_dim(COL_ENEMY, fade));
 
     float cx, cy;
     if (rpx < 2.0f) {
@@ -359,7 +369,10 @@ void vg_draw_world(const VgCam& cam) {
     for (int i = 0; i < MAX_ENEMIES; i++)
         if (vg.enemy[i].alive) draw_enemy(cam, &vg.enemy[i]);
 
-    if (vg.cine_on) draw_enemy(cam, &vg.cine);
+    // Amber, not threat red. In a cutscene the pair are being introduced, not
+    // engaged, and one of them is the player's own ship -- painting it in the
+    // colour reserved for hostiles said the wrong thing about both.
+    if (vg.cine_on) draw_enemy(cam, &vg.cine, true);
 
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);
