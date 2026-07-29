@@ -2,6 +2,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_screens.h"
+#include "vg_glitch.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -91,18 +92,30 @@ void vg_render_frame(const VgInput* in, float fps) {
     // too, but smaller than the world does and on its own clock -- what sells it
     // is the two disagreeing. Shaking in lockstep would read as one bigger
     // shake; out of step, it reads as a rack that is not quite bolted down.
+    const bool  live = (vg.state != VG_PAUSE);
+    const float thr  = vg.throttle_vis;
+
+    // Strain, from holding the throttle against the stop.
+    float strain = 0.0f;
+    if (live && thr > SPEED_SHAKE_AT)
+        strain = (thr - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
+
+    // Damage, from having just been hit. Both drive the same failure language,
+    // because they are the same thing to the airframe: something is wrong with
+    // the machine and the panel is where you find out.
+    const float hurt = (live && vg.damage_glitch > 0.0f)
+                     ? (vg.damage_glitch / DAMAGE_GLITCH) : 0.0f;
+
     float jx = 0.0f, jy = 0.0f;
-    const float thr = vg.throttle_vis;
-    if (thr > SPEED_SHAKE_AT && vg.state != VG_PAUSE) {
-        const float k = (thr - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
-        const float a = HUD_SHAKE_MAX * k * k;
-        // Bucketed at a rate of its own, deliberately not the frame rate and
-        // deliberately not the same bucket the world buzz uses.
-        const uint32_t b = (uint32_t)(vg.state_t * 47.0f);
-        uint32_t h = b * 0x9E3779B9u;
-        h ^= h >> 13; h *= 0x85EBCA6Bu; h ^= h >> 16;
-        jx = ((float)(h        & 63u) / 63.0f - 0.5f) * 2.0f * a;
-        jy = ((float)((h >> 7) & 63u) / 63.0f - 0.5f) * 2.0f * a;
+    if (strain > 0.0f)
+        vg_glitch_offset(vg.state_t, 47.0f, HUD_SHAKE_MAX * strain * strain, &jx, &jy);
+    if (hurt > 0.0f) {
+        // A hit throws the panel much harder than speed ever does, and on its
+        // own clock again so the two never resolve into one motion.
+        float hx, hy;
+        vg_glitch_offset(vg.state_t, 31.0f, HUD_SHAKE_MAX * 3.4f * hurt, &hx, &hy);
+        jx += hx;
+        jy += hy;
     }
 
     if (draw_instruments) {
@@ -113,21 +126,13 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg_hud_jitter(0.0f, 0.0f);
     }
 
-    // Right at the stop, the panel starts losing patches of itself. Small, dark
-    // and infrequent -- this is a readout struggling, not a readout failing, and
-    // anything more would make the instruments unusable exactly when they are
-    // needed most.
-    if (thr > HUD_GLITCH_AT && vg.state != VG_PAUSE) {
-        const uint32_t slow = (uint32_t)(vg.state_t * 7.0f);
-        uint32_t s = slow * 0x27D4EB2Du;
-        s ^= s >> 15; s *= 0x165667B1u; s ^= s >> 13;
-        if ((s % 5u) == 0u) {
-            const int bw = 18 + (int)((s >> 3)  % 54u);
-            const int bh = 3  + (int)((s >> 9)  % 9u);
-            const int bx = (int)((s >> 13) % (uint32_t)(SCR_W - bw));
-            const int by = (int)((s >> 20) % (uint32_t)(SCR_H - bh));
-            vg_fill_rect(bx, by, bw, bh, ((s >> 27) & 1u) ? COL_BLACK : INK_ONFILL);
-        }
+    // Panel damage, at whichever severity is worse. Kept low for strain -- a
+    // readout struggling, not failing, since anything more would make the
+    // instruments unusable at exactly the moment they matter most.
+    const float sev = (hurt * 0.55f > strain * 0.12f) ? hurt * 0.55f : strain * 0.12f;
+    if (sev > 0.0f) {
+        vg_glitch_patches(vg.state_t, sev);
+        if (hurt > 0.35f) vg_glitch_tears(vg.state_t, hurt * 0.5f);
     }
 
     // A scan bar running down the screen while it settles. One rectangle, and

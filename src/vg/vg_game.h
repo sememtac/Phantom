@@ -169,6 +169,10 @@ enum VgState : uint8_t {
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f
 
+// How long the panel shows a hit. Long enough to be startling, short enough
+// that it is never the reason a second hit lands.
+#define DAMAGE_GLITCH   0.85f
+
 // The entry gate, in four beats. It wipes open upward, holds long enough to be
 // registered as a thing in its own right, releases the ship, holds again while
 // it clears, then wipes shut the same way.
@@ -312,6 +316,10 @@ struct VgGame {
     float    cine_hold;    // >0 while the ship is still waiting behind the gate
 
     float    hud_boot;     // >0 while the instruments are coming up
+    // >0 while the systems are visibly hurt. Same failure language as the death
+    // screen, briefly and at lower severity -- damage and destruction are the
+    // same event at different scales, so they read as the same thing happening.
+    float    damage_glitch;
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame

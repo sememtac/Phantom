@@ -314,7 +314,8 @@ void vg_damage_player(float amount) {
     if (vg.state == VG_HIT || vg.state == VG_KILL) return;
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
-    vg.hit_flash = 0.6f;
+    vg.hit_flash     = 0.6f;
+    vg.damage_glitch = DAMAGE_GLITCH;
     vg.shake     = 1.0f;
     s_player_hit = true;
 }
@@ -754,7 +755,8 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
             }
         }
     }
-    if (vg.hud_boot > 0) vg.hud_boot -= dt;
+    if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
+    if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
     if (vg.gate_t   > 0) vg.gate_t   -= dt;
     if (vg.comms_t > 0) {
         vg.comms_t -= dt;

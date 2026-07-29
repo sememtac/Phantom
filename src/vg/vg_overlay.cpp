@@ -3,6 +3,7 @@
 #include "vg_tourney.h"
 #include "vg_voice.h"
 #include "vg_sky.h"
+#include "vg_glitch.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -26,12 +27,7 @@ static void draw_damage_vignette(void) {
     vg_fill_rect(SCR_W - t, 0, t, SCR_H, c);
 }
 
-static uint32_t glitch_hash(uint32_t x) {
-    x ^= x >> 16; x *= 0x7feb352dU;
-    x ^= x >> 15; x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return x;
-}
+#define glitch_hash vg_glitch_hash
 
 // The title card glitches in short bursts: characters jump out of line, a dim
 // ghost separates sideways like a mistimed signal, occasional letters corrupt,
@@ -277,84 +273,19 @@ static void draw_story(void) {
 #define DEATH_FLASH  0.11f
 
 static int death_jitter(void) {
-    const uint32_t b = (uint32_t)(vg.state_t * 17.0f);
-    const uint32_t h = glitch_hash(b * 977u);
+    const uint32_t h = vg_glitch_hash((uint32_t)(vg.state_t * 17.0f) * 977u);
     return ((h % 9u) < 3u) ? (int)((h >> 8) % 15u) - 7 : 0;
 }
 
+// Death is the same failure the panel shows when you take a hit, run all the
+// way out. Severity 1.0 and every mechanism at once.
 static void draw_death_glitch(void) {
-    const uint32_t bucket = (uint32_t)(vg.state_t * 17.0f);
-    const uint32_t h      = glitch_hash(bucket);
-
-    // Whole dropped frames. Rare, and the single most convincing part of it --
-    // a display that stutters is broken in a way one that merely flickers is
-    // not.
-    if ((h % 23u) == 0u) {
+    if (vg_glitch_dropout(vg.state_t, 1.0f)) {
         vg_fill_rect(0, 0, SCR_W, SCR_H, COL_BLACK);
         return;
     }
-
-    const int bars = (int)((h >> 3) % 4u) + 1;
-    for (int i = 0; i < bars; i++) {
-        const uint32_t g  = glitch_hash(bucket * 71u + (uint32_t)i);
-        const int      y  = (int)(g % (uint32_t)SCR_H);
-        const int      hh = 2 + (int)((g >> 8) % 10u);
-        // Shifted sideways as well as drawn: a tear is displaced signal, not a
-        // stripe laid over the top.
-        const int      xo = (int)((g >> 13) % 70u) - 35;
-        vg_fill_rect(xo, y, SCR_W, hh, ((g >> 21) & 1u) ? INK_TRACE : INK_ONFILL);
-    }
-
-    if (((h >> 11) % 5u) == 0u)
-        vg_fill_rect(0, (int)((h >> 15) % (uint32_t)SCR_H), SCR_W, 2, INK_BRIGHT);
-
-    // Panel damage: patches of pixels that stick, die, and re-form.
-    //
-    // Two clocks, and the pairing is what makes it read as a failing LCD rather
-    // than as static. The SLOW one decides where the patches are, so each one
-    // persists long enough to be seen as damage in a particular place. The FAST
-    // one flashes and nudges them, so they behave like a panel losing its
-    // addressing -- the fault stays put while the picture in it does not.
-    // Re-rolling positions every frame would just be noise, which has no
-    // location and therefore nothing wrong with it.
-    const uint32_t slow = (uint32_t)(vg.state_t * 4.5f);
-    const uint32_t fast = (uint32_t)(vg.state_t * 22.0f);
-
-    const int nblk = 4 + (int)(glitch_hash(slow * 31u) % 4u);
-    for (int i = 0; i < nblk; i++) {
-        const uint32_t g = glitch_hash(slow * 613u + (uint32_t)i * 71u);
-
-        // Not every patch is lit every moment; a stuck block that never blinks
-        // looks painted on.
-        if (((glitch_hash(fast * 17u + (uint32_t)i) >> 3) % 5u) == 0u) continue;
-
-        const int bw = 12 + (int)((g >> 2)  % 74u);
-        const int bh = 6  + (int)((g >> 9)  % 36u);
-        const int bx = (int)((g >> 15) % (uint32_t)(SCR_W - bw));
-        const int by = (int)((g >> 21) % (uint32_t)(SCR_H - bh));
-
-        // Morph: a few pixels of breathing on the fast clock, so the edges
-        // crawl instead of holding a clean rectangle.
-        const uint32_t m  = glitch_hash(fast * 53u + (uint32_t)i);
-        const int      dx = (int)(m % 7u) - 3;
-        const int      dy = (int)((m >> 4) % 5u) - 2;
-
-        uint16_t c;
-        switch ((g >> 27) % 4u) {
-        case 0:  c = COL_BLACK;  break;   // dead
-        case 1:  c = INK_MAX;    break;   // stuck full on
-        case 2:  c = INK_TRACE;  break;
-        default: c = COL_DANGER; break;   // one channel stuck
-        }
-        vg_fill_rect(bx + dx, by + dy, bw, bh, c);
-
-        // Some patches fail by row rather than as a solid area, which is what a
-        // panel that has lost part of its addressing actually looks like.
-        if (((g >> 25) & 1u) && bh > 12) {
-            for (int y = 1; y < bh; y += 3)
-                vg_fill_rect(bx + dx, by + dy + y, bw, 1, COL_BLACK);
-        }
-    }
+    vg_glitch_tears(vg.state_t, 1.0f);
+    vg_glitch_patches(vg.state_t, 1.0f);
 }
 
 void vg_draw_overlays(void) {
