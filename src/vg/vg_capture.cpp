@@ -3,25 +3,12 @@
 #include "vg_replay.h"
 #include <Arduino.h>
 
-// Frames per second the RECORDING plays at. Nothing to do with how fast the
-// device manages to send them -- it is only the dt the simulation is stepped
-// with, so it decides how much motion happens between captured frames.
-// 60 so a smooth capture is a genuine 60fps recording rather than a 30fps one.
-// Costs twice the frames for the same length of video, which is only ever a
-// wait -- and the whole point of this project is showing 60.
-#define CAP_FPS   60.0f
-
-// 0 idle, 1 fixed-step, 2 live.
-//
-// Fixed step gives smooth video of a game running in slow motion: the
-// simulation is told a frame took 1/30s however long it really took, so motion
-// between captured frames is always the same and the recording is perfect.
-//
-// Live leaves the clock alone. The game runs at its own pace and whatever gets
-// sent is what was genuinely on the panel at that moment, so the recording is
-// real time -- at the handful of frames a second the link can carry, because
-// every send stalls the loop while it goes out. Choppy and true, against
-// smooth and slowed.
+// Off, or streaming. There used to be two capture modes the host could arm
+// directly and both are gone, because neither could hold 60fps and 60fps is the
+// point of the project. Live stalled the loop on every send and dropped the game
+// to 15; smooth ran the simulation on a fake clock, which is 60fps video of a
+// board in slow motion. Streaming is now driven only by replay, where the frame
+// being sent was already produced at a real 60fps and is merely being read back.
 static int      s_mode  = 0;
 static uint32_t s_index = 0;
 
@@ -38,10 +25,6 @@ bool  vg_capture_active(void) { return s_mode != 0; }
 // too -- the loss is invisible from both ends at once.
 void  vg_capture_set(int mode) { s_mode = mode; s_index = 0; }
 bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; }
-
-// Only fixed-step overrides the clock. Live returns zero, meaning "use real
-// time", which is the entire difference between the two modes.
-float vg_capture_dt(void)     { return (s_mode == 1) ? (1.0f / CAP_FPS) : 0.0f; }
 
 // Serial.write RETURNS A COUNT, and it is not always the count you asked for.
 // The USB CDC ring is finite and the call gives up after a timeout, so a busy
@@ -107,16 +90,7 @@ void vg_capture_poll(void) {
         // Replay commands first: they read their own payload straight off the
         // stream, so they must not be mistaken for capture bytes.
         if (vg_replay_command(c)) continue;
-        if ((c == 'c' || c == 'l') && !s_mode) {
-            s_mode  = (c == 'l') ? 2 : 1;
-            s_index = 0;
-            // Announced on a line of its own so the host can sync before any
-            // binary arrives, and so a human watching the monitor can see why
-            // the game has suddenly gone slow.
-            Serial.printf("\nvg_capture: ARMED %s %dx%d rot %d\n",
-                          (s_mode == 2) ? "LIVE" : "FIXED",
-                          SCR_W, SCR_H, VG_ROTATE);
-        } else if (c == 's' && s_mode) {
+        if (c == 's' && s_mode) {
             s_mode = 0;
             Serial.printf("\nvg_capture: DONE %u frames\n", (unsigned)s_index);
         } else if (c == 'b' && !s_mode) {

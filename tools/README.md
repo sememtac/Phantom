@@ -1,24 +1,43 @@
 # Capture tools
 
-Recording Phantom off the board, instead of pointing a phone at it.
+Recording Phantom off the board at a true 60 fps, instead of pointing a phone
+at it.
+
+## Why it is two steps
+
+A frame is 480×480×2 = 460,800 bytes and the link carries 0.74 MB/s. Run-length
+coded, a typical frame is about 33 KB — roughly **23 frames a second**, not
+sixty. And that is the ceiling for *moving pixels*, not for playing: sending
+them while you play stalls the game loop to **15 fps**, which does not record
+this game so much as a slower, worse one.
+
+So nothing is sent while you play.
+
+**Record** logs the *simulation* instead of the picture — a frame duration and
+an input struct, 71 bytes a frame, about 4 KB/s. The game runs at its true,
+unimpeded speed. Measured: 240 frames of play in 3.57 s of wall clock for
+3.73 s of gameplay — 0.96× realtime, 64 fps, 17 KB.
+
+**Render** re-runs that session on the device afterwards, frame by frame, and
+pulls the real pixels back as slowly as it likes. Costs about **3.3 minutes per
+minute** of gameplay.
+
+The video is a genuine 60 fps because the frames really were 1/60 s apart when
+they happened, and every pixel is the actual rasteriser output — the HUD's own
+fps counter reads whatever it read at the time. Every frame arrives whole, with
+nothing dropped and no tearing, none of which is true of filming the panel.
+
+Recording **restarts the game**, because a session has to begin somewhere the
+replay can also begin. Play from the menu.
 
 ## PhantomRecorder (the app)
 
-A small window: pick the port and an output folder, set a length, press
-**Record**. It shows a live preview of what it is pulling and writes a
-timestamped `phantom-YYYYMMDD-HHMMSS.mp4` into the folder you chose.
+Pick the port and an output folder, then work down the window: **1. Record
+Gameplay**, play, **Stop**, then **2. Render to Video**. It writes a
+timestamped `.phr` session and then an `.mp4` beside it, and shows what it is
+pulling while it renders.
 
-Pressing **Stop** keeps whatever has already arrived — a recording cut short is
-still a recording.
-
-Tick **Continuous** to record until you press Stop — for a whole playthrough
-rather than a clip. Frames stream to disk as they arrive, so length is limited
-by disk rather than memory, and continuous recordings are written as fragmented
-mp4 so an unclean end costs the last fragment instead of the file.
-
-**Live** (on by default) records what is on the panel, when it was on the panel.
-Untick it for **smooth**. See below — the difference is the whole story of these
-tools.
+`File → Open Session...` renders a `.phr` from an earlier sitting.
 
 Run `tools/dist/PhantomRecorder.exe`, or from source:
 
@@ -34,99 +53,68 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
     --name PhantomRecorder --add-data "phantom_link.py;." phantom_recorder.py
 ```
 
-## phantom_capture.py (command line)
+## phantom_session.py (command line)
 
 Same thing without the window, for scripting:
-
-```
-python tools/phantom_capture.py --port COM6 --seconds 12 --dir .
-python tools/phantom_capture.py --port COM6 --smooth --seconds 12 --dir .
-python tools/phantom_capture.py --port COM6 --continuous --dir .   # until Ctrl+C
-```
-
-## Live or smooth — pick one, you cannot have both
-
-A frame is 480×480×2 = 460,800 bytes and the USB CDC link carries roughly a
-megabyte a second. Two frames per second raw, about **six** with the run-length
-coding the firmware applies. There is no compression scheme that turns that into
-sixty, so something has to give: either the video is real time and choppy, or it
-is smooth and slowed. Both modes exist because both are the right answer
-sometimes.
-
-**Live** (the default) leaves the game's clock alone. What goes out is exactly
-what was on the panel at that moment, so the recording is real time — at about
-six frames a second, because every send stalls the loop while it goes. The host
-measures the true arrival rate over the first sixteen frames and encodes at that,
-so the video runs at the speed the game actually ran. **This is the mode for
-recording yourself playing.**
-
-**Smooth** (`--smooth`, or untick Live) has the firmware step its simulation at a
-fixed 30 fps however long each frame really took. The board runs in slow motion;
-the recording plays back perfectly smooth. Wall-clock speed decides how long you
-wait, not how the video looks. Expect roughly **six seconds of waiting per second
-of footage** — and a match cannot really be *played* at six frames a second, so
-this is for the attract loop, the menus, the bracket and the launch cutscene,
-which record hands-off and look immaculate.
-
-Either way every frame arrives whole, with nothing dropped and no tearing, none
-of which is true of filming the panel.
-
-Measured on the bench: 6 s of live capture → 39 frames, 5.8 s of video at
-6.7 fps. 2 s of smooth capture → 60 frames at 30 fps, 13 s of waiting.
-
-One firmware consequence worth recording: live capture is why `main.cpp`
-sub-steps long frames instead of clamping them. A 180 ms send used to be clamped
-to 100 ms, which would have advanced the world at half wall-clock speed and made
-"real time" a lie by a factor of two.
-
-## phantom_session.py — recording gameplay at a true 60 fps
-
-Neither capture mode can give you 60 fps of your own piloting: live tops out
-around 23, and smooth needs the board in slow motion. So sessions are recorded
-and rendered separately.
 
 ```
 python tools/phantom_session.py record --port COM6 --out run.phr   # play, Ctrl+C
 python tools/phantom_session.py render --port COM6 run.phr --dir .
 ```
 
-Recording logs the simulation rather than the picture — a `dt` and an input
-struct, 71 bytes a frame, about 4 KB/s. The game runs at its **true, unimpeded
-speed** while you play (measured: 64 fps, 0.96× realtime, 17 KB for four
-seconds). Rendering then re-runs the session on the device frame by frame and
-pulls the real pixels at whatever rate the link manages.
+## How replay can be exact
 
-The video is a genuine 60 fps because the frames really were 1/60 s apart when
-they happened, and every pixel is the actual rasteriser output — the HUD's own
-fps counter reads whatever it read at the time. Rendering costs about
-**3.3 minutes per minute** of gameplay.
+The simulation is a pure function of (seed, dt, input): the game draws from a
+seeded xorshift, and no game or render code reads the wall clock. The four
+`esp_random()` calls that do exist go through `vg_replay_rand()`, which logs
+them while recording and hands the same values back while replaying. Touch and
+the IMU are never read during playback — whatever they produced is already in
+the recorded input struct.
 
-This works because the simulation is a pure function of (seed, dt, input): the
-game draws from a seeded xorshift, and no game or render code reads the wall
-clock. The four `esp_random()` calls that do exist are logged and replayed.
-Persisted progress is snapshotted into the session header and restored on
-playback, and saving to flash is suppressed while replaying, so rendering a
-recording cannot overwrite the progress of whoever made it.
+Persisted progress — credits, callsign, ship, champion, trail hue — is
+snapshotted into the session header and restored on playback, and saving to
+flash is suppressed while replaying, so rendering a recording cannot overwrite
+the progress of whoever made it.
 
-Recording **restarts the game**, because a session has to begin somewhere the
-replay can also begin. Play from the menu.
+## Things that were tried and are not here
+
+**Live capture**, which streamed frames while you played. Real time, and it
+dropped the game to 15 fps. The whole point of the project is 60, so it is gone.
+
+**Smooth capture**, which stepped the simulation on a fixed clock so the video
+came back perfectly smooth. But that is 60 fps video of a board running in slow
+motion, and the session workflow gives the same result from a game that really
+ran at 60.
+
+**Band delta compression.** Sending each band as its XOR against the previous
+frame cut a frame from 33 KB to **13.0 KB** — 2.5×, with 3499 of 3600 bands
+choosing the delta. It still made rendering **slower**: 19.5 fps → 16.3, and
+17.3 after cutting it to a single pass. Holding the previous frame in PSRAM
+costs about 900 KB of traffic per frame to read and write, and PSRAM is slow
+enough that this outweighs the ~27 ms of link time the smaller frames saved —
+especially since the USB driver drains in the background while the CPU works,
+so link time was already partly free. Rendering is device-bound, not
+link-bound. Reverted, and worth not rediscovering.
+
+The remaining lever for the render pass is overlapping the device's rasterising
+with its transmitting on the second core, which is untried.
 
 ## Layout
 
 | file | |
 |---|---|
-| `phantom_link.py` | wire protocol and pixel conversion — the only copy |
+| `phantom_link.py` | wire protocol, session format, pixel conversion — the only copy |
 | `phantom_recorder.py` | the window |
-| `phantom_session.py` | record a session, render it at 60 fps |
-| `phantom_capture.py` | the command line |
+| `phantom_session.py` | the command line |
 
-All three front ends drive `phantom_link`, deliberately. The two bugs that took
-the first version two attempts — scanning for the frame magic inside binary
+Both front ends drive `phantom_link`, deliberately. The two bugs that took the
+first version two attempts — scanning for the frame magic inside binary
 payloads, and copying the firmware's rotation instead of inverting it — are
 exactly the kind that get fixed in one copy and left in the other.
 
 ## Requirements
 
-`pyserial` for either script (the exe bundles it). `ffmpeg` on PATH for mp4
-output; without it both fall back to writing a PPM sequence, which ffmpeg or
-almost anything else can convert later.
+`pyserial`, and `numpy` for any useful speed — without it the pixel conversion
+runs a Python loop over 230,400 pixels per frame and rendering crawls. `ffmpeg`
+on PATH for mp4 output; without it a PPM sequence is written instead, which
+ffmpeg or almost anything else can convert later. The exe bundles all three.

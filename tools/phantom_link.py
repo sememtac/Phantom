@@ -28,7 +28,7 @@ try:
 except ImportError:
     _np = None
 
-FPS = 60            # the rate the firmware steps at in smooth capture
+FPS = 60            # what the game targets, and what a session records at
 WIDTH = HEIGHT = 480
 
 
@@ -182,17 +182,6 @@ class PhantomLink:
                 pass
             self.ser.close()
             self.ser = None
-
-    def arm(self, live=False):
-        """Fixed-step gives smooth video of a slowed game; live gives real-time
-        video of the game as it actually ran."""
-        self._synced = False
-        self.ser.write(b"l" if live else b"c")
-        self.ser.flush()
-
-    def disarm(self):
-        self.ser.write(b"s")
-        self.ser.flush()
 
     # -- session record / replay -------------------------------------------
     #

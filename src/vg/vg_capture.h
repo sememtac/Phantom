@@ -11,26 +11,14 @@
 // on this part manages roughly a megabyte a second. Two frames per second, and
 // there is no compression scheme that turns that into sixty.
 //
-// There is no way to have both real time and smooth, so there are two modes and
-// the host picks:
+// Nothing arms this directly any more. Two modes used to: LIVE, which sent
+// whatever was on the panel and stalled the game to 15fps doing it, and SMOOTH,
+// which stepped the simulation on a fake clock so the video was 60fps but the
+// board was in slow motion. Neither could hold a real 60fps, so neither
+// survived -- see vg_replay.h, which records the SIMULATION at full speed and
+// reads the pixels back afterwards.
 //
-//   LIVE ('l')   The clock is left alone. The game runs at its own speed and
-//                what goes out is exactly what was on the panel at that moment,
-//                so the recording is real time -- at the handful of frames a
-//                second the link can carry, since every send stalls the loop
-//                while it goes. Choppy and true. This is the mode for recording
-//                someone playing.
-//
-//   SMOOTH ('c') The simulation is stepped at a FIXED dt regardless of how long
-//                the frame actually took, so the device runs in slow motion
-//                while the recording plays back perfectly smooth. Wall-clock
-//                speed only decides how long you wait. The trade is that a match
-//                cannot really be PLAYED at five frames a second -- cutscenes,
-//                menus, the bracket and the attract loop record hands-off, live
-//                combat is best taken in short bursts.
-//
-// Both capture every frame whole, with nothing dropped and no tearing, neither
-// of which is true of pointing a camera at the screen.
+// What remains is the frame streaming itself, driven by replay.
 // ===========================================================================
 
 // Wire format. All little-endian, which is what both ends already are.
@@ -45,7 +33,7 @@
 // undoing either on the device would cost frame time to save the host a loop.
 #define VG_CAP_FMT_RLE16  1
 
-enum { VG_CAP_OFF = 0, VG_CAP_SMOOTH = 1, VG_CAP_LIVE = 2 };
+enum { VG_CAP_OFF = 0, VG_CAP_STREAM = 1 };
 
 bool vg_capture_active(void);
 
@@ -72,12 +60,9 @@ void vg_link_stats(uint32_t* bytes, uint32_t* shorts, uint32_t* stalls,
 void vg_link_stats_reset(void);
 void vg_capture_frame_counts(uint32_t* begins, uint32_t* ends);
 
-// The fixed simulation step, in SMOOTH mode only. Zero when live or idle,
-// meaning "use the real clock" -- which is the whole of the difference.
-float vg_capture_dt(void);
-
-// Check for a host command. 'c' arms smooth, 'l' arms live, 's' stops. Cheap
-// enough to call every frame.
+// Check for a host command: 's' stops a stream, 'b' benchmarks the link, and
+// the replay commands are dispatched from here. Cheap enough to call every
+// frame.
 void vg_capture_poll(void);
 
 // Called by the rasteriser around each finished frame. Bands arrive in the

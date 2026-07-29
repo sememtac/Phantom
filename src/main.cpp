@@ -98,28 +98,16 @@ void loop(void) {
     // write, a reconnect. Catching up on it is worse than dropping it.
     if (frame_dt > 0.50f) frame_dt = 0.50f;
 
-    // SMOOTH capture steps the simulation at a FIXED rate no matter how long the
-    // frame actually took. The device runs in slow motion because the link
-    // cannot carry 460KB sixty times a second, but the recording plays back
-    // perfectly -- wall-clock speed decides how long you wait, not how the video
-    // looks. Zero means live or idle: use the real clock.
-    const float cap_dt = vg_capture_dt();
-
     // A long frame is SUB-STEPPED rather than clamped.
     //
-    // Clamping was fine while a long frame meant a hitch, and wrong the moment
-    // live capture existed: sending a frame stalls the loop for ~180ms, so every
-    // frame would have been clamped to 100ms and the world would have advanced
-    // at half wall-clock speed. A recording that is real time in name only,
-    // playing back at half the speed the game was actually running.
+    // Clamping was fine while a long frame meant a hitch, and wrong once a
+    // frame could take 180ms: every one would have been clamped to 100ms and
+    // the world would have advanced at half wall-clock speed.
     //
     // Sub-stepping keeps real time AND keeps the guarantee the clamp existed for
     // -- no single step long enough to put a missile through a hull. Normal play
     // is a 16ms frame and one step, exactly as before.
-    // What the game believes this frame lasted. In smooth capture that is the
-    // fake clock, everywhere -- input timers included, or a touch would have to
-    // be held six times as long as it looks on the recording.
-    float sim_dt = (cap_dt > 0.0f) ? cap_dt : frame_dt;
+    float sim_dt = frame_dt;
 
     uint32_t t0 = micros();
     VgInput in;
@@ -138,7 +126,7 @@ void loop(void) {
     // this costs it nothing.
     int steps = 1;
     float dt = sim_dt;
-    if (cap_dt <= 0.0f && dt > 0.02f) {
+    if (dt > 0.02f) {
         steps = (int)(dt / 0.02f) + 1;
         dt    = sim_dt / (float)steps;
     }
@@ -158,7 +146,7 @@ void loop(void) {
 
     // The rate the FRAME went out at, not the sub-step rate -- sub-steps are an
     // implementation detail of a long frame and would read as a speed-up.
-    float inst = 1.0f / sim_dt;
+    float inst = 1.0f / sim_dt;   // NOLINT: sim_dt is never zero, clamped above
     fps += (inst - fps) * 0.08f;
 
     acc_input  += t1 - t0;

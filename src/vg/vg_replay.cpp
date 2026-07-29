@@ -158,7 +158,7 @@ static void begin_play(void) {
     s_index = 0;
     s_rand_n = 0;
     vg_link_stats_reset();
-    vg_capture_set(VG_CAP_LIVE);  // every replayed frame is streamed
+    vg_capture_set(VG_CAP_STREAM);   // every replayed frame is streamed
     Serial.printf("\nvg_replay: PLAYING\n");
 }
 
