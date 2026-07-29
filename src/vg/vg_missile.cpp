@@ -96,6 +96,7 @@ static void hit_enemy(int index, float dmg) {
     Ship* s = &vg.enemy[index];
     if (!s->alive) return;
     s->hull -= dmg;
+    s->engaged = true;      // being shot at counts as meeting
     s->hit_flash = 0.2f;
     // Said before the ship is cleared, so a dying pilot still has a tag to
     // transmit under.

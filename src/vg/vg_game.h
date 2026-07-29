@@ -61,6 +61,12 @@ struct Ship {
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
+    // True once the player and this ship have actually been in the same fight:
+    // close enough to see, or hit. A match must not be decided by an opponent
+    // who dies before this is set, because the player was never given a chance
+    // to be part of it.
+    bool  engaged;
+
     // Who is flying it. Carried on the ship rather than looked up through the
     // bracket, because a missile detonating has to name the pilot it just
     // killed and has no business knowing what a tournament is.

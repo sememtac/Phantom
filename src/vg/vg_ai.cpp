@@ -56,6 +56,14 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     float  inc_range = 1e9f;
     const Missile* inc = incoming_for(index, &inc_range);
 
+    // The fight has started once they are close enough for the player to see
+    // them. Their own lock range is the right measure of that: it is the
+    // distance this class fights at, so a BALLISTA counts from further out than
+    // a CHARIOT, which is exactly the difference between those ships.
+    if (!s->engaged && vlen2(s->pos) < (sp->lock_range * sp->lock_range)) {
+        s->engaged = true;
+    }
+
     Vec3 desired;
 
     Vec3  elocal = vg_arena_local_of(s->pos);

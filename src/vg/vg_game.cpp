@@ -131,6 +131,7 @@ static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->offset_dir   = vg_rand_unit();
     s->roll_vis     = 0;
     s->hit_flash    = 0;
+    s->engaged      = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -531,7 +532,18 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         // Backstop: the AI steers away from the wall, but never let one escape
         // the world if it cuts a turn too fine.
         s->pos = vg_arena_clamp_inside(s->pos, ENEMY_HIT_RADIUS);
-        if (vlen2(s->pos) > CULL_RADIUS * CULL_RADIUS) s->alive = false;
+
+        // NO DISTANCE CULL. There used to be one at CULL_RADIUS, which is 4200,
+        // and ARENA_TORUS_RMAJ is also 4200. The arena is a LOOP of that radius,
+        // so two ships on opposite sides of it are 8400 apart -- twice the
+        // distance that deleted one of them. An opponent spawns at up to 3625,
+        // already most of the way there, and any drift down the tunnel finished
+        // the job.
+        //
+        // It killed the opponent with no debris, no explosion and no last line,
+        // the match saw nobody left alive, and the player won a fight that never
+        // happened. The clamp above already keeps every enemy inside the torus,
+        // so there is nothing left for a cull to save us from.
     }
 
     for (int i = 0; i < MAX_MISSILES; i++) {
@@ -654,6 +666,10 @@ static void collide_player(void) {
         if (!s->alive) continue;
         float r = ENEMY_HIT_RADIUS + SHIP_RADIUS;
         if (vlen2(s->pos) < r * r) {
+            // Say it BEFORE clearing alive. A pilot who dies in a collision gets
+            // the same last line as one who dies to a missile; only the missile
+            // path used to speak, so half the deaths in the game were silent.
+            vg_comms_say(s, VOICE_DEATH);
             vg_spawn_debris(s->pos, 20.0f, 12);
             s->alive = false;
             vg_damage_player(DMG_RAM);
@@ -1089,8 +1105,27 @@ void vg_game_update(float dt, const VgInput* in) {
             }
 
             bool opponent_alive = false;
-            for (int i = 0; i < MAX_ENEMIES; i++)
+            bool opponent_met   = false;
+            for (int i = 0; i < MAX_ENEMIES; i++) {
                 if (vg.enemy[i].alive) opponent_alive = true;
+                if (vg.enemy[i].engaged) opponent_met = true;
+            }
+
+            // An opponent who dies without ever reaching the player does not end
+            // the match. Send the next one instead.
+            //
+            // Nothing should reach this now: the distance cull that deleted them
+            // is gone, and the only remaining ways to die are a missile and a
+            // collision, both of which require the two ships to be together. It
+            // stays because the failure it prevents is the worst kind -- a
+            // tournament round won without a fight, with no wreck and nobody
+            // saying anything, which reads as a broken game rather than a
+            // lucky one.
+            if (!opponent_alive && !opponent_met) {
+                vg_spawn_opponent();
+                opponent_alive = true;
+            }
+
             if (!opponent_alive) {
                 // Not straight to the scorecard. They are still talking, and
                 // cutting to a purse over the top of a dying pilot is the whole
