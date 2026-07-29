@@ -31,13 +31,18 @@ void setup(void) {
     Serial.setTxBufferSize(16384);
     Serial.begin(115200);
 
-    // Block when the host stops reading, do not DISCARD. The default is a short
-    // timeout after which write() drops whatever did not fit, which for a log
-    // line is invisible and for a 37KB frame is fatal: the host waits forever
-    // for bytes that were thrown away. Any pause on the host -- ffmpeg
-    // backpressure, a garbage collection -- was silently truncating a frame,
-    // which is why replay died at a different frame every run.
-    Serial.setTxTimeoutMs(5000);
+    // NEVER BLOCK THE GAME ON THE SERIAL PORT. Zero means write() drops whatever
+    // does not fit and returns immediately.
+    //
+    // This was 5000, so that a capture could not lose a frame when the host
+    // paused. It also meant that with nobody reading the port -- which is every
+    // normal session -- the 16KB ring slowly filled with telemetry, and then
+    // every two-second printf blocked for FIVE SECONDS. The game froze, ran for
+    // two seconds, and froze again, a few minutes into play.
+    //
+    // The long timeout is correct only while a capture is running, and only then
+    // is a host actually reading. vg_capture_set() raises it and lowers it again.
+    Serial.setTxTimeoutMs(0);
 
     // Room for more than one replay record in flight, so the host can keep the
     // next frame queued while the device is still sending the current one.
@@ -166,8 +171,11 @@ void loop(void) {
     // Also silent while recording a session: the log shares this link, and a
     // telemetry line landing between frame records is indistinguishable from a
     // corrupt one to the host.
+    // availableForWrite() as well: with the timeout at zero a full ring only
+    // costs a dropped line, but checking first means the frame does not even pay
+    // for formatting one nobody can receive.
     if (!vg_capture_active() && vg_replay_mode() == VG_RP_OFF
-        && ms - report_ms >= 2000) {
+        && ms - report_ms >= 2000 && Serial.availableForWrite() > 256) {
         report_ms = ms;
         // rast is CPU spent building bands; wait is time stalled on the panel
         // DMA. Only the amount by which rast exceeds the transfer window costs

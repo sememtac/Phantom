@@ -166,6 +166,16 @@ static float fbm_tex(int tx, int ty, uint32_t seed, int octaves, int base_period
 bool vg_sky_init(void) {
     const size_t bytes = (size_t)SKY_TEX_SIZE * SKY_TEX_SIZE * 2;
 
+    // Reuse the texture if it already exists. This used to allocate every time
+    // and leaked 32KB per call, which nobody noticed while vg_game_init() ran
+    // once at boot. Recording and rendering a session both call it again, so
+    // internal RAM fell 87KB -> 54KB -> 21KB across three sessions and then the
+    // allocation failed and the backdrop disappeared.
+    if (s_tex) {
+        s_ready = false;        // the contents belong to an older sky
+        return true;
+    }
+
     // Internal only. The fill reads this every frame in a scattered pattern;
     // from PSRAM it would thrash the cache exactly as a full framebuffer would.
     s_tex = (uint16_t*)heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);

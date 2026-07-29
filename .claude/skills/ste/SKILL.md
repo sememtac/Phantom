@@ -22,9 +22,9 @@ help.
 
 **Out of scope, permanently:** every word of the game's own writing. Pilot
 dialogue, ship names and taglines, the backstory crawl, menu copy, any string
-the player sees, `DESIGN.md`, and the root `README.md`. The author keeps full
-creative control there and that writing is not meant to be technically
-calibrated. Comments in `src/` are engineering prose and are also out of scope.
+the player sees, `DESIGN.md` (untracked, local only), and the root `README.md`.
+The author keeps full creative control there and that writing is not meant to be
+technically calibrated. Comments in `src/` are engineering prose and are also out of scope.
 
 See `CLAUDE.md` at the repository root. If a request is ambiguous about which
 side of that line it falls on, ask before you rewrite anything.

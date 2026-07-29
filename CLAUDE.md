@@ -14,6 +14,10 @@ executed. It includes:
   (`src/vg/vg_screens.cpp`, `src/vg/vg_overlay.cpp`, `src/vg/vg_game.cpp`)
 - `DESIGN.md` and the root `README.md`
 
+`DESIGN.md` is **not tracked by git** and must stay that way. It is the working
+design document, for us, and it is listed in `.gitignore`. Keep it updated as the
+game changes; do not add it back to the repository.
+
 The author keeps full creative control of all of it. If a line there reads
 oddly, that is a decision until the author says otherwise. Ask; do not tidy.
 

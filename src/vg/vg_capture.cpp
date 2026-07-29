@@ -34,11 +34,22 @@ void vg_capture_set(int mode) {
     // Drain before going idle. The host must have every byte of the last frame
     // before the device reports that the session finished.
     if (!mode && s_mode) tx_drain();
+
     s_mode  = mode;
     s_index = 0;
     if (mode) tx_start();
 }
 bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; }
+
+// A blocking write is correct while a session runs and wrong at every other
+// time. During a session a host is reading, and a dropped byte truncates a frame
+// it then waits for. Outside a session nobody is reading, and a blocking write
+// freezes the game -- see the note in setup().
+//
+// Replay owns this, because replay is what knows a session has started. It has
+// to be on before the first announce: the host waits for "PLAYING", and with
+// writes non-blocking that line was dropped and the render never began.
+void vg_link_blocking(bool on) { Serial.setTxTimeoutMs(on ? 5000 : 0); }
 
 // Serial.write RETURNS A COUNT, and it is not always the count you asked for.
 // The USB CDC ring is finite and the call gives up after a timeout, so a busy
@@ -57,10 +68,20 @@ static uint32_t s_begins = 0, s_ends = 0;
 void vg_link_write(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
     s_wr_bytes += (uint32_t)n;
+    // Bounded. A host that stops reading mid-capture used to spin here for ever,
+    // and a device that hangs is worse than a capture that desyncs -- the host
+    // resynchronises on the next frame, and the player gets their game back.
+    int spins = 0;
     while (n > 0) {
         const size_t k = Serial.write(b, (size_t)n);
         if (k < (size_t)n) s_wr_short++;
-        if (k == 0) { s_wr_stall++; delay(1); continue; }   // ring full, drain
+        if (k == 0) {
+            s_wr_stall++;
+            if (++spins > 3000) return;      // ~3s, then give up on these bytes
+            delay(1);
+            continue;
+        }
+        spins = 0;
         b += k;
         n -= (int)k;
     }

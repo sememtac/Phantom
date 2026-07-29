@@ -20,3 +20,6 @@ desktop.ini
 tools/build/
 tools/__pycache__/
 tools/*.spec
+
+# The design document is ours, not the public repo's. It stays on disk.
+DESIGN.md

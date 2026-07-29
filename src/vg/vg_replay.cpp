@@ -91,6 +91,7 @@ static void restore(const RpSave* s) {
 // --- record ----------------------------------------------------------------
 
 static void begin_record(void) {
+    vg_link_blocking(true);     // the header must not be dropped
     s_mode   = VG_RP_RECORD;
     s_index  = 0;
     s_rand_n = 0;
@@ -151,6 +152,7 @@ static void begin_play(void) {
     s_rand_n = nr;
     s_rand_i = 0;
     s_mode   = VG_RP_PLAY;
+    vg_link_blocking(true);     // the PLAYING announce must not be dropped
 
     vg_game_init();               // consumes the recorded seeds
     restore(&sv);
@@ -203,6 +205,7 @@ bool vg_replay_command(int c) {
         const bool was_play = (s_mode == VG_RP_PLAY);
         s_mode = VG_RP_OFF;
         if (was_play) vg_capture_set(VG_CAP_OFF);
+        vg_link_blocking(false);    // back to never blocking the game
         uint32_t wb, ws, wt, wm;
         vg_link_stats(&wb, &ws, &wt, &wm);
         uint32_t fb, fe;

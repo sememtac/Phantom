@@ -94,6 +94,68 @@ static void draw_comms(void) {
     vg_text(x + tw + 14, y, vg.comms_line, dying ? INK_MAX : INK_BRIGHT, 2);
 }
 
+// A caution annunciator: a solid block with the label knocked out of it.
+//
+// The strongest thing a single-hue interface can do, and the reason both alerts
+// use it instead of red text. They used to be COL_DANGER and COL_WARN, which
+// spent hue on urgency -- and hue is reserved for identity here, so a red word
+// was competing with the one thing colour is allowed to mean.
+static void hud_annunciator(int y, const char* s, int scale) {
+    const int tw = vg_text_width(s, scale);
+    const int bw = tw + 28;
+    const int bh = 7 * scale + 14;
+    const int bx = (SCR_W - bw) / 2;
+
+    vg_fill_rect(bx, y, bw, bh, INK_MAX);
+    // INK_ONFILL, not COL_BLACK: vg_text discards colour 0, so a black label
+    // would leave a blank block.
+    vg_text(bx + 14, y + 7, s, INK_ONFILL, scale);
+    // Outer rule standing off the block -- the bracketed-caution motif.
+    vg_rect(bx - 5, y - 5, bw + 10, bh + 10, INK_MAX);
+}
+
+// Incoming missile. A DOUBLE BEAT, the way a threat warning sounds: two pulses
+// and a rest, with the whole cycle shortening as the seeker closes. Inside
+// MSL_ALERT_SOLID it stops beating and stays lit, because at that range the
+// question is no longer whether to react.
+static void draw_missile_alert(void) {
+    if (!vg.threat || vg.threat_range > MSL_ALERT_RANGE) return;
+
+    if (vg.threat_range > MSL_ALERT_SOLID) {
+        // 0 at the far edge, 1 just before it goes steady.
+        float k = 1.0f - (vg.threat_range - MSL_ALERT_SOLID)
+                       / (MSL_ALERT_RANGE - MSL_ALERT_SOLID);
+        if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+
+        const float period = MSL_ALERT_BEAT_FAR
+                           + (MSL_ALERT_BEAT_NEAR - MSL_ALERT_BEAT_FAR) * k;
+        const float ph = fmodf(vg.state_t, period) / period;
+
+        // Beat, gap, beat, then a longer rest. The rest is what makes it read as
+        // a pair rather than as a fast even blink.
+        const bool on = (ph < 0.18f) || (ph >= 0.30f && ph < 0.48f);
+        if (!on) return;
+    }
+
+    hud_annunciator(62, "MISSILE", 2);
+}
+
+// The boundary. One flash a second when the wall first matters, four a second at
+// contact. The rate is the range -- a player who cannot spare attention for a
+// distance can still count a rhythm getting faster.
+static void draw_boundary_alert(void) {
+    if (vg.wall_clear > ARENA_DANGER_RANGE) return;
+
+    float k = 1.0f - vg.wall_clear / ARENA_DANGER_RANGE;
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+
+    const float period = ARENA_ALERT_SLOW
+                       + (ARENA_ALERT_FAST - ARENA_ALERT_SLOW) * k;
+    if (fmodf(vg.state_t, period) > period * 0.45f) return;
+
+    hud_annunciator(128, "BOUNDARY", 2);
+}
+
 static void draw_throttle(void) {
     const int x0 = THROTTLE_X0, w = THROTTLE_W;
     const int y0 = THROTTLE_TOP, h = THROTTLE_BOT - THROTTLE_TOP;
@@ -422,13 +484,6 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     draw_throttle();
     draw_radar();
 
-    if (vg.threat && vg.threat_range < 260.0f)
-        vg_text((SCR_W - vg_text_width("MISSILE", 3)) / 2, 92, "MISSILE",
-                (fmodf(vg.state_t, 0.4f) < 0.25f) ? COL_DANGER : COL_WARN, 3);
-
-    // Last-ditch warning. The grid going red is the real cue; by the time this
-    // fires you should already have been turning.
-    if (vg.wall_clear < ARENA_WARN_RANGE && fmodf(vg.state_t, 0.36f) < 0.22f)
-        vg_text((SCR_W - vg_text_width("BOUNDARY", 3)) / 2, 128, "BOUNDARY",
-                COL_DANGER, 3);
+    draw_missile_alert();
+    draw_boundary_alert();
 }

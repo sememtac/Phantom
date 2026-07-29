@@ -9,7 +9,8 @@ when something is chasing you and to run when it isn't.
 
 This README describes the **engine**. The game on top of it — a sixteen-entrant
 knockout tournament with four ship classes, a repair economy and a roster of
-pilots who talk back — is specified in **[DESIGN.md](DESIGN.md)**.
+pilots who talk back — is specified in a design document kept out of this
+repository.
 
 ---
 

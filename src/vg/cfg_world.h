@@ -77,9 +77,28 @@
 // own distance -- so the wall you are closing on lights up while the far side
 // stays cool, telling you WHERE the danger is rather than merely that there is
 // some.
-#define ARENA_DANGER_RANGE   900.0f
+#define ARENA_DANGER_RANGE   1400.0f  // TEMP for a visual check
 
 #define ARENA_ENEMY_MARGIN   700.0f   // AI turns inward inside this
 #define ARENA_SPAWN_MARGIN   380.0f   // spawns get pushed this far off the wall
 // Attract autopilot pulls back toward the centreline inside this clearance.
 #define ARENA_ATTRACT_MARGIN 450.0f
+
+// --- boundary alert --------------------------------------------------------
+// A flash whose rate IS the range. One a second when the wall first becomes a
+// problem, accelerating to four a second at contact and never faster, because
+// past that it stops reading as a rhythm and becomes a flicker.
+#define ARENA_ALERT_SLOW     1.00f    // seconds per flash at ARENA_DANGER_RANGE
+#define ARENA_ALERT_FAST     0.25f    // ...and at the wall. Never faster.
+
+// The subdivided patch of wall the player is about to hit.
+//
+// The structural grid is 480 units between hoops and an eighth of the tube
+// between rails, which is a cell hundreds of units across. Reddening a cell that
+// large says "the wall is near" without saying HOW near, and a player can cross
+// the last of it without a cell boundary ever passing them. So the cell the
+// player is closest to gets subdivided, and the mesh appearing and tightening is
+// the cue that the surface is arriving.
+#define ARENA_PATCH_SPAN     520.0f   // world units across the patch
+#define ARENA_PATCH_SUB      3        // extra lines each side of the near point
+#define ARENA_PATCH_SEGS     6        // segments per patch line

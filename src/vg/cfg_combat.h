@@ -105,3 +105,16 @@
 // that converges perfectly on it decelerates into a stern chase it cannot win.
 // Aiming slightly beyond means the closing speed is still rising at contact.
 #define ENEMY_KAMIKAZE_LEAD     140.0f
+
+// --- incoming missile alert -------------------------------------------------
+// The alert used to appear at 260 units, which against a missile closing at
+// several hundred a second is under a second of warning -- an alert that only
+// tells you what already happened.
+//
+// It now starts far enough out to be acted on, and its cadence carries the
+// range: a double beat that gets faster as the seeker closes, and then stops
+// beating and stays lit once evasion is no longer the question.
+#define MSL_ALERT_RANGE      900.0f   // warning starts here
+#define MSL_ALERT_SOLID      190.0f   // steady from here in: no longer blinking
+#define MSL_ALERT_BEAT_FAR   0.90f    // seconds per double beat, far out
+#define MSL_ALERT_BEAT_NEAR  0.26f    // ...and just before it goes steady
