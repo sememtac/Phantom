@@ -158,8 +158,11 @@ static void begin_play(void) {
     s_index = 0;
     s_rand_n = 0;
     vg_link_stats_reset();
-    vg_capture_set(VG_CAP_STREAM);   // every replayed frame is streamed
+    // Announce BEFORE the transmit task starts. After it starts, this core and
+    // core 0 would both write to Serial, and two writers corrupt the stream.
     Serial.printf("\nvg_replay: PLAYING\n");
+    Serial.flush();
+    vg_capture_set(VG_CAP_STREAM);   // every replayed frame is streamed
 }
 
 bool vg_replay_next(float* dt, VgInput* in) {

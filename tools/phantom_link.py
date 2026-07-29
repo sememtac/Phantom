@@ -316,13 +316,43 @@ class PhantomLink:
             if tag == b"PHEN":
                 self._read_exact(4)
                 break
-            if tag != b"PHBD":
+            if tag == b"PHBP":
+                # A band with a colour table. Each run is a count and an index,
+                # which is 2 bytes instead of 3.
+                y, bh, ncol, nbytes = struct.unpack("<HHHI", self._read_exact(10))
+                pal = self._read_exact(ncol * 2)
+                seg = _decode_pal(self._read_exact(nbytes), pal, w * bh)
+            elif tag == b"PHBD":
+                y, bh, nbytes = struct.unpack("<HHI", self._read_exact(8))
+                seg = _decode_rle(self._read_exact(nbytes), w * bh)
+            else:
                 self._synced = False
                 raise Desync("lost the stream mid-frame")
-            y, bh, nbytes = struct.unpack("<HHI", self._read_exact(8))
-            pixels[y * w:(y + bh) * w] = _decode_rle(self._read_exact(nbytes), w * bh)
+            pixels[y * w:(y + bh) * w] = seg
 
         return to_rgb(pixels, w, h, rot), w, h
+
+
+def _decode_pal(payload, pal, npix):
+    """u8 run, u8 index, against a table of u16 colours."""
+    if _np is not None:
+        table = _np.frombuffer(pal, dtype="<u2")
+        a = _np.frombuffer(payload, dtype=_np.uint8)
+        a = a[:(len(a) // 2) * 2].reshape(-1, 2)
+        out = _np.repeat(table[a[:, 1]], a[:, 0].astype(_np.int32))
+        if out.size != npix:
+            fixed = _np.zeros(npix, dtype=_np.uint16)
+            fixed[:min(npix, out.size)] = out[:npix]
+            out = fixed
+        return out
+
+    table = [pal[i] | (pal[i + 1] << 8) for i in range(0, len(pal), 2)]
+    out = []
+    for i in range(0, len(payload) - 1, 2):
+        out.extend([table[payload[i + 1]]] * payload[i])
+    if len(out) != npix:
+        out = (out + [0] * npix)[:npix]
+    return out
 
 
 def _decode_rle(payload, npix):

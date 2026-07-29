@@ -2,6 +2,9 @@
 #include "vg_config.h"
 #include "vg_replay.h"
 #include <Arduino.h>
+#include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // Off, or streaming. There used to be two capture modes the host could arm
 // directly and both are gone, because neither could hold 60fps and 60fps is the
@@ -17,13 +20,24 @@ static uint32_t s_index = 0;
 static uint8_t  s_buf[8192];
 static int      s_len = 0;
 
+static void tx_start(void);
+static void tx_drain(void);
+static inline void flush(void);
+
 bool  vg_capture_active(void) { return s_mode != 0; }
 
 // Does NOT discard the staging buffer. Zeroing s_len here throws away bytes
 // whose band header has already gone out claiming them, and because those bytes
 // never reach vg_link_write they are missing from the device's own byte count
 // too -- the loss is invisible from both ends at once.
-void  vg_capture_set(int mode) { s_mode = mode; s_index = 0; }
+void vg_capture_set(int mode) {
+    // Drain before going idle. The host must have every byte of the last frame
+    // before the device reports that the session finished.
+    if (!mode && s_mode) tx_drain();
+    s_mode  = mode;
+    s_index = 0;
+    if (mode) tx_start();
+}
 bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; }
 
 // Serial.write RETURNS A COUNT, and it is not always the count you asked for.
@@ -67,6 +81,108 @@ void vg_link_stats_reset(void) {
     s_begins = s_ends = 0;
 }
 
+// ---------------------------------------------------------------------------
+// The transmit ring, drained by a task on the OTHER core.
+//
+// Serial.write blocks while the USB driver accepts bytes, and it blocks on the
+// core that rasterises. Measured: a frame takes 45 ms, of which the link needs
+// 28.6 ms and 16.4 ms is CPU that the link does not hide. With the write moved
+// to core 0, core 1 rasterises the next frame while core 0 sends this one, and
+// the frame costs only the link time.
+//
+// One producer and one consumer, so the indices need no lock. The producer only
+// advances the head, the consumer only advances the tail, and each reads the
+// other index once.
+//
+// The barriers are necessary, and volatile alone is not enough. The two cores
+// can make the write of the head visible BEFORE the bytes it refers to. The
+// consumer then reads bytes that are not written yet. This gives a stream that
+// is correct for some frames and then corrupt, which is what happened.
+#define RING_SZ (32 * 1024)
+
+static uint8_t*          s_ring = nullptr;
+static volatile uint32_t s_head = 0;    // producer writes here
+static volatile uint32_t s_tail = 0;    // consumer reads here
+static TaskHandle_t      s_tx_task = nullptr;
+
+static inline uint32_t ring_free(void) {
+    const uint32_t used = (s_head - s_tail) & (RING_SZ - 1);
+    return RING_SZ - 1 - used;          // one byte kept free, so full != empty
+}
+
+static void ring_write(const uint8_t* b, int n) {
+    while (n > 0) {
+        uint32_t space = ring_free();
+        while (space == 0) {            // the link is behind; let it catch up
+            delay(1);
+            space = ring_free();
+        }
+        uint32_t h = s_head;
+        uint32_t chunk = (uint32_t)n < space ? (uint32_t)n : space;
+        const uint32_t to_end = RING_SZ - h;
+        if (chunk > to_end) chunk = to_end;
+        memcpy(s_ring + h, b, chunk);
+        __sync_synchronize();           // the bytes land before the head moves
+        s_head = (h + chunk) & (RING_SZ - 1);
+        b += chunk;
+        n -= (int)chunk;
+    }
+}
+
+static void tx_task(void*) {
+    for (;;) {
+        const uint32_t t = s_tail;
+        const uint32_t h = s_head;
+        __sync_synchronize();           // read the head before the bytes
+        if (h == t) {
+            // Nothing left. Push the tail of the last frame out of the driver.
+            // Without this the final bytes wait for more traffic, and the host
+            // waits for them, and neither side moves.
+            Serial.flush();
+            vTaskDelay(1);
+            continue;
+        }
+        uint32_t run = (h > t) ? (h - t) : (RING_SZ - t);
+        const size_t k = Serial.write(s_ring + t, run);
+        if (k == 0) { vTaskDelay(1); continue; }
+        __sync_synchronize();           // the read completes before space frees
+        s_tail = (t + (uint32_t)k) & (RING_SZ - 1);
+    }
+}
+
+static void tx_start(void) {
+    // DISABLED. Sending from core 0 while core 1 rasterises should save the
+    // 16.4 ms of CPU that the link does not hide, and twice it produced a
+    // corrupt stream instead: the host read a length of 1,667,340,360 bytes.
+    // Memory barriers on the ring did not fix it, and neither did moving the
+    // one competing printf. The cause is not established, so the code stays
+    // here unused rather than shipping a capture that is wrong now and then.
+    //
+    // With this returning early, s_ring stays null and flush() writes directly,
+    // which is the path that rendered 240 frames pixel-identical at 22.2 fps.
+    return;
+
+    if (s_tx_task) return;
+    // INTERNAL RAM, not PSRAM. One frame is 25 KB, so 32 KB is enough to hold
+    // a whole frame while core 1 starts the next one.
+    s_ring = (uint8_t*)heap_caps_malloc(RING_SZ, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!s_ring) {
+        Serial.println("vg_capture: no PSRAM for the transmit ring");
+        return;
+    }
+    s_head = s_tail = 0;
+    // Core 0. Core 1 runs the game loop, and the point is to not be on it.
+    xTaskCreatePinnedToCore(tx_task, "vg_tx", 3072, nullptr, 5, &s_tx_task, 0);
+}
+
+// Wait for the ring to empty. Only for the end of a session, where the host
+// must receive everything before the device says it has finished.
+static void tx_drain(void) {
+    if (!s_tx_task) return;
+    while (s_head != s_tail) delay(1);
+    Serial.flush();
+}
+
 static inline void put(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
     while (n > 0) {
@@ -76,12 +192,15 @@ static inline void put(const void* p, int n) {
         s_len += take;
         b     += take;
         n     -= take;
-        if (s_len == (int)sizeof(s_buf)) { vg_link_write(s_buf, s_len); s_len = 0; }
+        if (s_len == (int)sizeof(s_buf)) flush();
     }
 }
 
 static inline void flush(void) {
-    if (s_len) { vg_link_write(s_buf, s_len); s_len = 0; }
+    if (!s_len) return;
+    if (s_ring) ring_write(s_buf, s_len);   // core 0 sends it
+    else        vg_link_write(s_buf, s_len);
+    s_len = 0;
 }
 
 void vg_capture_poll(void) {
@@ -130,10 +249,89 @@ void vg_capture_frame_begin(void) {
     put(&fmt, 1);
 }
 
+// A colour table for one band, so a run costs 2 bytes instead of 3.
+//
+// A run is a count and a colour: one byte and two bytes. Almost all of a band
+// is a few colours repeated, so the colour is the part worth removing. Measured
+// over 900 bands of real play: the median band holds 19 different colours and
+// the largest holds 87. No band went above 256, so an 8-bit index always fits.
+// A frame goes from 36.7 KB to 25.3 KB, which is 1.45 times smaller.
+//
+// The table is an open-addressing hash with 512 slots for at most 256 colours,
+// so a free slot always exists and the probe always ends. It lives in internal
+// RAM. PSRAM is what made the delta method slower than the bytes it saved.
+#define PAL_SLOTS 512
+
+static uint16_t s_pal_key[PAL_SLOTS];
+static uint8_t  s_pal_val[PAL_SLOTS];
+static uint8_t  s_pal_used[PAL_SLOTS];
+static uint16_t s_pal_list[256];
+static int      s_pal_n;
+
+static inline int pal_slot(uint16_t c) {
+    uint32_t hsh = ((uint32_t)c * 2654435761u) >> 23;
+    int i = (int)(hsh & (PAL_SLOTS - 1));
+    while (s_pal_used[i] && s_pal_key[i] != c) i = (i + 1) & (PAL_SLOTS - 1);
+    return i;
+}
+
+// The index of this colour. Adds the colour if it is new. -1 if the table is
+// full, and then the caller sends the band with a colour in every run.
+static inline int pal_get(uint16_t c) {
+    const int i = pal_slot(c);
+    if (s_pal_used[i]) return s_pal_val[i];
+    if (s_pal_n >= 256) return -1;
+    s_pal_used[i]  = 1;
+    s_pal_key[i]   = c;
+    s_pal_val[i]   = (uint8_t)s_pal_n;
+    s_pal_list[s_pal_n] = c;
+    return s_pal_n++;
+}
+
 void vg_capture_band(int y, int h, const uint16_t* px) {
     if (!s_mode) return;
 
     const int n = SCR_W * h;
+
+    // Pass 1: count the runs and collect the colours.
+    memset(s_pal_used, 0, sizeof(s_pal_used));
+    s_pal_n = 0;
+    int pruns = 0;
+    bool paletted = true;
+    for (int i = 0; i < n; ) {
+        const uint16_t v = px[i];
+        int run = 1;
+        while (i + run < n && px[i + run] == v && run < 255) run++;
+        if (pal_get(v) < 0) { paletted = false; break; }
+        i += run;
+        pruns++;
+    }
+
+    if (paletted) {
+        const uint8_t  hdr[4] = { 'P', 'H', 'B', 'P' };
+        const uint16_t sy = (uint16_t)y, sh = (uint16_t)h;
+        const uint16_t ncol = (uint16_t)s_pal_n;
+        const uint32_t bytes = (uint32_t)pruns * 2u;
+        put(hdr, 4);
+        put(&sy, 2);
+        put(&sh, 2);
+        put(&ncol, 2);
+        put(&bytes, 4);
+        put(s_pal_list, s_pal_n * 2);
+
+        for (int i = 0; i < n; ) {
+            const uint16_t v = px[i];
+            int run = 1;
+            while (i + run < n && px[i + run] == v && run < 255) run++;
+            const uint8_t pair[2] = { (uint8_t)run, (uint8_t)s_pal_val[pal_slot(v)] };
+            put(pair, 2);
+            i += run;
+        }
+        flush();
+        return;
+    }
+    // More than 256 colours in one band. Not seen in 900 sampled bands, but the
+    // path below sends the colour in every run and is always correct.
 
     // Run-length over 16-bit pixels. This is worth doing rather than sending
     // raw because of how the backdrop is drawn: the fill writes one sampled
@@ -198,11 +396,9 @@ void vg_capture_frame_end(void) {
     put(hdr, 4);
     put(&s_index, 4);
     flush();
-    // Push the frame all the way out before returning. flush() above only empties
-    // OUR staging buffer into the driver's ring; the tail can still be sitting
-    // there when the loop goes back to waiting on the host, and during replay
-    // that wait is what the host is blocked on -- a deadlock that looks exactly
-    // like a truncated frame.
+    // Push the frame out before returning. Without this the last bytes wait in
+    // the USB driver until more traffic moves them, and the host waits for
+    // those bytes, and neither side continues.
     Serial.flush();
     s_index++;
 }

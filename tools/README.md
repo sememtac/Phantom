@@ -20,7 +20,7 @@ clock time for 3.73 s of game time. That is 0.96 times real time, at 64 fps, in
 17 KB.
 
 **Render** runs the session again on the device, one frame at a time. The device
-sends the true pixels at the speed of the link. This step takes about 3.3
+sends the true pixels at the speed of the link. This step takes about 2.9
 minutes for each minute of play.
 
 The video is 60 fps because the game made the frames 1/60 s apart. Every pixel
@@ -114,26 +114,34 @@ it as proof that smaller frames cannot help. The numbers say the opposite:
 | quantity | value |
 |---|---|
 | link, with no render and no encode (`b` command) | 0.885 MB/s |
-| bytes for each frame | 33 KB |
-| link time for one frame | 38.2 ms |
-| measured time for one frame | 51.3 ms |
-| CPU time that the link does not hide | 13.1 ms |
+| bytes for each frame | 25.3 KB |
+| link time for one frame | 28.6 ms |
+| measured time for one frame | 45.0 ms |
+| CPU time that the link does not hide | 16.4 ms |
 
-The link is 74% of the time of a frame. The render step is therefore limited by
+The link is 64% of the time of a frame. The render step is therefore limited by
 the link, and a cheaper encoding does help, if it costs little CPU. The delta
 method failed because it needed PSRAM, not because the frames became smaller.
 
-Two methods are not tried:
+**A colour table for each band** was tried and is in use. A run was a count and
+a colour, which is 3 bytes. It is now a count and an index, which is 2 bytes,
+with one table for each band. Measured over 900 bands of play: the median band
+holds 19 colours and the largest holds 87. No band went above 256, so the index
+always fits, and the code keeps the 3-byte form for a band that does not fit.
+A frame went from 36.7 KB to 25.3 KB, and the render step went from 19.5 fps to
+22.2 fps. The output is the same: three frames of a render are identical to the
+same frames before the change.
 
-1. Send one frame from the second core while the CPU rasterises the next frame.
-   This removes the 13.1 ms of CPU time and gives about 26 fps.
-2. Give each run 2 bytes instead of 3, with a colour table for each band. A
-   frame has about 11,300 runs, so this gives about 22 KB and 25 ms of link
-   time. The colour table must stay in internal RAM. PSRAM is what made the
-   delta method slow.
+**Transmit from the second core** was tried and is NOT in use. The idea is
+correct: 16.4 ms of each frame is CPU time that the link does not hide, and
+core 0 could send the frame while core 1 draws the next one. Both attempts gave
+a corrupt stream. The host read a band length of 1,667,340,360 bytes. Memory
+barriers on the ring did not fix it, and neither did moving the one printf that
+also wrote to the port. The cause is not established.
 
-Together these two give about 25 ms for each frame, which is about 1.5 minutes
-for each minute of play.
+The code stays in `vg_capture.cpp` with `tx_start()` returning at its first
+line. To try again, remove that return and find the fault first. A capture that
+is wrong now and then is worse than a capture that is slow.
 
 ## Why the video is darker than the panel
 
