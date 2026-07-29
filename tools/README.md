@@ -11,6 +11,11 @@ timestamped `phantom-YYYYMMDD-HHMMSS.mp4` into the folder you chose.
 Pressing **Stop** keeps whatever has already arrived — a recording cut short is
 still a recording.
 
+Tick **Continuous** to record until you press Stop — for a whole playthrough
+rather than a clip. Frames stream to disk as they arrive, so length is limited
+by disk rather than memory, and continuous recordings are written as fragmented
+mp4 so an unclean end costs the last fragment instead of the file.
+
 Run `tools/dist/PhantomRecorder.exe`, or from source:
 
 ```
@@ -30,7 +35,8 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
 Same thing without the window, for scripting:
 
 ```
-python tools/phantom_capture.py --port COM6 --seconds 12 --out demo.mp4
+python tools/phantom_capture.py --port COM6 --seconds 12 --dir .
+python tools/phantom_capture.py --port COM6 --continuous --dir .   # until Ctrl+C
 ```
 
 ## Why it is slow, and why that does not matter

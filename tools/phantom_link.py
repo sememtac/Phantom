@@ -8,6 +8,7 @@ copying the firmware's rotation instead of inverting it -- were the kind that
 get fixed in one copy and left in the other.
 """
 
+import os
 import struct
 import time
 
@@ -174,6 +175,71 @@ def to_rgb(pixels, w, h, rot):
         rgb[o + 1] = _G6[(v >> 5) & 0x3F]
         rgb[o + 2] = _R5[v & 0x1F]
     return bytes(rgb)
+
+
+class FrameWriter:
+    """Writes frames as they arrive instead of collecting them first.
+
+    Buffering was fine for a ten second clip and impossible for a playthrough.
+    A frame is 480*480*3 = 691,200 bytes of RGB888, so even at the five frames
+    a second the link manages, ten minutes of capture is well over a gigabyte
+    of RAM and an hour is out of the question entirely.
+
+    Streaming makes the length of a recording a question about disk rather
+    than about memory, and it means an interruption costs the tail of the video
+    instead of all of it.
+    """
+
+    def __init__(self, out_dir, fps=FPS, w=WIDTH, h=HEIGHT, fragmented=False):
+        import shutil
+        import subprocess
+        import time
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        self.n = 0
+        self._w, self._h = w, h
+        self._proc = None
+        self._dir = None
+
+        if shutil.which("ffmpeg"):
+            self.path = os.path.join(out_dir, f"phantom-{stamp}.mp4")
+            args = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                    "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16"]
+            if fragmented:
+                # An unbounded recording may be ended by something other than a
+                # clean stop -- a closed lid, an unplugged board. A fragmented
+                # mp4 stays playable when truncated, where a normal one needs
+                # its trailer written and is worthless without it.
+                args += ["-movflags", "frag_keyframe+empty_moov"]
+            args += [self.path]
+            self._proc = subprocess.Popen(
+                args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            self._dir = os.path.join(out_dir, f"phantom-{stamp}")
+            os.makedirs(self._dir, exist_ok=True)
+            self.path = self._dir
+
+    def write(self, rgb):
+        if self._proc:
+            self._proc.stdin.write(rgb)
+        else:
+            with open(os.path.join(self._dir, f"f{self.n:05d}.ppm"), "wb") as fh:
+                fh.write(b"P6\n%d %d\n255\n" % (self._w, self._h))
+                fh.write(rgb)
+        self.n += 1
+
+    def close(self):
+        if self._proc:
+            try:
+                self._proc.stdin.close()
+                self._proc.wait(timeout=60)
+            except Exception:
+                self._proc.kill()
+            self._proc = None
+        return self.path
 
 
 def subsample_ppm(rgb, w, h, out_w):

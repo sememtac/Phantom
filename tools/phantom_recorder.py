@@ -22,15 +22,15 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from phantom_link import (FPS, HEIGHT, WIDTH, Desync, PhantomLink, list_ports,
-                          subsample_ppm)
+from phantom_link import (FPS, HEIGHT, WIDTH, Desync, FrameWriter, PhantomLink,
+                          list_ports, subsample_ppm)
 
 PREVIEW = 240        # pixels
 
 # Shown in the title bar. Not decoration: a build that silently failed to
 # rebuild is indistinguishable from one that did until you can read a version
 # off the running window, and that already cost a round trip once.
-VERSION = "1.1"
+VERSION = "1.2"
 
 AMBER  = "#ffae1e"
 GROUND = "#0d0700"
@@ -108,17 +108,26 @@ class Recorder(tk.Tk):
         ttk.Button(self, text="Browse", width=8, command=self._browse).grid(row=2, column=2, **pad)
 
         tk.Label(self, text="Seconds", fg=AMBER, bg=GROUND).grid(row=3, column=0, sticky="e", **pad)
-        tk.Entry(self, textvariable=self.seconds, width=6).grid(row=3, column=1, sticky="w", **pad)
+        self.sec_entry = tk.Entry(self, textvariable=self.seconds, width=6)
+        self.sec_entry.grid(row=3, column=1, sticky="w", **pad)
+
+        self.cont = tk.BooleanVar(value=False)
+        tk.Checkbutton(self, text="Continuous (record until Stop)",
+                       variable=self.cont, command=self._mode_changed,
+                       fg=AMBER, bg=GROUND, selectcolor=GROUND,
+                       activeforeground=AMBER, activebackground=GROUND,
+                       highlightthickness=0, bd=0
+                       ).grid(row=4, column=0, columnspan=3, sticky="w", padx=8)
 
         self.btn = ttk.Button(self, text="Record", command=self._toggle)
-        self.btn.grid(row=4, column=0, columnspan=3, sticky="ew", padx=8, pady=(6, 2))
+        self.btn.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=(6, 2))
 
         self.bar = ttk.Progressbar(self, mode="determinate")
-        self.bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
+        self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
         self.status = tk.Label(self, text="idle", fg=AMBER, bg=GROUND,
                                anchor="w", width=1)
-        self.status.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
+        self.status.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
 
         self._refresh()
 
@@ -130,6 +139,9 @@ class Recorder(tk.Tk):
         if ports:
             self.port.current(0)
         self._ports = [d for d, _ in ports]
+
+    def _mode_changed(self):
+        self.sec_entry.config(state="disabled" if self.cont.get() else "normal")
 
     def _browse(self):
         d = filedialog.askdirectory(initialdir=self.out_dir.get())
@@ -183,19 +195,25 @@ class Recorder(tk.Tk):
         if not self._ports:
             self.status.config(text="no serial ports found")
             return
-        try:
-            want = max(1, int(float(self.seconds.get()) * FPS))
-        except ValueError:
-            self.status.config(text="seconds must be a number")
-            return
         if not os.path.isdir(self.out_dir.get()):
             self.status.config(text="output folder does not exist")
             return
 
-        self.frames = []
+        want = None
+        if not self.cont.get():
+            try:
+                want = max(1, int(float(self.seconds.get()) * FPS))
+            except ValueError:
+                self.status.config(text="seconds must be a number")
+                return
+
         self.stop_flag.clear()
-        self.bar["maximum"] = want
-        self.bar["value"] = 0
+        if want:
+            self.bar.config(mode="determinate", maximum=want, value=0)
+        else:
+            # Nothing to be a fraction of, so the bar reports activity instead.
+            self.bar.config(mode="indeterminate", value=0)
+            self.bar.start(60)
         self.btn.config(text="Stop")
 
         port = self._ports[self.port.current()]
@@ -203,19 +221,29 @@ class Recorder(tk.Tk):
         self.worker.start()
 
     def _run(self, port, want):
+        # Frames go straight to the writer as they arrive rather than into a
+        # list. Continuous recording is otherwise impossible: at 691,200 bytes
+        # of RGB888 per frame, an unbounded run fills memory long before it
+        # fills a disk, and buffering would have capped a playthrough at a few
+        # minutes for no reason other than how the fixed-length version happened
+        # to be written.
         link = PhantomLink(port)
+        writer = None
         started = time.time()
         try:
+            writer = FrameWriter(self.out_dir.get(), fragmented=(want is None))
             link.open()
             link.arm()
-            while len(self.frames) < want and not self.stop_flag.is_set():
+            while not self.stop_flag.is_set():
+                if want is not None and writer.n >= want:
+                    break
                 try:
                     rgb, w, h = link.read_frame()
                 except Desync:
                     continue          # drop it and pick the stream back up
-                self.frames.append(rgb)
-                self.q.put(("frame", len(self.frames), want,
-                            time.time() - started, subsample_ppm(rgb, w, h, PREVIEW)))
+                writer.write(rgb)
+                self.q.put(("frame", writer.n, want, time.time() - started,
+                            subsample_ppm(rgb, w, h, PREVIEW)))
         except Exception as e:
             self.q.put(("error", str(e)))
         finally:
@@ -223,7 +251,9 @@ class Recorder(tk.Tk):
                 link.close()
             except Exception:
                 pass
-            self.q.put(("done", time.time() - started))
+            path = writer.close() if writer else None
+            n = writer.n if writer else 0
+            self.q.put(("done", time.time() - started, n, path))
 
     # -- ui pump ------------------------------------------------------------
 
@@ -233,11 +263,17 @@ class Recorder(tk.Tk):
                 msg = self.q.get_nowait()
                 if msg[0] == "frame":
                     _, n, want, elapsed, ppm = msg
-                    self.bar["value"] = n
                     rate = n / max(0.001, elapsed)
-                    eta = (want - n) / max(0.01, rate)
-                    self.status.config(
-                        text=f"{n}/{want}   {rate:.1f}/s   ~{eta:.0f}s left")
+                    if want:
+                        self.bar["value"] = n
+                        eta = (want - n) / max(0.01, rate)
+                        self.status.config(
+                            text=f"{n}/{want}   {rate:.1f}/s   ~{eta:.0f}s left")
+                    else:
+                        # Length of the VIDEO so far, which is the number that
+                        # matters, not how long you have been sitting there.
+                        self.status.config(
+                            text=f"{n} frames   {n / FPS:.1f}s of video   {rate:.1f}/s")
                     self._img = tk.PhotoImage(data=base64.b64encode(ppm))
                     if self._img_id is None:
                         self._img_id = self.canvas.create_image(0, 0, anchor="nw",
@@ -247,46 +283,27 @@ class Recorder(tk.Tk):
                 elif msg[0] == "error":
                     self.status.config(text=f"error: {msg[1]}")
                 elif msg[0] == "done":
-                    self._finish(msg[1])
+                    self._finish(msg[1], msg[2], msg[3])
         except queue.Empty:
             pass
         self.after(60, self._pump)
 
-    def _finish(self, elapsed):
+    def _finish(self, elapsed, n, path):
+        self.bar.stop()
+        self.bar.config(mode="determinate")
         self.btn.config(text="Record")
-        if not self.frames:
+
+        if not n:
+            self.bar["value"] = 0
             self.status.config(text="no frames captured -- is the board running?")
             return
 
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        n = len(self.frames)
-        self.status.config(text=f"{n} frames in {elapsed:.0f}s -- writing...")
-        self.update_idletasks()
-
-        if shutil.which("ffmpeg"):
-            path = os.path.join(self.out_dir.get(), f"phantom-{stamp}.mp4")
-            p = subprocess.Popen(
-                ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
-                 "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "-",
-                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", path],
-                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            for f in self.frames:
-                p.stdin.write(f)
-            p.stdin.close()
-            p.wait()
-            self.last_output = path
-            self.status.config(text=f"wrote {os.path.basename(path)}  ({n} frames)")
-        else:
-            d = os.path.join(self.out_dir.get(), f"phantom-{stamp}")
-            os.makedirs(d, exist_ok=True)
-            for i, f in enumerate(self.frames):
-                with open(os.path.join(d, f"f{i:05d}.ppm"), "wb") as fh:
-                    fh.write(b"P6\n%d %d\n255\n" % (WIDTH, HEIGHT))
-                    fh.write(f)
-            self.last_output = d
-            self.status.config(text=f"no ffmpeg -- wrote {n} PPMs to {os.path.basename(d)}")
+        # Already written -- the file was being built the whole time, so there
+        # is nothing to do here but say where it went.
+        self.last_output = path
+        self.bar.config(maximum=n, value=n)
+        self.status.config(
+            text=f"{os.path.basename(path)}  --  {n} frames, {n / FPS:.1f}s of video")
 
 
 if __name__ == "__main__":

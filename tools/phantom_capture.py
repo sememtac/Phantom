@@ -20,13 +20,11 @@ seconds of footage is 360 frames and takes a few minutes to pull.
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from phantom_link import FPS, HEIGHT, WIDTH, Desync, PhantomLink
+from phantom_link import FPS, Desync, FrameWriter, PhantomLink
 
 
 def main():
@@ -34,61 +32,56 @@ def main():
     ap.add_argument("--port", required=True, help="e.g. COM6 or /dev/ttyACM0")
     ap.add_argument("--seconds", type=float, default=10.0,
                     help="length of the resulting VIDEO, not of the wait")
-    ap.add_argument("--out", default="phantom.mp4")
+    ap.add_argument("--continuous", action="store_true",
+                    help="record until Ctrl+C -- for a whole playthrough")
+    ap.add_argument("--dir", default=".", help="output folder")
     args = ap.parse_args()
 
-    want = max(1, int(args.seconds * FPS))
+    want = None if args.continuous else max(1, int(args.seconds * FPS))
     link = PhantomLink(args.port)
-    frames = []
+    writer = None
     started = time.time()
 
-    print(f"arming for {want} frames ({args.seconds:.1f}s of video)...")
+    if want:
+        print(f"arming for {want} frames ({args.seconds:.1f}s of video)...")
+    else:
+        print("arming -- recording until Ctrl+C...")
+
     try:
+        # Frames are written as they arrive rather than collected. At 691,200
+        # bytes each, an unbounded recording fills memory long before it fills
+        # a disk.
+        writer = FrameWriter(args.dir, fragmented=args.continuous)
         link.open()
         link.arm()
-        while len(frames) < want:
+        while want is None or writer.n < want:
             try:
                 rgb, _w, _h = link.read_frame()
             except Desync as e:
                 print(f"\n  {e}, resyncing...")
                 continue
-            frames.append(rgb)
-            rate = len(frames) / max(0.001, time.time() - started)
-            eta = (want - len(frames)) / max(0.01, rate)
-            print(f"\r  {len(frames)}/{want}  {rate:.1f} fps captured  eta {eta:5.0f}s",
-                  end="", flush=True)
+            writer.write(rgb)
+            rate = writer.n / max(0.001, time.time() - started)
+            if want:
+                eta = (want - writer.n) / max(0.01, rate)
+                print(f"\r  {writer.n}/{want}  {rate:.1f} fps  eta {eta:5.0f}s",
+                      end="", flush=True)
+            else:
+                print(f"\r  {writer.n} frames  {writer.n / FPS:6.1f}s of video"
+                      f"  {rate:.1f} fps", end="", flush=True)
     except KeyboardInterrupt:
-        print("\ninterrupted -- keeping what arrived")
+        print("\nstopped -- keeping what arrived")
     except TimeoutError as e:
         print(f"\nstopped early: {e}")
     finally:
         link.close()
+        path = writer.close() if writer else None
+        n = writer.n if writer else 0
 
-    if not frames:
+    if not n:
         sys.exit("\nno frames captured -- is the board running?")
-    print(f"\n{len(frames)} frames in {time.time() - started:.0f}s")
-
-    if shutil.which("ffmpeg"):
-        print(f"encoding {args.out} ...")
-        p = subprocess.Popen(
-            ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
-             "-s", f"{WIDTH}x{HEIGHT}", "-r", str(FPS), "-i", "-",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", args.out],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for f in frames:
-            p.stdin.write(f)
-        p.stdin.close()
-        p.wait()
-        print(f"wrote {args.out}")
-    else:
-        d = os.path.splitext(args.out)[0] + "_frames"
-        os.makedirs(d, exist_ok=True)
-        for i, f in enumerate(frames):
-            with open(os.path.join(d, f"f{i:05d}.ppm"), "wb") as fh:
-                fh.write(b"P6\n%d %d\n255\n" % (WIDTH, HEIGHT))
-                fh.write(f)
-        print(f"ffmpeg not found; wrote {len(frames)} PPMs to {d}/")
-        print(f"  ffmpeg -r {FPS} -i {d}/f%05d.ppm -c:v libx264 -pix_fmt yuv420p {args.out}")
+    print(f"\nwrote {path}  ({n} frames, {n / FPS:.1f}s of video, "
+          f"{time.time() - started:.0f}s elapsed)")
 
 
 if __name__ == "__main__":
