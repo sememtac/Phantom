@@ -28,7 +28,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from phantom_link import (Desync, FrameWriter, PhantomLink, Session,
-                          reset_board)
+                          reset_board, set_gamma)
 
 
 def record(args):
@@ -68,6 +68,11 @@ def record(args):
 
 
 def render(args):
+    if args.gamma != 1.0:
+        set_gamma(args.gamma)
+        print(f"gamma {args.gamma} -- matching the panel, not correcting the capture")
+    if not os.path.isdir(args.dir):
+        sys.exit(f"no such folder: {args.dir}")
     ses = Session.load(args.session)
     n = len(ses.frames)
     fps = n / max(0.001, ses.seconds)
@@ -145,6 +150,9 @@ def main():
     p.add_argument("session")
     p.add_argument("--port", required=True)
     p.add_argument("--dir", default=".")
+    p.add_argument("--gamma", type=float, default=1.0,
+                   help="1.0 (default) is a faithful copy of the framebuffer; "
+                        "above it lifts midtones towards how the AMOLED reads")
     p.set_defaults(fn=render)
 
     args = ap.parse_args()

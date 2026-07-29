@@ -353,6 +353,29 @@ if _np is not None:
     _G6_LUT = _np.array(_G6, dtype=_np.uint8)
 
 
+def set_gamma(g):
+    """Rebuild the 5/6-bit to 8-bit tables with a display gamma.
+
+    A capture is a faithful copy of the framebuffer: 0x1F really is 255. What it
+    cannot copy is the PANEL, which is an emissive AMOLED with true blacks
+    driven hard, and which looks considerably punchier than the same numbers
+    shown on a monitor. That difference is real and no amount of correctness in
+    the conversion removes it.
+
+    So this is deliberately not a correction -- it is a matching control, and it
+    lives in the lookup tables where it costs nothing per frame. g = 1.0 is the
+    faithful copy and the default; above 1.0 lifts the midtones towards how the
+    panel reads, leaving black at black and white at white.
+    """
+    global _R5, _G6, _R5_LUT, _G6_LUT
+    inv = 1.0 / max(0.01, float(g))
+    _R5 = [int(round(((v / 31.0) ** inv) * 255)) for v in range(32)]
+    _G6 = [int(round(((v / 63.0) ** inv) * 255)) for v in range(64)]
+    if _np is not None:
+        _R5_LUT = _np.array(_R5, dtype=_np.uint8)
+        _G6_LUT = _np.array(_G6, dtype=_np.uint8)
+
+
 def to_rgb(pixels, w, h, rot):
     """RGB565 in PANEL byte order and PANEL orientation to upright RGB888.
 
@@ -535,9 +558,22 @@ class FrameWriter:
 
         if shutil.which("ffmpeg"):
             self.path = os.path.join(out_dir, f"phantom-{stamp}.mp4")
+            # Tag the colour explicitly. Untagged, the file says nothing about
+            # how its YUV should be read, so every player guesses -- and one
+            # that guesses full range on a limited-range file crushes the blacks
+            # and darkens the whole picture. This game is almost entirely dark,
+            # so it is the worst possible thing to leave to chance.
             args = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                     "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16"]
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16",
+                    "-colorspace", "bt709", "-color_primaries", "bt709",
+                    "-color_trc", "bt709", "-color_range", "tv",
+                    # And again as encoder options. ffmpeg's -color_* flags set
+                    # the container tags but leave the stream's own VUI unwritten
+                    # for two of the three, so a player reading the bitstream
+                    # rather than the container still has to guess.
+                    "-x264-params",
+                    "colorprim=bt709:transfer=bt709:colormatrix=bt709"]
             if fragmented:
                 # An unbounded recording may be ended by something other than a
                 # clean stop -- a closed lid, an unplugged board. A fragmented

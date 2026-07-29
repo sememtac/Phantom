@@ -99,6 +99,39 @@ link-bound. Reverted, and worth not rediscovering.
 The remaining lever for the render pass is overlapping the device's rasterising
 with its transmitting on the second core, which is untried.
 
+## Why the recording looks darker than the panel
+
+The capture is a faithful copy of the framebuffer: a 5-bit 0x1F really does come
+out as 255. What it cannot copy is the panel, which is an emissive AMOLED with
+true blacks driven hard, and which reads considerably punchier than the same
+numbers on a monitor. No amount of correctness in the conversion closes that.
+
+Two things do help. The mp4 is now tagged bt709 / limited range explicitly, in
+both the container and the stream's own VUI -- untagged, players guess, and one
+that guesses wrong on a picture this dark crushes the blacks. And `--gamma`
+lifts the midtones towards how the panel reads:
+
+```
+python tools/phantom_session.py render --port COM6 run.phr --gamma 1.5
+```
+
+It is a matching control, not a correction: 1.0 is the faithful copy and the
+default. Black stays black and white stays white at any setting.
+
+## Those vertical stripes are the scanline effect
+
+They are not a recording artifact and not your monitor. `band_scanlines` in
+`vg_band.cpp` darkens every other **panel row**, and with `VG_ROTATE 1` the
+panel is mounted a quarter turn off -- so a panel row lands as a constant *x*
+in the upright picture. The CRT scanline effect has always run vertically, on
+the device too. At ~313 PPI on a 2.16-inch panel it is nearly invisible;
+magnified on a monitor it is obvious.
+
+Turning it back to horizontal means darkening every other panel COLUMN, which
+means touching every row instead of every second one. The pass currently
+measures ~3.3 ms a frame, so expect roughly double -- about 3 ms out of a 16.6 ms
+budget, against a game that already dips to 52 fps. Not done, deliberately.
+
 ## Layout
 
 | file | |
