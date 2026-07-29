@@ -1,6 +1,7 @@
 #include "vg_save.h"
 #include "vg_game.h"
 #include "vg_port.h"
+#include "vg_replay.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -61,6 +62,11 @@ void vg_save_load(void) {
 }
 
 void vg_save_store(void) {
+    // A replay re-runs someone's session, including whatever they won or spent.
+    // Letting it write would mean rendering a recording could overwrite the
+    // progress of the person who recorded it.
+    if (vg_replay_suppress_save()) return;
+
     SaveRecord r;
     memset(&r, 0, sizeof(r));
 

@@ -11,6 +11,7 @@
 #include "vg/vg_game.h"
 #include "vg/vg_render.h"
 #include "vg/vg_capture.h"
+#include "vg/vg_replay.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -29,6 +30,19 @@ void setup(void) {
     // and more buffer buys nothing but RAM.
     Serial.setTxBufferSize(16384);
     Serial.begin(115200);
+
+    // Block when the host stops reading, do not DISCARD. The default is a short
+    // timeout after which write() drops whatever did not fit, which for a log
+    // line is invisible and for a 37KB frame is fatal: the host waits forever
+    // for bytes that were thrown away. Any pause on the host -- ffmpeg
+    // backpressure, a garbage collection -- was silently truncating a frame,
+    // which is why replay died at a different frame every run.
+    Serial.setTxTimeoutMs(5000);
+
+    // Room for more than one replay record in flight, so the host can keep the
+    // next frame queued while the device is still sending the current one.
+    Serial.setRxBufferSize(2048);
+
     delay(300);
     Serial.println("\n=== PHANTOM ===");
 
@@ -71,7 +85,9 @@ void loop(void) {
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t frames    = 0;
 
-    vg_capture_poll();
+    // Not while replaying: the host is sending frame records, and the capture
+    // poller would eat them as if they were commands.
+    if (vg_replay_mode() != VG_RP_PLAY) vg_capture_poll();
 
     uint32_t now = micros();
     if (last_us == 0) last_us = now;
@@ -103,8 +119,23 @@ void loop(void) {
     // What the game believes this frame lasted. In smooth capture that is the
     // fake clock, everywhere -- input timers included, or a touch would have to
     // be held six times as long as it looks on the recording.
-    const float sim_dt = (cap_dt > 0.0f) ? cap_dt : frame_dt;
+    float sim_dt = (cap_dt > 0.0f) ? cap_dt : frame_dt;
 
+    uint32_t t0 = micros();
+    VgInput in;
+
+    // Replaying: the frame's length and every input come off the wire, and the
+    // hardware is never asked. Feeding the recorded VgInput straight in is what
+    // makes touch and IMU irrelevant to reproducing a session -- whatever they
+    // produced is already in the struct.
+    if (vg_replay_mode() == VG_RP_PLAY) {
+        if (!vg_replay_next(&sim_dt, &in)) return;
+    } else {
+        vg_input_update(sim_dt, &in);
+    }
+
+    // Sub-step long frames, as above. A replayed frame is already 1/60s, so
+    // this costs it nothing.
     int steps = 1;
     float dt = sim_dt;
     if (cap_dt <= 0.0f && dt > 0.02f) {
@@ -112,12 +143,11 @@ void loop(void) {
         dt    = sim_dt / (float)steps;
     }
 
-    uint32_t t0 = micros();
-    VgInput in;
-    vg_input_update(sim_dt, &in);
-
     uint32_t t1 = micros();
     for (int s = 0; s < steps; s++) vg_game_update(dt, &in);
+
+    // Straight after the step, so seeds drawn during it belong to this frame.
+    vg_replay_note_frame(sim_dt, &in);
 
     uint32_t t2 = micros();
     vg_render_frame(&in, fps);
@@ -145,7 +175,11 @@ void loop(void) {
     // Telemetry is suppressed while recording: it shares the link with the
     // frame stream, and a printf landing mid-band would corrupt the capture.
     uint32_t ms = millis();
-    if (!vg_capture_active() && ms - report_ms >= 2000) {
+    // Also silent while recording a session: the log shares this link, and a
+    // telemetry line landing between frame records is indistinguishable from a
+    // corrupt one to the host.
+    if (!vg_capture_active() && vg_replay_mode() == VG_RP_OFF
+        && ms - report_ms >= 2000) {
         report_ms = ms;
         // rast is CPU spent building bands; wait is time stalled on the panel
         // DMA. Only the amount by which rast exceeds the transfer window costs

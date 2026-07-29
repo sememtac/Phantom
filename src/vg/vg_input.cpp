@@ -1,6 +1,7 @@
 #include "vg_input.h"
 #include "vg_config.h"
 #include "vg_port.h"
+#include "vg_capture.h"
 #include <Arduino.h>
 #include <math.h>
 
@@ -147,7 +148,7 @@ void vg_input_update(float dt, VgInput* out) {
     // Only an anomaly if the value jumped while a contact was ALREADY holding
     // the throttle -- a thumb cannot drag that far in one frame. A fresh grab
     // legitimately snaps to wherever it landed, so it is not reported.
-    if (!fresh_grab && fabsf(s_throttle - prev_throttle) > 0.35f) {
+    if (!fresh_grab && fabsf(s_throttle - prev_throttle) > 0.35f && !vg_link_busy()) {
         Serial.printf("THR JUMP %.2f->%.2f | n=%d thr_i=%d nzone=%d |",
                       (double)prev_throttle, (double)s_throttle, n, thr_i, nzone);
         for (int i = 0; i < n; i++) Serial.printf(" (%u,%u)", xs[i], ys[i]);

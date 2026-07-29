@@ -79,12 +79,45 @@ sub-steps long frames instead of clamping them. A 180 ms send used to be clamped
 to 100 ms, which would have advanced the world at half wall-clock speed and made
 "real time" a lie by a factor of two.
 
+## phantom_session.py — recording gameplay at a true 60 fps
+
+Neither capture mode can give you 60 fps of your own piloting: live tops out
+around 23, and smooth needs the board in slow motion. So sessions are recorded
+and rendered separately.
+
+```
+python tools/phantom_session.py record --port COM6 --out run.phr   # play, Ctrl+C
+python tools/phantom_session.py render --port COM6 run.phr --dir .
+```
+
+Recording logs the simulation rather than the picture — a `dt` and an input
+struct, 71 bytes a frame, about 4 KB/s. The game runs at its **true, unimpeded
+speed** while you play (measured: 64 fps, 0.96× realtime, 17 KB for four
+seconds). Rendering then re-runs the session on the device frame by frame and
+pulls the real pixels at whatever rate the link manages.
+
+The video is a genuine 60 fps because the frames really were 1/60 s apart when
+they happened, and every pixel is the actual rasteriser output — the HUD's own
+fps counter reads whatever it read at the time. Rendering costs about
+**3.3 minutes per minute** of gameplay.
+
+This works because the simulation is a pure function of (seed, dt, input): the
+game draws from a seeded xorshift, and no game or render code reads the wall
+clock. The four `esp_random()` calls that do exist are logged and replayed.
+Persisted progress is snapshotted into the session header and restored on
+playback, and saving to flash is suppressed while replaying, so rendering a
+recording cannot overwrite the progress of whoever made it.
+
+Recording **restarts the game**, because a session has to begin somewhere the
+replay can also begin. Play from the menu.
+
 ## Layout
 
 | file | |
 |---|---|
 | `phantom_link.py` | wire protocol and pixel conversion — the only copy |
 | `phantom_recorder.py` | the window |
+| `phantom_session.py` | record a session, render it at 60 fps |
 | `phantom_capture.py` | the command line |
 
 Both front ends drive `phantom_link`, deliberately. The two bugs that took the

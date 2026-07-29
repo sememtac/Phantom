@@ -1,5 +1,6 @@
 #include "vg_sky.h"
 #include "vg_config.h"
+#include "vg_capture.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <math.h>
@@ -526,6 +527,10 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     // Origin and scale are in the report for the same reason lit and peak are:
     // a backdrop pointed at the wrong part of its own texture looks exactly like
     // one that was never generated.
+    // Silent while the link carries frames. A venue is generated mid-session
+    // -- at the start of every match -- so this line lands between two bands
+    // and the host reads it as pixel data.
+    if (vg_link_busy()) return;
     Serial.printf("vg_sky_generate: %s seed %u in %ums  lit %d%%  peak %u/125"
                   "  uv %.0f,%.0f  scale %.3f\n",
                   vg_sky_name(), (unsigned)seed, (unsigned)(millis() - t0),

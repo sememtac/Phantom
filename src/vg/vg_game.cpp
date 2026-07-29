@@ -6,7 +6,7 @@
 #include "vg_save.h"
 #include "vg_cine.h"
 #include <Arduino.h>
-#include <esp_random.h>
+#include "vg_replay.h"
 #include <math.h>
 #include <string.h>
 
@@ -231,7 +231,7 @@ static void player_fire(void) {
 
 void vg_game_init(void) {
     memset(&vg, 0, sizeof(vg));
-    vg_rng_seed(esp_random());
+    vg_rng_seed(vg_replay_rand());
 
     vg_build_models();
     vg_build_starfield();
@@ -242,7 +242,7 @@ void vg_game_init(void) {
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
     vg_sky_init();
-    vg_sky_generate(SKY_MENU, esp_random());   // we boot straight into the menu
+    vg_sky_generate(SKY_MENU, vg_replay_rand());   // we boot straight into the menu
 
     vg.state       = VG_ATTRACT;
     vg.cam_zoom    = 1.0f;
@@ -332,7 +332,13 @@ void vg_match_start(void) {
     vg_arena_init(ARENA_TORUS);
     // The venue. Generated here and then dissolved in across the cutscene, so
     // the match arrives somewhere rather than simply starting.
-    vg_sky_generate((SkyKind)(esp_random() % (uint32_t)SKY_KINDS), esp_random());
+    // Drawn into locals, in this order, deliberately. C++ does not define the
+    // order arguments are evaluated in, and these two seeds are logged for
+    // replay -- leaving it to the compiler would make the recording's meaning
+    // depend on how it was built.
+    const uint32_t venue_kind = vg_replay_rand();
+    const uint32_t venue_seed = vg_replay_rand();
+    vg_sky_generate((SkyKind)(venue_kind % (uint32_t)SKY_KINDS), venue_seed);
     vg_sky_set_reveal(0.0f);
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
 
@@ -746,7 +752,7 @@ int vg_last_purse(void) { return s_last_purse; }
 // which is invisible at a screen change and is the price of not carrying a
 // second full texture just to avoid it.
 static void use_menu_sky(void) {
-    vg_sky_generate(SKY_MENU, esp_random());
+    vg_sky_generate(SKY_MENU, vg_replay_rand());
 }
 
 static void enter_attract(void) {

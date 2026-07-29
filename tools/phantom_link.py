@@ -10,6 +10,7 @@ get fixed in one copy and left in the other.
 
 import os
 import struct
+import threading
 import time
 
 import serial
@@ -27,7 +28,7 @@ try:
 except ImportError:
     _np = None
 
-FPS = 30            # the rate the firmware steps at while armed
+FPS = 60            # the rate the firmware steps at in smooth capture
 WIDTH = HEIGHT = 480
 
 
@@ -71,6 +72,27 @@ class Desync(Exception):
     pass
 
 
+def reset_board(port, settle=3.0):
+    """Pulse the board's reset line and wait for it to come back up.
+
+    Replay is a lockstep conversation, so a host that dies mid-session leaves
+    the device waiting for a frame record and reading everything else as one.
+    It recovers on its own after 30 seconds, which is a long time to look
+    broken. Starting from a known state is cheaper than detecting every way the
+    previous run could have ended -- and both operations reinitialise the game
+    anyway, so nothing is lost by it.
+    """
+    s = serial.Serial(port, 115200)
+    try:
+        s.dtr = False
+        s.rts = True
+        time.sleep(0.15)
+        s.rts = False
+    finally:
+        s.close()
+    time.sleep(settle)
+
+
 class PhantomLink:
     def __init__(self, port, baud=115200, timeout=8):
         self.port = port
@@ -78,15 +100,80 @@ class PhantomLink:
         self.timeout = timeout
         self.ser = None
         self._synced = False
+        self._blob = 0          # size of the device's input struct, from the header
 
     # -- connection ---------------------------------------------------------
 
     def open(self):
-        self.ser = serial.Serial(self.port, self.baud, timeout=self.timeout)
+        # DTR/RTS deasserted BEFORE the port opens, or opening it resets the
+        # board. That is harmless for capture, which just re-arms, and quietly
+        # fatal for replay: the 'P' lands while the device is booting, is lost,
+        # and the frame records that follow are then read as commands -- one of
+        # which is another 'P', which starts a replay from whatever bytes
+        # happen to come next.
+        self.ser = serial.Serial()
+        self.ser.port = self.port
+        self.ser.baudrate = self.baud
+        self.ser.timeout = self.timeout
+        self.ser.dtr = False
+        self.ser.rts = False
+        self.ser.open()
+
+        # Windows gives a serial port a ~4KB receive buffer. A frame is 35KB
+        # arriving in one burst, and the host does real work between bands
+        # (decoding runs, writing into the frame), so the driver buffer
+        # overflows and DROPS bytes -- silently, with no error anywhere. The
+        # symptom is a frame that stops mid-band while the device, which sent
+        # every byte, sits waiting for the next request.
+        try:
+            self.ser.set_buffer_size(rx_size=1 << 20, tx_size=1 << 16)
+        except Exception:
+            pass          # Windows-only API; elsewhere the default is ample
+
         time.sleep(0.4)
         self.ser.reset_input_buffer()
+        self._start_reader()
+
+    # -- receive thread -----------------------------------------------------
+    #
+    # Draining the port is separated from parsing it, because they cannot share
+    # a thread without losing data. A frame arrives as a 35KB burst while the
+    # parser is decoding runs and filling a numpy array, and every millisecond
+    # spent doing that is a millisecond the driver's receive buffer is not being
+    # emptied. It overflows and discards, silently -- measured at 3.6KB missing
+    # from 1.6MB, against a device that reported writing every byte with no
+    # short writes and no stalls.
+    #
+    # So this thread does nothing but move bytes out of the driver as fast as
+    # they appear. Parsing then runs against a buffer in memory, where being
+    # slow costs latency instead of data.
+
+    def _start_reader(self):
+        self._rx = bytearray()
+        self._rx_lock = threading.Lock()
+        self._rx_err = None
+        self._rx_stop = False
+        self._reader = threading.Thread(target=self._reader_loop, daemon=True)
+        self._reader.start()
+
+    def _reader_loop(self):
+        while not self._rx_stop:
+            try:
+                n = self.ser.in_waiting
+                chunk = self.ser.read(n if n else 1)
+            except Exception as e:
+                self._rx_err = e
+                return
+            if chunk:
+                with self._rx_lock:
+                    self._rx += chunk
+
+    def _rx_clear(self):
+        with self._rx_lock:
+            del self._rx[:]
 
     def close(self):
+        self._rx_stop = True
         if self.ser:
             try:
                 self.ser.write(b"s")
@@ -107,26 +194,101 @@ class PhantomLink:
         self.ser.write(b"s")
         self.ser.flush()
 
+    # -- session record / replay -------------------------------------------
+    #
+    # The session is opaque here on purpose. The host stores the device's input
+    # blobs and hands them back byte for byte without ever interpreting them, so
+    # VgInput can gain a field without this file knowing. The device checks the
+    # size on playback and refuses a mismatch, which is the one thing the host
+    # could not detect.
+
+    def session_start(self):
+        """Begin recording a session. Returns the header to store with it."""
+        self._rx_clear()
+        self.ser.write(b"R")
+        self.ser.flush()
+        self._scan_to(b"PHRH")
+        ver, blob, nr = struct.unpack("<HHB", self._read_exact(5))
+        seeds = self._read_exact(nr * 4)
+        save = self._read_exact(12)
+        self._blob = blob
+        return {"ver": ver, "blob": blob, "seeds": seeds, "save": save}
+
+    def session_frame(self):
+        """One recorded frame, or None if the device stopped."""
+        tag = self._read_exact(4)
+        if tag != b"PHRC":
+            raise Desync(f"expected a frame record, got {tag!r}")
+        idx, dt, nr = struct.unpack("<IfB", self._read_exact(9))
+        seeds = self._read_exact(nr * 4)
+        blob = self._read_exact(self._blob)
+        return {"i": idx, "dt": dt, "seeds": seeds, "input": blob}
+
+    def session_end(self):
+        self.ser.write(b"E")
+        self.ser.flush()
+
+    def replay_start(self, hdr):
+        self._rx_clear()
+        self.ser.write(b"P")
+        self.ser.write(struct.pack("<HHB", hdr["ver"], hdr["blob"],
+                                   len(hdr["seeds"]) // 4))
+        self.ser.write(hdr["seeds"])
+        self.ser.write(hdr["save"])
+        self.ser.flush()
+        self._synced = False
+        self._blob = hdr["blob"]
+
+        # Wait to be told it is ready rather than sleeping a guessed interval.
+        # The device re-initialises the game first, which regenerates a sky and
+        # takes a few hundred milliseconds -- and if a frame record arrives
+        # during that, it is consumed as a command instead.
+        deadline = time.time() + 10.0
+        seen = bytearray()
+        while time.time() < deadline:
+            try:
+                seen += self._read_exact(1)
+            except TimeoutError:
+                break
+            if b"vg_replay: PLAYING" in seen:
+                return
+            if b"vg_replay: REJECT" in seen:
+                raise Desync(
+                    "device refused the session -- it was recorded by a "
+                    "different firmware build")
+        raise TimeoutError("device never started the replay")
+
+    def replay_send(self, fr):
+        self.ser.write(b"PHRP")
+        self.ser.write(struct.pack("<fB", fr["dt"], len(fr["seeds"]) // 4))
+        self.ser.write(fr["seeds"])
+        self.ser.write(fr["input"])
+        self.ser.flush()
+
     # -- stream -------------------------------------------------------------
 
     def _read_exact(self, n):
         """Serial reads come back short constantly and a frame is fifteen bands;
         every one of them will be split. Looping here rather than at each call
         site is the difference between working and appearing to work."""
-        buf = bytearray()
-        while len(buf) < n:
-            chunk = self.ser.read(n - len(buf))
-            if not chunk:
-                raise TimeoutError(f"link went quiet with {n - len(buf)} bytes outstanding")
-            buf += chunk
-        return bytes(buf)
+        deadline = time.time() + self.timeout
+        while True:
+            with self._rx_lock:
+                if len(self._rx) >= n:
+                    out = bytes(self._rx[:n])
+                    del self._rx[:n]
+                    return out
+                have = len(self._rx)
+            if self._rx_err:
+                raise self._rx_err
+            if time.time() > deadline:
+                raise TimeoutError(f"link went quiet with {n - have} bytes outstanding")
+            time.sleep(0.0005)
 
     def _scan_to(self, magic):
         window = bytearray()
         while True:
-            b = self.ser.read(1)
-            if not b:
-                raise TimeoutError("no frame header; is the device armed?")
+            b = self._read_exact(1)
             window += b
             if len(window) > 4:
                 del window[0]
@@ -233,6 +395,54 @@ def to_rgb(pixels, w, h, rot):
         rgb[o + 1] = _G6[(v >> 5) & 0x3F]
         rgb[o + 2] = _R5[v & 0x1F]
     return bytes(rgb)
+
+
+class Session:
+    """A recorded session: a header and a list of per-frame records.
+
+    Small enough to keep in memory and to keep forever -- a ten minute session
+    at 60fps is 36,000 records of under a hundred bytes, so about three
+    megabytes. That is the whole trick: the thing worth storing was never the
+    pixels.
+    """
+
+    MAGIC = b"PHRS"
+
+    def __init__(self, hdr=None):
+        self.hdr = hdr
+        self.frames = []
+
+    @property
+    def seconds(self):
+        return sum(f["dt"] for f in self.frames)
+
+    def save(self, path):
+        with open(path, "wb") as fh:
+            fh.write(self.MAGIC)
+            fh.write(struct.pack("<HHBI", self.hdr["ver"], self.hdr["blob"],
+                                 len(self.hdr["seeds"]) // 4, len(self.frames)))
+            fh.write(self.hdr["seeds"])
+            fh.write(self.hdr["save"])
+            for f in self.frames:
+                fh.write(struct.pack("<fB", f["dt"], len(f["seeds"]) // 4))
+                fh.write(f["seeds"])
+                fh.write(f["input"])
+        return path
+
+    @classmethod
+    def load(cls, path):
+        with open(path, "rb") as fh:
+            if fh.read(4) != cls.MAGIC:
+                raise ValueError(f"{os.path.basename(path)} is not a Phantom session")
+            ver, blob, nr, nframes = struct.unpack("<HHBI", fh.read(9))
+            hdr = {"ver": ver, "blob": blob, "seeds": fh.read(nr * 4),
+                   "save": fh.read(12)}
+            s = cls(hdr)
+            for _ in range(nframes):
+                dt, fnr = struct.unpack("<fB", fh.read(5))
+                s.frames.append({"dt": dt, "seeds": fh.read(fnr * 4),
+                                 "input": fh.read(blob)})
+        return s
 
 
 def _to_rgb_np(pixels, w, h, rot):
