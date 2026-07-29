@@ -27,6 +27,11 @@ from phantom_link import (FPS, HEIGHT, WIDTH, Desync, PhantomLink, list_ports,
 
 PREVIEW = 240        # pixels
 
+# Shown in the title bar. Not decoration: a build that silently failed to
+# rebuild is indistinguishable from one that did until you can read a version
+# off the running window, and that already cost a round trip once.
+VERSION = "1.1"
+
 AMBER  = "#ffae1e"
 GROUND = "#0d0700"
 
@@ -34,7 +39,7 @@ GROUND = "#0d0700"
 class Recorder(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Phantom Recorder")
+        self.title(f"Phantom Recorder {VERSION}")
         self.resizable(False, False)
         self.configure(bg=GROUND)
 
