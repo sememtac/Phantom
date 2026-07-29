@@ -43,12 +43,16 @@
 // foreground is just noise.
 #define SKY_MAX_LEVEL   0.52f
 
-// The menu gets its own, far higher ceiling. That cap above exists to protect
-// thin HUD strokes during a fight -- and the menu has no HUD, only the title
-// and the crawl, both of which are large text sitting mostly over the shadow.
-// Held to the combat ceiling the black hole came out at peak 61/125, which is a
-// dim smudge rather than the thing you are meant to sit and look at.
-#define SKY_MENU_LEVEL  0.92f
+// The menu gets its own ceiling, above the combat cap but well below full. That
+// cap exists to protect thin HUD strokes during a fight and the menu has no HUD
+// -- but it does have the title and the whole backstory crawl, and once the hole
+// was actually on screen rather than off the side of its own texture, 0.92 was
+// bright enough to fight the text wherever the two overlapped.
+//
+// Held to the combat ceiling instead it came out at peak 61/125, which is a dim
+// smudge. This sits between the two: still the loudest thing in the set, still
+// readable over.
+#define SKY_MENU_LEVEL  0.70f
 
 // Sampling scale and pan rate, set per backdrop at generation time.
 //
@@ -70,17 +74,21 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // Raised so the whole structure sits inside the frame with room around it. It
 // is a backdrop -- the thing behind the title and the crawl -- and a black hole
 // cropped by the screen edges reads as a dark shape rather than as an object.
-#define SKY_MENU_SCALE  0.118f
+#define SKY_MENU_SCALE  0.155f
 
 // ...and pushed off the axis, so it is not parked behind the text.
 //
 // Offset in TEXELS from the centre of the tile. The sampling rotation carries
 // this vector round with the camera roll, so the hole orbits the frame as the
-// menu tumbles instead of sitting still -- which is the point of it. At 24
-// texels diagonally it rides about 290 screen pixels out, far enough that the
-// title and the crawl are usually over open space and the hole sweeps past them
-// rather than sitting under them.
-#define SKY_MENU_OFF    24.0f
+// menu tumbles instead of sitting still -- which is the point of it.
+//
+// Measured in texels, so it has to be re-derived whenever the scale changes:
+// on-screen radius is OFF / SCALE. 45 texels at 0.155 holds it about 290 pixels
+// out, which is far enough that the title and the crawl are over open space
+// most of the cycle and the hole sweeps past them rather than sitting under
+// them. It also keeps the next tile's copy some 540 pixels off centre, well
+// outside the 339 pixel half-diagonal, so no repeat can come into view.
+#define SKY_MENU_OFF    45.0f
 
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
