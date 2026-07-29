@@ -88,13 +88,23 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     // Departing keeps it in front by construction. It starts near, close to the
     // centre of frame, and recedes -- so it is always at a shallow angle and
     // never has to be chased into the corner of the screen.
-    // Acquired a long way out and running further. A broadcast picks a ship up
-    // as a speck at the edge of the play space and pushes in on it; it does not
-    // start on a close-up, because there is nowhere for that shot to go.
-    c->pos   = v3(sx * 620.0f, 130.0f, 1700.0f);
-    c->fwd   = vnorm(v3(sx * 0.22f, -0.03f, 1.0f));
+    // A fly-by past a fixed position, the way a rally camera is planted at the
+    // outside of a corner. It comes in from a long way down the tunnel, crosses
+    // at about 470 units, and carries on BEHIND the camera -- which is what
+    // makes the operator whip round after it.
+    //
+    // Departing shots were the mistake before this: a ship that only ever
+    // recedes keeps the same bearing, so the camera barely turns and the whole
+    // thing reads as chase footage flying along behind it. Nothing whizzes past
+    // unless it actually goes past.
+    //
+    // At this speed the crossing asks for about 1.75 rad/s against a turn rate
+    // near 2.3, so the pan is at full stretch through the pass without ever
+    // quite losing the subject.
+    c->pos   = v3(sx * 640.0f, 100.0f, 3490.0f);
+    c->fwd   = vnorm(v3(sx * -0.30f, -0.05f, -0.95f));
     c->up    = v3(0, 1, 0);
-    c->speed = 470.0f;
+    c->speed = 815.0f;
 
     c->roll_vis = sx * 0.5f;
 
@@ -152,7 +162,7 @@ static void cine_fly(float dt) {
     // A slow curving climb rather than a straight line. Nothing in this game
     // flies straight, and a ship holding a ruled course through a four second
     // shot reads as a model on a wire.
-    const Mat3 T = mat3_euler(-0.07f * dt, s_cine_turn * dt, 0.0f);
+    const Mat3 T = mat3_euler(-0.04f * dt, s_cine_turn * dt, 0.0f);
     c->fwd = vnorm(mat3_apply(T, c->fwd));
 
     // Re-orthonormalise UP against the new heading, exactly as the AI does.
@@ -1014,21 +1024,24 @@ void vg_game_update(float dt, const VgInput* in) {
         // of somewhere arriving rather than of somewhere already there.
         vg_sky_set_reveal(t / (INTRO_DRIFT * 0.85f));
 
-        // Optical push-in across each shot. The ship is running away at roughly
-        // the rate the lens is tightening, so it holds a near-constant size on
-        // screen while the arena and the starfield magnify around it -- which is
-        // what makes the move read as a camera closing rather than a ship
-        // growing. It is also why the ship can be framed small: the zoom, not
-        // the distance, is doing the work.
-        {
-            float u = 0.0f;
-            if (t > INTRO_OPP_START && t < INTRO_OPP_END)
-                u = (t - INTRO_OPP_START) / (INTRO_OPP_END - INTRO_OPP_START);
-            else if (t > INTRO_DRIFT && t < INTRO_YOU_END)
-                u = (t - INTRO_DRIFT) / (INTRO_YOU_END - INTRO_DRIFT);
-            // Eased, because a linear zoom is visible as a mechanism.
-            const float e = u * u * (3.0f - 2.0f * u);
-            vg.cam_zoom = 0.92f + 1.55f * e;
+        // Zoom is driven by RANGE, not by a timeline. Holding focal length
+        // proportional to distance keeps the ship a constant size on screen, so
+        // the operator is tight on it while it is far out and pulls wide as it
+        // closes -- which is exactly what a camera crew does, and it needs no
+        // hand-authored curve to stay in step with the geometry.
+        //
+        // The wide clamp is what lets the pass be dramatic: once inside about
+        // 1350 units the lens has nothing left to give and the ship is finally
+        // allowed to get big, right at the moment it goes by.
+        if (vg.cine_on) {
+            float z = vlen(vg.cine.pos) / 1600.0f;
+            if (z < 0.85f) z = 0.85f;
+            if (z > 2.40f) z = 2.40f;
+            float k = dt * 4.0f;
+            if (k > 1.0f) k = 1.0f;
+            vg.cam_zoom += (z - vg.cam_zoom) * k;   // smoothed, or it judders
+        } else {
+            vg.cam_zoom = 1.0f;
         }
 
         // Which shot we are in. Each cut re-anchors: the ship is launched fresh
@@ -1042,12 +1055,12 @@ void vg_game_update(float dt, const VgInput* in) {
             const bool was_first = (s_shot == 1);
             s_shot = shot;
             if (shot == 1) {
-                s_cine_turn = 0.30f;
+                s_cine_turn = 0.10f;
                 cine_launch(vg.spec, vg.trail_hue, false);
             } else if (shot == 2) {
                 // Only once, on the way in to the second setup.
                 if (was_first || s_shot == 2) cine_relocate();
-                s_cine_turn = -0.30f;
+                s_cine_turn = -0.10f;
                 cine_launch(vg.enemy[0].spec, vg.enemy[0].hue, true);
             }
             // Between shots the ribbon goes too, or the cut lands on a stranded
