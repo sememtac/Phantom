@@ -132,6 +132,8 @@ static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->roll_vis     = 0;
     s->hit_flash    = 0;
     s->engaged      = false;
+    s->kamikaze_will = (vg_frand01() < ENEMY_KAMIKAZE_CHANCE);
+    s->kamikaze_on   = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +144,24 @@ static bool s_player_hit = false;
 
 bool vg_player_was_hit(void)  { return s_player_hit; }
 void vg_clear_player_hit(void) { s_player_hit = false; }
+
+// Any contact kills, whatever the hull is and whatever happened a moment ago.
+//
+// This deliberately ignores the VG_HIT grace period that vg_damage_player
+// honours. That grace exists so one missile cannot cascade into three, which is
+// a fairness rule about being SHOT. Flying into a wall while still flinching
+// from a hit is not unfair, it is flying into a wall.
+//
+// VG_KILL still protects: at that point the opponent is already dead and the
+// round is decided, and a win must not be taken back after the fact.
+void vg_kill_player(void) {
+    if (vg.state == VG_KILL) return;
+    vg.health        = 0.0f;
+    vg.hit_flash     = 0.6f;
+    vg.damage_glitch = DAMAGE_GLITCH;
+    vg.shake         = 1.0f;
+    s_player_hit     = true;
+}
 
 void vg_damage_player(float amount) {
     // Brief post-hit invulnerability, so one bad moment cannot cascade into three
@@ -645,7 +665,7 @@ static void collide_player(void) {
     // any more -- the run is simply over.
     if (vg.wall_clear < SHIP_RADIUS) {
         vg_spawn_debris(v3(0, 0, 14), 26.0f, 16);
-        vg_damage_player(DMG_WALL);
+        vg_kill_player();
     }
 
     for (int i = 0; i < MAX_ASTEROIDS; i++) {
@@ -655,7 +675,7 @@ static void collide_player(void) {
         if (vlen2(a->pos) < r * r) {
             vg_spawn_debris(a->pos, a->radius, 8);
             a->alive = false;
-            vg_damage_player(DMG_ASTEROID);
+            vg_kill_player();
         }
     }
 
@@ -672,7 +692,7 @@ static void collide_player(void) {
             vg_comms_say(s, VOICE_DEATH);
             vg_spawn_debris(s->pos, 20.0f, 12);
             s->alive = false;
-            vg_damage_player(DMG_RAM);
+            vg_kill_player();
         }
     }
 }

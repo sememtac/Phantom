@@ -67,6 +67,12 @@ struct Ship {
     // to be part of it.
     bool  engaged;
 
+    // Suicide run. `kamikaze_will` is this pilot's disposition, rolled once at
+    // spawn. `kamikaze_on` is the commitment, and once it is set it never
+    // clears: a pilot who has decided to ram does not change their mind.
+    bool  kamikaze_will;
+    bool  kamikaze_on;
+
     // Who is flying it. Carried on the ship rather than looked up through the
     // bracket, because a missile detonating has to name the pilot it just
     // killed and has no business knowing what a tournament is.

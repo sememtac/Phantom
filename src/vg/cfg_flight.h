@@ -78,13 +78,20 @@
 
 // Missile damage is not here -- it comes from the launching ship's warhead and
 // scales with how close the fuse went off (ShipSpec::msl_damage / graze_floor).
-// These are the collisions, in hull points against a ~100-point ship.
-#define DMG_ASTEROID         26.0f
-#define DMG_RAM              42.0f
-// Fatal outright, on any hull. Flying into the world boundary ends the run,
-// which is what gives the high-speed escape option a real cost -- you are least
-// able to turn exactly when you are covering ground fastest.
-#define DMG_WALL             1.0e9f
+//
+// COLLISION IS ALWAYS FATAL, so there is no collision damage number any more.
+// See vg_kill_player() in vg_game.cpp -- one rule for the wall, an asteroid and
+// another ship, on any hull, at any speed.
+//
+// There used to be three numbers here: 26 for an asteroid, 42 for a ram, fatal
+// for the wall. Touching a rock was therefore a setback on a full hull and death
+// on a low one, and the player had to learn which contacts they could afford.
+// Now there is nothing to learn.
+//
+// This is what makes the boundary a real edge and gives a high-speed escape a
+// cost, because you are least able to turn exactly when you cover ground
+// fastest. It is also what makes a suicide run a real threat instead of a trade
+// the enemy loses.
 
 #define SHIP_RADIUS          9.0f
 

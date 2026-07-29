@@ -50,6 +50,8 @@ void vg_spawn_opponent(void);
 // lower ones and never the other way round, so a death is always heard out.
 void vg_comms_say(const Ship* s, VoiceEvent ev);
 void vg_damage_player(float amount);
+// Any collision. Always fatal, and not subject to the post-hit grace period.
+void vg_kill_player(void);
 bool vg_player_was_hit(void);
 void vg_clear_player_hit(void);
 

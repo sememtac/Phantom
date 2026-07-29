@@ -201,6 +201,50 @@ hits. That was only survivable because regen caught you, and it leaves the credi
 economy no room to operate — you would be either untouched or dead, with nothing
 in between worth buying back. Hence the numbers above.
 
+### Collision
+
+**Any collision kills the player outright.** The wall, an asteroid, another
+ship — on any hull, at any speed. There is no collision damage number.
+
+This used to be three values: 26 for an asteroid, 42 for a ram, fatal for the
+wall. A rock was therefore survivable on a full hull and lethal on a low one, so
+the player had to carry a running estimate of which contacts they could afford.
+That is a lot of hidden arithmetic to ask of someone in a turning fight, and the
+answer it produced was never interesting. One rule replaces it: touch anything
+and the run is over.
+
+It stays a **loss** even when the opponent dies in the same instant. Player death
+resolves first, for the same reason a mutual kill has always been a loss — you
+died, so you do not advance.
+
+### The suicide run
+
+Some pilots will trade their ship for yours.
+
+Willingness is rolled **once per pilot** at spawn (`ENEMY_KAMIKAZE_CHANCE`), so a
+given opponent either is that sort or is not, for the whole match. Rolling it per
+frame would make every enemy occasionally suicidal, which reads as a bug rather
+than as a character.
+
+A willing pilot commits when their **hull is nearly gone**
+(`ENEMY_KAMIKAZE_HULL`) and the player is **close** (`ENEMY_KAMIKAZE_RANGE`).
+Both conditions matter: the first means they are dying anyway and the ship has
+stopped being an asset worth protecting, and the second makes it a decision taken
+during a fight rather than a behaviour they arrived with.
+
+Once committed it never clears. A pilot who has decided to ram does not change
+their mind.
+
+The run sits **above missile evasion** in the AI's priority order — they no longer
+care what is chasing them — and **below wall avoidance**, because the wall cannot
+be aimed at anybody. They fly at full throttle, which also means they cannot
+shoot, since firing needs a low speed. The aim point is slightly *past* the
+player: a pursuit curve that converges exactly on its target arrives with the
+closing speed fallen to nothing, which is a stern chase rather than a collision.
+
+The only warning is a line on the radio and a contact that stops manoeuvring and
+points straight at you.
+
 ---
 
 ## Credits

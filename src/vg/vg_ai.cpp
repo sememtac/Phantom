@@ -5,10 +5,14 @@
 // Enemy fighter behaviour, in strict priority order:
 //
 //   1. wall avoidance   -- outranks even running from a missile, because flying
-//                          into the boundary to dodge is just a slower death
-//   2. missile evasion  -- break ACROSS the seeker, never away from it
-//   3. break-off        -- extend after a pass instead of boring in
-//   4. pursue           -- aim beside the player, not at them
+//                          into the boundary to dodge is just a slower death,
+//                          and it outranks a suicide run because the wall
+//                          cannot be aimed at anybody
+//   2. suicide run      -- once committed, nothing else matters, including a
+//                          missile on their tail
+//   3. missile evasion  -- break ACROSS the seeker, never away from it
+//   4. break-off        -- extend after a pass instead of boring in
+//   5. pursue           -- aim beside the player, not at them
 //
 // Enemies live under the same physics the player does: bleeding speed buys turn
 // rate, and flat out they cannot shoot.
@@ -69,9 +73,37 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     Vec3  elocal = vg_arena_local_of(s->pos);
     float eclear = vg_arena_clearance(elocal);
 
+    // Commit to a suicide run: this pilot is the sort, they are nearly dead, and
+    // the player is close enough for it to be a decision rather than a plan.
+    if (!s->kamikaze_on && s->kamikaze_will &&
+        s->hull <= sp->hull * ENEMY_KAMIKAZE_HULL &&
+        vlen2(s->pos) < ENEMY_KAMIKAZE_RANGE * ENEMY_KAMIKAZE_RANGE) {
+        s->kamikaze_on = true;
+        // Said once, on the decision. The player gets a line and a ship that
+        // stops manoeuvring and starts pointing straight at them, which together
+        // are the only warning they get.
+        vg_comms_say(s, VOICE_TAUNT);
+    }
+
     if (eclear < ARENA_ENEMY_MARGIN) {
         desired = vg_arena_dir_to_view(vg_arena_inward(elocal));
         s->target_speed = (smin + smax) * 0.5f;
+        s->evade_t = 0;
+        s->break_t = 0;
+
+    } else if (s->kamikaze_on) {
+        // Straight at the player, everything open. Above missile evasion on
+        // purpose: a pilot who has decided to ram does not care what is chasing
+        // them. Still BELOW wall avoidance, because dying against the boundary
+        // achieves nothing at all -- the whole point is to take the player with
+        // them, and the wall cannot be aimed.
+        //
+        // Aimed a little past the player rather than at them. A pursuit curve
+        // that converges exactly on its aim point arrives with the closing speed
+        // fallen to nothing, which is a stern chase, not a collision.
+        Vec3 to = vsub(v3(0, 0, 0), s->pos);
+        desired = vadd(to, vmul(vnorm(to), ENEMY_KAMIKAZE_LEAD));
+        s->target_speed = smax;
         s->evade_t = 0;
         s->break_t = 0;
 

@@ -84,3 +84,24 @@
 #define ENEMY_BREAK_RANGE    560.0f
 #define ENEMY_BREAK_TIME_MIN 1.1f
 #define ENEMY_BREAK_TIME_MAX 1.8f
+
+// --- suicide runs ----------------------------------------------------------
+// Some pilots will trade their ship for yours. The willingness is rolled once
+// per pilot at spawn, so a given opponent either is that sort or is not, and it
+// stays true for the whole match. Rolling it per frame would make every enemy
+// occasionally suicidal, which reads as a bug rather than as a character.
+#define ENEMY_KAMIKAZE_CHANCE   0.35f   // of pilots who would do it at all
+
+// A willing pilot commits when their hull is this low. They are going to die to
+// the next hit anyway, so the ship stops being an asset to protect and becomes
+// the largest weapon they have left.
+#define ENEMY_KAMIKAZE_HULL     0.34f
+
+// ...and only from inside this range, so it reads as a decision made during a
+// fight rather than a behaviour they spawned with.
+#define ENEMY_KAMIKAZE_RANGE    1800.0f
+
+// Aim point for the run. Not the origin: the player IS the origin, and a ship
+// that converges perfectly on it decelerates into a stern chase it cannot win.
+// Aiming slightly beyond means the closing speed is still rising at contact.
+#define ENEMY_KAMIKAZE_LEAD     140.0f
