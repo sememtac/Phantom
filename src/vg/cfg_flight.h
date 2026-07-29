@@ -100,6 +100,13 @@
 #define SPEED_SHAKE_AT       0.80f    // throttle at which it starts
 #define SPEED_SHAKE_MAX      2.7f     // px at full
 
+// The instruments feel it too. Smaller than the airframe shake and running on
+// its own clock, so the panel is clearly not rigidly bolted to the view -- what
+// sells it is the two disagreeing. A HUD that shook in lockstep with the world
+// would just look like one bigger shake.
+#define HUD_SHAKE_MAX        1.7f     // px at full throttle
+#define HUD_GLITCH_AT        0.94f    // throttle above which the panel drops out
+
 // --- trails ----------------------------------------------------------------
 // Every fighter drags a coloured ribbon of where it has been. This is what makes
 // trail colour a mechanic rather than decoration: at range a contact is four

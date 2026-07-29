@@ -87,10 +87,47 @@ void vg_render_frame(const VgInput* in, float fps) {
         draw_instruments = ((h % 100u) < (uint32_t)(p * p * 118.0f));
     }
 
+    // Avionics feel the airframe. The panel jitters at the top of the throttle
+    // too, but smaller than the world does and on its own clock -- what sells it
+    // is the two disagreeing. Shaking in lockstep would read as one bigger
+    // shake; out of step, it reads as a rack that is not quite bolted down.
+    float jx = 0.0f, jy = 0.0f;
+    const float thr = vg.throttle_vis;
+    if (thr > SPEED_SHAKE_AT && vg.state != VG_PAUSE) {
+        const float k = (thr - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
+        const float a = HUD_SHAKE_MAX * k * k;
+        // Bucketed at a rate of its own, deliberately not the frame rate and
+        // deliberately not the same bucket the world buzz uses.
+        const uint32_t b = (uint32_t)(vg.state_t * 47.0f);
+        uint32_t h = b * 0x9E3779B9u;
+        h ^= h >> 13; h *= 0x85EBCA6Bu; h ^= h >> 16;
+        jx = ((float)(h        & 63u) / 63.0f - 0.5f) * 2.0f * a;
+        jy = ((float)((h >> 7) & 63u) / 63.0f - 0.5f) * 2.0f * a;
+    }
+
     if (draw_instruments) {
+        vg_hud_jitter(jx, jy);
         vg_hud_warp(true, warp);
         vg_draw_hud(cam, in, fps);
         vg_hud_warp(false, 1.0f);
+        vg_hud_jitter(0.0f, 0.0f);
+    }
+
+    // Right at the stop, the panel starts losing patches of itself. Small, dark
+    // and infrequent -- this is a readout struggling, not a readout failing, and
+    // anything more would make the instruments unusable exactly when they are
+    // needed most.
+    if (thr > HUD_GLITCH_AT && vg.state != VG_PAUSE) {
+        const uint32_t slow = (uint32_t)(vg.state_t * 7.0f);
+        uint32_t s = slow * 0x27D4EB2Du;
+        s ^= s >> 15; s *= 0x165667B1u; s ^= s >> 13;
+        if ((s % 5u) == 0u) {
+            const int bw = 18 + (int)((s >> 3)  % 54u);
+            const int bh = 3  + (int)((s >> 9)  % 9u);
+            const int bx = (int)((s >> 13) % (uint32_t)(SCR_W - bw));
+            const int by = (int)((s >> 20) % (uint32_t)(SCR_H - bh));
+            vg_fill_rect(bx, by, bw, bh, ((s >> 27) & 1u) ? COL_BLACK : INK_ONFILL);
+        }
     }
 
     // A scan bar running down the screen while it settles. One rectangle, and

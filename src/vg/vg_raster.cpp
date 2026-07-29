@@ -118,12 +118,24 @@ void vg_hud_warp(bool on, float scale) {
     s_warp_k = HUD_WARP_K * scale;
 }
 
+static float s_hud_jx = 0.0f, s_hud_jy = 0.0f;
+
+void vg_hud_jitter(float dx, float dy) { s_hud_jx = dx; s_hud_jy = dy; }
+
 static inline void warp_pt(float* x, float* y) {
     float dx = *x - SCR_CX, dy = *y - SCR_CY;
     float r2 = (dx * dx + dy * dy) * (1.0f / (SCR_CX * SCR_CX + SCR_CY * SCR_CY));
     float k  = 1.0f + s_warp_k * r2;
-    *x = SCR_CX + dx * k;
-    *y = SCR_CY + dy * k;
+    // Displacement is added AFTER the bend, so the whole assembly translates as
+    // one rather than the curvature being recomputed about a moved centre --
+    // the panel vibrates, it does not flex.
+    //
+    // Every instrument routes through here when the warp bracket is open: lines
+    // subdivide through it and fills go out as warped quads through it. So this
+    // is the one point that moves the entire panel and nothing else, and the
+    // world, which is drawn outside the bracket, is untouched.
+    *x = SCR_CX + dx * k + s_hud_jx;
+    *y = SCR_CY + dy * k + s_hud_jy;
 }
 
 // ---------------------------------------------------------------------------

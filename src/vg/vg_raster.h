@@ -28,6 +28,11 @@ void vg_rast_begin_frame(void);
 // from game state (speed) rather than it being a fixed stylistic constant.
 void vg_hud_warp(bool on, float scale);
 
+// Translate the whole instrument panel by a few pixels. Only affects primitives
+// submitted inside the warp bracket, so the world never moves with it. Reset to
+// zero when the bracket closes.
+void vg_hud_jitter(float dx, float dy);
+
 // Line quality, bracketed the same way as the warp. Antialiasing costs roughly
 // an order of magnitude more per pixel than a Bresenham span -- two blends, two
 // byte swaps and two bounds tests against a single store -- so it is worth
