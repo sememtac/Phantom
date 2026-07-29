@@ -66,26 +66,49 @@ void loop(void) {
 
     uint32_t now = micros();
     if (last_us == 0) last_us = now;
-    float dt = (now - last_us) * 1e-6f;
+    float frame_dt = (now - last_us) * 1e-6f;
     last_us = now;
-    // A stalled frame must not teleport the world through an asteroid.
-    if (dt < 0.0005f) dt = 0.0005f;
-    if (dt > 0.10f)   dt = 0.10f;
+    if (frame_dt < 0.0005f) frame_dt = 0.0005f;
+    // Past half a second the frame is not late, something has blocked -- a flash
+    // write, a reconnect. Catching up on it is worse than dropping it.
+    if (frame_dt > 0.50f) frame_dt = 0.50f;
 
-    // While recording, the simulation is stepped at a FIXED rate no matter how
-    // long the frame actually took. The device runs in slow motion because the
-    // link cannot carry 460KB sixty times a second, but the recording plays
-    // back perfectly smooth -- wall-clock speed decides how long you wait, not
-    // how the video looks.
+    // SMOOTH capture steps the simulation at a FIXED rate no matter how long the
+    // frame actually took. The device runs in slow motion because the link
+    // cannot carry 460KB sixty times a second, but the recording plays back
+    // perfectly -- wall-clock speed decides how long you wait, not how the video
+    // looks. Zero means live or idle: use the real clock.
     const float cap_dt = vg_capture_dt();
-    if (cap_dt > 0.0f) dt = cap_dt;
+
+    // A long frame is SUB-STEPPED rather than clamped.
+    //
+    // Clamping was fine while a long frame meant a hitch, and wrong the moment
+    // live capture existed: sending a frame stalls the loop for ~180ms, so every
+    // frame would have been clamped to 100ms and the world would have advanced
+    // at half wall-clock speed. A recording that is real time in name only,
+    // playing back at half the speed the game was actually running.
+    //
+    // Sub-stepping keeps real time AND keeps the guarantee the clamp existed for
+    // -- no single step long enough to put a missile through a hull. Normal play
+    // is a 16ms frame and one step, exactly as before.
+    // What the game believes this frame lasted. In smooth capture that is the
+    // fake clock, everywhere -- input timers included, or a touch would have to
+    // be held six times as long as it looks on the recording.
+    const float sim_dt = (cap_dt > 0.0f) ? cap_dt : frame_dt;
+
+    int steps = 1;
+    float dt = sim_dt;
+    if (cap_dt <= 0.0f && dt > 0.02f) {
+        steps = (int)(dt / 0.02f) + 1;
+        dt    = sim_dt / (float)steps;
+    }
 
     uint32_t t0 = micros();
     VgInput in;
-    vg_input_update(dt, &in);
+    vg_input_update(sim_dt, &in);
 
     uint32_t t1 = micros();
-    vg_game_update(dt, &in);
+    for (int s = 0; s < steps; s++) vg_game_update(dt, &in);
 
     uint32_t t2 = micros();
     vg_render_frame(&in, fps);
@@ -94,7 +117,9 @@ void loop(void) {
     vg_rast_flush();
     uint32_t t4 = micros();
 
-    float inst = 1.0f / dt;
+    // The rate the FRAME went out at, not the sub-step rate -- sub-steps are an
+    // implementation detail of a long frame and would read as a speed-up.
+    float inst = 1.0f / sim_dt;
     fps += (inst - fps) * 0.08f;
 
     acc_input  += t1 - t0;

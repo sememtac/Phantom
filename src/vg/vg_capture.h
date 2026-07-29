@@ -11,17 +11,26 @@
 // on this part manages roughly a megabyte a second. Two frames per second, and
 // there is no compression scheme that turns that into sixty.
 //
-// So capture does not run in real time, and does not try to. While it is armed
-// the simulation is stepped at a FIXED dt regardless of how long the frame
-// actually took, which means the device runs in slow motion while the recording
-// plays back perfectly smooth at whatever rate that dt implies. Wall-clock
-// speed becomes irrelevant -- it only decides how long you wait, not how the
-// video looks. Every frame is captured whole, nothing is dropped, and there is
-// no tearing, none of which is true of pointing a camera at the screen.
+// There is no way to have both real time and smooth, so there are two modes and
+// the host picks:
 //
-// The trade is that a match cannot really be PLAYED at three frames a second.
-// Cutscenes, the menu, the bracket and the attract loop record perfectly
-// hands-off; live combat is best captured in short bursts.
+//   LIVE ('l')   The clock is left alone. The game runs at its own speed and
+//                what goes out is exactly what was on the panel at that moment,
+//                so the recording is real time -- at the handful of frames a
+//                second the link can carry, since every send stalls the loop
+//                while it goes. Choppy and true. This is the mode for recording
+//                someone playing.
+//
+//   SMOOTH ('c') The simulation is stepped at a FIXED dt regardless of how long
+//                the frame actually took, so the device runs in slow motion
+//                while the recording plays back perfectly smooth. Wall-clock
+//                speed only decides how long you wait. The trade is that a match
+//                cannot really be PLAYED at five frames a second -- cutscenes,
+//                menus, the bracket and the attract loop record hands-off, live
+//                combat is best taken in short bursts.
+//
+// Both capture every frame whole, with nothing dropped and no tearing, neither
+// of which is true of pointing a camera at the screen.
 // ===========================================================================
 
 // Wire format. All little-endian, which is what both ends already are.
@@ -38,11 +47,12 @@
 
 bool vg_capture_active(void);
 
-// Fixed simulation step while armed. Zero when idle, meaning "use real time".
+// The fixed simulation step, in SMOOTH mode only. Zero when live or idle,
+// meaning "use the real clock" -- which is the whole of the difference.
 float vg_capture_dt(void);
 
-// Check for a host command. 'c' arms, 's' stops. Cheap enough to call every
-// frame.
+// Check for a host command. 'c' arms smooth, 'l' arms live, 's' stops. Cheap
+// enough to call every frame.
 void vg_capture_poll(void);
 
 // Called by the rasteriser around each finished frame. Bands arrive in the

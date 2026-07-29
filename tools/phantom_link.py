@@ -19,14 +19,40 @@ FPS = 30            # the rate the firmware steps at while armed
 WIDTH = HEIGHT = 480
 
 
+ESPRESSIF_VID = 0x303A
+
+
 def list_ports():
-    """Likely boards first: the ESP32-S3 shows up as a USB CDC device."""
+    """Boards first, ranked by USB VENDOR ID rather than by description text.
+
+    Matching on strings looked reasonable and picked the wrong device: an FTDI
+    adapter enumerating as "USB Serial Port (COM3)" scores identically to the
+    board's "USB Serial Device (COM6)" against a substring like "usb serial",
+    and sorts ahead of it on port number. The recorder then opened a port with
+    nothing on the other end, waited for a header that was never coming, and
+    reported it as though the board were not running.
+
+    The vendor ID is not a guess. 0x303A is Espressif's, and nothing else on a
+    normal machine claims it.
+    """
     ports = list(serial.tools.list_ports.comports())
+
     def score(p):
-        blob = f"{p.description} {p.manufacturer or ''} {p.hwid or ''}".lower()
-        return 0 if any(k in blob for k in ("esp32", "usb serial", "cdc", "espressif")) else 1
+        if p.vid == ESPRESSIF_VID:
+            return 0
+        blob = f"{p.description} {p.manufacturer or ''}".lower()
+        if "esp32" in blob or "espressif" in blob:
+            return 1
+        return 2 if p.vid else 3          # anything with a VID beats Bluetooth
+
     ports.sort(key=score)
-    return [(p.device, p.description or p.device) for p in ports]
+    out = []
+    for p in ports:
+        label = p.description or p.device
+        if p.vid == ESPRESSIF_VID:
+            label += "  [ESP32]"
+        out.append((p.device, label))
+    return out
 
 
 class Desync(Exception):
@@ -58,9 +84,11 @@ class PhantomLink:
             self.ser.close()
             self.ser = None
 
-    def arm(self):
+    def arm(self, live=False):
+        """Fixed-step gives smooth video of a slowed game; live gives real-time
+        video of the game as it actually ran."""
         self._synced = False
-        self.ser.write(b"c")
+        self.ser.write(b"l" if live else b"c")
         self.ser.flush()
 
     def disarm(self):
@@ -191,6 +219,15 @@ class FrameWriter:
     """
 
     def __init__(self, out_dir, fps=FPS, w=WIDTH, h=HEIGHT, fragmented=False):
+        """fps=None means measure it.
+
+        Live capture has no nominal rate -- it is whatever the link and the game
+        managed between them -- and ffmpeg needs a rate before the first frame.
+        So the first few frames are held back, timed, and the encoder is started
+        with the real figure. Sixteen frames is about three seconds of wall
+        clock and eleven megabytes, which buys a rate accurate enough that a
+        recording lasting an hour still ends when it should.
+        """
         import shutil
         import subprocess
         import time
@@ -200,6 +237,42 @@ class FrameWriter:
         self._w, self._h = w, h
         self._proc = None
         self._dir = None
+        self._out_dir = out_dir
+        self._fragmented = fragmented
+        self._fps = fps
+        self._pending = []          # frames held while the rate is measured
+        self._t0 = None
+
+        if fps is None:
+            self.path = None        # decided when the encoder is started
+            return
+
+        self._start(fps, stamp)
+
+    @property
+    def fps(self):
+        """The rate the video will actually play at.
+
+        Nominal in fixed mode. In live mode it is the measured arrival rate, or
+        a running estimate from the frames held so far -- callers want to report
+        seconds-of-video from the first frame, well before enough have arrived
+        to settle on a figure.
+        """
+        import time
+
+        if self._fps is not None:
+            return self._fps
+        if self._t0 is None or len(self._pending) < 2:
+            return FPS
+        return max(1.0, (len(self._pending) - 1) / max(0.001, time.time() - self._t0))
+
+    def _start(self, fps, stamp=None):
+        import shutil
+        import subprocess
+        import time
+
+        stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
+        out_dir, w, h, fragmented = self._out_dir, self._w, self._h, self._fragmented
 
         if shutil.which("ffmpeg"):
             self.path = os.path.join(out_dir, f"phantom-{stamp}.mp4")
@@ -223,6 +296,33 @@ class FrameWriter:
             self.path = self._dir
 
     def write(self, rgb):
+        import time
+
+        # Measuring phase: hold the frame, and once there are enough of them
+        # work out the rate they actually arrived at and open the encoder.
+        if self._fps is None:
+            now = time.time()
+            if self._t0 is None:
+                self._t0 = now
+            self._pending.append(rgb)
+            # Counted by length while buffering, then reset so the flush can
+            # count them exactly once. Incrementing in both places double-counts
+            # every held frame, which shows up as a progress bar that overshoots
+            # and a frame total that disagrees with the file.
+            self.n = len(self._pending)
+            if len(self._pending) >= 16:
+                span = max(0.001, now - self._t0)
+                self._fps = max(1.0, min(60.0, (len(self._pending) - 1) / span))
+                self._start(self._fps)
+                held, self._pending = self._pending, []
+                self.n = 0
+                for f in held:
+                    self._flush_one(f)
+            return
+
+        self._flush_one(rgb)
+
+    def _flush_one(self, rgb):
         if self._proc:
             self._proc.stdin.write(rgb)
         else:
@@ -232,6 +332,17 @@ class FrameWriter:
         self.n += 1
 
     def close(self):
+        # A recording stopped before the rate settled still has to be written,
+        # and at the best rate available rather than the nominal one -- a live
+        # clip of ten frames written at 30fps plays in a third of a second.
+        # self.fps is the running estimate, which two frames is enough for.
+        if self._fps is None:
+            self._fps = self.fps
+            self._start(self._fps)
+            held, self._pending = self._pending, []
+            self.n = 0
+            for f in held:
+                self._flush_one(f)
         if self._proc:
             try:
                 self._proc.stdin.close()

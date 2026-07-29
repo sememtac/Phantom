@@ -16,6 +16,10 @@ rather than a clip. Frames stream to disk as they arrive, so length is limited
 by disk rather than memory, and continuous recordings are written as fragmented
 mp4 so an unclean end costs the last fragment instead of the file.
 
+**Live** (on by default) records what is on the panel, when it was on the panel.
+Untick it for **smooth**. See below — the difference is the whole story of these
+tools.
+
 Run `tools/dist/PhantomRecorder.exe`, or from source:
 
 ```
@@ -36,28 +40,44 @@ Same thing without the window, for scripting:
 
 ```
 python tools/phantom_capture.py --port COM6 --seconds 12 --dir .
+python tools/phantom_capture.py --port COM6 --smooth --seconds 12 --dir .
 python tools/phantom_capture.py --port COM6 --continuous --dir .   # until Ctrl+C
 ```
 
-## Why it is slow, and why that does not matter
+## Live or smooth — pick one, you cannot have both
 
 A frame is 480×480×2 = 460,800 bytes and the USB CDC link carries roughly a
-megabyte a second. Two frames per second raw, about five with the run-length
-coding the firmware applies. There is no compression scheme that turns that
-into sixty.
+megabyte a second. Two frames per second raw, about **six** with the run-length
+coding the firmware applies. There is no compression scheme that turns that into
+sixty, so something has to give: either the video is real time and choppy, or it
+is smooth and slowed. Both modes exist because both are the right answer
+sometimes.
 
-So capture does not run in real time and does not try to. While recording is
-armed the firmware steps its simulation at a **fixed 30 fps** no matter how long
-each frame actually took. The board runs in slow motion; the recording plays
-back perfectly smooth. Wall-clock speed decides how long you wait, not how the
-video looks — and every frame arrives whole, with nothing dropped and no
-tearing, none of which is true of filming the panel.
+**Live** (the default) leaves the game's clock alone. What goes out is exactly
+what was on the panel at that moment, so the recording is real time — at about
+six frames a second, because every send stalls the loop while it goes. The host
+measures the true arrival rate over the first sixteen frames and encodes at that,
+so the video runs at the speed the game actually ran. **This is the mode for
+recording yourself playing.**
 
-Expect roughly **five seconds of waiting per second of footage**.
+**Smooth** (`--smooth`, or untick Live) has the firmware step its simulation at a
+fixed 30 fps however long each frame really took. The board runs in slow motion;
+the recording plays back perfectly smooth. Wall-clock speed decides how long you
+wait, not how the video looks. Expect roughly **six seconds of waiting per second
+of footage** — and a match cannot really be *played* at six frames a second, so
+this is for the attract loop, the menus, the bracket and the launch cutscene,
+which record hands-off and look immaculate.
 
-The consequence worth knowing: a match cannot really be *played* at five frames
-a second. The attract loop, the menus, the bracket and the launch cutscene all
-record perfectly hands-off. Live combat is best taken in short bursts.
+Either way every frame arrives whole, with nothing dropped and no tearing, none
+of which is true of filming the panel.
+
+Measured on the bench: 6 s of live capture → 39 frames, 5.8 s of video at
+6.7 fps. 2 s of smooth capture → 60 frames at 30 fps, 13 s of waiting.
+
+One firmware consequence worth recording: live capture is why `main.cpp`
+sub-steps long frames instead of clamping them. A 180 ms send used to be clamped
+to 100 ms, which would have advanced the world at half wall-clock speed and made
+"real time" a lie by a factor of two.
 
 ## Layout
 

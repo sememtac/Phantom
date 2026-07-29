@@ -7,7 +7,18 @@
 // with, so it decides how much motion happens between captured frames.
 #define CAP_FPS   30.0f
 
-static bool     s_on    = false;
+// 0 idle, 1 fixed-step, 2 live.
+//
+// Fixed step gives smooth video of a game running in slow motion: the
+// simulation is told a frame took 1/30s however long it really took, so motion
+// between captured frames is always the same and the recording is perfect.
+//
+// Live leaves the clock alone. The game runs at its own pace and whatever gets
+// sent is what was genuinely on the panel at that moment, so the recording is
+// real time -- at the handful of frames a second the link can carry, because
+// every send stalls the loop while it goes out. Choppy and true, against
+// smooth and slowed.
+static int      s_mode  = 0;
 static uint32_t s_index = 0;
 
 // Runs are emitted through a staging buffer rather than written one at a time.
@@ -15,8 +26,11 @@ static uint32_t s_index = 0;
 static uint8_t  s_buf[4096];
 static int      s_len = 0;
 
-bool  vg_capture_active(void) { return s_on; }
-float vg_capture_dt(void)     { return s_on ? (1.0f / CAP_FPS) : 0.0f; }
+bool  vg_capture_active(void) { return s_mode != 0; }
+
+// Only fixed-step overrides the clock. Live returns zero, meaning "use real
+// time", which is the entire difference between the two modes.
+float vg_capture_dt(void)     { return (s_mode == 1) ? (1.0f / CAP_FPS) : 0.0f; }
 
 static inline void put(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
@@ -38,23 +52,24 @@ static inline void flush(void) {
 void vg_capture_poll(void) {
     while (Serial.available()) {
         const int c = Serial.read();
-        if (c == 'c' && !s_on) {
-            s_on    = true;
+        if ((c == 'c' || c == 'l') && !s_mode) {
+            s_mode  = (c == 'l') ? 2 : 1;
             s_index = 0;
             // Announced on a line of its own so the host can sync before any
             // binary arrives, and so a human watching the monitor can see why
             // the game has suddenly gone slow.
-            Serial.printf("\nvg_capture: ARMED %dx%d rot %d @%.0ffps\n",
-                          SCR_W, SCR_H, VG_ROTATE, (double)CAP_FPS);
-        } else if (c == 's' && s_on) {
-            s_on = false;
+            Serial.printf("\nvg_capture: ARMED %s %dx%d rot %d\n",
+                          (s_mode == 2) ? "LIVE" : "FIXED",
+                          SCR_W, SCR_H, VG_ROTATE);
+        } else if (c == 's' && s_mode) {
+            s_mode = 0;
             Serial.printf("\nvg_capture: DONE %u frames\n", (unsigned)s_index);
         }
     }
 }
 
 void vg_capture_frame_begin(void) {
-    if (!s_on) return;
+    if (!s_mode) return;
     const uint8_t hdr[4] = { 'P', 'H', 'F', 'R' };
     const uint16_t w = SCR_W, h = SCR_H;
     const uint8_t  rot = VG_ROTATE, fmt = VG_CAP_FMT_RLE16;
@@ -67,7 +82,7 @@ void vg_capture_frame_begin(void) {
 }
 
 void vg_capture_band(int y, int h, const uint16_t* px) {
-    if (!s_on) return;
+    if (!s_mode) return;
 
     const int n = SCR_W * h;
 
@@ -115,7 +130,7 @@ void vg_capture_band(int y, int h, const uint16_t* px) {
 }
 
 void vg_capture_frame_end(void) {
-    if (!s_on) return;
+    if (!s_mode) return;
     const uint8_t hdr[4] = { 'P', 'H', 'E', 'N' };
     put(hdr, 4);
     put(&s_index, 4);

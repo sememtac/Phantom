@@ -8,14 +8,19 @@ For a window with a folder picker and a live preview, use phantom_recorder.py
 (or the built PhantomRecorder.exe) instead. Both drive the same link module, so
 neither can drift away from the protocol the firmware actually speaks.
 
-The device does not stream in real time and does not try to. A frame is 460,800
-bytes and the CDC link carries roughly a megabyte a second, so while recording
-is armed the firmware steps its simulation at a fixed 30 fps regardless of how
-long each frame actually took. The board runs in slow motion; the recording
-plays back smooth. Wall-clock speed only decides how long you wait.
+A frame is 460,800 bytes and the CDC link carries roughly a megabyte a second,
+which is the constraint everything else follows from. Two modes trade against
+it in opposite directions:
 
-So --seconds is the length of the VIDEO, not the length of the wait. Twelve
-seconds of footage is 360 frames and takes a few minutes to pull.
+  --live (default)  the game runs normally and you get whatever the link can
+                    carry. Real time, and choppy at a few frames a second.
+                    --seconds is wall clock, and is also the video length.
+
+  --smooth          the firmware steps its simulation at a fixed 30 fps however
+                    long each frame really took. The board runs in slow motion
+                    and the recording plays back perfectly. --seconds is the
+                    length of the VIDEO, not of the wait: twelve seconds is 360
+                    frames and takes a few minutes to pull.
 """
 
 import argparse
@@ -31,43 +36,67 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True, help="e.g. COM6 or /dev/ttyACM0")
     ap.add_argument("--seconds", type=float, default=10.0,
-                    help="length of the resulting VIDEO, not of the wait")
+                    help="wall clock in live mode; length of the VIDEO in smooth mode")
     ap.add_argument("--continuous", action="store_true",
                     help="record until Ctrl+C -- for a whole playthrough")
+    ap.add_argument("--smooth", action="store_true",
+                    help="fixed-step slow motion instead of real time")
     ap.add_argument("--dir", default=".", help="output folder")
     args = ap.parse_args()
 
-    want = None if args.continuous else max(1, int(args.seconds * FPS))
+    live = not args.smooth
+    # Smooth mode counts frames to a known target; live mode counts seconds on
+    # the clock, because its frame rate is not known until frames arrive.
+    want = want_secs = None
+    if not args.continuous:
+        if live:
+            want_secs = max(0.5, args.seconds)
+        else:
+            want = max(1, int(args.seconds * FPS))
+
     link = PhantomLink(args.port)
     writer = None
     started = time.time()
 
     if want:
-        print(f"arming for {want} frames ({args.seconds:.1f}s of video)...")
+        print(f"arming smooth for {want} frames ({args.seconds:.1f}s of video)...")
+    elif want_secs:
+        print(f"arming live for {want_secs:.1f}s...")
     else:
-        print("arming -- recording until Ctrl+C...")
+        print(f"arming {'live' if live else 'smooth'} -- recording until Ctrl+C...")
 
     try:
         # Frames are written as they arrive rather than collected. At 691,200
         # bytes each, an unbounded recording fills memory long before it fills
         # a disk.
-        writer = FrameWriter(args.dir, fragmented=args.continuous)
+        writer = FrameWriter(args.dir, fps=None if live else FPS,
+                             fragmented=args.continuous)
         link.open()
-        link.arm()
-        while want is None or writer.n < want:
+        link.arm(live=live)
+        while True:
+            elapsed = time.time() - started
+            if want is not None and writer.n >= want:
+                break
+            if want_secs is not None and elapsed >= want_secs:
+                break
             try:
                 rgb, _w, _h = link.read_frame()
             except Desync as e:
                 print(f"\n  {e}, resyncing...")
                 continue
             writer.write(rgb)
-            rate = writer.n / max(0.001, time.time() - started)
+            elapsed = time.time() - started
+            rate = writer.n / max(0.001, elapsed)
             if want:
                 eta = (want - writer.n) / max(0.01, rate)
                 print(f"\r  {writer.n}/{want}  {rate:.1f} fps  eta {eta:5.0f}s",
                       end="", flush=True)
+            elif want_secs:
+                print(f"\r  {elapsed:5.1f}/{want_secs:.1f}s  {writer.n} frames"
+                      f"  {rate:.1f} fps", end="", flush=True)
             else:
-                print(f"\r  {writer.n} frames  {writer.n / FPS:6.1f}s of video"
+                print(f"\r  {writer.n} frames  "
+                      f"{writer.n / max(1.0, writer.fps):6.1f}s of video"
                       f"  {rate:.1f} fps", end="", flush=True)
     except KeyboardInterrupt:
         print("\nstopped -- keeping what arrived")
@@ -77,11 +106,13 @@ def main():
         link.close()
         path = writer.close() if writer else None
         n = writer.n if writer else 0
+        fps = writer.fps if writer else FPS
 
     if not n:
-        sys.exit("\nno frames captured -- is the board running?")
-    print(f"\nwrote {path}  ({n} frames, {n / FPS:.1f}s of video, "
-          f"{time.time() - started:.0f}s elapsed)")
+        sys.exit("\nno frames captured -- is the board running, and is this the "
+                 "port marked [ESP32]?")
+    print(f"\nwrote {path}  ({n} frames, {n / max(1.0, fps):.1f}s of video "
+          f"@ {fps:.1f}fps, {time.time() - started:.0f}s elapsed)")
 
 
 if __name__ == "__main__":
