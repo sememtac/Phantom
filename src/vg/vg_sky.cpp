@@ -479,6 +479,8 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     } else {
         s_scale = SKY_SCALE;
         s_pan   = SKY_PAN_PER_RAD;
+        // Clouds have no centre worth finding, so any origin will do.
+        s_u = s_v = 0.0f;
     }
 
     // Report what actually landed in the texture. A backdrop that is silently
@@ -493,11 +495,22 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         if (bright > peak) peak = bright;
     }
 
-    s_u = s_v = s_bank = 0.0f;
+    // Bank only. This line used to reset the sampling ORIGIN too, and it runs
+    // after the per-kind setup below it -- so it quietly undid the centring that
+    // puts the black hole in front of the camera and left the menu sampling
+    // texel (0,0), the corner of the tile. The texture was perfect the whole
+    // time; it was simply being read from the empty quarter.
+    s_bank = 0.0f;
     s_ready = true;
-    Serial.printf("vg_sky_generate: %s seed %u in %ums  lit %d%%  peak %u/125\n",
+
+    // Origin and scale are in the report for the same reason lit and peak are:
+    // a backdrop pointed at the wrong part of its own texture looks exactly like
+    // one that was never generated.
+    Serial.printf("vg_sky_generate: %s seed %u in %ums  lit %d%%  peak %u/125"
+                  "  uv %.0f,%.0f  scale %.3f\n",
                   vg_sky_name(), (unsigned)seed, (unsigned)(millis() - t0),
-                  lit * 100 / (SKY_TEX_SIZE * SKY_TEX_SIZE), (unsigned)peak);
+                  lit * 100 / (SKY_TEX_SIZE * SKY_TEX_SIZE), (unsigned)peak,
+                  (double)s_u, (double)s_v, (double)s_scale);
 }
 
 void vg_sky_step(float d_pitch, float d_yaw, float bank) {
