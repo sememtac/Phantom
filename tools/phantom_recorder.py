@@ -33,7 +33,7 @@ from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from phantom_link import (Desync, FrameWriter, PhantomLink, Session,
-                          list_ports, reset_board, subsample_ppm)
+                          list_ports, reset_board, set_gamma, subsample_ppm)
 
 PREVIEW = 240        # pixels
 
@@ -128,16 +128,27 @@ class Recorder(tk.Tk):
                                   command=self._toggle_record)
         self.btn_rec.grid(row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(8, 2))
 
+        # Gamma sits with Render because that is when it applies -- a session
+        # holds no pixels, so the same recording can be rendered again at a
+        # different setting without replaying anything.
+        tk.Label(self, text="Gamma", fg=AMBER, bg=GROUND).grid(row=4, column=0,
+                                                               sticky="e", **pad)
+        self.gamma = tk.StringVar(value="1.0")
+        tk.Entry(self, textvariable=self.gamma, width=6).grid(row=4, column=1,
+                                                              sticky="w", **pad)
+        tk.Label(self, text="1.0 = exact,  1.5 = panel-like", fg="#7a5a20",
+                 bg=GROUND).grid(row=4, column=1, sticky="e", padx=8)
+
         self.btn_render = ttk.Button(self, text="2. Render to Video",
                                      command=self._render, state="disabled")
-        self.btn_render.grid(row=4, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
+        self.btn_render.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
         self.bar = ttk.Progressbar(self, mode="determinate")
-        self.bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
+        self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
         self.status = tk.Label(self, text="ready -- press Record, then play",
                                fg=AMBER, bg=GROUND, anchor="w", width=1)
-        self.status.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
+        self.status.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
 
         self._refresh()
 
@@ -273,6 +284,13 @@ class Recorder(tk.Tk):
             self.status.config(text="output folder does not exist")
             return
 
+        try:
+            g = float(self.gamma.get())
+        except ValueError:
+            self.status.config(text="gamma must be a number (1.0 is exact)")
+            return
+        set_gamma(g)
+
         self._error = None
         self.stop_flag.clear()
         self.btn_rec.config(state="disabled")
@@ -282,10 +300,10 @@ class Recorder(tk.Tk):
 
         self.worker = threading.Thread(
             target=self._run_render,
-            args=(self._port(), self.out_dir.get(), self.session), daemon=True)
+            args=(self._port(), self.out_dir.get(), self.session, g), daemon=True)
         self.worker.start()
 
-    def _run_render(self, port, out_dir, ses):
+    def _run_render(self, port, out_dir, ses, gamma):
         fps = len(ses.frames) / max(0.001, ses.seconds)
         link = None
         writer = None
@@ -332,7 +350,7 @@ class Recorder(tk.Tk):
                     pass
                 link.close()
             path = writer.close() if writer else None
-            self.q.put(("ren_done", done, path, fps))
+            self.q.put(("ren_done", done, path, fps, gamma))
 
     # -- ui pump ------------------------------------------------------------
 
@@ -368,7 +386,7 @@ class Recorder(tk.Tk):
                         self.canvas.itemconfig(self._img_id, image=self._img)
 
                 elif kind == "ren_done":
-                    self._render_done(msg[1], msg[2], msg[3])
+                    self._render_done(msg[1], msg[2], msg[3], msg[4])
 
                 elif kind == "error":
                     # Latched, so the "done" that follows cannot overwrite it.
@@ -408,7 +426,7 @@ class Recorder(tk.Tk):
             text=f"{len(ses.frames)} frames, {ses.seconds:.1f}s at {fps:.0f} fps"
                  f"  --  now press Render")
 
-    def _render_done(self, done, path, fps):
+    def _render_done(self, done, path, fps, gamma):
         self.bar.stop()
         self.btn_rec.config(state="normal")
         self.btn_render.config(text="2. Render to Video")
@@ -421,7 +439,8 @@ class Recorder(tk.Tk):
         self.last_output = path
         self.status.config(
             text=f"{os.path.basename(path)}  --  {done} frames, "
-                 f"{done / max(1.0, fps):.1f}s at {fps:.0f} fps")
+                 f"{done / max(1.0, fps):.1f}s at {fps:.0f} fps"
+                 + (f", gamma {gamma}" if gamma != 1.0 else ""))
 
 
 if __name__ == "__main__":
