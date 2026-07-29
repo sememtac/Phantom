@@ -173,6 +173,12 @@ enum VgState : uint8_t {
 // that it is never the reason a second hit lands.
 #define DAMAGE_GLITCH   0.85f
 
+// Below this fraction of hull the systems never fully recover: the panel keeps
+// a low, permanent fault instead of settling between hits. This is the hull bar
+// said a second way -- a number you have to look at, made into something you
+// cannot help noticing.
+#define DAMAGE_CHRONIC  0.55f
+
 // The entry gate, in four beats. It wipes open upward, holds long enough to be
 // registered as a thing in its own right, releases the ship, holds again while
 // it clears, then wipes shut the same way.

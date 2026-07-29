@@ -100,11 +100,27 @@ void vg_render_frame(const VgInput* in, float fps) {
     if (live && thr > SPEED_SHAKE_AT)
         strain = (thr - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
 
-    // Damage, from having just been hit. Both drive the same failure language,
-    // because they are the same thing to the airframe: something is wrong with
-    // the machine and the panel is where you find out.
-    const float hurt = (live && vg.damage_glitch > 0.0f)
-                     ? (vg.damage_glitch / DAMAGE_GLITCH) : 0.0f;
+    // Damage, and it escalates. A hit on a fresh hull is a flicker; the same hit
+    // on a wreck nearly takes the display out, because the systems taking it
+    // have already been carved up. `wound` scales the impulse, and past
+    // DAMAGE_CHRONIC it also holds a permanent floor -- a badly hurt ship never
+    // stops glitching, it only glitches less between hits.
+    //
+    // This is the hull bar said a second way. The number is precise and easy to
+    // ignore mid-turn; a panel that will not hold still is neither.
+    const float wound = (vg.health_max > 0.0f)
+                      ? (1.0f - vg.health / vg.health_max) : 0.0f;
+
+    float hurt = 0.0f;
+    if (live) {
+        if (vg.damage_glitch > 0.0f)
+            hurt = (vg.damage_glitch / DAMAGE_GLITCH) * (0.30f + 0.70f * wound);
+        if (wound > DAMAGE_CHRONIC) {
+            const float chronic = (wound - DAMAGE_CHRONIC)
+                                / (1.0f - DAMAGE_CHRONIC) * 0.34f;
+            if (chronic > hurt) hurt = chronic;
+        }
+    }
 
     float jx = 0.0f, jy = 0.0f;
     if (strain > 0.0f)
@@ -129,10 +145,13 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Panel damage, at whichever severity is worse. Kept low for strain -- a
     // readout struggling, not failing, since anything more would make the
     // instruments unusable at exactly the moment they matter most.
-    const float sev = (hurt * 0.55f > strain * 0.12f) ? hurt * 0.55f : strain * 0.12f;
+    const float sev = (hurt > strain * 0.12f) ? hurt : strain * 0.12f;
     if (sev > 0.0f) {
         vg_glitch_patches(vg.state_t, sev);
-        if (hurt > 0.35f) vg_glitch_tears(vg.state_t, hurt * 0.5f);
+        // Tears only once it is genuinely bad. They displace the whole width of
+        // the screen, so they are the loudest thing in the vocabulary and have
+        // to stay the last thing it reaches for.
+        if (hurt > 0.45f) vg_glitch_tears(vg.state_t, (hurt - 0.45f) * 1.4f);
     }
 
     // A scan bar running down the screen while it settles. One rectangle, and

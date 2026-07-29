@@ -43,6 +43,60 @@ void vg_glitch_tears(float t, float sev) {
         vg_fill_rect(0, (int)((h >> 15) % (uint32_t)SCR_H), SCR_W, 2, INK_BRIGHT);
 }
 
+// How a patch fails.
+//
+// Five console failures rather than five flat colours. This interface states
+// everything through brightness, inverse video and the ink ramp -- a solid red
+// block says "error" in a language the display does not otherwise speak, and
+// reads as a graphic pasted over the panel rather than as the panel breaking.
+// Every mode below is something the console already does, pushed past working.
+static void patch_draw(int x, int y, int w, int h, uint32_t g) {
+    switch ((g >> 27) % 5u) {
+
+    case 0:
+        // Inverse video with its content knocked out. The panel already inverts
+        // to mark a live control; this is that, stuck and holding nothing.
+        vg_fill_rect(x, y, w, h, INK);
+        for (int i = 2; i < h - 1; i += 4)
+            vg_fill_rect(x + 1, y + i, w - 2, 2, INK_ONFILL);
+        break;
+
+    case 1:
+        // Lost sync: alternate rows lit, the rest gone. The same interleave the
+        // scanline pass uses, run to the point where half the region is missing.
+        for (int i = 0; i < h; i += 2)
+            vg_fill_rect(x, y + i, w, 1, INK_TRACE);
+        break;
+
+    case 2:
+        // Dropped to the screen ground. Dark, but NOT the black of nothing
+        // being drawn -- a dead region of a lit panel still glows faintly, and
+        // that difference is most of what makes it read as hardware.
+        vg_fill_rect(x, y, w, h, INK_WELL);
+        break;
+
+    case 3:
+        // Corrupted content: short bars at varying widths and offsets, which is
+        // the shape text makes when its addressing survives but its data does
+        // not. The most legible failure of the five, because the eye recognises
+        // it as writing that has stopped meaning anything.
+        for (int i = 0; i < h - 1; i += 3) {
+            const uint32_t r  = vg_glitch_hash(g + (uint32_t)i * 2654435761u);
+            int            rw = 4 + (int)(r % 24u);
+            if (rw > w) rw = w;
+            const int      rx = x + (int)((r >> 9) % (uint32_t)(w - rw + 1));
+            vg_fill_rect(rx, y + i, rw, 2, ((r >> 20) & 1u) ? INK_BRIGHT : INK_FAINT);
+        }
+        break;
+
+    default:
+        // Stuck full on -- the one that hurts to look at, and the reason the
+        // others are needed: on its own it is just a bright rectangle.
+        vg_fill_rect(x, y, w, h, INK_MAX);
+        break;
+    }
+}
+
 void vg_glitch_patches(float t, float sev) {
     if (sev <= 0.0f) return;
 
@@ -70,20 +124,6 @@ void vg_glitch_patches(float t, float sev) {
         const int      dx = (int)(m % 7u) - 3;
         const int      dy = (int)((m >> 4) % 5u) - 2;
 
-        uint16_t c;
-        switch ((g >> 27) % 4u) {
-        case 0:  c = COL_BLACK;  break;   // dead
-        case 1:  c = INK_MAX;    break;   // stuck full on
-        case 2:  c = INK_TRACE;  break;
-        default: c = COL_DANGER; break;   // one channel jammed
-        }
-        vg_fill_rect(bx + dx, by + dy, bw, bh, c);
-
-        // Some fail by ROW rather than as a solid area, which is what losing
-        // part of the addressing actually looks like.
-        if (((g >> 25) & 1u) && bh > 12) {
-            for (int y = 1; y < bh; y += 3)
-                vg_fill_rect(bx + dx, by + dy + y, bw, 1, COL_BLACK);
-        }
+        patch_draw(bx + dx, by + dy, bw, bh, g);
     }
 }
