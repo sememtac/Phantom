@@ -75,7 +75,7 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->alive = true;
     c->spec  = spec;
     c->hue   = hue;
-    c->scale = 128.0f;
+    c->scale = 130.0f;
 
     // Runs AWAY down the tunnel rather than across the view.
     //
@@ -88,10 +88,13 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     // Departing keeps it in front by construction. It starts near, close to the
     // centre of frame, and recedes -- so it is always at a shallow angle and
     // never has to be chased into the corner of the screen.
-    c->pos   = v3(sx * 250.0f, 80.0f, 540.0f);
-    c->fwd   = vnorm(v3(sx * 0.26f, -0.04f, 1.0f));
+    // Acquired a long way out and running further. A broadcast picks a ship up
+    // as a speck at the edge of the play space and pushes in on it; it does not
+    // start on a close-up, because there is nowhere for that shot to go.
+    c->pos   = v3(sx * 620.0f, 130.0f, 1700.0f);
+    c->fwd   = vnorm(v3(sx * 0.22f, -0.03f, 1.0f));
     c->up    = v3(0, 1, 0);
-    c->speed = 620.0f;
+    c->speed = 470.0f;
 
     c->roll_vis = sx * 0.5f;
 
@@ -377,6 +380,7 @@ void vg_game_init(void) {
     vg_sky_generate(SKY_MENU, esp_random());   // we boot straight into the menu
 
     vg.state       = VG_ATTRACT;
+    vg.cam_zoom    = 1.0f;
     vg.credits     = CREDIT_START;
     vg.callsign[0] = 'A'; vg.callsign[1] = 'C'; vg.callsign[2] = 'E';
     vg.callsign[3] = 0;
@@ -1010,6 +1014,23 @@ void vg_game_update(float dt, const VgInput* in) {
         // of somewhere arriving rather than of somewhere already there.
         vg_sky_set_reveal(t / (INTRO_DRIFT * 0.85f));
 
+        // Optical push-in across each shot. The ship is running away at roughly
+        // the rate the lens is tightening, so it holds a near-constant size on
+        // screen while the arena and the starfield magnify around it -- which is
+        // what makes the move read as a camera closing rather than a ship
+        // growing. It is also why the ship can be framed small: the zoom, not
+        // the distance, is doing the work.
+        {
+            float u = 0.0f;
+            if (t > INTRO_OPP_START && t < INTRO_OPP_END)
+                u = (t - INTRO_OPP_START) / (INTRO_OPP_END - INTRO_OPP_START);
+            else if (t > INTRO_DRIFT && t < INTRO_YOU_END)
+                u = (t - INTRO_DRIFT) / (INTRO_YOU_END - INTRO_DRIFT);
+            // Eased, because a linear zoom is visible as a mechanism.
+            const float e = u * u * (3.0f - 2.0f * u);
+            vg.cam_zoom = 0.92f + 1.55f * e;
+        }
+
         // Which shot we are in. Each cut re-anchors: the ship is launched fresh
         // from the opposite side on a new line, so the second setup reads as a
         // different camera in a different place rather than a repeat.
@@ -1090,6 +1111,7 @@ void vg_game_update(float dt, const VgInput* in) {
             //
             // Free to do because the handover is a hard cut to black with the
             // instruments rebooting over it. Nothing of the snap is visible.
+            vg.cam_zoom = 1.0f;      // the cockpit is never zoomed
             vg_arena_init(ARENA_TORUS);
             vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
             for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive = false;

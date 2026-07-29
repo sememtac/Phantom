@@ -158,11 +158,11 @@ enum VgState : uint8_t {
 // Paced to settle the player rather than to get out of the way. Two seconds of
 // empty space first, then four and a half on each fighter -- long enough to
 // look at it, which is the point of introducing it at all.
-#define INTRO_DRIFT     2.2f
-#define INTRO_YOU_END   6.6f
-#define INTRO_OPP_START 7.0f
-#define INTRO_OPP_END  11.4f
-#define INTRO_END      11.8f
+#define INTRO_DRIFT     2.4f
+#define INTRO_YOU_END   8.4f
+#define INTRO_OPP_START 8.8f
+#define INTRO_OPP_END  14.8f
+#define INTRO_END      15.2f
 
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f
@@ -287,6 +287,7 @@ struct VgGame {
     bool     cine_on;
 
     float    hud_boot;     // >0 while the instruments are coming up
+    float    cam_zoom;     // 1.0 in flight; only the cutscene moves it
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
 

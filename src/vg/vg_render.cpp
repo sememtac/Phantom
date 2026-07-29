@@ -33,7 +33,7 @@ static void draw_fps(float fps) {
 }
 
 void vg_render_frame(const VgInput* in, float fps) {
-    VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y);
+    VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
 
     vg_rast_begin_frame();
 

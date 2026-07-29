@@ -10,14 +10,22 @@
 struct VgCam {
     float bank_s, bank_c;   // cosmetic roll
     float sx, sy;           // screen-shake offset, pixels
+    // Effective focal length. A real optical zoom rather than a model scale:
+    // it magnifies the arena, the starfield and the ship alike, which is the
+    // only way a push-in reads as a camera moving in rather than an object
+    // growing. Flight always runs at 1.0 -- changing the field of view mid-fight
+    // would break every judgement the player makes about closure and lead.
+    float focal;
 };
 
-static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y) {
+static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y,
+                                float zoom) {
     VgCam c;
     c.bank_s = sinf(bank);
     c.bank_c = cosf(bank);
     c.sx = shake_x;
     c.sy = shake_y;
+    c.focal = FOCAL * ((zoom > 0.05f) ? zoom : 1.0f);
     return c;
 }
 
@@ -25,7 +33,7 @@ static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y) {
 // behind the near plane; callers that draw edges must clip in 3D first.
 static inline bool vg_project(const VgCam& c, Vec3 p, float* out_x, float* out_y) {
     if (p.z < NEAR_Z) return false;
-    float inv = FOCAL / p.z;
+    float inv = c.focal / p.z;
     float x = p.x * inv;
     float y = p.y * inv;
     *out_x = SCR_CX + (x * c.bank_c - y * c.bank_s) + c.sx;
@@ -40,5 +48,7 @@ static inline Vec3 vg_unproject_dir(const VgCam& c, float sx, float sy) {
     float ry = -(sy - SCR_CY - c.sy);
     float x  =  rx * c.bank_c + ry * c.bank_s;
     float y  = -rx * c.bank_s + ry * c.bank_c;
-    return vnorm(v3(x / FOCAL, y / FOCAL, 1.0f));
+    // Must divide by the SAME focal length the forward transform used, or the
+    // inverse stops being exact the moment anything zooms.
+    return vnorm(v3(x / c.focal, y / c.focal, 1.0f));
 }
