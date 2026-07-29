@@ -99,12 +99,19 @@ void vg_capture_poll(void) {
             // Worth having permanently: capture throughput is the whole
             // constraint on this feature, and "is it the wire or is it us"
             // cannot be answered from the host side.
+            // Derive the total from sizeof(s_buf). It was hard-coded at 1MB,
+            // and when the staging buffer grew from 4K to 8K the loop started
+            // sending 2MB while the report still divided by one. The rate came
+            // back at half the truth, which is the kind of number that gets
+            // believed and then reasoned from.
             memset(s_buf, 0xA5, sizeof(s_buf));
+            const uint32_t total = 256u * (uint32_t)sizeof(s_buf);
             const uint32_t t0 = micros();
-            for (int i = 0; i < 256; i++) Serial.write(s_buf, sizeof(s_buf));
+            for (int i = 0; i < 256; i++) vg_link_write(s_buf, (int)sizeof(s_buf));
             const uint32_t el = micros() - t0;
-            Serial.printf("\nvg_capture: BENCH 1MB in %u us = %.3f MB/s\n",
-                          (unsigned)el, 1048576.0f / (float)el);
+            Serial.printf("\nvg_capture: BENCH %u KB in %u us = %.3f MB/s\n",
+                          (unsigned)(total / 1024u), (unsigned)el,
+                          (float)total / (float)el);
         }
     }
 }

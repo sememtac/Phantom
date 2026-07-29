@@ -105,14 +105,35 @@ of 3600 used the delta. The render step became slower: 19.5 fps changed to 16.3
 fps. One pass instead of two gave 17.3 fps.
 
 The previous frame must stay in PSRAM. To read it and to write it costs about
-900 KB of PSRAM traffic for each frame. PSRAM is slow, so this cost is more than
-the 27 ms of link time that the smaller frames saved. The USB driver also sends
-bytes while the CPU works, so part of the link time was already free. The device
-limits the render step, not the link. This change was removed. Do not try it
-again.
+900 KB of PSRAM traffic for each frame. PSRAM is slow, and that cost is more
+than the link time the smaller frames saved. This change was removed.
 
-One method is not tried. The device can rasterise one frame on the second core
-while it sends the previous frame.
+The reason is the cost of THIS method, not the idea of compression. Do not read
+it as proof that smaller frames cannot help. The numbers say the opposite:
+
+| quantity | value |
+|---|---|
+| link, with no render and no encode (`b` command) | 0.885 MB/s |
+| bytes for each frame | 33 KB |
+| link time for one frame | 38.2 ms |
+| measured time for one frame | 51.3 ms |
+| CPU time that the link does not hide | 13.1 ms |
+
+The link is 74% of the time of a frame. The render step is therefore limited by
+the link, and a cheaper encoding does help, if it costs little CPU. The delta
+method failed because it needed PSRAM, not because the frames became smaller.
+
+Two methods are not tried:
+
+1. Send one frame from the second core while the CPU rasterises the next frame.
+   This removes the 13.1 ms of CPU time and gives about 26 fps.
+2. Give each run 2 bytes instead of 3, with a colour table for each band. A
+   frame has about 11,300 runs, so this gives about 22 KB and 25 ms of link
+   time. The colour table must stay in internal RAM. PSRAM is what made the
+   delta method slow.
+
+Together these two give about 25 ms for each frame, which is about 1.5 minutes
+for each minute of play.
 
 ## Why the video is darker than the panel
 
