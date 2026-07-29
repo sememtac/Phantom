@@ -111,9 +111,23 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
 // having travelled there.
 static void cine_relocate(void) {
     const Mat3 R = mat3_euler(vg_frand(-0.55f, 0.55f), vg_frand(-1.4f, 1.4f), 0.0f);
-    const float dz = vg_frand(2600.0f, 4400.0f);
 
-    vg_arena_step(R, dz);
+    // Rotation first, and rotation alone is always safe: turning about the
+    // camera cannot change where the camera sits inside the tube.
+    vg_arena_step(R, 0.0f);
+
+    // The jump down the tunnel is not safe, because after an arbitrary turn
+    // "forward" may be pointing straight at the wall. So it is attempted and
+    // then checked, and backed out if it left the arena. Blindly stepping a few
+    // thousand units was one of the two ways the cutscene could strand the
+    // viewpoint outside the torus and kill the player the instant the match
+    // began.
+    const float dz = vg_frand(2600.0f, 4400.0f);
+    const Mat3  I  = mat3_euler(0.0f, 0.0f, 0.0f);
+    vg_arena_step(I, dz);
+    if (vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0))) < ARENA_ATTRACT_MARGIN)
+        vg_arena_step(I, -dz);
+
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
 
     for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
@@ -135,9 +149,20 @@ static void cine_fly(float dt) {
     // A slow curving climb rather than a straight line. Nothing in this game
     // flies straight, and a ship holding a ruled course through a four second
     // shot reads as a model on a wire.
-    const Mat3 T = mat3_euler(-0.13f * dt, s_cine_turn * dt, 0.0f);
+    const Mat3 T = mat3_euler(-0.07f * dt, s_cine_turn * dt, 0.0f);
     c->fwd = vnorm(mat3_apply(T, c->fwd));
-    c->roll_vis += ((s_cine_turn > 0 ? 0.75f : -0.75f) - c->roll_vis) * dt * 0.8f;
+
+    // Re-orthonormalise UP against the new heading, exactly as the AI does.
+    //
+    // This is why the ship appeared and then stopped drawing. Turning `fwd`
+    // without correcting `up` leaves the pair skewed, vg_ship_basis builds a
+    // non-orthonormal matrix from them, and the winding test that decides which
+    // faces are front-facing starts answering wrongly -- so every face gets
+    // culled and a solid ship renders as almost nothing.
+    Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
+    if (vlen2(u) > 1e-6f) c->up = vnorm(u);
+
+    c->roll_vis += ((s_cine_turn > 0 ? 0.70f : -0.70f) - c->roll_vis) * dt * 0.8f;
 
     c->pos = vadd(c->pos, vmul(c->fwd, c->speed * dt));
 
@@ -161,6 +186,24 @@ static void cine_clear(void) {
     vg.cine.trail_n     = 0;
     vg.cine.trail_head  = 0;
     vg.cine.trail_acc   = 0;
+}
+
+static void spawn_enemy(int i, ShipClass cls, float skill, float hue);
+
+// Put the bracket's opponent into the world. Called twice: once at match setup
+// so the cutscene has a ship to introduce, and again when the cutscene ends, by
+// which point the viewpoint has drifted for twelve seconds and their position
+// relative to the arena means nothing.
+static void spawn_opponent(void) {
+    const Entrant* opp = vg_tourney_opponent();
+    if (opp) {
+        spawn_enemy(0, opp->cls,
+                    ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
+        vg.enemy[0].voice = opp->voice;
+        for (int i = 0; i < 4; i++) vg.enemy[0].tag[i] = opp->tag[i];
+    } else {
+        spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
+    }
 }
 
 void vg_comms_say(const Ship* s, VoiceEvent ev) {
@@ -427,15 +470,7 @@ void vg_match_start(void) {
     // One opponent, taken from the bracket. A match is strictly one on one --
     // the old "keep a fight going" respawn belonged to an endless survival mode
     // and would make a knockout round unwinnable.
-    const Entrant* opp = vg_tourney_opponent();
-    if (opp) {
-        spawn_enemy(0, opp->cls,
-                    ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
-        vg.enemy[0].voice = opp->voice;
-        for (int i = 0; i < 4; i++) vg.enemy[0].tag[i] = opp->tag[i];
-    } else {
-        spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
-    }
+    spawn_opponent();
 
     // They open the match. The first thing you learn about an opponent should
     // be what kind of person they are, not what they are flying.
@@ -567,6 +602,13 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         c->pos = mat3_apply(R, c->pos);
         c->fwd = vnorm(mat3_apply(R, c->fwd));
         c->up  = vnorm(mat3_apply(R, c->up));
+        // Rotation cannot skew an orthonormal pair, but floating point drift
+        // over thousands of frames can, and the failure is silent -- the model
+        // simply stops having front faces.
+        {
+            Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
+            if (vlen2(u) > 1e-6f) c->up = vnorm(u);
+        }
         // The ribbon has to ride the same rotation as the ship that laid it.
         // Missing this is why the cutscene ships appeared to emit nothing: the
         // camera pans at up to two radians a second during a pass, so within a
@@ -1002,13 +1044,31 @@ void vg_game_update(float dt, const VgInput* in) {
             const Vec3 w = vnorm(vg.cine.pos);
             yaw_in   =  w.x * 3.2f;
             pitch_in = -w.y * 3.2f;
-            if (yaw_in   >  1.0f) yaw_in   =  1.0f;
-            if (yaw_in   < -1.0f) yaw_in   = -1.0f;
-            if (pitch_in >  1.0f) pitch_in =  1.0f;
-            if (pitch_in < -1.0f) pitch_in = -1.0f;
         } else {
             attract_autopilot(t, &pitch_in, &yaw_in);
         }
+
+        // Wall avoidance applies even mid-shot. Following a ship is not a
+        // reason to fly the viewpoint out through the side of the arena, and
+        // twelve seconds of unconstrained panning did exactly that -- the
+        // cutscene ended outside the torus and the first collision test of the
+        // match killed the player instantly, with no way to progress.
+        {
+            const Vec3  pl    = vg_arena_local_of(v3(0, 0, 0));
+            const float clear = vg_arena_clearance(pl);
+            if (clear < ARENA_ATTRACT_MARGIN) {
+                const Vec3  inw = vg_arena_dir_to_view(vg_arena_inward(pl));
+                const float k   = 2.6f * (ARENA_ATTRACT_MARGIN - clear)
+                                       / ARENA_ATTRACT_MARGIN;
+                yaw_in   +=  inw.x * k;
+                pitch_in += -inw.y * k;
+            }
+        }
+
+        if (yaw_in   >  1.0f) yaw_in   =  1.0f;
+        if (yaw_in   < -1.0f) yaw_in   = -1.0f;
+        if (pitch_in >  1.0f) pitch_in =  1.0f;
+        if (pitch_in < -1.0f) pitch_in = -1.0f;
 
         // Throttle zero: the camera is anchored, not flying. world_step still
         // rotates the whole world by the pan, which is what carries the arena
@@ -1019,6 +1079,23 @@ void vg_game_update(float dt, const VgInput* in) {
         if (t > INTRO_END || tap_up) {
             s_shot = 0;
             cine_clear();
+
+            // Re-seat the world before handing over. The cutscene has spent
+            // twelve seconds turning and drifting the viewpoint for the sake of
+            // the shot, and relocating between setups moved it again -- so
+            // where it has ended up relative to the arena is not something the
+            // match should have to inherit. Both the arena and the opponent are
+            // re-established from scratch, which makes a bad start structurally
+            // impossible rather than merely unlikely.
+            //
+            // Free to do because the handover is a hard cut to black with the
+            // instruments rebooting over it. Nothing of the snap is visible.
+            vg_arena_init(ARENA_TORUS);
+            vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+            for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive = false;
+            for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive = false;
+            spawn_opponent();
+
             vg.state    = VG_PLAYING;
             vg.state_t  = 0;
             vg.hud_boot = HUD_BOOT_TIME;
