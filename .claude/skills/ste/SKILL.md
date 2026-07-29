@@ -14,6 +14,23 @@ description: Write or revise technical and functional copy in ASD-STE100 Simplif
 > - **As plain documentation** — delete the frontmatter and drop the rest into a
 >   style guide, a CONTRIBUTING file, or a project's agent instructions.
 
+## Scope in this project (Phantom)
+
+**In scope:** `tools/README.md` and the prose in `tools/*.py` — docstrings,
+comments, status lines, error messages, the About dialog, and the command line
+help.
+
+**Out of scope, permanently:** every word of the game's own writing. Pilot
+dialogue, ship names and taglines, the backstory crawl, menu copy, any string
+the player sees, `DESIGN.md`, and the root `README.md`. The author keeps full
+creative control there and that writing is not meant to be technically
+calibrated. Comments in `src/` are engineering prose and are also out of scope.
+
+See `CLAUDE.md` at the repository root. If a request is ambiguous about which
+side of that line it falls on, ask before you rewrite anything.
+
+---
+
 STE is a controlled language for technical documentation. It makes text easy to read, easy to translate, and hard to misread. It has two parts:
 
 1. **Writing rules** — 53 rules in 9 sections (words, noun phrases, verbs, sentences, procedures, descriptions, warnings, punctuation, writing practices).
