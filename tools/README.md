@@ -116,7 +116,19 @@ python tools/phantom_session.py render --port COM6 run.phr --gamma 1.5
 ```
 
 It is a matching control, not a correction: 1.0 is the faithful copy and the
-default. Black stays black and white stays white at any setting.
+default.
+
+The lift is applied to each pixel's **value** — its largest channel — with all
+three channels scaled by that same factor, so hue and saturation come through
+untouched. Applying a curve per channel instead, which is the obvious way, is
+wrong for this game: the HUD amber is `#ffae18`, red already pinned at 255, so
+only green and blue can move and the colour rotates towards yellow while going
+pale. Measured 39° / 91% saturation at gamma 1.0 against 43° / 79% at 1.5 — an
+interface built on one amber shows that first. Hue now holds at 32.3° across
+1.0 to 1.8 while a dim amber lifts from 38% to 53% brightness.
+
+A pixel already at 255 in some channel cannot get brighter, which is correct —
+it is already as bright as the format goes. What lifts is everything below it.
 
 ## Those vertical stripes are the scanline effect
 

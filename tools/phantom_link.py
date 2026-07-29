@@ -353,27 +353,52 @@ if _np is not None:
     _G6_LUT = _np.array(_G6, dtype=_np.uint8)
 
 
+_GAMMA = 1.0
+_SCALE = None          # per-brightness gain, indexed by the pixel's max channel
+
+
 def set_gamma(g):
-    """Rebuild the 5/6-bit to 8-bit tables with a display gamma.
+    """Brightness lift that leaves hue and saturation exactly where they were.
 
     A capture is a faithful copy of the framebuffer: 0x1F really is 255. What it
     cannot copy is the PANEL, which is an emissive AMOLED with true blacks
-    driven hard, and which looks considerably punchier than the same numbers
-    shown on a monitor. That difference is real and no amount of correctness in
-    the conversion removes it.
+    driven hard, and which reads considerably punchier than the same numbers on
+    a monitor. So this is a matching control, not a correction. g = 1.0 is the
+    faithful copy and the default.
 
-    So this is deliberately not a correction -- it is a matching control, and it
-    lives in the lookup tables where it costs nothing per frame. g = 1.0 is the
-    faithful copy and the default; above 1.0 lifts the midtones towards how the
-    panel reads, leaving black at black and white at white.
+    It does NOT apply a curve per channel, which was the obvious way and was
+    wrong. The HUD amber is #ffae18 -- red already pinned at 255, green in the
+    middle, blue near nothing. Raising each channel independently cannot lift
+    the red any further, so only green and blue move, and the colour rotates
+    towards yellow while going pale: measured 39 deg and 91% saturation at
+    gamma 1.0, against 43 deg and 79% at 1.5. Exactly the "leaning yellow" that
+    a whole interface built on one amber would show first.
+
+    So the lift is applied to the pixel's VALUE -- its largest channel -- and
+    all three channels are scaled by that same factor. Ratios between channels
+    are untouched, so hue and saturation come through unchanged and only
+    brightness moves. The consequence worth knowing is that a pixel already at
+    255 in any channel cannot get brighter, which is correct: it is already as
+    bright as the format goes. What lifts is everything below it.
     """
-    global _R5, _G6, _R5_LUT, _G6_LUT
-    inv = 1.0 / max(0.01, float(g))
-    _R5 = [int(round(((v / 31.0) ** inv) * 255)) for v in range(32)]
-    _G6 = [int(round(((v / 63.0) ** inv) * 255)) for v in range(64)]
-    if _np is not None:
-        _R5_LUT = _np.array(_R5, dtype=_np.uint8)
-        _G6_LUT = _np.array(_G6, dtype=_np.uint8)
+    global _GAMMA, _SCALE
+    _GAMMA = max(0.01, float(g))
+    if _GAMMA == 1.0 or _np is None:
+        _SCALE = None
+        return
+    inv = 1.0 / _GAMMA
+    v = _np.arange(256, dtype=_np.float32)
+    out = _np.power(v / 255.0, inv) * 255.0
+    with _np.errstate(divide="ignore", invalid="ignore"):
+        _SCALE = _np.where(v > 0, out / _np.maximum(v, 1e-6), 1.0).astype(_np.float32)
+
+
+def _lift(out):
+    """Scale every channel by the gain its brightest one asks for."""
+    if _SCALE is None:
+        return out
+    mx = out.max(axis=-1)
+    return _np.clip(out * _SCALE[mx][..., None] + 0.5, 0, 255).astype(_np.uint8)
 
 
 def to_rgb(pixels, w, h, rot):
@@ -484,7 +509,7 @@ def _to_rgb_np(pixels, w, h, rot):
     out[..., 0] = _R5_LUT[(v >> 11) & 0x1F]
     out[..., 1] = _G6_LUT[(v >> 5) & 0x3F]
     out[..., 2] = _R5_LUT[v & 0x1F]
-    return out.tobytes()
+    return _lift(out).tobytes()
 
 
 class FrameWriter:
