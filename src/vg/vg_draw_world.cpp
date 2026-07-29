@@ -288,25 +288,35 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
 static void draw_gate(const VgCam& cam) {
     if (vg.gate_t <= 0.0f) return;
 
-    const float u = 1.0f - vg.gate_t / GATE_TIME;      // 0 at open, 1 at gone
+    const float e = GATE_TIME - vg.gate_t;             // seconds since it opened
 
-    // Snaps open, holds while the ship clears it, then dims away. Fading the
-    // colour rather than shrinking the plane: a portal that closes to a point
-    // pulls the eye back to it exactly when the ship should have the frame.
-    float grow = u / 0.18f;
-    if (grow > 1.0f) grow = 1.0f;
-    float fade = (u < 0.40f) ? 1.0f : (1.0f - (u - 0.40f) / 0.60f);
-    if (fade < 0.0f) fade = 0.0f;
+    // Wipes UP from its own bottom edge, holds, then wipes back down the same
+    // way. The bottom edge never moves, so it reads as a surface being drawn
+    // into existence rather than a rectangle being scaled -- which is the whole
+    // difference between a materialisation and a pop.
+    float open = 1.0f;
+    if (e < GATE_SWIPE)                     open = e / GATE_SWIPE;
+    else if (e > GATE_TIME - GATE_SWIPE)    open = (GATE_TIME - e) / GATE_SWIPE;
+    if (open < 0.0f) open = 0.0f;
+    if (open > 1.0f) open = 1.0f;
 
-    const float h  = GATE_SIZE * grow;
-    const Vec3  rr = vmul(vg.gate_r, h);
-    const Vec3  uu = vmul(vg.gate_u, h * 0.72f);       // wider than tall
+    // Brightness rides the wipe, so it fades in as it grows and out as it
+    // retracts. Sells the leading edge as energy rather than as a moving line.
+    const float fade = open;
+
+    const float hw = GATE_SIZE;                        // half width, fixed
+    const float hh = GATE_SIZE * 0.72f;                // half height, full open
+    const Vec3  rr = vmul(vg.gate_r, hw);
+
+    // Bottom edge pinned; top edge climbs from it.
+    const Vec3 lo = vmul(vg.gate_u, -hh);
+    const Vec3 hi = vmul(vg.gate_u, -hh + 2.0f * hh * open);
 
     const Vec3 c[4] = {
-        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), vmul(uu, -1.0f))),
-        vadd(vg.gate_pos, vadd(rr,              vmul(uu, -1.0f))),
-        vadd(vg.gate_pos, vadd(rr,              uu)),
-        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), uu)),
+        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), lo)),
+        vadd(vg.gate_pos, vadd(rr,              lo)),
+        vadd(vg.gate_pos, vadd(rr,              hi)),
+        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), hi)),
     };
 
     float sx[4], sy[4];
@@ -317,12 +327,13 @@ static void draw_gate(const VgCam& cam) {
     vg_tri(sx[0], sy[0], sx[1], sy[1], sx[2], sy[2], col);
     vg_tri(sx[0], sy[0], sx[2], sy[2], sx[3], sy[3], col);
 
-    // Hot rim, so the plane has an edge instead of dissolving into the backdrop.
-    const uint16_t rim = vg_dim(INK_MAX, fade);
-    for (int i = 0; i < 4; i++) {
-        const int j = (i + 1) & 3;
-        vg_line_w(sx[i], sy[i], sx[j], sy[j], rim, 2);
-    }
+    // Hot leading edge along the top, dimmer rim elsewhere. The bright line is
+    // what the eye follows while the plane is wiping.
+    const uint16_t rim  = vg_dim(INK, fade * 0.8f);
+    vg_line_w(sx[0], sy[0], sx[1], sy[1], rim, 2);
+    vg_line_w(sx[1], sy[1], sx[2], sy[2], rim, 2);
+    vg_line_w(sx[3], sy[3], sx[0], sy[0], rim, 2);
+    vg_line_w(sx[2], sy[2], sx[3], sy[3], vg_dim(INK_MAX, fade), 3);
 }
 
 static void draw_missile(const VgCam& cam, const Missile* m) {

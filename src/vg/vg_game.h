@@ -158,17 +158,29 @@ enum VgState : uint8_t {
 // Paced to settle the player rather than to get out of the way. Two seconds of
 // empty space first, then four and a half on each fighter -- long enough to
 // look at it, which is the point of introducing it at all.
+// Each shot is long enough for the gate to open, hold, release the ship, and
+// still leave a full fly-by afterwards.
 #define INTRO_DRIFT     2.4f
-#define INTRO_YOU_END   8.4f
-#define INTRO_OPP_START 8.8f
-#define INTRO_OPP_END  14.8f
-#define INTRO_END      15.2f
+#define INTRO_YOU_END   9.2f
+#define INTRO_OPP_START 9.6f
+#define INTRO_OPP_END  16.4f
+#define INTRO_END      16.8f
 
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f
 
-// The entry gate. Opens fast, holds, then fades once the ship is clear of it.
-#define GATE_TIME       1.15f
+// The entry gate, in four beats. It wipes open upward, holds long enough to be
+// registered as a thing in its own right, releases the ship, holds again while
+// it clears, then wipes shut the same way.
+//
+// The register hold is the whole reason this reads as an effect rather than a
+// flash: an object that appears and is immediately upstaged never gets looked
+// at. The ship is deliberately not there yet.
+#define GATE_SWIPE      0.25f
+#define GATE_REGISTER   0.50f
+#define GATE_CLEAR      0.55f
+#define GATE_EMERGE     (GATE_SWIPE + GATE_REGISTER)
+#define GATE_TIME       (GATE_SWIPE + GATE_REGISTER + GATE_CLEAR + GATE_SWIPE)
 #define GATE_SIZE       210.0f
 
 // After the opponent goes down. Two distinct beats, and they do different jobs.
@@ -297,6 +309,7 @@ struct VgGame {
     Vec3     gate_pos, gate_r, gate_u;
     float    gate_t;       // counts down; the plane is drawn while positive
     float    gate_hue;
+    float    cine_hold;    // >0 while the ship is still waiting behind the gate
 
     float    hud_boot;     // >0 while the instruments are coming up
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it

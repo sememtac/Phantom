@@ -67,7 +67,10 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // Bigger than the combat skies, and this is close to the ceiling. The lensed
 // arcs sit at ~20 texels; much past this and they cross the top and bottom
 // edges, which crops the one feature that makes it read as a black hole.
-#define SKY_MENU_SCALE  0.088f
+// Raised so the whole structure sits inside the frame with room around it. It
+// is a backdrop -- the thing behind the title and the crawl -- and a black hole
+// cropped by the screen edges reads as a dark shape rather than as an object.
+#define SKY_MENU_SCALE  0.118f
 
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;

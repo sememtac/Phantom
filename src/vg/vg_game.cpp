@@ -111,11 +111,11 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->trail_n    = 0;
     c->trail_head = 0;
     c->trail_acc  = 0;
-    vg.cine_on    = true;
 
-    // The gate sits exactly where the ship starts, square to its travel, so the
-    // ship is already coming through the plane on the first frame it exists --
-    // it arrives THROUGH something rather than simply being there.
+    // The gate opens first and the ship waits behind it. Building the plane's
+    // axes from the ship's heading means cross(gate_r, gate_u) is exactly that
+    // heading again, so when the ship is released it can be re-seated straight
+    // off the gate -- wherever the world has rotated it to by then.
     Vec3 r = vcross(v3(0, 1, 0), c->fwd);
     if (vlen2(r) < 1e-4f) r = vcross(v3(1, 0, 0), c->fwd);
     vg.gate_r   = vnorm(r);
@@ -123,6 +123,9 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     vg.gate_pos = c->pos;
     vg.gate_hue = hue;
     vg.gate_t   = GATE_TIME;
+
+    vg.cine_hold = GATE_EMERGE;
+    vg.cine_on   = false;      // nothing to see until the gate has opened
 }
 
 // Move the whole shot somewhere else. The two fighters are launched from
@@ -208,6 +211,7 @@ static void cine_fly(float dt) {
 static void cine_clear(void) {
     vg.cine_on          = false;
     vg.gate_t           = 0.0f;
+    vg.cine_hold        = 0.0f;
     vg.cine.trail_n     = 0;
     vg.cine.trail_head  = 0;
     vg.cine.trail_acc   = 0;
@@ -1051,13 +1055,13 @@ void vg_game_update(float dt, const VgInput* in) {
         // The wide clamp is what lets the pass be dramatic: once inside about
         // 1350 units the lens has nothing left to give and the ship is finally
         // allowed to get big, right at the moment it goes by.
-        if (vg.cine_on) {
+        if (vg.cine_on || vg.gate_t > 0.0f) {
             // Divisor sets the size the ship is HELD at through the approach;
             // the floor sets how wide the lens goes at the pass, and therefore
             // how big it is allowed to get as it goes by. Both pulled back --
             // this is an establishing shot of a place with a ship in it, not a
             // portrait of a ship.
-            float z = vlen(vg.cine.pos) / 2400.0f;
+            float z = vlen(vg.cine_on ? vg.cine.pos : vg.gate_pos) / 2400.0f;
             if (z < 0.74f) z = 0.74f;
             if (z > 2.40f) z = 2.40f;
             float k = dt * 4.0f;
@@ -1091,14 +1095,28 @@ void vg_game_update(float dt, const VgInput* in) {
             else cine_clear();
         }
 
+        // Release the ship once the gate has opened and been held. It is seated
+        // straight off the plane rather than from its stored position, so it
+        // emerges from wherever the gate has rotated to in the meantime --
+        // exactly aligned, with no bookkeeping to drift out of step.
+        if (vg.cine_hold > 0.0f) {
+            vg.cine_hold -= dt;
+            if (vg.cine_hold <= 0.0f) {
+                Ship* c = &vg.cine;
+                c->pos = vg.gate_pos;
+                c->fwd = vnorm(vcross(vg.gate_r, vg.gate_u));
+                Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
+                c->up  = (vlen2(u) > 1e-6f) ? vnorm(u) : vg.gate_u;
+                vg.cine_on = true;
+            }
+        }
+
         float pitch_in = 0.0f, yaw_in = 0.0f;
-        if (vg.cine_on) {
-            // Steer the view onto the ship. Gain is deliberately high so the
-            // input saturates the moment it is more than about twenty degrees
-            // off-axis -- from there the camera pans at its own maximum rate
-            // and visibly lags through the closest approach, which is what an
-            // operator swinging a long lens actually does.
-            const Vec3 w = vnorm(vg.cine.pos);
+        if (vg.cine_on || vg.gate_t > 0.0f) {
+            // Aim at whichever exists. Before the ship is out the gate is the
+            // subject, and holding on it is what tells the viewer where to look.
+            const Vec3 tgt = vg.cine_on ? vg.cine.pos : vg.gate_pos;
+            const Vec3 w   = vnorm(tgt);
             yaw_in   =  w.x * 3.2f;
             pitch_in = -w.y * 3.2f;
         } else {
