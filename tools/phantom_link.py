@@ -1,11 +1,12 @@
 """
-Device link for Phantom frame capture.
+The link to the device, for Phantom frame capture.
 
-The wire protocol and the pixel conversions live here rather than in either
-front end, so the CLI and the recorder cannot drift apart. Both bugs found in
-the first version -- scanning for the frame magic inside binary payloads, and
-copying the firmware's rotation instead of inverting it -- were the kind that
-get fixed in one copy and left in the other.
+This module holds the wire protocol and the pixel conversions. It does not hold
+them in the command line tool or in the window, so those two programs cannot
+become different. The first version had two bugs of that type: it looked for the
+frame magic inside binary data, and it copied the rotation of the firmware
+instead of the inverse. A person fixes such a bug in one copy and leaves it in
+the other copy.
 """
 
 import os
@@ -16,13 +17,13 @@ import time
 import serial
 import serial.tools.list_ports
 
-# numpy turns the per-frame pixel work from the bottleneck into a rounding
-# error. Decoding runs and rotating 230,400 pixels in a Python loop costs
-# roughly 150ms a frame, which capped capture at 5 fps while the wire was
-# happily delivering 22. Vectorised it is a few milliseconds.
+# numpy makes the pixel work for each frame very small. A Python loop that
+# decodes the runs and rotates 230,400 pixels costs about 150 ms for each frame.
+# That limited the capture to 5 fps while the link delivered 22 fps. The numpy
+# code needs a few milliseconds.
 #
-# Optional on purpose: the pure-Python path below is kept and still correct, so
-# a machine without numpy records slowly rather than not at all.
+# numpy is optional. The Python code below is kept and is still correct, so a
+# computer without numpy records slowly instead of not at all.
 try:
     import numpy as _np
 except ImportError:
@@ -36,17 +37,17 @@ ESPRESSIF_VID = 0x303A
 
 
 def list_ports():
-    """Boards first, ranked by USB VENDOR ID rather than by description text.
+    """List the ports, with the device first. Sort by the USB VENDOR ID.
 
-    Matching on strings looked reasonable and picked the wrong device: an FTDI
-    adapter enumerating as "USB Serial Port (COM3)" scores identically to the
-    board's "USB Serial Device (COM6)" against a substring like "usb serial",
-    and sorts ahead of it on port number. The recorder then opened a port with
-    nothing on the other end, waited for a header that was never coming, and
-    reported it as though the board were not running.
+    A sort by the description text looks correct and selects the wrong port. An
+    FTDI adapter has the name "USB Serial Port (COM3)". The device has the name
+    "USB Serial Device (COM6)". Both names contain "usb serial", so both get the
+    same score, and the lower port number comes first. The window then opened a
+    port with no device on it. It waited for a header that never came, and it
+    told the user that the device did not run.
 
-    The vendor ID is not a guess. 0x303A is Espressif's, and nothing else on a
-    normal machine claims it.
+    The vendor ID is not a guess. 0x303A belongs to Espressif, and no other
+    equipment on a normal computer uses it.
     """
     ports = list(serial.tools.list_ports.comports())
 
@@ -56,7 +57,7 @@ def list_ports():
         blob = f"{p.description} {p.manufacturer or ''}".lower()
         if "esp32" in blob or "espressif" in blob:
             return 1
-        return 2 if p.vid else 3          # anything with a VID beats Bluetooth
+        return 2 if p.vid else 3          # a port with a VID is better than Bluetooth
 
     ports.sort(key=score)
     out = []
@@ -73,14 +74,15 @@ class Desync(Exception):
 
 
 def reset_board(port, settle=3.0):
-    """Pulse the board's reset line and wait for it to come back up.
+    """Pulse the reset line of the device and wait for the device to start.
 
-    Replay is a lockstep conversation, so a host that dies mid-session leaves
-    the device waiting for a frame record and reading everything else as one.
-    It recovers on its own after 30 seconds, which is a long time to look
-    broken. Starting from a known state is cheaper than detecting every way the
-    previous run could have ended -- and both operations reinitialise the game
-    anyway, so nothing is lost by it.
+    A render is an exchange of one entry for one frame. If the host stops during
+    a render, the device waits for the next entry and reads every byte as one.
+    The device recovers after 30 seconds, and during that time it looks broken.
+
+    A start from a known state is simpler than a test for each way the last run
+    could end. The record step and the render step both start the game again, so
+    the reset costs nothing.
     """
     s = serial.Serial(port, 115200)
     try:
@@ -100,17 +102,16 @@ class PhantomLink:
         self.timeout = timeout
         self.ser = None
         self._synced = False
-        self._blob = 0          # size of the device's input struct, from the header
+        self._blob = 0          # size of the input structure, from the header
 
     # -- connection ---------------------------------------------------------
 
     def open(self):
-        # DTR/RTS deasserted BEFORE the port opens, or opening it resets the
-        # board. That is harmless for capture, which just re-arms, and quietly
-        # fatal for replay: the 'P' lands while the device is booting, is lost,
-        # and the frame records that follow are then read as commands -- one of
-        # which is another 'P', which starts a replay from whatever bytes
-        # happen to come next.
+        # Set DTR and RTS to false BEFORE the port opens. If you do not, the
+        # open resets the device. During a render this is not safe. The 'P'
+        # command arrives while the device starts, so the device loses it. The
+        # device then reads the entries that follow as commands. One of those
+        # bytes is another 'P', which starts a render from the next bytes.
         self.ser = serial.Serial()
         self.ser.port = self.port
         self.ser.baudrate = self.baud
@@ -119,16 +120,16 @@ class PhantomLink:
         self.ser.rts = False
         self.ser.open()
 
-        # Windows gives a serial port a ~4KB receive buffer. A frame is 35KB
-        # arriving in one burst, and the host does real work between bands
-        # (decoding runs, writing into the frame), so the driver buffer
-        # overflows and DROPS bytes -- silently, with no error anywhere. The
-        # symptom is a frame that stops mid-band while the device, which sent
-        # every byte, sits waiting for the next request.
+        # Windows gives a serial port a receive buffer of about 4 KB. A frame is
+        # 35 KB and arrives in one burst. The host does work between the bands:
+        # it decodes the runs and writes them into the frame. The buffer of the
+        # driver therefore overflows and DISCARDS bytes. There is no error. The
+        # result is a frame that stops in the middle of a band. The device sent
+        # every byte and then waited for the next request.
         try:
             self.ser.set_buffer_size(rx_size=1 << 20, tx_size=1 << 16)
         except Exception:
-            pass          # Windows-only API; elsewhere the default is ample
+            pass          # Windows only. Other systems have a large default.
 
         time.sleep(0.4)
         self.ser.reset_input_buffer()
@@ -136,17 +137,17 @@ class PhantomLink:
 
     # -- receive thread -----------------------------------------------------
     #
-    # Draining the port is separated from parsing it, because they cannot share
-    # a thread without losing data. A frame arrives as a 35KB burst while the
-    # parser is decoding runs and filling a numpy array, and every millisecond
-    # spent doing that is a millisecond the driver's receive buffer is not being
-    # emptied. It overflows and discards, silently -- measured at 3.6KB missing
-    # from 1.6MB, against a device that reported writing every byte with no
-    # short writes and no stalls.
+    # One thread reads the port and a different thread parses the data. One
+    # thread for both loses data. A frame arrives as a burst of 35 KB while the
+    # parser decodes the runs and fills a numpy array. Each millisecond of that
+    # work is a millisecond in which nothing empties the receive buffer of the
+    # driver. The buffer overflows and discards bytes, with no error.
     #
-    # So this thread does nothing but move bytes out of the driver as fast as
-    # they appear. Parsing then runs against a buffer in memory, where being
-    # slow costs latency instead of data.
+    # A measurement: 3.6 KB were lost from 1.6 MB, and the device reported that
+    # it wrote every byte with no short write and no stop.
+    #
+    # This thread therefore only moves bytes out of the driver. The parser then
+    # reads a buffer in memory, where slow work costs time instead of data.
 
     def _start_reader(self):
         self._rx = bytearray()
@@ -185,14 +186,14 @@ class PhantomLink:
 
     # -- session record / replay -------------------------------------------
     #
-    # The session is opaque here on purpose. The host stores the device's input
-    # blobs and hands them back byte for byte without ever interpreting them, so
-    # VgInput can gain a field without this file knowing. The device checks the
-    # size on playback and refuses a mismatch, which is the one thing the host
-    # could not detect.
+    # The host does not read the contents of a session entry. It saves the input
+    # structure of the device and sends it back byte for byte. A new field in
+    # VgInput therefore does not need a change in this file. The device compares
+    # the size at the start of a render and refuses a session that does not
+    # match. The host cannot make that test.
 
     def session_start(self):
-        """Begin recording a session. Returns the header to store with it."""
+        """Start a session. Returns the header to save with the session."""
         self._rx_clear()
         self.ser.write(b"R")
         self.ser.flush()
@@ -204,7 +205,7 @@ class PhantomLink:
         return {"ver": ver, "blob": blob, "seeds": seeds, "save": save}
 
     def session_frame(self):
-        """One recorded frame, or None if the device stopped."""
+        """Read one entry of the session."""
         tag = self._read_exact(4)
         if tag != b"PHRC":
             raise Desync(f"expected a frame record, got {tag!r}")
@@ -228,10 +229,10 @@ class PhantomLink:
         self._synced = False
         self._blob = hdr["blob"]
 
-        # Wait to be told it is ready rather than sleeping a guessed interval.
-        # The device re-initialises the game first, which regenerates a sky and
-        # takes a few hundred milliseconds -- and if a frame record arrives
-        # during that, it is consumed as a command instead.
+        # Wait for the report from the device. Do not wait for a fixed time.
+        # The device starts the game again first. This makes a new sky and takes
+        # some hundred milliseconds. An entry that arrives during that time
+        # becomes a command.
         deadline = time.time() + 10.0
         seen = bytearray()
         while time.time() < deadline:
@@ -243,8 +244,8 @@ class PhantomLink:
                 return
             if b"vg_replay: REJECT" in seen:
                 raise Desync(
-                    "device refused the session -- it was recorded by a "
-                    "different firmware build")
+                    "The device refused the session. A different firmware "
+                    "build made it.")
         raise TimeoutError("device never started the replay")
 
     def replay_send(self, fr):
@@ -257,9 +258,11 @@ class PhantomLink:
     # -- stream -------------------------------------------------------------
 
     def _read_exact(self, n):
-        """Serial reads come back short constantly and a frame is fifteen bands;
-        every one of them will be split. Looping here rather than at each call
-        site is the difference between working and appearing to work."""
+        """Read exactly n bytes.
+
+        A serial read gives fewer bytes than you ask for. A frame has 15 bands
+        and the driver divides all of them. The loop is here, and not at each
+        call, so that every caller is correct."""
         deadline = time.time() + self.timeout
         while True:
             with self._rx_lock:
@@ -285,14 +288,16 @@ class PhantomLink:
                 return
 
     def read_frame(self):
-        """One frame as RGB888 bytes, upright. Raises Desync if the stream is
-        lost mid-frame; the caller can simply ask for the next one."""
-        # Sync ONCE, then read tags positionally.
+        """Read one frame as upright RGB888 bytes.
+
+        Raises Desync if the stream breaks inside a frame. The caller can then
+        ask for the next frame."""
+        # Synchronise ONCE, then read each tag at its position.
         #
-        # Scanning before every frame looks more robust and is the opposite:
-        # band payloads are arbitrary binary, so the four bytes 'PHFR' turn up
-        # inside compressed pixel data soon enough and the scanner locks onto
-        # one, treating the middle of a band as a header.
+        # A search before every frame looks safer and is not. The data of a band
+        # is binary, so the four bytes 'PHFR' also occur inside the compressed
+        # pixels. The search then stops at the middle of a band and reads it as
+        # a header.
         if not self._synced:
             self._scan_to(b"PHFR")
             self._synced = True
@@ -343,8 +348,8 @@ def _decode_rle(payload, npix):
     return out
 
 
-# 5/6/5 -> 8/8/8, built once. Per-pixel shifting in Python is the single
-# slowest thing in the capture path, and a frame is 230,400 pixels.
+# Tables from 5/6/5 to 8/8/8, built one time. A shift for each pixel in Python
+# is the slowest operation in this path, and a frame has 230,400 pixels.
 _R5 = [(v * 255) // 31 for v in range(32)]
 _G6 = [(v * 255) // 63 for v in range(64)]
 
@@ -358,28 +363,31 @@ _SCALE = None          # per-brightness gain, indexed by the pixel's max channel
 
 
 def set_gamma(g):
-    """Brightness lift that leaves hue and saturation exactly where they were.
+    """Make the picture brighter. The hue and the saturation do not change.
 
-    A capture is a faithful copy of the framebuffer: 0x1F really is 255. What it
-    cannot copy is the PANEL, which is an emissive AMOLED with true blacks
-    driven hard, and which reads considerably punchier than the same numbers on
-    a monitor. So this is a matching control, not a correction. g = 1.0 is the
-    faithful copy and the default.
+    A capture holds the same values as the framebuffer: 0x1F becomes 255. It
+    cannot hold the PANEL. The panel is an emissive AMOLED with true black, and
+    it runs at high brightness, so the same values look brighter there than on a
+    monitor. This function therefore matches the panel. It does not correct the
+    capture. A value of 1.0 keeps the framebuffer values and is the default.
 
-    It does NOT apply a curve per channel, which was the obvious way and was
-    wrong. The HUD amber is #ffae18 -- red already pinned at 255, green in the
-    middle, blue near nothing. Raising each channel independently cannot lift
-    the red any further, so only green and blue move, and the colour rotates
-    towards yellow while going pale: measured 39 deg and 91% saturation at
-    gamma 1.0, against 43 deg and 79% at 1.5. Exactly the "leaning yellow" that
-    a whole interface built on one amber would show first.
+    The function does NOT apply a curve to each channel. That is the usual
+    method and it is wrong here. The amber of the HUD is #ffae18: red is 255,
+    green is in the middle, and blue is very low. A curve on each channel cannot
+    raise the red, so only green and blue rise. The colour then turns towards
+    yellow and loses saturation. Measurements on that colour: 39 degrees and 91%
+    saturation at gamma 1.0, and 43 degrees and 79% at gamma 1.5. The interface
+    uses this one amber colour almost everywhere, so a user sees that change
+    first.
 
-    So the lift is applied to the pixel's VALUE -- its largest channel -- and
-    all three channels are scaled by that same factor. Ratios between channels
-    are untouched, so hue and saturation come through unchanged and only
-    brightness moves. The consequence worth knowing is that a pixel already at
-    255 in any channel cannot get brighter, which is correct: it is already as
-    bright as the format goes. What lifts is everything below it.
+    The function applies the gain to the VALUE of the pixel, which is its
+    largest channel. It then multiplies all three channels by that same gain.
+    The ratios between the channels do not change, so the hue and the saturation
+    do not change. Only the brightness changes.
+
+    A pixel with a channel at 255 cannot become brighter. This is correct,
+    because 255 is the maximum of the format. The gain applies to all values
+    below it.
     """
     global _GAMMA, _SCALE
     _GAMMA = max(0.01, float(g))
@@ -394,7 +402,7 @@ def set_gamma(g):
 
 
 def _lift(out):
-    """Scale every channel by the gain its brightest one asks for."""
+    """Multiply all three channels by the gain of the largest channel."""
     if _SCALE is None:
         return out
     mx = out.max(axis=-1)
@@ -402,21 +410,23 @@ def _lift(out):
 
 
 def to_rgb(pixels, w, h, rot):
-    """RGB565 in PANEL byte order and PANEL orientation to upright RGB888.
+    """Convert RGB565 to upright RGB888.
 
-    Both conversions have to happen somewhere. The device stores pixels
-    pre-swapped so a band blit is a straight DMA, and never un-rotates because
-    the panel is mounted a quarter turn off -- doing either on the board would
-    cost frame time purely to save the host a loop.
+    The input has the byte order of the panel and the orientation of the panel.
+    Some program must do both conversions. The device stores each pixel with the
+    bytes in the order of the panel, so a band goes to the display by DMA. The
+    device also does not correct the rotation, because the panel is mounted at
+    90 degrees. Both operations on the device would cost frame time and would
+    only save the host a loop.
     """
     if _np is not None and isinstance(pixels, _np.ndarray):
         return _to_rgb_np(pixels, w, h, rot)
 
     rgb = bytearray(w * h * 3)
 
-    # This is the INVERSE of the firmware's rot_pt, not a copy of it. Getting
-    # that backwards is a 180 degree error for rot 1 and 3, which looks exactly
-    # like a correct capture of an upside-down game.
+    # This is the INVERSE of rot_pt in the firmware. It is not a copy. A copy
+    # gives an error of 180 degrees for rot 1 and rot 3. That error looks the
+    # same as a correct capture of a game that is upside down.
     #
     #   rot 1: firmware maps logical (lx,ly) -> panel (ly, H-1-lx)
     #   rot 3: firmware maps logical (lx,ly) -> panel (W-1-ly, lx)
@@ -435,12 +445,12 @@ def to_rgb(pixels, w, h, rot):
 
 
 class Session:
-    """A recorded session: a header and a list of per-frame records.
+    """A session: one header and one entry for each frame.
 
-    Small enough to keep in memory and to keep forever -- a ten minute session
-    at 60fps is 36,000 records of under a hundred bytes, so about three
-    megabytes. That is the whole trick: the thing worth storing was never the
-    pixels.
+    A session stays in memory, and you can keep it. A session of ten minutes at
+    60 fps has 36,000 entries of less than 100 bytes, which is about three
+    megabytes. This is the method of these tools: the pixels are not the data
+    that is necessary to keep.
     """
 
     MAGIC = b"PHRS"
@@ -483,16 +493,16 @@ class Session:
 
 
 def _to_rgb_np(pixels, w, h, rot):
-    """Vectorised twin of the loop in to_rgb. Same inverse rotation, derived
-    rather than copied:
+    """The numpy form of the loop in to_rgb. It uses the same inverse rotation.
 
-        firmware rot 1 maps logical (lx,ly) -> panel (ly, H-1-lx), so the panel
-        array S undoes it as D[x, h-1-y] = S[y, x], which is S transposed with
-        its columns reversed. rot 3 is the same transpose flipped the other way,
-        rot 2 is both axes reversed.
+    The rotation below is derived, not copied. For rot 1 the firmware maps the
+    logical point (lx,ly) to the panel point (ly, H-1-lx). The panel array S
+    therefore inverts to D[x, h-1-y] = S[y, x]. That is S transposed, with the
+    columns in the opposite order. For rot 3 the transpose is flipped on the
+    other axis. For rot 2 both axes are in the opposite order.
 
-    Getting this backwards is a 180 degree error that looks exactly like a
-    correct capture of an upside-down game, so it is worth spelling out.
+    An error here of 180 degrees looks the same as a correct capture of a game
+    that is upside down, so the derivation is written out.
     """
     src = pixels.reshape(h, w)
     if rot == 1:
@@ -513,27 +523,26 @@ def _to_rgb_np(pixels, w, h, rot):
 
 
 class FrameWriter:
-    """Writes frames as they arrive instead of collecting them first.
+    """Write each frame when it arrives. Do not collect the frames first.
 
-    Buffering was fine for a ten second clip and impossible for a playthrough.
-    A frame is 480*480*3 = 691,200 bytes of RGB888, so even at the five frames
-    a second the link manages, ten minutes of capture is well over a gigabyte
-    of RAM and an hour is out of the question entirely.
+    A buffer is acceptable for a clip of ten seconds and is not possible for a
+    full game. A frame is 480 x 480 x 3 = 691,200 bytes of RGB888. At five
+    frames each second, ten minutes of capture is more than one gigabyte of RAM,
+    and one hour is not possible.
 
-    Streaming makes the length of a recording a question about disk rather
-    than about memory, and it means an interruption costs the tail of the video
-    instead of all of it.
+    A write for each frame makes the length of a video a question of disk space,
+    not of memory. An interruption then costs the end of the video, not all of
+    the video.
     """
 
     def __init__(self, out_dir, fps=FPS, w=WIDTH, h=HEIGHT, fragmented=False):
-        """fps=None means measure it.
+        """An fps of None tells the writer to measure the rate.
 
-        Live capture has no nominal rate -- it is whatever the link and the game
-        managed between them -- and ffmpeg needs a rate before the first frame.
-        So the first few frames are held back, timed, and the encoder is started
-        with the real figure. Sixteen frames is about three seconds of wall
-        clock and eleven megabytes, which buys a rate accurate enough that a
-        recording lasting an hour still ends when it should.
+        ffmpeg needs a rate before the first frame. If the caller does not know
+        the rate, the writer keeps the first frames, measures the time between
+        them, and then starts ffmpeg with the measured rate. Sixteen frames is
+        about three seconds and eleven megabytes. That number of frames gives a
+        rate that is correct enough for a video of one hour.
         """
         import shutil
         import subprocess
@@ -558,12 +567,12 @@ class FrameWriter:
 
     @property
     def fps(self):
-        """The rate the video will actually play at.
+        """The rate at which the video plays.
 
-        Nominal in fixed mode. In live mode it is the measured arrival rate, or
-        a running estimate from the frames held so far -- callers want to report
-        seconds-of-video from the first frame, well before enough have arrived
-        to settle on a figure.
+        This is the rate the caller gave, or the measured rate. During the
+        measurement it is an estimate from the frames that arrived. A caller
+        shows the length of the video from the first frame, and that is before
+        the measurement is complete.
         """
         import time
 
@@ -583,27 +592,27 @@ class FrameWriter:
 
         if shutil.which("ffmpeg"):
             self.path = os.path.join(out_dir, f"phantom-{stamp}.mp4")
-            # Tag the colour explicitly. Untagged, the file says nothing about
-            # how its YUV should be read, so every player guesses -- and one
-            # that guesses full range on a limited-range file crushes the blacks
-            # and darkens the whole picture. This game is almost entirely dark,
-            # so it is the worst possible thing to leave to chance.
+            # Declare the colour. Without a declaration the file says nothing
+            # about its YUV range, so each player must guess. A player that
+            # guesses full range on a file with limited range makes the black
+            # areas darker. This game is almost all black, so a wrong guess is
+            # very visible.
             args = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                     "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16",
                     "-colorspace", "bt709", "-color_primaries", "bt709",
                     "-color_trc", "bt709", "-color_range", "tv",
-                    # And again as encoder options. ffmpeg's -color_* flags set
-                    # the container tags but leave the stream's own VUI unwritten
-                    # for two of the three, so a player reading the bitstream
-                    # rather than the container still has to guess.
+                    # Give the same values to the encoder. The -color_* options
+                    # of ffmpeg write the tags of the container. For two of the
+                    # three values they do not write the VUI of the video
+                    # stream. A player that reads the stream must then guess.
                     "-x264-params",
                     "colorprim=bt709:transfer=bt709:colormatrix=bt709"]
             if fragmented:
-                # An unbounded recording may be ended by something other than a
-                # clean stop -- a closed lid, an unplugged board. A fragmented
-                # mp4 stays playable when truncated, where a normal one needs
-                # its trailer written and is worthless without it.
+                # A long video can stop for a reason other than a clean stop:
+                # a closed lid, or a disconnected device. A fragmented mp4 file
+                # still plays if it is incomplete. A normal mp4 file needs its
+                # trailer, and without the trailer it has no value.
                 args += ["-movflags", "frag_keyframe+empty_moov"]
             args += [self.path]
             self._proc = subprocess.Popen(
@@ -618,17 +627,18 @@ class FrameWriter:
     def write(self, rgb):
         import time
 
-        # Measuring phase: hold the frame, and once there are enough of them
-        # work out the rate they actually arrived at and open the encoder.
+        # Measurement: keep the frame. When there are enough frames, calculate
+        # the rate at which they arrived and start the encoder.
         if self._fps is None:
             now = time.time()
             if self._t0 is None:
                 self._t0 = now
             self._pending.append(rgb)
-            # Counted by length while buffering, then reset so the flush can
-            # count them exactly once. Incrementing in both places double-counts
-            # every held frame, which shows up as a progress bar that overshoots
-            # and a frame total that disagrees with the file.
+            # During the measurement the count is the length of the list. The
+            # count is then set to zero, so that the write counts each frame one
+            # time. A count in both places counts each kept frame two times.
+            # The progress bar then goes too far, and the total does not agree
+            # with the file.
             self.n = len(self._pending)
             if len(self._pending) >= 16:
                 span = max(0.001, now - self._t0)
@@ -652,10 +662,10 @@ class FrameWriter:
         self.n += 1
 
     def close(self):
-        # A recording stopped before the rate settled still has to be written,
-        # and at the best rate available rather than the nominal one -- a live
-        # clip of ten frames written at 30fps plays in a third of a second.
-        # self.fps is the running estimate, which two frames is enough for.
+        # A video that stops before the measurement is complete must still be
+        # written, and at the best known rate. Ten frames at 60 fps play in one
+        # sixth of a second, which is wrong. self.fps holds the estimate, and
+        # two frames are enough for it.
         if self._fps is None:
             self._fps = self.fps
             self._start(self._fps)
@@ -674,8 +684,10 @@ class FrameWriter:
 
 
 def subsample_ppm(rgb, w, h, out_w):
-    """Nearest-neighbour down to a small PPM, for on-screen preview. PPM because
-    Tk reads it natively -- no image library, nothing extra to bundle."""
+    """Make a small PPM image for the window. Use nearest-neighbour sampling.
+
+    The format is PPM because Tk reads PPM without help. No image library is
+    necessary, and the program does not become larger."""
     step = w // out_w
     out_h = h // step
 

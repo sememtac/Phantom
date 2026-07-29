@@ -1,51 +1,61 @@
 # Capture tools
 
-Recording Phantom off the board at a true 60 fps, instead of pointing a phone
-at it.
+These tools record Phantom from the device at 60 fps. The result is better than
+a video of the panel.
 
-## Why it is two steps
+## Why there are two steps
 
-A frame is 480×480×2 = 460,800 bytes and the link carries 0.74 MB/s. Run-length
-coded, a typical frame is about 33 KB — roughly **23 frames a second**, not
-sixty. And that is the ceiling for *moving pixels*, not for playing: sending
-them while you play stalls the game loop to **15 fps**, which does not record
-this game so much as a slower, worse one.
+One frame is 480 x 480 x 2 = 460,800 bytes. The link carries 0.74 MB/s.
+Run-length coding makes a typical frame about 33 KB. The link can carry about
+23 of these frames each second, not 60.
 
-So nothing is sent while you play.
+That limit causes a second problem. If the device sends pixels while you play,
+the game loop slows to 15 fps. The video then shows a slower game than the game
+you play. For this reason the device sends no pixels while you play.
 
-**Record** logs the *simulation* instead of the picture — a frame duration and
-an input struct, 71 bytes a frame, about 4 KB/s. The game runs at its true,
-unimpeded speed. Measured: 240 frames of play in 3.57 s of wall clock for
-3.73 s of gameplay — 0.96× realtime, 64 fps, 17 KB.
+**Record** saves the simulation, not the picture. Each frame needs one frame
+time and one input structure, which is 71 bytes. This is about 4 KB/s, so the
+game keeps its full speed. A measurement: 240 frames of play took 3.57 s of
+clock time for 3.73 s of game time. That is 0.96 times real time, at 64 fps, in
+17 KB.
 
-**Render** re-runs that session on the device afterwards, frame by frame, and
-pulls the real pixels back as slowly as it likes. Costs about **3.3 minutes per
-minute** of gameplay.
+**Render** runs the session again on the device, one frame at a time. The device
+sends the true pixels at the speed of the link. This step takes about 3.3
+minutes for each minute of play.
 
-The video is a genuine 60 fps because the frames really were 1/60 s apart when
-they happened, and every pixel is the actual rasteriser output — the HUD's own
-fps counter reads whatever it read at the time. Every frame arrives whole, with
-nothing dropped and no tearing, none of which is true of filming the panel.
+The video is 60 fps because the game made the frames 1/60 s apart. Every pixel
+is the output of the rasteriser. The fps counter in the HUD shows the value it
+showed at the time. Every frame arrives complete, and no frame tears. A video of
+the panel gives none of these.
 
-Recording **restarts the game**, because a session has to begin somewhere the
-replay can also begin. Play from the menu.
+## PhantomRecorder (the window)
 
-## PhantomRecorder (the app)
+**A record restarts the game.** A session must start at a state that the render
+step can also start from. Play from the menu.
 
-Pick the port and an output folder, then work down the window: **1. Record
-Gameplay**, play, **Stop**, then **2. Render to Video**. It writes a
-timestamped `.phr` session and then an `.mp4` beside it, and shows what it is
-pulling while it renders.
+Do these steps in order:
 
-`File → Open Session...` renders a `.phr` from an earlier sitting.
+1. Select the port and the output folder.
+2. Press **1. Record Gameplay**.
+3. Play the game.
+4. Press **Stop**.
+5. Set the **Gamma** slider.
+6. Press **2. Render to Video**.
 
-Run `tools/dist/PhantomRecorder.exe`, or from source:
+The program writes a session file with the extension `.phr`. It then writes an
+`.mp4` file in the same folder. The window shows each frame during the render
+step.
+
+To render a session from an earlier day, use **File > Open Session**.
+
+Start `tools/dist/PhantomRecorder.exe`. To start the program from the source
+instead:
 
 ```
 python tools/phantom_recorder.py
 ```
 
-To rebuild the executable:
+To build the program again:
 
 ```
 cd tools
@@ -55,111 +65,127 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
 
 ## phantom_session.py (command line)
 
-Same thing without the window, for scripting:
+This program does the same work without a window.
 
 ```
-python tools/phantom_session.py record --port COM6 --out run.phr   # play, Ctrl+C
+python tools/phantom_session.py record --port COM6 --out run.phr   # play, then press Ctrl+C
 python tools/phantom_session.py render --port COM6 run.phr --dir .
 ```
 
-## How replay can be exact
+## Why the render step gives the same picture
 
-The simulation is a pure function of (seed, dt, input): the game draws from a
-seeded xorshift, and no game or render code reads the wall clock. The four
-`esp_random()` calls that do exist go through `vg_replay_rand()`, which logs
-them while recording and hands the same values back while replaying. Touch and
-the IMU are never read during playback — whatever they produced is already in
-the recorded input struct.
+The simulation is a pure function of the seed, the frame time, and the input.
+The game gets its random numbers from a seeded xorshift. No game code and no
+render code reads the clock.
 
-Persisted progress — credits, callsign, ship, champion, trail hue — is
-snapshotted into the session header and restored on playback, and saving to
-flash is suppressed while replaying, so rendering a recording cannot overwrite
-the progress of whoever made it.
+The firmware has four calls to `esp_random()`. Each call goes through
+`vg_replay_rand()`. This function saves the value during a record, and returns
+the same value during a render. The device does not read the touch panel or the
+IMU during a render, because the saved input structure already holds their
+values.
 
-## Things that were tried and are not here
+The device puts the progress of the player in the session header: the credits,
+the callsign, the ship, the champion flag, and the trail hue. It restores these
+values at the start of a render. It also blocks every write to flash during a
+render. A render therefore cannot change the progress of the player who made
+the session.
 
-**Live capture**, which streamed frames while you played. Real time, and it
-dropped the game to 15 fps. The whole point of the project is 60, so it is gone.
+## Methods that were tried and removed
 
-**Smooth capture**, which stepped the simulation on a fixed clock so the video
-came back perfectly smooth. But that is 60 fps video of a board running in slow
-motion, and the session workflow gives the same result from a game that really
-ran at 60.
+**Live capture** sent frames while you played. The video was real time, but the
+game slowed to 15 fps. The project needs 60 fps, so this method was removed.
 
-**Band delta compression.** Sending each band as its XOR against the previous
-frame cut a frame from 33 KB to **13.0 KB** — 2.5×, with 3499 of 3600 bands
-choosing the delta. It still made rendering **slower**: 19.5 fps → 16.3, and
-17.3 after cutting it to a single pass. Holding the previous frame in PSRAM
-costs about 900 KB of traffic per frame to read and write, and PSRAM is slow
-enough that this outweighs the ~27 ms of link time the smaller frames saved —
-especially since the USB driver drains in the background while the CPU works,
-so link time was already partly free. Rendering is device-bound, not
-link-bound. Reverted, and worth not rediscovering.
+**Smooth capture** stepped the simulation with a fixed frame time. The video was
+smooth, but the device ran in slow motion. The two steps above give the same
+video from a game that ran at 60 fps.
 
-The remaining lever for the render pass is overlapping the device's rasterising
-with its transmitting on the second core, which is untried.
+**Band delta compression** sent each band as an XOR against the previous frame.
+It made a frame 13.0 KB instead of 33 KB, which is 2.5 times smaller. 3499 bands
+of 3600 used the delta. The render step became slower: 19.5 fps changed to 16.3
+fps. One pass instead of two gave 17.3 fps.
 
-## Why the recording looks darker than the panel
+The previous frame must stay in PSRAM. To read it and to write it costs about
+900 KB of PSRAM traffic for each frame. PSRAM is slow, so this cost is more than
+the 27 ms of link time that the smaller frames saved. The USB driver also sends
+bytes while the CPU works, so part of the link time was already free. The device
+limits the render step, not the link. This change was removed. Do not try it
+again.
 
-The capture is a faithful copy of the framebuffer: a 5-bit 0x1F really does come
-out as 255. What it cannot copy is the panel, which is an emissive AMOLED with
-true blacks driven hard, and which reads considerably punchier than the same
-numbers on a monitor. No amount of correctness in the conversion closes that.
+One method is not tried. The device can rasterise one frame on the second core
+while it sends the previous frame.
 
-Two things do help. The mp4 is now tagged bt709 / limited range explicitly, in
-both the container and the stream's own VUI -- untagged, players guess, and one
-that guesses wrong on a picture this dark crushes the blacks. And `--gamma`
-lifts the midtones towards how the panel reads:
+## Why the video is darker than the panel
+
+The video holds the same values as the framebuffer. A 5-bit value of 0x1F
+becomes 255. The panel is different. It is an emissive AMOLED with true black,
+and it runs at high brightness. The same values look brighter on the panel than
+on a monitor. A correct conversion cannot remove this difference.
+
+Two things help.
+
+First, the mp4 file now declares bt709 and limited range. The declaration is in
+the container and in the VUI of the video stream. Without the declaration, a
+player must guess the range. A wrong guess makes the black areas darker, and
+this picture is mostly black.
+
+Second, the `--gamma` option makes the dark parts brighter:
 
 ```
 python tools/phantom_session.py render --port COM6 run.phr --gamma 1.5
 ```
 
-It is a matching control, not a correction: 1.0 is the faithful copy and the
-default.
+A gamma of 1.0 keeps the values of the framebuffer. This is the default.
 
-The lift is applied to each pixel's **value** � its largest channel � with all
-three channels scaled by that same factor, so hue and saturation come through
-untouched. Applying a curve per channel instead, which is the obvious way, is
-wrong for this game: the HUD amber is `#ffae18`, red already pinned at 255, so
-only green and blue can move and the colour rotates towards yellow while going
-pale. Measured 39� / 91% saturation at gamma 1.0 against 43� / 79% at 1.5 � an
-interface built on one amber shows that first. Hue now holds at 32.3� across
-1.0 to 1.8 while a dim amber lifts from 38% to 53% brightness.
+The program finds the largest channel of each pixel and gets a gain from it. It
+then multiplies all three channels by that same gain. The hue and the saturation
+do not change.
 
-A pixel already at 255 in some channel cannot get brighter, which is correct �
-it is already as bright as the format goes. What lifts is everything below it.
+A gain curve on each channel is the usual method, and it is wrong for this game.
+The amber colour of the HUD is `#ffae18`. Red is already 255 and cannot
+increase. Only green and blue increase, so the colour turns towards yellow and
+loses saturation. Measurements on that colour: 39 degrees and 91% saturation at
+gamma 1.0, and 43 degrees and 79% at gamma 1.5. The interface uses this one
+amber colour almost everywhere, so this change is easy to see. The hue now stays
+at 32.3 degrees from gamma 1.0 to gamma 1.8. A dark amber increases from 38% to
+53% brightness.
 
-## Those vertical stripes are the scanline effect
+A pixel with a channel at 255 cannot become brighter. This is correct, because
+255 is the maximum of the format. The gain applies to all values below it.
 
-They are not a recording artifact and not your monitor. `band_scanlines` in
-`vg_band.cpp` darkens every other **panel row**, and with `VG_ROTATE 1` the
-panel is mounted a quarter turn off -- so a panel row lands as a constant *x*
-in the upright picture. The CRT scanline effect has always run vertically, on
-the device too. At ~313 PPI on a 2.16-inch panel it is nearly invisible;
-magnified on a monitor it is obvious.
+## The vertical stripes are the scanline effect
 
-Turning it back to horizontal means darkening every other panel COLUMN, which
-means touching every row instead of every second one. The pass currently
-measures ~3.3 ms a frame, so expect roughly double -- about 3 ms out of a 16.6 ms
-budget, against a game that already dips to 52 fps. Not done, deliberately.
+The stripes are not an error of the video, and not an error of your monitor. The
+function `band_scanlines` in `vg_band.cpp` makes every second **panel row**
+darker. `VG_ROTATE` is 1, so the panel is mounted at 90 degrees. A panel row
+therefore becomes a column of constant *x* in the upright picture. The scanline
+effect always ran vertically, on the device also. The panel has about 313 pixels
+per inch on a screen of 2.16 inches, so the stripes are difficult to see there.
+A monitor makes them larger and easy to see.
 
-## Layout
+To make the stripes horizontal, the function must darken every second panel
+**column**. It must then read every row, not every second row. The pass costs
+about 3.3 ms for each frame now, so expect about 6.6 ms. The frame budget is
+16.6 ms, and the game already falls to 52 fps. This change is not done.
 
-| file | |
+## Files
+
+| file | contents |
 |---|---|
-| `phantom_link.py` | wire protocol, session format, pixel conversion — the only copy |
+| `phantom_link.py` | the wire protocol, the session format, and the pixel conversion |
 | `phantom_recorder.py` | the window |
 | `phantom_session.py` | the command line |
 
-Both front ends drive `phantom_link`, deliberately. The two bugs that took the
-first version two attempts — scanning for the frame magic inside binary
-payloads, and copying the firmware's rotation instead of inverting it — are
-exactly the kind that get fixed in one copy and left in the other.
+Both front ends use `phantom_link`, so there is one copy of the protocol code.
+The first version had two bugs of the type that one copy prevents. It looked for
+the frame magic inside binary data, and it copied the rotation of the firmware
+instead of the inverse.
 
 ## Requirements
 
-`pyserial`, and `numpy` for any useful speed — without it the pixel conversion
-runs a Python loop over 230,400 pixels per frame and rendering crawls. `ffmpeg`
-on PATH for mp4 output; without it a PPM sequence is written instead, which
-ffmpeg or almost anything else can convert later. The exe bundles all three.
+You need `pyserial`. You also need `numpy` for speed. Without `numpy`, the pixel
+conversion runs a Python loop over 230,400 pixels for each frame, and the render
+step is very slow.
+
+You need `ffmpeg` on the PATH to write mp4 files. Without `ffmpeg`, the tools
+write a sequence of PPM files, and another program can convert them later. The
+`.exe` file contains all three.

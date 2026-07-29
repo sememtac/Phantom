@@ -1,25 +1,26 @@
 """
-Phantom Recorder -- records gameplay off the board at a true 60 fps.
+Phantom Recorder. This program records the game from the device at 60 fps.
 
-Two steps, and the reason is arithmetic. A frame is 460,800 bytes and the link
-carries 0.74 MB/s, so pixels cannot come off the board faster than about 23
-frames a second. Sending them while you play stalls the game loop to 15 fps,
-which is not a recording of this game -- it is a recording of a different,
-worse game. So nothing is sent while you play.
+There are two steps because of the link. One frame is 460,800 bytes and the link
+carries 0.74 MB/s, so the device cannot send more than about 23 frames each
+second. If it sends frames while you play, the game loop slows to 15 fps, and
+the video then shows a slower game than the game you play. For this reason the
+device sends no pixels while you play.
 
-  RECORD  logs the simulation instead of the picture: a frame duration and an
-          input struct, 71 bytes a frame. The game runs at its true 60 fps.
+  RECORD  saves the simulation, not the picture. Each frame needs one frame
+          time and one input structure, which is 71 bytes. The game keeps its
+          full speed of 60 fps.
 
-  RENDER  re-runs that session on the device afterwards and pulls the real
-          pixels back, as slowly as it likes.
+  RENDER  runs that session again on the device and reads the true pixels. This
+          step is slow, and that is acceptable.
 
-The video is a genuine 60 fps because the frames really were 1/60 s apart when
-they happened, and every pixel is the actual rasteriser output.
+The video is 60 fps because the game made the frames 1/60 s apart. Every pixel
+is the output of the rasteriser.
 
-The capture runs on a worker thread and hands frames back through a queue: the
-link stalls for hundreds of milliseconds at a time, and doing that on the UI
-thread would freeze the window solid for the whole recording, which looks
-identical to a crash.
+A worker thread does the link work and sends the frames to the window through a
+queue. The link stops for some hundred milliseconds at a time. On the thread of
+the window this would stop the window for the full record, and a user cannot
+tell that condition from a crash.
 """
 
 import os
@@ -37,9 +38,9 @@ from phantom_link import (Desync, FrameWriter, PhantomLink, Session,
 
 PREVIEW = 240        # pixels
 
-# Shown in the title bar. Not decoration: a build that silently failed to
-# rebuild is indistinguishable from one that did until you can read a version
-# off the running window, and that already cost a round trip once.
+# The title bar shows this version. It is necessary: if a build fails, the old
+# program stays on disk and looks the same. The version in the window is the
+# only proof that the new build runs. This error already cost one cycle.
 VERSION = "2.0"
 
 AMBER  = "#ffae1e"
@@ -57,7 +58,7 @@ class Recorder(tk.Tk):
         self.stop_flag = threading.Event()
         self.q = queue.Queue()
         self.last_output = None
-        self.session = None          # the recording waiting to be rendered
+        self.session = None          # the session that waits for a render
         self._error = None
         self.out_dir = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos"))
 
@@ -102,10 +103,10 @@ class Recorder(tk.Tk):
     def _build(self):
         pad = dict(padx=8, pady=3)
 
-        # A CANVAS, not a Label. Label width/height are in TEXT UNITS until an
-        # image is attached, so asking a bare Label for width=240 requests a
-        # widget 240 CHARACTERS wide -- which is how the first build opened at a
-        # size that would not fit on a television. Canvas measures in pixels.
+        # Use a Canvas, not a Label. A Label measures its width and its height
+        # in TEXT UNITS until an image is attached. A Label with width=240 is
+        # therefore 240 CHARACTERS wide, and the first build opened at a size
+        # larger than a television screen. A Canvas measures in pixels.
         self.canvas = tk.Canvas(self, width=PREVIEW, height=PREVIEW,
                                 bg="black", highlightthickness=1,
                                 highlightbackground="#4a2f08")
@@ -121,28 +122,27 @@ class Recorder(tk.Tk):
         tk.Entry(self, textvariable=self.out_dir, width=24).grid(row=2, column=1, sticky="ew", **pad)
         ttk.Button(self, text="Browse", width=8, command=self._browse).grid(row=2, column=2, **pad)
 
-        # Two buttons, in the order they are used. Step two stays disabled until
-        # there is something to render, so the workflow is not something the
-        # window expects you to already know.
+        # The two buttons are in the order of use. Button two stays disabled
+        # until a session exists, so the window shows the order of the steps.
         self.btn_rec = ttk.Button(self, text="1. Record Gameplay",
                                   command=self._toggle_record)
         self.btn_rec.grid(row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(8, 2))
 
-        # Gamma sits with Render because that is when it applies -- a session
-        # holds no pixels, so the same recording can be rendered again at a
-        # different setting without replaying anything.
+        # Gamma is near the Render button because the render step applies it. A
+        # session holds no pixels, so you can render the same session again at a
+        # different gamma. The device does not run the session again.
         #
-        # A slider, and the readout gets its own COLUMN. The entry this replaced
-        # shared column 1 with its hint label, so the two were laid on top of
-        # each other in one cell and the box was squeezed to nothing.
+        # The value has its own COLUMN. The earlier entry box shared column 1
+        # with its hint label. Two widgets in one cell made the box very small.
         tk.Label(self, text="Gamma", fg=AMBER, bg=GROUND).grid(row=4, column=0,
                                                                sticky="e", **pad)
-        # ttk, not tk.Scale. A tk.Scale draws its THUMB in the widget's own
-        # background colour, and this window's background is near-black -- so the
-        # grip vanished and the control read as a gap between two bits of
-        # trough. ttk uses the platform theme, which draws a thumb you can see
-        # and grab. The cost is that it ignores bg/fg, so it looks native rather
-        # than amber; the ttk buttons above it already do.
+        # Use ttk.Scale, not tk.Scale. A tk.Scale draws its THUMB in the
+        # background colour of the widget. The background of this window is
+        # nearly black, so the thumb was not visible and the control looked like
+        # a gap in the trough. A ttk.Scale uses the theme of the platform and
+        # draws a thumb that the user can see and move. A ttk.Scale ignores bg
+        # and fg, so it does not use the amber colours. The ttk buttons above it
+        # have the same appearance.
         self.gamma = tk.DoubleVar(value=1.0)
         ttk.Scale(self, from_=1.0, to=2.0, orient="horizontal",
                   variable=self.gamma, command=self._gamma_changed
@@ -150,7 +150,7 @@ class Recorder(tk.Tk):
         self.gamma_lbl = tk.Label(self, text="1.00", fg=AMBER, bg=GROUND, width=8)
         self.gamma_lbl.grid(row=4, column=2, sticky="w")
 
-        tk.Label(self, text="1.0 exact  ·  1.5 reads like the panel",
+        tk.Label(self, text="1.0 keeps the exact values.  1.5 is near the panel.",
                  fg="#7a5a20", bg=GROUND, anchor="w", width=1
                  ).grid(row=5, column=0, columnspan=3, sticky="ew", padx=10)
 
@@ -161,7 +161,7 @@ class Recorder(tk.Tk):
         self.bar = ttk.Progressbar(self, mode="determinate")
         self.bar.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
-        self.status = tk.Label(self, text="ready -- press Record, then play",
+        self.status = tk.Label(self, text="Ready. Press Record, then play the game.",
                                fg=AMBER, bg=GROUND, anchor="w", width=1)
         self.status.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
 
@@ -199,11 +199,11 @@ class Recorder(tk.Tk):
         try:
             self.session = Session.load(p)
         except Exception as e:
-            messagebox.showerror("Phantom Recorder", f"Could not open it:\n{e}")
+            messagebox.showerror("Phantom Recorder", f"The tool could not open the file:\n{e}")
             return
         self.btn_render.config(state="normal")
-        self.status.config(text=f"{os.path.basename(p)} -- "
-                                f"{len(self.session.frames)} frames, ready to render")
+        self.status.config(text=f"{os.path.basename(p)}: "
+                                f"{len(self.session.frames)} frames. Ready to render.")
 
     def _reveal(self, path):
         if sys.platform.startswith("win"):
@@ -218,29 +218,32 @@ class Recorder(tk.Tk):
         if os.path.isdir(d):
             self._reveal(d)
         else:
-            messagebox.showwarning("Phantom Recorder", "That folder does not exist.")
+            messagebox.showwarning("Phantom Recorder", "The folder does not exist.")
 
     def _show_last(self):
         if self.last_output and os.path.exists(self.last_output):
             self._reveal(os.path.dirname(self.last_output))
         else:
-            messagebox.showinfo("Phantom Recorder", "Nothing recorded yet this session.")
+            messagebox.showinfo("Phantom Recorder", "This session has no recording yet.")
 
     def _about(self):
         messagebox.showinfo(
             "About Phantom Recorder",
-            "Records Phantom off the ESP32-S3 at a true 60 fps.\n\n"
-            "It takes two steps because a frame is 460,800 bytes and the link\n"
-            "carries 0.74 MB/s. Sending pixels while you play stalls the game\n"
-            "to 15 fps, so nothing is sent while you play.\n\n"
-            "RECORD logs the simulation instead -- a frame duration and an\n"
-            "input struct, 71 bytes a frame. The game runs at its full speed.\n\n"
-            "RENDER re-runs the session on the device afterwards and pulls the\n"
-            "real pixels back. Expect about three minutes per minute of play.\n\n"
-            "Recording RESTARTS the game, because a session has to begin\n"
-            "somewhere the replay can also begin. Play from the menu.\n\n"
-            "mp4 output needs ffmpeg on PATH; without it a PPM sequence is\n"
-            "written instead.")
+            "This program records Phantom from the ESP32-S3 at 60 fps.\n\n"
+            "There are two steps because of the link. One frame is 460,800\n"
+            "bytes and the link carries 0.74 MB/s. If the device sends pixels\n"
+            "while you play, the game slows to 15 fps. For this reason the\n"
+            "device sends no pixels while you play.\n\n"
+            "RECORD saves the simulation. Each frame needs one frame time and\n"
+            "one input structure, which is 71 bytes. The game keeps its full\n"
+            "speed.\n\n"
+            "RENDER runs the session again on the device and reads the true\n"
+            "pixels. This step takes about three minutes for each minute of\n"
+            "play.\n\n"
+            "A record restarts the game. A session must start at a state that\n"
+            "the render step can also start from. Play from the menu.\n\n"
+            "To write mp4 files you need ffmpeg on the PATH. Without ffmpeg\n"
+            "the program writes a sequence of PPM files.")
 
     def _busy(self):
         return self.worker is not None and self.worker.is_alive()
@@ -253,10 +256,10 @@ class Recorder(tk.Tk):
     def _toggle_record(self):
         if self._busy():
             self.stop_flag.set()
-            self.status.config(text="stopping...")
+            self.status.config(text="The tool stops...")
             return
         if not self._ports:
-            self.status.config(text="no serial ports found")
+            self.status.config(text="No serial port was found.")
             return
 
         self._error = None
@@ -266,7 +269,7 @@ class Recorder(tk.Tk):
         self.btn_render.config(state="disabled")
         self.bar.config(mode="indeterminate", value=0)
         self.bar.start(60)
-        self.status.config(text="resetting the board...")
+        self.status.config(text="The device resets...")
 
         self.worker = threading.Thread(target=self._run_record,
                                        args=(self._port(),), daemon=True)
@@ -287,8 +290,8 @@ class Recorder(tk.Tk):
                     self.q.put(("rec", len(ses.frames), ses.seconds,
                                 time.time() - started))
         except TimeoutError:
-            self.q.put(("error", f"no response on {port} -- wrong port? "
-                                 f"look for the one marked [ESP32]"))
+            self.q.put(("error", f"{port} did not respond. "
+                                 f"Select the port marked [ESP32]."))
         except Exception as e:
             self.q.put(("error", f"{type(e).__name__}: {e}"))
         finally:
@@ -306,7 +309,7 @@ class Recorder(tk.Tk):
         if self._busy() or not self.session:
             return
         if not os.path.isdir(self.out_dir.get()):
-            self.status.config(text="output folder does not exist")
+            self.status.config(text="The output folder does not exist.")
             return
 
         # A slider cannot produce a value that needs validating, which is most of
@@ -338,11 +341,11 @@ class Recorder(tk.Tk):
             link.replay_start(ses.hdr)
             writer = FrameWriter(out_dir, fps=round(fps, 3), fragmented=True)
 
-            # One record always queued ahead. In strict lockstep the device sits
-            # idle between frames and its final bytes do not leave the USB
-            # driver until something else moves them -- the host then waits
-            # eight seconds for a hundred bytes that arrive only once it gives
-            # up and writes.
+            # The host always sends one entry more than the device asked for.
+            # A strict exchange of one entry for one frame makes the device idle
+            # between frames. The last bytes of a frame then stay in the USB
+            # driver until more traffic moves them. The host waited eight
+            # seconds for 100 bytes.
             depth = 2
             for fr in ses.frames[:depth]:
                 link.replay_send(fr)
@@ -362,7 +365,7 @@ class Recorder(tk.Tk):
                 self.q.put(("ren", done, len(ses.frames), time.time() - started,
                             subsample_ppm(rgb, w, h, PREVIEW)))
         except TimeoutError as e:
-            self.q.put(("error", f"link stalled: {e}"))
+            self.q.put(("error", f"The link stopped: {e}"))
         except Exception as e:
             self.q.put(("error", f"{type(e).__name__}: {e}"))
         finally:
@@ -399,8 +402,9 @@ class Recorder(tk.Tk):
                     self.status.config(
                         text=f"rendering   {done}/{total}   {rate:.1f}/s   "
                              f"~{(total - done) / max(0.01, rate):.0f}s left")
-                    # RAW PPM bytes, NOT base64. Tk 8.6 takes base64 for GIF and
-                    # PNG only; its PPM handler wants the bytes themselves.
+                    # Give Tk the RAW PPM bytes, NOT base64. Tk 8.6 accepts
+                    # base64 for GIF and for PNG only. Its PPM reader needs the
+                    # bytes.
                     self._img = tk.PhotoImage(data=ppm)
                     if self._img_id is None:
                         self._img_id = self.canvas.create_image(0, 0, anchor="nw",
@@ -418,9 +422,10 @@ class Recorder(tk.Tk):
         except queue.Empty:
             pass
         except Exception as e:
-            # The pump must survive anything one message can do to it. It is the
-            # only thing rescheduling itself, so an uncaught exception does not
-            # drop a frame -- it stops the window updating for good.
+            # The pump must survive every error that one message can cause.
+            # The pump is the only function that starts itself again. An error
+            # that is not caught does not lose one frame. It stops all updates
+            # of the window.
             self.status.config(text=f"display error: {type(e).__name__}: {e}")
         self.after(60, self._pump)
 
@@ -431,7 +436,7 @@ class Recorder(tk.Tk):
 
         if not ses or not ses.frames:
             if not self._error:
-                self.status.config(text="nothing recorded -- is the board running?")
+                self.status.config(text="No frames arrived. Make sure the device is on.")
             return
 
         self.session = ses
@@ -440,14 +445,14 @@ class Recorder(tk.Tk):
         try:
             ses.save(path)
         except Exception as e:
-            self.status.config(text=f"could not save the session: {e}")
+            self.status.config(text=f"The tool could not save the session: {e}")
             return
 
         fps = len(ses.frames) / max(0.001, ses.seconds)
         self.btn_render.config(state="normal")
         self.status.config(
-            text=f"{len(ses.frames)} frames, {ses.seconds:.1f}s at {fps:.0f} fps"
-                 f"  --  now press Render")
+            text=f"{len(ses.frames)} frames, {ses.seconds:.1f} s at {fps:.0f} fps."
+                 f"  Now press Render.")
 
     def _render_done(self, done, path, fps, gamma):
         self.bar.stop()
@@ -456,14 +461,14 @@ class Recorder(tk.Tk):
 
         if not done:
             if not self._error:
-                self.status.config(text="nothing rendered")
+                self.status.config(text="No frames were rendered.")
             return
 
         self.last_output = path
         self.status.config(
-            text=f"{os.path.basename(path)}  --  {done} frames, "
-                 f"{done / max(1.0, fps):.1f}s at {fps:.0f} fps"
-                 + (f", gamma {gamma}" if gamma != 1.0 else ""))
+            text=f"{os.path.basename(path)}: {done} frames, "
+                 f"{done / max(1.0, fps):.1f} s at {fps:.0f} fps"
+                 + (f", gamma {gamma:.2f}" if gamma != 1.0 else ""))
 
 
 if __name__ == "__main__":
