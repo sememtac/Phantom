@@ -2,6 +2,7 @@
 #include "vg_raster_int.h"
 #include "vg_font.h"
 #include "vg_port.h"
+#include "vg_capture.h"
 #include "vg_sky.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -393,10 +394,18 @@ void vg_rast_flush(void) {
         s_scan_us += micros() - t_scan;
         raster += micros() - r0;
 
+        // Captured AFTER the scanline pass and BEFORE the blit, so the recording
+        // is exactly the bytes the panel receives -- effects included, and with
+        // no chance of catching a buffer mid-redraw. Reads the band without
+        // touching it, so the transfer that follows is unaffected.
+        if (b == 0) vg_capture_frame_begin();
+        vg_capture_band(b * BAND_H, BAND_H, buf);
+
         // Queues and returns: the next iteration rasterises into the other
         // buffer while this one is on the wire.
         vg_panel_push_band(b * BAND_H, BAND_H, buf);
     }
 
+    vg_capture_frame_end();
     s_raster_us = raster;
 }

@@ -10,6 +10,7 @@
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
 #include "vg/vg_render.h"
+#include "vg/vg_capture.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -61,6 +62,8 @@ void loop(void) {
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t frames    = 0;
 
+    vg_capture_poll();
+
     uint32_t now = micros();
     if (last_us == 0) last_us = now;
     float dt = (now - last_us) * 1e-6f;
@@ -68,6 +71,14 @@ void loop(void) {
     // A stalled frame must not teleport the world through an asteroid.
     if (dt < 0.0005f) dt = 0.0005f;
     if (dt > 0.10f)   dt = 0.10f;
+
+    // While recording, the simulation is stepped at a FIXED rate no matter how
+    // long the frame actually took. The device runs in slow motion because the
+    // link cannot carry 460KB sixty times a second, but the recording plays
+    // back perfectly smooth -- wall-clock speed decides how long you wait, not
+    // how the video looks.
+    const float cap_dt = vg_capture_dt();
+    if (cap_dt > 0.0f) dt = cap_dt;
 
     uint32_t t0 = micros();
     VgInput in;
@@ -97,8 +108,10 @@ void loop(void) {
     acc_scan   += vg_rast_scan_us();
     frames++;
 
+    // Telemetry is suppressed while recording: it shares the link with the
+    // frame stream, and a printf landing mid-band would corrupt the capture.
     uint32_t ms = millis();
-    if (ms - report_ms >= 2000) {
+    if (!vg_capture_active() && ms - report_ms >= 2000) {
         report_ms = ms;
         // rast is CPU spent building bands; wait is time stalled on the panel
         // DMA. Only the amount by which rast exceeds the transfer window costs
