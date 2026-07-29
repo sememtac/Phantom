@@ -15,6 +15,18 @@ import time
 import serial
 import serial.tools.list_ports
 
+# numpy turns the per-frame pixel work from the bottleneck into a rounding
+# error. Decoding runs and rotating 230,400 pixels in a Python loop costs
+# roughly 150ms a frame, which capped capture at 5 fps while the wire was
+# happily delivering 22. Vectorised it is a few milliseconds.
+#
+# Optional on purpose: the pure-Python path below is kept and still correct, so
+# a machine without numpy records slowly rather than not at all.
+try:
+    import numpy as _np
+except ImportError:
+    _np = None
+
 FPS = 30            # the rate the firmware steps at while armed
 WIDTH = HEIGHT = 480
 
@@ -142,7 +154,7 @@ class PhantomLink:
         if fmt != 1:
             raise Desync(f"unknown pixel format {fmt}")
 
-        pixels = [0] * (w * h)
+        pixels = _np.zeros(w * h, dtype=_np.uint16) if _np is not None else [0] * (w * h)
         while True:
             tag = self._read_exact(4)
             if tag == b"PHEN":
@@ -159,6 +171,17 @@ class PhantomLink:
 
 def _decode_rle(payload, npix):
     """u8 run, u16 pixel, little-endian."""
+    if _np is not None:
+        a = _np.frombuffer(payload, dtype=_np.uint8)
+        a = a[:(len(a) // 3) * 3].reshape(-1, 3)
+        vals = a[:, 1].astype(_np.uint16) | (a[:, 2].astype(_np.uint16) << 8)
+        out = _np.repeat(vals, a[:, 0].astype(_np.int32))
+        if out.size != npix:
+            fixed = _np.zeros(npix, dtype=_np.uint16)
+            fixed[:min(npix, out.size)] = out[:npix]
+            out = fixed
+        return out
+
     out = []
     i, n = 0, len(payload)
     while i + 2 < n:
@@ -174,6 +197,10 @@ def _decode_rle(payload, npix):
 _R5 = [(v * 255) // 31 for v in range(32)]
 _G6 = [(v * 255) // 63 for v in range(64)]
 
+if _np is not None:
+    _R5_LUT = _np.array(_R5, dtype=_np.uint8)
+    _G6_LUT = _np.array(_G6, dtype=_np.uint8)
+
 
 def to_rgb(pixels, w, h, rot):
     """RGB565 in PANEL byte order and PANEL orientation to upright RGB888.
@@ -183,6 +210,9 @@ def to_rgb(pixels, w, h, rot):
     the panel is mounted a quarter turn off -- doing either on the board would
     cost frame time purely to save the host a loop.
     """
+    if _np is not None and isinstance(pixels, _np.ndarray):
+        return _to_rgb_np(pixels, w, h, rot)
+
     rgb = bytearray(w * h * 3)
 
     # This is the INVERSE of the firmware's rot_pt, not a copy of it. Getting
@@ -203,6 +233,36 @@ def to_rgb(pixels, w, h, rot):
         rgb[o + 1] = _G6[(v >> 5) & 0x3F]
         rgb[o + 2] = _R5[v & 0x1F]
     return bytes(rgb)
+
+
+def _to_rgb_np(pixels, w, h, rot):
+    """Vectorised twin of the loop in to_rgb. Same inverse rotation, derived
+    rather than copied:
+
+        firmware rot 1 maps logical (lx,ly) -> panel (ly, H-1-lx), so the panel
+        array S undoes it as D[x, h-1-y] = S[y, x], which is S transposed with
+        its columns reversed. rot 3 is the same transpose flipped the other way,
+        rot 2 is both axes reversed.
+
+    Getting this backwards is a 180 degree error that looks exactly like a
+    correct capture of an upside-down game, so it is worth spelling out.
+    """
+    src = pixels.reshape(h, w)
+    if rot == 1:
+        src = _np.fliplr(src.T)
+    elif rot == 2:
+        src = src[::-1, ::-1]
+    elif rot == 3:
+        src = _np.flipud(src.T)
+
+    # Panel byte order -> native, the same swap the scalar path does per pixel.
+    v = ((src & 0x00FF) << 8) | (src >> 8)
+
+    out = _np.empty(v.shape + (3,), dtype=_np.uint8)
+    out[..., 0] = _R5_LUT[(v >> 11) & 0x1F]
+    out[..., 1] = _G6_LUT[(v >> 5) & 0x3F]
+    out[..., 2] = _R5_LUT[v & 0x1F]
+    return out.tobytes()
 
 
 class FrameWriter:
@@ -358,6 +418,12 @@ def subsample_ppm(rgb, w, h, out_w):
     Tk reads it natively -- no image library, nothing extra to bundle."""
     step = w // out_w
     out_h = h // step
+
+    if _np is not None:
+        a = _np.frombuffer(rgb, dtype=_np.uint8).reshape(h, w, 3)
+        small = a[::step, ::step][:out_h, :out_w]
+        return b"P6\n%d %d\n255\n" % (out_w, out_h) + small.tobytes()
+
     body = bytearray(out_w * out_h * 3)
     k = 0
     for yy in range(out_h):

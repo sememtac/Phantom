@@ -23,7 +23,7 @@ static uint32_t s_index = 0;
 
 // Runs are emitted through a staging buffer rather than written one at a time.
 // Serial.write per pair would spend more time in the driver than on the wire.
-static uint8_t  s_buf[4096];
+static uint8_t  s_buf[8192];
 static int      s_len = 0;
 
 bool  vg_capture_active(void) { return s_mode != 0; }
@@ -64,6 +64,18 @@ void vg_capture_poll(void) {
         } else if (c == 's' && s_mode) {
             s_mode = 0;
             Serial.printf("\nvg_capture: DONE %u frames\n", (unsigned)s_index);
+        } else if (c == 'b' && !s_mode) {
+            // Link benchmark. Blasts a fixed blob with no rendering and no
+            // encoding, so the number that comes back is the write path alone.
+            // Worth having permanently: capture throughput is the whole
+            // constraint on this feature, and "is it the wire or is it us"
+            // cannot be answered from the host side.
+            memset(s_buf, 0xA5, sizeof(s_buf));
+            const uint32_t t0 = micros();
+            for (int i = 0; i < 256; i++) Serial.write(s_buf, sizeof(s_buf));
+            const uint32_t el = micros() - t0;
+            Serial.printf("\nvg_capture: BENCH 1MB in %u us = %.3f MB/s\n",
+                          (unsigned)el, 1048576.0f / (float)el);
         }
     }
 }
