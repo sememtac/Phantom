@@ -120,8 +120,8 @@ replay can also begin. Play from the menu.
 | `phantom_session.py` | record a session, render it at 60 fps |
 | `phantom_capture.py` | the command line |
 
-Both front ends drive `phantom_link`, deliberately. The two bugs that took the
-first version two attempts — scanning for the frame magic inside binary
+All three front ends drive `phantom_link`, deliberately. The two bugs that took
+the first version two attempts — scanning for the frame magic inside binary
 payloads, and copying the firmware's rotation instead of inverting it — are
 exactly the kind that get fixed in one copy and left in the other.
 
