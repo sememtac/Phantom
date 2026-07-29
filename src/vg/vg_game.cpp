@@ -75,7 +75,7 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->alive = true;
     c->spec  = spec;
     c->hue   = hue;
-    c->scale = 130.0f;
+    c->scale = 112.0f;
 
     // Runs AWAY down the tunnel rather than across the view.
     //
@@ -112,6 +112,17 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->trail_head = 0;
     c->trail_acc  = 0;
     vg.cine_on    = true;
+
+    // The gate sits exactly where the ship starts, square to its travel, so the
+    // ship is already coming through the plane on the first frame it exists --
+    // it arrives THROUGH something rather than simply being there.
+    Vec3 r = vcross(v3(0, 1, 0), c->fwd);
+    if (vlen2(r) < 1e-4f) r = vcross(v3(1, 0, 0), c->fwd);
+    vg.gate_r   = vnorm(r);
+    vg.gate_u   = vnorm(vcross(c->fwd, vg.gate_r));
+    vg.gate_pos = c->pos;
+    vg.gate_hue = hue;
+    vg.gate_t   = GATE_TIME;
 }
 
 // Move the whole shot somewhere else. The two fighters are launched from
@@ -196,6 +207,7 @@ static void cine_fly(float dt) {
 
 static void cine_clear(void) {
     vg.cine_on          = false;
+    vg.gate_t           = 0.0f;
     vg.cine.trail_n     = 0;
     vg.cine.trail_head  = 0;
     vg.cine.trail_acc   = 0;
@@ -623,6 +635,11 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
             Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
             if (vlen2(u) > 1e-6f) c->up = vnorm(u);
         }
+        if (vg.gate_t > 0.0f) {
+            vg.gate_pos = mat3_apply(R, vg.gate_pos);
+            vg.gate_r   = vnorm(mat3_apply(R, vg.gate_r));
+            vg.gate_u   = vnorm(mat3_apply(R, vg.gate_u));
+        }
         // The ribbon has to ride the same rotation as the ship that laid it.
         // Missing this is why the cutscene ships appeared to emit nothing: the
         // camera pans at up to two radians a second during a pass, so within a
@@ -724,6 +741,7 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         }
     }
     if (vg.hud_boot > 0) vg.hud_boot -= dt;
+    if (vg.gate_t   > 0) vg.gate_t   -= dt;
     if (vg.comms_t > 0) {
         vg.comms_t -= dt;
         if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
@@ -1034,8 +1052,13 @@ void vg_game_update(float dt, const VgInput* in) {
         // 1350 units the lens has nothing left to give and the ship is finally
         // allowed to get big, right at the moment it goes by.
         if (vg.cine_on) {
-            float z = vlen(vg.cine.pos) / 1600.0f;
-            if (z < 0.85f) z = 0.85f;
+            // Divisor sets the size the ship is HELD at through the approach;
+            // the floor sets how wide the lens goes at the pass, and therefore
+            // how big it is allowed to get as it goes by. Both pulled back --
+            // this is an establishing shot of a place with a ship in it, not a
+            // portrait of a ship.
+            float z = vlen(vg.cine.pos) / 2400.0f;
+            if (z < 0.74f) z = 0.74f;
             if (z > 2.40f) z = 2.40f;
             float k = dt * 4.0f;
             if (k > 1.0f) k = 1.0f;

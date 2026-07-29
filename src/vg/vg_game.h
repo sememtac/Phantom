@@ -167,6 +167,10 @@ enum VgState : uint8_t {
 // How long the instruments take to come up once the cockpit is back.
 #define HUD_BOOT_TIME   1.5f
 
+// The entry gate. Opens fast, holds, then fades once the ship is clear of it.
+#define GATE_TIME       1.15f
+#define GATE_SIZE       210.0f
+
 // After the opponent goes down. Two distinct beats, and they do different jobs.
 //
 // KILL_SPEECH is how long their last transmission stays up. It is the only line
@@ -285,6 +289,14 @@ struct VgGame {
     // can ever see it.
     Ship     cine;
     bool     cine_on;
+
+    // Entry gate: a lit plane in the pilot's own colour that the cutscene ship
+    // emerges through. Held as a centre and two in-plane axes rather than as a
+    // normal, so it rides the world rotation the same way everything else does
+    // and never has to be rebuilt from a basis.
+    Vec3     gate_pos, gate_r, gate_u;
+    float    gate_t;       // counts down; the plane is drawn while positive
+    float    gate_hue;
 
     float    hud_boot;     // >0 while the instruments are coming up
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it

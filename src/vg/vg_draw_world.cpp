@@ -277,6 +277,54 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
     vg_line_aa_mode(true);
 }
 
+// The entry gate: a lit plane in the pilot's colour, square to their travel,
+// that the cutscene ship comes through. Filled rather than outlined, because
+// the whole point is a bright surface a solid object emerges from -- an outline
+// would read as a frame around empty space.
+//
+// This is the one place a filled quad appears in a renderer that is otherwise
+// all edges and hidden-line fills, and it earns it: hue is identity here, so
+// the plane announces WHO is arriving before the ship is resolvable at all.
+static void draw_gate(const VgCam& cam) {
+    if (vg.gate_t <= 0.0f) return;
+
+    const float u = 1.0f - vg.gate_t / GATE_TIME;      // 0 at open, 1 at gone
+
+    // Snaps open, holds while the ship clears it, then dims away. Fading the
+    // colour rather than shrinking the plane: a portal that closes to a point
+    // pulls the eye back to it exactly when the ship should have the frame.
+    float grow = u / 0.18f;
+    if (grow > 1.0f) grow = 1.0f;
+    float fade = (u < 0.40f) ? 1.0f : (1.0f - (u - 0.40f) / 0.60f);
+    if (fade < 0.0f) fade = 0.0f;
+
+    const float h  = GATE_SIZE * grow;
+    const Vec3  rr = vmul(vg.gate_r, h);
+    const Vec3  uu = vmul(vg.gate_u, h * 0.72f);       // wider than tall
+
+    const Vec3 c[4] = {
+        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), vmul(uu, -1.0f))),
+        vadd(vg.gate_pos, vadd(rr,              vmul(uu, -1.0f))),
+        vadd(vg.gate_pos, vadd(rr,              uu)),
+        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), uu)),
+    };
+
+    float sx[4], sy[4];
+    for (int i = 0; i < 4; i++)
+        if (!vg_project(cam, c[i], &sx[i], &sy[i])) return;
+
+    const uint16_t col = vg_dim(vg_hue_col(vg.gate_hue), fade * 0.85f);
+    vg_tri(sx[0], sy[0], sx[1], sy[1], sx[2], sy[2], col);
+    vg_tri(sx[0], sy[0], sx[2], sy[2], sx[3], sy[3], col);
+
+    // Hot rim, so the plane has an edge instead of dissolving into the backdrop.
+    const uint16_t rim = vg_dim(INK_MAX, fade);
+    for (int i = 0; i < 4; i++) {
+        const int j = (i + 1) & 3;
+        vg_line_w(sx[i], sy[i], sx[j], sy[j], rim, 2);
+    }
+}
+
 static void draw_missile(const VgCam& cam, const Missile* m) {
     const bool friendly = m->from_player;
 
@@ -357,6 +405,9 @@ void vg_draw_world(const VgCam& cam) {
     // hard turn sweeps it into view -- so you can see the arc you just flew.
     draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
                     v3(0, 0, 0), vg.trail_hue);
+
+    // Gate first: the ship comes THROUGH it, so it has to be behind.
+    draw_gate(cam);
 
     // Nobody is flying this one: the fighter crossing the view during the launch
     // cutscene, or the player's own wreck after a death.
