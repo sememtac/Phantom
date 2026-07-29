@@ -32,6 +32,20 @@ Vec3  vg_mote_spawn(float zmin, float zmax);
 
 void vg_spawn_debris(Vec3 at, float radius, int count);
 
+// The per-frame transform of everything: one counter-rotation and one forward
+// translation applied to the arena, the backdrop and every object in the world.
+// `roll_in` is radians about the view axis for this frame and goes INTO the
+// rotation, so it composes with pitch and yaw instead of merely turning the
+// finished picture. Flight passes zero.
+void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
+                   float throttle_in);
+
+// The idle camera: a long lazy arc that holds the centreline of the tube.
+void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in);
+
+// Put the bracket's current opponent into the world.
+void vg_spawn_opponent(void);
+
 // Put one of this pilot's lines on the radio. Higher-priority events displace
 // lower ones and never the other way round, so a death is always heard out.
 void vg_comms_say(const Ship* s, VoiceEvent ev);

@@ -1,9 +1,10 @@
-#include "vg_sim.h"
+﻿#include "vg_sim.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
 #include "vg_save.h"
+#include "vg_cine.h"
 #include <Arduino.h>
 #include <esp_random.h>
 #include <math.h>
@@ -54,176 +55,13 @@ void vg_spawn_debris(Vec3 at, float radius, int count) {
     }
 }
 
-// Fly a ship across the view for the launch cutscene. `u` runs 0..1 over the
-// pass. It approaches from far out on one side and crosses close, which is the
-// only way to read a wireframe silhouette -- held at distance it is four pixels
-// and a trail, and held close it fills the screen before you can see its shape.
-// A TRACKING shot, not a fly-past. The camera cannot be aimed -- the player is
-// the origin, so there is nothing to aim -- but that cuts both ways: the ship's
-// position is authored directly in view space, so holding it near the centre of
-// frame IS the camera following it. What sells the movement is everything else,
-// because the arena and the starfield keep sweeping behind a subject that does
-// not.
-//
-// It is drawn many times its combat size. At ENEMY_SCALE a fighter is about
-// five pixels across at any distance the near plane will allow, which is fine
-// for a contact and useless for a subject.
-static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
-    Ship* c = &vg.cine;
-    const float sx = mirror ? -1.0f : 1.0f;
-
-    c->alive = true;
-    c->spec  = spec;
-    c->hue   = hue;
-    c->scale = 112.0f;
-
-    // Runs AWAY down the tunnel rather than across the view.
-    //
-    // Crossing laterally was wrong twice over. It read as a ship going sideways
-    // past a corridor instead of flying along one, and it put the ship outside
-    // the 62 degree field of view at both ends of the pass -- which is the
-    // appearing and disappearing: launched at 68 degrees off-axis, invisible
-    // until the camera had swung round to it, and gone again before the end.
-    //
-    // Departing keeps it in front by construction. It starts near, close to the
-    // centre of frame, and recedes -- so it is always at a shallow angle and
-    // never has to be chased into the corner of the screen.
-    // A fly-by past a fixed position, the way a rally camera is planted at the
-    // outside of a corner. It comes in from a long way down the tunnel, crosses
-    // at about 470 units, and carries on BEHIND the camera -- which is what
-    // makes the operator whip round after it.
-    //
-    // Departing shots were the mistake before this: a ship that only ever
-    // recedes keeps the same bearing, so the camera barely turns and the whole
-    // thing reads as chase footage flying along behind it. Nothing whizzes past
-    // unless it actually goes past.
-    //
-    // At this speed the crossing asks for about 1.75 rad/s against a turn rate
-    // near 2.3, so the pan is at full stretch through the pass without ever
-    // quite losing the subject.
-    c->pos   = v3(sx * 640.0f, 100.0f, 3490.0f);
-    c->fwd   = vnorm(v3(sx * -0.30f, -0.05f, -0.95f));
-    c->up    = v3(0, 1, 0);
-    c->speed = 815.0f;
-
-    c->roll_vis = sx * 0.5f;
-
-    c->trail_n    = 0;
-    c->trail_head = 0;
-    c->trail_acc  = 0;
-
-    // The gate opens first and the ship waits behind it. Building the plane's
-    // axes from the ship's heading means cross(gate_r, gate_u) is exactly that
-    // heading again, so when the ship is released it can be re-seated straight
-    // off the gate -- wherever the world has rotated it to by then.
-    Vec3 r = vcross(v3(0, 1, 0), c->fwd);
-    if (vlen2(r) < 1e-4f) r = vcross(v3(1, 0, 0), c->fwd);
-    vg.gate_r   = vnorm(r);
-    vg.gate_u   = vnorm(vcross(c->fwd, vg.gate_r));
-    vg.gate_pos = c->pos;
-    vg.gate_hue = hue;
-    vg.gate_t   = GATE_TIME;
-
-    vg.cine_hold = GATE_EMERGE;
-    vg.cine_on   = false;      // nothing to see until the gate has opened
-}
-
-// Move the whole shot somewhere else. The two fighters are launched from
-// separate places, and cutting between them without relocating showed the same
-// stretch of tunnel twice -- which reads as the pair starting on top of each
-// other rather than a corridor apart.
-//
-// The camera is the origin and cannot be moved, so the world is moved instead:
-// a long jump down the tube and a hard turn, which is indistinguishable from
-// having travelled there.
-static void cine_relocate(void) {
-    const Mat3 R = mat3_euler(vg_frand(-0.55f, 0.55f), vg_frand(-1.4f, 1.4f), 0.0f);
-
-    // Rotation first, and rotation alone is always safe: turning about the
-    // camera cannot change where the camera sits inside the tube.
-    vg_arena_step(R, 0.0f);
-
-    // The jump down the tunnel is not safe, because after an arbitrary turn
-    // "forward" may be pointing straight at the wall. So it is attempted and
-    // then checked, and backed out if it left the arena. Blindly stepping a few
-    // thousand units was one of the two ways the cutscene could strand the
-    // viewpoint outside the torus and kill the player the instant the match
-    // began.
-    const float dz = vg_frand(2600.0f, 4400.0f);
-    const Mat3  I  = mat3_euler(0.0f, 0.0f, 0.0f);
-    vg_arena_step(I, dz);
-    if (vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0))) < ARENA_ATTRACT_MARGIN)
-        vg_arena_step(I, -dz);
-
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
-
-    for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
-    // Motes are near-field, so there is nothing to carry over -- re-seed them
-    // rather than dragging the old dust to the new location.
-    for (int i = 0; i < NUM_MOTES; i++) vg.mote[i] = vg_mote_spawn(MOTE_Z_MIN, MOTE_Z_MAX);
-
-    // The backdrop is at infinity, so only the turn applies to it.
-    vg_sky_step(vg_frand(-0.9f, 0.9f), vg_frand(-1.6f, 1.6f), vg.bank);
-}
-
-// Advance along its own track, and lay ribbon. Runs AFTER world_step, which has
-// already turned both the ship and the background by this frame's camera pan.
-static float s_cine_turn = 0.0f;   // lazy arc, set at launch
-
-static void cine_fly(float dt) {
-    Ship* c = &vg.cine;
-
-    // A slow curving climb rather than a straight line. Nothing in this game
-    // flies straight, and a ship holding a ruled course through a four second
-    // shot reads as a model on a wire.
-    const Mat3 T = mat3_euler(-0.04f * dt, s_cine_turn * dt, 0.0f);
-    c->fwd = vnorm(mat3_apply(T, c->fwd));
-
-    // Re-orthonormalise UP against the new heading, exactly as the AI does.
-    //
-    // This is why the ship appeared and then stopped drawing. Turning `fwd`
-    // without correcting `up` leaves the pair skewed, vg_ship_basis builds a
-    // non-orthonormal matrix from them, and the winding test that decides which
-    // faces are front-facing starts answering wrongly -- so every face gets
-    // culled and a solid ship renders as almost nothing.
-    Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
-    if (vlen2(u) > 1e-6f) c->up = vnorm(u);
-
-    c->roll_vis += ((s_cine_turn > 0 ? 0.70f : -0.70f) - c->roll_vis) * dt * 0.8f;
-
-    c->pos = vadd(c->pos, vmul(c->fwd, c->speed * dt));
-
-    // Sampled twice as often as a combat trail: this one is crossing the frame
-    // at 850 units a second, and at the normal rate the ribbon would be a row
-    // of disconnected dashes rather than a streak.
-    c->trail_acc += dt;
-    if (c->trail_acc >= SHIP_TRAIL_DT * 0.5f) {
-        c->trail_acc = 0;
-        c->trail_head = (uint8_t)((c->trail_head + 1) % SHIP_TRAIL);
-        // From the engine, not the hull centre -- at this model size the ribbon
-        // would otherwise start somewhere inside the ship.
-        c->trail[c->trail_head]   = vsub(c->pos, vmul(c->fwd, c->scale * 1.3f));
-        c->trail_p[c->trail_head] = 255;    // full burn, so the colour carries
-        if (c->trail_n < SHIP_TRAIL) c->trail_n++;
-    }
-}
-
-static void cine_clear(void) {
-    vg.cine_on          = false;
-    vg.gate_t           = 0.0f;
-    vg.cine_hold        = 0.0f;
-    vg.cine.trail_n     = 0;
-    vg.cine.trail_head  = 0;
-    vg.cine.trail_acc   = 0;
-}
-
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue);
 
 // Put the bracket's opponent into the world. Called twice: once at match setup
 // so the cutscene has a ship to introduce, and again when the cutscene ends, by
 // which point the viewpoint has drifted for twelve seconds and their position
 // relative to the arena means nothing.
-static void spawn_opponent(void) {
+void vg_spawn_opponent(void) {
     const Entrant* opp = vg_tourney_opponent();
     if (opp) {
         spawn_enemy(0, opp->cls,
@@ -501,7 +339,7 @@ void vg_match_start(void) {
     // One opponent, taken from the bracket. A match is strictly one on one --
     // the old "keep a fight going" respawn belonged to an endless survival mode
     // and would make a knockout round unwinnable.
-    spawn_opponent();
+    vg_spawn_opponent();
 
     // They open the match. The first thing you learn about an opponent should
     // be what kind of person they are, not what they are flying.
@@ -529,7 +367,7 @@ void vg_match_start(void) {
 // difference between a tumble and a rotated picture: once it is in R, the next
 // frame's pitch and yaw act in the rolled frame and the path actually
 // corkscrews. Flight passes zero -- the player's roll stays cosmetic.
-static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
+void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
                        float throttle_in) {
     float k = dt * THROTTLE_LERP;
     if (k > 1.0f) k = 1.0f;
@@ -824,7 +662,7 @@ static void collide_player(void) {
 // Attract autopilot: a slow weave, plus a pull back toward the middle whenever
 // the wall closes in. Without that second term it flies straight out through the
 // side of the tunnel within a few seconds.
-static void attract_autopilot(float t, float* pitch_in, float* yaw_in) {
+void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in) {
     // Barely a deviation at all -- just enough that the path is not a dead
     // straight line. Two terms per axis on periods with no common multiple, so
     // it drifts without ever visibly repeating.
@@ -936,7 +774,7 @@ static void enter_attract(void) {
 // and the ship select sit over moving space rather than a dead background.
 static void menu_world(float dt) {
     float pitch_in, yaw_in;
-    attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
+    vg_attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
 
     // Continuous roll rather than an oscillation. Something adrift does not rock
     // back to level -- it keeps going, slowly, and that is also what makes the
@@ -944,7 +782,7 @@ static void menu_world(float dt) {
     // little so it never reads as a motor.
     const float roll_rate = 0.052f + 0.020f * sinf(vg.state_t * 0.023f);
 
-    world_step(dt, pitch_in, yaw_in, roll_rate * dt, 0.30f);
+    vg_world_step(dt, pitch_in, yaw_in, roll_rate * dt, 0.30f);
 
     vg.spawn_t -= dt;
     if (vg.spawn_t <= 0) { spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
@@ -1052,137 +890,24 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_INTRO: {
-        const float t = vg.state_t;
-
-        // The venue materialises during the opening drift, so the first shot is
-        // of somewhere arriving rather than of somewhere already there.
-        vg_sky_set_reveal(t / (INTRO_DRIFT * 0.85f));
-
-        // Zoom is driven by RANGE, not by a timeline. Holding focal length
-        // proportional to distance keeps the ship a constant size on screen, so
-        // the operator is tight on it while it is far out and pulls wide as it
-        // closes -- which is exactly what a camera crew does, and it needs no
-        // hand-authored curve to stay in step with the geometry.
+        // The shot itself lives in vg_cine.cpp. What belongs here is only the
+        // handover: the cutscene has spent seventeen seconds turning and
+        // drifting the viewpoint for the sake of framing, and relocating
+        // between setups moved it again -- so where it ended up relative to the
+        // arena is not something a match should have to inherit. Both the arena
+        // and the opponent are re-established from scratch, which makes a bad
+        // start structurally impossible rather than merely unlikely.
         //
-        // The wide clamp is what lets the pass be dramatic: once inside about
-        // 1350 units the lens has nothing left to give and the ship is finally
-        // allowed to get big, right at the moment it goes by.
-        if (vg.cine_on || vg.gate_t > 0.0f) {
-            // Divisor sets the size the ship is HELD at through the approach;
-            // the floor sets how wide the lens goes at the pass, and therefore
-            // how big it is allowed to get as it goes by. Both pulled back --
-            // this is an establishing shot of a place with a ship in it, not a
-            // portrait of a ship.
-            float z = vlen(vg.cine_on ? vg.cine.pos : vg.gate_pos) / 2400.0f;
-            if (z < 0.74f) z = 0.74f;
-            if (z > 2.40f) z = 2.40f;
-            float k = dt * 4.0f;
-            if (k > 1.0f) k = 1.0f;
-            vg.cam_zoom += (z - vg.cam_zoom) * k;   // smoothed, or it judders
-        } else {
-            vg.cam_zoom = 1.0f;
-        }
-
-        // Which shot we are in. Each cut re-anchors: the ship is launched fresh
-        // from the opposite side on a new line, so the second setup reads as a
-        // different camera in a different place rather than a repeat.
-        static int s_shot = 0;
-        const int  shot = (t > INTRO_OPP_START && t < INTRO_OPP_END) ? 2
-                        : (t > INTRO_DRIFT     && t < INTRO_YOU_END) ? 1 : 0;
-
-        if (shot != s_shot) {
-            const bool was_first = (s_shot == 1);
-            s_shot = shot;
-            if (shot == 1) {
-                s_cine_turn = 0.10f;
-                cine_launch(vg.spec, vg.trail_hue, false);
-            } else if (shot == 2) {
-                // Only once, on the way in to the second setup.
-                if (was_first || s_shot == 2) cine_relocate();
-                s_cine_turn = -0.10f;
-                cine_launch(vg.enemy[0].spec, vg.enemy[0].hue, true);
-            }
-            // Between shots the ribbon goes too, or the cut lands on a stranded
-            // trail with nothing on the end of it.
-            else cine_clear();
-        }
-
-        // Release the ship once the gate has opened and been held. It is seated
-        // straight off the plane rather than from its stored position, so it
-        // emerges from wherever the gate has rotated to in the meantime --
-        // exactly aligned, with no bookkeeping to drift out of step.
-        if (vg.cine_hold > 0.0f) {
-            vg.cine_hold -= dt;
-            if (vg.cine_hold <= 0.0f) {
-                Ship* c = &vg.cine;
-                c->pos = vg.gate_pos;
-                c->fwd = vnorm(vcross(vg.gate_r, vg.gate_u));
-                Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
-                c->up  = (vlen2(u) > 1e-6f) ? vnorm(u) : vg.gate_u;
-                vg.cine_on = true;
-            }
-        }
-
-        float pitch_in = 0.0f, yaw_in = 0.0f;
-        if (vg.cine_on || vg.gate_t > 0.0f) {
-            // Aim at whichever exists. Before the ship is out the gate is the
-            // subject, and holding on it is what tells the viewer where to look.
-            const Vec3 tgt = vg.cine_on ? vg.cine.pos : vg.gate_pos;
-            const Vec3 w   = vnorm(tgt);
-            yaw_in   =  w.x * 3.2f;
-            pitch_in = -w.y * 3.2f;
-        } else {
-            attract_autopilot(t, &pitch_in, &yaw_in);
-        }
-
-        // Wall avoidance applies even mid-shot. Following a ship is not a
-        // reason to fly the viewpoint out through the side of the arena, and
-        // twelve seconds of unconstrained panning did exactly that -- the
-        // cutscene ended outside the torus and the first collision test of the
-        // match killed the player instantly, with no way to progress.
-        {
-            const Vec3  pl    = vg_arena_local_of(v3(0, 0, 0));
-            const float clear = vg_arena_clearance(pl);
-            if (clear < ARENA_ATTRACT_MARGIN) {
-                const Vec3  inw = vg_arena_dir_to_view(vg_arena_inward(pl));
-                const float k   = 2.6f * (ARENA_ATTRACT_MARGIN - clear)
-                                       / ARENA_ATTRACT_MARGIN;
-                yaw_in   +=  inw.x * k;
-                pitch_in += -inw.y * k;
-            }
-        }
-
-        if (yaw_in   >  1.0f) yaw_in   =  1.0f;
-        if (yaw_in   < -1.0f) yaw_in   = -1.0f;
-        if (pitch_in >  1.0f) pitch_in =  1.0f;
-        if (pitch_in < -1.0f) pitch_in = -1.0f;
-
-        // Throttle zero: the camera is anchored, not flying. world_step still
-        // rotates the whole world by the pan, which is what carries the arena
-        // and the starfield across behind the subject.
-        world_step(dt, pitch_in, yaw_in, 0.0f, 0.0f);
-        if (vg.cine_on) cine_fly(dt);
-
-        if (t > INTRO_END || tap_up) {
-            s_shot = 0;
-            cine_clear();
-
-            // Re-seat the world before handing over. The cutscene has spent
-            // twelve seconds turning and drifting the viewpoint for the sake of
-            // the shot, and relocating between setups moved it again -- so
-            // where it has ended up relative to the arena is not something the
-            // match should have to inherit. Both the arena and the opponent are
-            // re-established from scratch, which makes a bad start structurally
-            // impossible rather than merely unlikely.
-            //
-            // Free to do because the handover is a hard cut to black with the
-            // instruments rebooting over it. Nothing of the snap is visible.
-            vg.cam_zoom = 1.0f;      // the cockpit is never zoomed
+        // Free to do because the handover is a hard cut to black with the
+        // instruments rebooting over it. None of the snap is visible.
+        if (vg_cine_update(dt, tap_up)) {
+            vg_cine_clear();
+            vg.cam_zoom = 1.0f;              // the cockpit is never zoomed
             vg_arena_init(ARENA_TORUS);
             vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
             for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive = false;
             for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive = false;
-            spawn_opponent();
+            vg_spawn_opponent();
 
             vg.state    = VG_PLAYING;
             vg.state_t  = 0;
@@ -1199,7 +924,7 @@ void vg_game_update(float dt, const VgInput* in) {
         // The world keeps running -- wreckage still tumbles, their last trail
         // still fades -- but nothing can touch the player. The only job of this
         // state is to let the dead pilot finish talking.
-        world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
         vg_update_missiles(dt);
         update_threat();
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
@@ -1280,7 +1005,7 @@ void vg_game_update(float dt, const VgInput* in) {
 
         vg_clear_player_hit();
 
-        world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
 
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
 
@@ -1380,7 +1105,7 @@ void vg_game_update(float dt, const VgInput* in) {
         // slowly, and slowing further, like something that has stopped being a
         // ship and started being debris.
         const float decay = 1.0f / (1.0f + vg.state_t * 0.55f);
-        world_step(dt,
+        vg_world_step(dt,
                    0.16f * decay * sinf(vg.state_t * 0.63f),
                    0.21f * decay * sinf(vg.state_t * 0.41f + 1.1f),
                    0.30f * decay * dt,
@@ -1394,7 +1119,7 @@ void vg_game_update(float dt, const VgInput* in) {
         vg.shake_y += vg_frand(-3.4f, 3.4f);
 
         // Knocked out is knocked out: back to the main menu, not a restart.
-        if (vg.state_t > 2.2f && tap_up) { cine_clear(); enter_attract(); }
+        if (vg.state_t > 2.2f && tap_up) { vg_cine_clear(); enter_attract(); }
         break;
     }
     }
