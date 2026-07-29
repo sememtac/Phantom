@@ -728,6 +728,16 @@ static void world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.shake_x = vg.shake_y = 0;
     }
 
+    // Buzz, on top of whatever the impact shake is doing. Squared so it stays
+    // out of the way until the last fifth of the travel and then comes on hard,
+    // which is what makes firewalling it feel like a decision.
+    if (vg.throttle > SPEED_SHAKE_AT) {
+        const float k = (vg.throttle - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
+        const float a = SPEED_SHAKE_MAX * k * k;
+        vg.shake_x += vg_frand(-a, a);
+        vg.shake_y += vg_frand(-a, a);
+    }
+
     if (vg.hit_flash > 0) vg.hit_flash -= dt;
     if (vg.msl_event_t > 0) {
         vg.msl_event_t -= dt;
@@ -1374,6 +1384,12 @@ void vg_game_update(float dt, const VgInput* in) {
                    0.30f * decay * dt,
                    0.0f);
         vg_update_missiles(dt);
+
+        // The image never settles. Camera jitter under the screen-space tearing
+        // gives the failure somewhere physical to come from -- one alone reads
+        // as an effect, the two together read as a machine coming apart.
+        vg.shake_x += vg_frand(-3.4f, 3.4f);
+        vg.shake_y += vg_frand(-3.4f, 3.4f);
 
         // Knocked out is knocked out: back to the main menu, not a restart.
         if (vg.state_t > 2.2f && tap_up) { cine_clear(); enter_attract(); }

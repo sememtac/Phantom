@@ -267,6 +267,48 @@ static void draw_story(void) {
     }
 }
 
+// The feed failing, not just the ship. Tear bars, dropped frames and text that
+// loses its place -- the display is the last thing still transmitting and it is
+// not doing it well.
+//
+// All of it is hashed off a time bucket rather than random, so it runs at its
+// own rate instead of strobing at whatever the frame rate happens to be, and it
+// costs nothing to keep still between buckets.
+#define DEATH_FLASH  0.11f
+
+static int death_jitter(void) {
+    const uint32_t b = (uint32_t)(vg.state_t * 17.0f);
+    const uint32_t h = glitch_hash(b * 977u);
+    return ((h % 9u) < 3u) ? (int)((h >> 8) % 15u) - 7 : 0;
+}
+
+static void draw_death_glitch(void) {
+    const uint32_t bucket = (uint32_t)(vg.state_t * 17.0f);
+    const uint32_t h      = glitch_hash(bucket);
+
+    // Whole dropped frames. Rare, and the single most convincing part of it --
+    // a display that stutters is broken in a way one that merely flickers is
+    // not.
+    if ((h % 23u) == 0u) {
+        vg_fill_rect(0, 0, SCR_W, SCR_H, COL_BLACK);
+        return;
+    }
+
+    const int bars = (int)((h >> 3) % 4u) + 1;
+    for (int i = 0; i < bars; i++) {
+        const uint32_t g  = glitch_hash(bucket * 71u + (uint32_t)i);
+        const int      y  = (int)(g % (uint32_t)SCR_H);
+        const int      hh = 2 + (int)((g >> 8) % 10u);
+        // Shifted sideways as well as drawn: a tear is displaced signal, not a
+        // stripe laid over the top.
+        const int      xo = (int)((g >> 13) % 70u) - 35;
+        vg_fill_rect(xo, y, SCR_W, hh, ((g >> 21) & 1u) ? INK_TRACE : INK_ONFILL);
+    }
+
+    if (((h >> 11) % 5u) == 0u)
+        vg_fill_rect(0, (int)((h >> 15) % (uint32_t)SCR_H), SCR_W, 2, INK_BRIGHT);
+}
+
 void vg_draw_overlays(void) {
     char buf[40];
 
@@ -397,10 +439,15 @@ void vg_draw_overlays(void) {
 
     // No instruments -- there is no cockpit left to report from. What is on
     // screen is the wreck, the tumble, and the system telling you what happened.
-    case VG_OVER:
-        centred(150, "SIGNAL LOST", COL_DANGER, 5);
+    case VG_OVER: {
+        draw_death_glitch();
+
+        // The text drifts with the tearing rather than sitting steady over it.
+        const int j = death_jitter();
+        vg_text((SCR_W - vg_text_width("SIGNAL LOST", 5)) / 2 + j, 150,
+                "SIGNAL LOST", COL_DANGER, 5);
         snprintf(buf, sizeof(buf), "%s   HULL BREACH", vg.callsign);
-        centred(214, buf, COL_HUD, 2);
+        vg_text((SCR_W - vg_text_width(buf, 2)) / 2 - j, 214, buf, COL_HUD, 2);
         snprintf(buf, sizeof(buf), "ELIMINATED IN THE %s",
                  vg_tourney_round_name(vt.round));
         centred(246, buf, COL_HUD_DIM, 2);
@@ -408,7 +455,16 @@ void vg_draw_overlays(void) {
         centred(278, buf, INK_FAINT, 2);
         if (vg.state_t > 2.2f && fmodf(vg.state_t, 1.0f) < 0.6f)
             centred(330, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
+
+        // The moment itself: one hard white frame, gone almost before it
+        // registers. Drawn LAST so it covers everything, including the glitch --
+        // the display is overwhelmed first and fails afterwards.
+        if (vg.state_t < DEATH_FLASH) {
+            float f = 1.0f - vg.state_t / DEATH_FLASH;
+            vg_fill_rect(0, 0, SCR_W, SCR_H, vg_dim(COL_STAR_BRIGHT, f * f));
+        }
         break;
+    }
 
     default:
         break;

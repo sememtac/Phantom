@@ -88,6 +88,18 @@
 
 #define SHIP_RADIUS          9.0f
 
+// --- airframe buzz ---------------------------------------------------------
+// A fine, continuous vibration at the top of the throttle. Speed is otherwise
+// only a number and a mote streak: nothing about the view tells you the ship is
+// working. Deliberately small -- this has to read as strain at the edge of the
+// envelope, not as damage, and anything large enough to notice consciously is
+// large enough to make the reticle useless.
+//
+// Applied to the CAMERA, so the world shakes and the panel-mounted instruments
+// do not, which is the right way round for something bolted to the airframe.
+#define SPEED_SHAKE_AT       0.80f    // throttle at which it starts
+#define SPEED_SHAKE_MAX      2.7f     // px at full
+
 // --- trails ----------------------------------------------------------------
 // Every fighter drags a coloured ribbon of where it has been. This is what makes
 // trail colour a mechanic rather than decoration: at range a contact is four
