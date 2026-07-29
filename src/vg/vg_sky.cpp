@@ -72,6 +72,16 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // cropped by the screen edges reads as a dark shape rather than as an object.
 #define SKY_MENU_SCALE  0.118f
 
+// ...and pushed off the axis, so it is not parked behind the text.
+//
+// Offset in TEXELS from the centre of the tile. The sampling rotation carries
+// this vector round with the camera roll, so the hole orbits the frame as the
+// menu tumbles instead of sitting still -- which is the point of it. At 24
+// texels diagonally it rides about 290 screen pixels out, far enough that the
+// title and the crawl are usually over open space and the hole sweeps past them
+// rather than sitting under them.
+#define SKY_MENU_OFF    24.0f
+
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
@@ -472,10 +482,12 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     if (s_kind == SKY_MENU) {
         s_scale = SKY_MENU_SCALE;
         s_pan   = 0.0f;                       // fixed at infinity; see above
-        // Park the sample on the hole itself. The fill maps screen centre to
-        // (s_u, s_v), so this is what puts it in the middle of the view -- and
-        // with no pan it stays there for good.
-        s_u = s_v = (float)(SKY_TEX_SIZE / 2);
+        // The fill maps screen centre to (s_u, s_v), so offsetting the origin
+        // from the hole's own texel pushes the hole the other way on screen --
+        // and with no pan it holds that relationship for good, orbiting only
+        // with the roll.
+        s_u = (float)(SKY_TEX_SIZE / 2) + SKY_MENU_OFF;
+        s_v = (float)(SKY_TEX_SIZE / 2) + SKY_MENU_OFF;
     } else {
         s_scale = SKY_SCALE;
         s_pan   = SKY_PAN_PER_RAD;
