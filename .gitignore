@@ -16,3 +16,7 @@
 Thumbs.db
 desktop.ini
 .DS_Store
+# PyInstaller working directories -- the exe is the artefact, not these.
+tools/build/
+tools/__pycache__/
+tools/*.spec
