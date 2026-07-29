@@ -131,24 +131,39 @@ class Recorder(tk.Tk):
         # Gamma sits with Render because that is when it applies -- a session
         # holds no pixels, so the same recording can be rendered again at a
         # different setting without replaying anything.
+        #
+        # A slider, and the readout gets its own COLUMN. The entry this replaced
+        # shared column 1 with its hint label, so the two were laid on top of
+        # each other in one cell and the box was squeezed to nothing.
         tk.Label(self, text="Gamma", fg=AMBER, bg=GROUND).grid(row=4, column=0,
                                                                sticky="e", **pad)
-        self.gamma = tk.StringVar(value="1.0")
-        tk.Entry(self, textvariable=self.gamma, width=6).grid(row=4, column=1,
-                                                              sticky="w", **pad)
-        tk.Label(self, text="1.0 = exact,  1.5 = panel-like", fg="#7a5a20",
-                 bg=GROUND).grid(row=4, column=1, sticky="e", padx=8)
+        # ttk, not tk.Scale. A tk.Scale draws its THUMB in the widget's own
+        # background colour, and this window's background is near-black -- so the
+        # grip vanished and the control read as a gap between two bits of
+        # trough. ttk uses the platform theme, which draws a thumb you can see
+        # and grab. The cost is that it ignores bg/fg, so it looks native rather
+        # than amber; the ttk buttons above it already do.
+        self.gamma = tk.DoubleVar(value=1.0)
+        ttk.Scale(self, from_=1.0, to=2.0, orient="horizontal",
+                  variable=self.gamma, command=self._gamma_changed
+                  ).grid(row=4, column=1, sticky="ew", padx=8)
+        self.gamma_lbl = tk.Label(self, text="1.00", fg=AMBER, bg=GROUND, width=8)
+        self.gamma_lbl.grid(row=4, column=2, sticky="w")
+
+        tk.Label(self, text="1.0 exact  ·  1.5 reads like the panel",
+                 fg="#7a5a20", bg=GROUND, anchor="w", width=1
+                 ).grid(row=5, column=0, columnspan=3, sticky="ew", padx=10)
 
         self.btn_render = ttk.Button(self, text="2. Render to Video",
                                      command=self._render, state="disabled")
-        self.btn_render.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
+        self.btn_render.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=(4, 2))
 
         self.bar = ttk.Progressbar(self, mode="determinate")
-        self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
+        self.bar.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=2)
 
         self.status = tk.Label(self, text="ready -- press Record, then play",
                                fg=AMBER, bg=GROUND, anchor="w", width=1)
-        self.status.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
+        self.status.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8, pady=(2, 8))
 
         self._refresh()
 
@@ -160,6 +175,16 @@ class Recorder(tk.Tk):
         if ports:
             self.port.current(0)
         self._ports = [d for d, _ in ports]
+
+    def _gamma_changed(self, value=None):
+        # ttk.Scale is continuous, so snap here. Only write back when the
+        # rounded value actually differs, or setting the variable inside its own
+        # callback re-enters this endlessly.
+        raw = self.gamma.get() if value is None else float(value)
+        g = round(raw / 0.05) * 0.05
+        if abs(g - self.gamma.get()) > 1e-9:
+            self.gamma.set(g)
+        self.gamma_lbl.config(text=f"{g:.2f}")
 
     def _browse(self):
         d = filedialog.askdirectory(initialdir=self.out_dir.get())
@@ -284,11 +309,9 @@ class Recorder(tk.Tk):
             self.status.config(text="output folder does not exist")
             return
 
-        try:
-            g = float(self.gamma.get())
-        except ValueError:
-            self.status.config(text="gamma must be a number (1.0 is exact)")
-            return
+        # A slider cannot produce a value that needs validating, which is most of
+        # why it is one.
+        g = self.gamma.get()
         set_gamma(g)
 
         self._error = None
