@@ -59,7 +59,6 @@
 #define ARENA_TORUS_RMIN     1100.0f  // room to manoeuvre, tight enough to read
                                       // as a corridor
 
-#define ARENA_WARN_RANGE     450.0f   // blinking warning below this
 
 // Torus structural hoops: how far ahead/behind they are drawn, and how far apart.
 #define ARENA_HOOP_SPACING   480.0f

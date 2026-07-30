@@ -25,7 +25,6 @@
 // needs to shout goes brighter, inverts, or blinks.
 
 #define VG_PAL_AMBER  0    // amber CRT phosphor (P3)
-#define VG_PAL_NEON   1    // monochrome AC plasma panel
 #define VG_PALETTE    VG_PAL_AMBER
 
 #if VG_PALETTE == VG_PAL_AMBER
@@ -68,9 +67,7 @@
 #define COL_ENEMY            VGC(0xFC10)       // hot red
 #define COL_ENEMY_HIT        VGC(0xFFFF)
 
-#define COL_MSL_FRIEND       VGC(0x7FFF)       // pale cyan-white
 #define COL_MSL_HOSTILE      VGC(0xFC00)       // red-orange
-#define COL_TRAIL_FRIEND     VGC(0x5EFF)
 #define COL_TRAIL_HOSTILE    VGC(0xFC80)
 #define COL_TRAIL_DEAD       VGC(0x4208)       // lock broken: coasting ballistic
 

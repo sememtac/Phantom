@@ -75,9 +75,6 @@ Vec3 vg_arena_surf_t(float cu, float su, float cv, float sv) {
     return v3(R * cv * cu, R * sv, R * cv * su);
 }
 
-Vec3 vg_arena_surf(float u, float v) {
-    return vg_arena_surf_t(cosf(u), sinf(u), cosf(v), sinf(v));
-}
 
 void vg_arena_nearest(Vec3 p, float* u, float* v, float* clearance) {
     if (vg_arena.kind == ARENA_TORUS) {

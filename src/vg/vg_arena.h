@@ -43,7 +43,6 @@ Vec3 vg_arena_dir_to_view(Vec3 local_d);  // arena-local vector -> view space
 Vec3 vg_arena_local_of(Vec3 view_pos);    // view-space point   -> arena-local
 
 // --- surface queries, all in arena-local coordinates ---
-Vec3  vg_arena_surf(float u, float v);
 // Same, but from precomputed trig. Lets a caller walk a polyline with an
 // incremental rotation (4 trig calls per line) instead of a sin/cos pair per
 // point (2 per segment) -- the grid is dense enough that this dominates.

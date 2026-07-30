@@ -40,15 +40,3 @@ static inline bool vg_project(const VgCam& c, Vec3 p, float* out_x, float* out_y
     *out_y = SCR_CY - (x * c.bank_s + y * c.bank_c) + c.sy;
     return true;
 }
-
-// Exact inverse of vg_project's screen mapping, for a point on the projection
-// plane: undo shake, undo bank, divide out the focal length.
-static inline Vec3 vg_unproject_dir(const VgCam& c, float sx, float sy) {
-    float rx =  (sx - SCR_CX - c.sx);
-    float ry = -(sy - SCR_CY - c.sy);
-    float x  =  rx * c.bank_c + ry * c.bank_s;
-    float y  = -rx * c.bank_s + ry * c.bank_c;
-    // Must divide by the SAME focal length the forward transform used, or the
-    // inverse stops being exact the moment anything zooms.
-    return vnorm(v3(x / c.focal, y / c.focal, 1.0f));
-}

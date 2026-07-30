@@ -14,8 +14,6 @@
 // input calibration and for anything that needs a scale before a ship is known.
 // The values the simulation actually uses come from ShipSpec (vg_ship.h), so a
 // CHARIOT tops out at 460 and a BALLISTA at 340.
-#define SPEED_MIN            100.0f   // world units/sec at zero throttle
-#define SPEED_MAX            420.0f   // ...and at full throttle
 
 // Deliberately sluggish. Committing to speed -- in either direction -- has to
 // take a couple of seconds, or the choice between fighting and running carries
@@ -32,8 +30,6 @@
 // Turn rate scales inversely with speed. This is the whole reason the throttle
 // exists as a combat control: slow down to out-turn a missile, speed up to
 // outrun it.
-#define AGILITY_SLOW_BONUS   0.75f    // extra turn-rate fraction at idle
-#define AGILITY_FAST_MALUS   0.30f    // turn-rate fraction lost at full throttle
 
 // --- steering --------------------------------------------------------------
 // 0 = virtual joystick. Press anywhere right of the throttle zone to set an
@@ -112,7 +108,6 @@
 // sells it is the two disagreeing. A HUD that shook in lockstep with the world
 // would just look like one bigger shake.
 #define HUD_SHAKE_MAX        1.7f     // px at full throttle
-#define HUD_GLITCH_AT        0.94f    // throttle above which the panel drops out
 
 // --- trails ----------------------------------------------------------------
 // Every fighter drags a coloured ribbon of where it has been. This is what makes

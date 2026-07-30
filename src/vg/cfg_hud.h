@@ -63,5 +63,3 @@
 
 // --- gestures --------------------------------------------------------------
 // A contact that lifts quickly without travelling counts as a tap, and fires.
-#define TAP_MAX_MOVE         14.0f   // px
-#define TAP_MAX_TIME         0.28f   // sec

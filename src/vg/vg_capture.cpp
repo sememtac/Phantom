@@ -3,8 +3,6 @@
 #include "vg_replay.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 // Off, or streaming. There used to be two capture modes the host could arm
 // directly and both are gone, because neither could hold 60fps and 60fps is the
@@ -20,8 +18,6 @@ static uint32_t s_index = 0;
 static uint8_t  s_buf[8192];
 static int      s_len = 0;
 
-static void tx_start(void);
-static void tx_drain(void);
 static inline void flush(void);
 
 bool  vg_capture_active(void) { return s_mode != 0; }
@@ -33,11 +29,8 @@ bool  vg_capture_active(void) { return s_mode != 0; }
 void vg_capture_set(int mode) {
     // Drain before going idle. The host must have every byte of the last frame
     // before the device reports that the session finished.
-    if (!mode && s_mode) tx_drain();
-
     s_mode  = mode;
     s_index = 0;
-    if (mode) tx_start();
 }
 bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; }
 
@@ -102,108 +95,6 @@ void vg_link_stats_reset(void) {
     s_begins = s_ends = 0;
 }
 
-// ---------------------------------------------------------------------------
-// The transmit ring, drained by a task on the OTHER core.
-//
-// Serial.write blocks while the USB driver accepts bytes, and it blocks on the
-// core that rasterises. Measured: a frame takes 45 ms, of which the link needs
-// 28.6 ms and 16.4 ms is CPU that the link does not hide. With the write moved
-// to core 0, core 1 rasterises the next frame while core 0 sends this one, and
-// the frame costs only the link time.
-//
-// One producer and one consumer, so the indices need no lock. The producer only
-// advances the head, the consumer only advances the tail, and each reads the
-// other index once.
-//
-// The barriers are necessary, and volatile alone is not enough. The two cores
-// can make the write of the head visible BEFORE the bytes it refers to. The
-// consumer then reads bytes that are not written yet. This gives a stream that
-// is correct for some frames and then corrupt, which is what happened.
-#define RING_SZ (32 * 1024)
-
-static uint8_t*          s_ring = nullptr;
-static volatile uint32_t s_head = 0;    // producer writes here
-static volatile uint32_t s_tail = 0;    // consumer reads here
-static TaskHandle_t      s_tx_task = nullptr;
-
-static inline uint32_t ring_free(void) {
-    const uint32_t used = (s_head - s_tail) & (RING_SZ - 1);
-    return RING_SZ - 1 - used;          // one byte kept free, so full != empty
-}
-
-static void ring_write(const uint8_t* b, int n) {
-    while (n > 0) {
-        uint32_t space = ring_free();
-        while (space == 0) {            // the link is behind; let it catch up
-            delay(1);
-            space = ring_free();
-        }
-        uint32_t h = s_head;
-        uint32_t chunk = (uint32_t)n < space ? (uint32_t)n : space;
-        const uint32_t to_end = RING_SZ - h;
-        if (chunk > to_end) chunk = to_end;
-        memcpy(s_ring + h, b, chunk);
-        __sync_synchronize();           // the bytes land before the head moves
-        s_head = (h + chunk) & (RING_SZ - 1);
-        b += chunk;
-        n -= (int)chunk;
-    }
-}
-
-static void tx_task(void*) {
-    for (;;) {
-        const uint32_t t = s_tail;
-        const uint32_t h = s_head;
-        __sync_synchronize();           // read the head before the bytes
-        if (h == t) {
-            // Nothing left. Push the tail of the last frame out of the driver.
-            // Without this the final bytes wait for more traffic, and the host
-            // waits for them, and neither side moves.
-            Serial.flush();
-            vTaskDelay(1);
-            continue;
-        }
-        uint32_t run = (h > t) ? (h - t) : (RING_SZ - t);
-        const size_t k = Serial.write(s_ring + t, run);
-        if (k == 0) { vTaskDelay(1); continue; }
-        __sync_synchronize();           // the read completes before space frees
-        s_tail = (t + (uint32_t)k) & (RING_SZ - 1);
-    }
-}
-
-static void tx_start(void) {
-    // DISABLED. Sending from core 0 while core 1 rasterises should save the
-    // 16.4 ms of CPU that the link does not hide, and twice it produced a
-    // corrupt stream instead: the host read a length of 1,667,340,360 bytes.
-    // Memory barriers on the ring did not fix it, and neither did moving the
-    // one competing printf. The cause is not established, so the code stays
-    // here unused rather than shipping a capture that is wrong now and then.
-    //
-    // With this returning early, s_ring stays null and flush() writes directly,
-    // which is the path that rendered 240 frames pixel-identical at 22.2 fps.
-    return;
-
-    if (s_tx_task) return;
-    // INTERNAL RAM, not PSRAM. One frame is 25 KB, so 32 KB is enough to hold
-    // a whole frame while core 1 starts the next one.
-    s_ring = (uint8_t*)heap_caps_malloc(RING_SZ, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (!s_ring) {
-        Serial.println("vg_capture: no PSRAM for the transmit ring");
-        return;
-    }
-    s_head = s_tail = 0;
-    // Core 0. Core 1 runs the game loop, and the point is to not be on it.
-    xTaskCreatePinnedToCore(tx_task, "vg_tx", 3072, nullptr, 5, &s_tx_task, 0);
-}
-
-// Wait for the ring to empty. Only for the end of a session, where the host
-// must receive everything before the device says it has finished.
-static void tx_drain(void) {
-    if (!s_tx_task) return;
-    while (s_head != s_tail) delay(1);
-    Serial.flush();
-}
-
 static inline void put(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
     while (n > 0) {
@@ -218,10 +109,7 @@ static inline void put(const void* p, int n) {
 }
 
 static inline void flush(void) {
-    if (!s_len) return;
-    if (s_ring) ring_write(s_buf, s_len);   // core 0 sends it
-    else        vg_link_write(s_buf, s_len);
-    s_len = 0;
+    if (s_len) { vg_link_write(s_buf, s_len); s_len = 0; }
 }
 
 void vg_capture_poll(void) {

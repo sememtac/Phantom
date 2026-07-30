@@ -448,7 +448,6 @@ static SkyKind s_kind = SKY_NEBULA;
 
 static float s_reveal = 1.0f;
 void  vg_sky_set_reveal(float r) { s_reveal = (r < 0.0f) ? 0.0f : (r > 1.0f ? 1.0f : r); }
-float vg_sky_reveal(void)        { return s_reveal; }
 
 // Somewhere to have a fight. Proper noun plus the kind of thing the backdrop
 // actually is, so the name is never at odds with what is on screen.

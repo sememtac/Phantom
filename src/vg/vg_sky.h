@@ -44,7 +44,6 @@ const char* vg_sky_place(void);
 // thing the fill exists to avoid. Skipped rows are cleared instead, so a
 // partial reveal is cheaper than a full one, not dearer.
 void  vg_sky_set_reveal(float r);
-float vg_sky_reveal(void);
 
 // Allocates the texture pair. Returns false if internal SRAM is short, in which
 // case the renderer falls back to a plain black clear.
