@@ -31,9 +31,10 @@
 //   IFT_COURSE_MISS   no arguments
 //   IFT_COURSE_DONE   no arguments
 //
-// A line is drawn at scale 2 across the full width, so about 34 characters fit
-// before it runs into the edges. Longer is not clipped, it is centred and will
-// overhang.
+// A line is drawn at SCALE 3 across the full width, so about 24 characters fit
+// before it runs into the edges. Longer is not clipped -- it is centred and will
+// overhang. Scale 3 because this is the system talking and scale 2 read as a
+// footnote; the cost is ten characters.
 // ---------------------------------------------------------------------------
 
 static const char* const IFT_FMT[IFT_SLOTS] = {

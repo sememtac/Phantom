@@ -1,5 +1,6 @@
 #include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_ift.h"
 #include "vg_tourney.h"
 #include "vg_voice.h"
 #include "vg_sky.h"
@@ -334,15 +335,24 @@ void vg_draw_overlays(void) {
             }
         }
 
-        // The name card WAITS for the broadcast to finish. The IFT band sits at
-        // 384..414 and the card at 360 and 414, so on screen together they were
-        // one illegible pile -- and they were saying the same thing twice.
-        if (vg.ift_t > 0.0f) break;
+        // The card waits for the broadcast to have SPOKEN AND FINISHED, tested on
+        // the slot's own fired bit rather than on a time.
+        //
+        // Testing the clock is what put the card first: the card started at
+        // INTRO_DRIFT and the line fired 0.4s later, so for those 0.4s the card
+        // was alone on screen and then vanished when the IFT arrived. Matching the
+        // two thresholds would have worked only as long as nothing reordered the
+        // update and the draw. This cannot be got wrong by a timing change.
+        //
+        // An unwritten slot sets its bit and posts nothing, so the card appears at
+        // once -- which is the right behaviour for a line that does not exist yet.
+        const bool said_you = (vg.ift_fired & (1u << IFT_INTRO_YOU)) && vg.ift_t <= 0.0f;
+        const bool said_opp = (vg.ift_fired & (1u << IFT_INTRO_OPP)) && vg.ift_t <= 0.0f;
 
-        if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
+        if (said_you && t > INTRO_DRIFT && t < INTRO_YOU_END) {
             centred(360, vg.callsign, INK_MAX, 5);
             centred(414, vg.spec->name, INK_BRIGHT, 2);
-        } else if (t > INTRO_OPP_START && t < INTRO_OPP_END) {
+        } else if (said_opp && t > INTRO_OPP_START && t < INTRO_OPP_END) {
             const Entrant* o = vg_tourney_opponent();
             if (o) {
                 centred(360, o->is_phantom ? "PHANTOM" : o->tag, INK_MAX, 5);

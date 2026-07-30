@@ -979,11 +979,11 @@ void vg_game_update(float dt, const VgInput* in) {
         // instruments rebooting over it. None of the snap is visible.
         // The broadcast introduces each fighter over its own shot. The cutscene
         // already hard-cuts between them, so the cues are the shot boundaries.
-        if (vg.state_t > INTRO_DRIFT + 0.4f && !(vg.ift_fired & (1u << IFT_INTRO_YOU))) {
+        if (vg.state_t > INTRO_DRIFT && !(vg.ift_fired & (1u << IFT_INTRO_YOU))) {
             vg.ift_fired |= (1u << IFT_INTRO_YOU);
             vg_ift_line(IFT_INTRO_YOU);
         }
-        if (vg.state_t > INTRO_OPP_START + 0.4f && !(vg.ift_fired & (1u << IFT_INTRO_OPP))) {
+        if (vg.state_t > INTRO_OPP_START && !(vg.ift_fired & (1u << IFT_INTRO_OPP))) {
             vg.ift_fired |= (1u << IFT_INTRO_OPP);
             vg_ift_line(IFT_INTRO_OPP);
         }

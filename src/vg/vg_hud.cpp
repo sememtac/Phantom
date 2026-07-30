@@ -152,8 +152,8 @@ static void draw_boundary_alert(void) {
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 
-// The broadcast caption. A full-width band low on the screen, in WHITE, with the
-// IFT mark where a pilot's callsign block would be.
+// The broadcast caption: a full-width band in WHITE, with the IFT mark where a
+// pilot's callsign block would be.
 //
 // Distinguished by FORM as well as by colour, deliberately. Colour alone is a weak
 // signal at a glance, and the wall tint can now push the whole frame red -- so the
@@ -161,28 +161,36 @@ static void draw_boundary_alert(void) {
 // line; the IFT speaks as a rule across the screen, which reads as broadcast
 // furniture rather than as a pilot who happens to be white.
 //
-// A lower third, because that is where a broadcast puts one, and because the IFT
-// only speaks BETWEEN fights -- so a thumb resting over it costs nothing.
+// SCALE 3, because this is the system talking and it was reading as a footnote.
+// That costs width: 18 pixels a character means about 24 fit across, against 34 at
+// scale 2. See the note in vg_ift.cpp.
+//
+// NOT a lower third, despite that being where a broadcast puts one. The radar is
+// centred at y=452 with a 78-pixel radius, so it owns 374 to the bottom edge, and
+// the first version of this band sat straight on top of it -- invisible in the
+// attract loop, where there is no HUD, and a mess in an actual match. This sits in
+// the clear band between the reticle at 240 and the radar.
 void vg_draw_ift(void) {
     if (!vg.ift_line || vg.ift_t <= 0.0f) return;
 
-    const int y  = 384;
-    const int h  = 30;
-    const int mw = vg_text_width(vg.ift_line, 2);
-    const int mx = (SCR_W - mw) / 2;
+    const int y     = 300;
+    const int h     = 46;
+    const int scale = 3;
+    const int mw    = vg_text_width(vg.ift_line, scale);
+    const int mx    = (SCR_W - mw) / 2;
 
-    // Rules above and below rather than a filled block: a solid white band would
-    // be the brightest thing on a panel whose whole hierarchy is brightness, and
-    // it would bury the instruments it is supposed to sit behind.
-    vg_fill_rect(0, y,         SCR_W, HUD_STROKE, COL_IFT);
+    // Rules rather than a filled band: a solid white block would be the brightest
+    // thing on a panel whose whole hierarchy is brightness, and it would bury the
+    // instruments it is meant to sit behind.
+    vg_fill_rect(0, y,                  SCR_W, HUD_STROKE, COL_IFT);
     vg_fill_rect(0, y + h - HUD_STROKE, SCR_W, HUD_STROKE, COL_IFT);
-    vg_text(mx, y + 8, vg.ift_line, COL_IFT, 2);
+    vg_text(mx, y + 13, vg.ift_line, COL_IFT, scale);
 
     // The mark, inverse-video at the left, where a callsign block sits on the
     // pilots' channel.
-    const int tw = vg_text_width("IFT", 1);
-    vg_fill_rect(8, y + 9, tw + 8, 12, COL_IFT);
-    vg_text(12, y + 11, "IFT", INK_ONFILL, 1);
+    const int tw = vg_text_width("IFT", 2);
+    vg_fill_rect(8, y + 12, tw + 10, 18, COL_IFT);
+    vg_text(13, y + 15, "IFT", INK_ONFILL, 2);
 }
 
 static void draw_throttle(void) {
