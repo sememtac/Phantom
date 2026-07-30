@@ -437,7 +437,11 @@ static void band_wall_tint(uint16_t* band, int by0, float k) {
 static float s_tint_k = 0.0f;
 
 void vg_rast_tint(float k) {
-    s_tint_k = (k < 0.0f) ? 0.0f : (k > 1.0f ? 1.0f : k);
+    // Written as "keep it only if it is in range" rather than as two rejections,
+    // because a NaN fails BOTH `k < 0` and `k > 1` and would sail through a clamp
+    // written the obvious way. Nothing produces a NaN wall distance today; a
+    // clamp that cannot actually clamp is still not worth keeping.
+    s_tint_k = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
 }
 
 static inline void band_scanlines(uint16_t* band, int by0) {

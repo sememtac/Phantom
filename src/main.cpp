@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 #include "vg/vg_port.h"
 #include "vg/vg_raster.h"
 #include "vg/vg_input.h"
@@ -13,6 +14,7 @@
 #include "vg/vg_render.h"
 #include "vg/vg_capture.h"
 #include "vg/vg_replay.h"
+#include "vg/vg_crumb.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -57,8 +59,12 @@ void setup(void) {
     // a hang. This survives the reboot and is the only thing that will tell us.
     //
     //   1 power-on   3 software   4 PANIC   5 int watchdog   6 task watchdog
-    //   7 watchdog   9 brownout  14 USB, which is our own reset pulse
-    Serial.printf("reset reason: %d\n", (int)esp_reset_reason());
+    //   7 watchdog   9 brownout  11 USB, which is our own reset pulse
+    //
+    // The reason alone says which kind of death it was and nothing about where.
+    // vg_crumb_report() prints the reason AND the last position of the frame that
+    // died -- see vg_crumb.h.
+    vg_crumb_report();
 
     if (!vg_panel_init()) {
         Serial.println("FATAL: no panel");
@@ -101,6 +107,7 @@ void loop(void) {
 
     // Not while replaying: the host is sending frame records, and the capture
     // poller would eat them as if they were commands.
+    vg_crumb(CRUMB_POLL, (uint8_t)vg.state);
     if (vg_replay_mode() != VG_RP_PLAY) vg_capture_poll();
 
     uint32_t now = micros();
@@ -124,6 +131,7 @@ void loop(void) {
     float sim_dt = frame_dt;
 
     uint32_t t0 = micros();
+    vg_crumb(CRUMB_INPUT, (uint8_t)vg.state);
     VgInput in;
 
     // Replaying: the frame's length and every input come off the wire, and the
@@ -146,15 +154,18 @@ void loop(void) {
     }
 
     uint32_t t1 = micros();
+    vg_crumb(CRUMB_UPDATE, (uint8_t)vg.state);
     for (int s = 0; s < steps; s++) vg_game_update(dt, &in);
 
     // Straight after the step, so seeds drawn during it belong to this frame.
     vg_replay_note_frame(sim_dt, &in);
 
     uint32_t t2 = micros();
+    vg_crumb(CRUMB_RENDER, (uint8_t)vg.state);
     vg_render_frame(&in, fps);
 
     uint32_t t3 = micros();
+    vg_crumb(CRUMB_FLUSH, (uint8_t)vg.state);
     vg_rast_flush();
     uint32_t t4 = micros();
 
@@ -191,7 +202,7 @@ void loop(void) {
         // frame time, so those two numbers are what any optimisation is aimed at.
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu blit %lu "
                       "| rast %lu = sky %lu prim %lu scan %lu "
-                      "| P %d T %d%s\n",
+                      "| P %d T %d | heap %luK stack %luB%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
@@ -203,6 +214,11 @@ void loop(void) {
                       (unsigned long)(acc_scan   / frames),
                       vg_rast_prim_count(),
                       vg_rast_tri_count(),
+                      // A leak shows as heap falling steadily; a stack overflow
+                      // shows as headroom approaching zero before it panics.
+                      // Both were invisible until now.
+                      (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                      (unsigned long)(uxTaskGetStackHighWaterMark(NULL)),
                       vg_rast_overflowed() ? " OVERFLOW" : "");
 #if VG_DEBUG_TILT
         Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
