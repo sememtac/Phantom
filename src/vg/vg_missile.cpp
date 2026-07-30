@@ -17,6 +17,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->alive       = true;
     m->from_player = from_player;
     m->locked      = true;
+    m->lost_at     = -1.0f;
     m->spec        = spec;
     m->pos         = pos;
     m->dir         = vnorm(dir);
@@ -121,6 +122,28 @@ void vg_update_missiles(float dt) {
         Vec3 tpos, tvel;
         bool have_target = missile_target(m, &tpos, &tvel);
 
+        // A seeker that can come back for another pass.
+        //
+        // The alternative was a wider cone, and the comment on MISSILE_SEEKER_COS
+        // is right to warn against it: a round that cannot be shaken is a round
+        // that is not a decision. This keeps the dodge intact -- the lock still
+        // breaks hard, the missile still sails past, the player still gets the
+        // moment of having beaten it -- and only then does it turn around.
+        //
+        // Which is a different threat from an unbreakable one. You can beat it
+        // twice, or three times; you just cannot beat it once and forget it.
+        if (!m->locked && have_target && m->lost_at >= 0.0f
+            && m->spec->msl_reacq_cos <= 1.0f
+            && (m->age - m->lost_at) > MISSILE_REACQ_DELAY) {
+            Vec3  to    = vsub(tpos, m->pos);
+            float range = vlen(to);
+            if (range > 1e-3f
+                && vdot(m->dir, vmul(to, 1.0f / range)) >= m->spec->msl_reacq_cos) {
+                m->locked  = true;
+                m->lost_at = -1.0f;
+            }
+        }
+
         if (m->locked && have_target) {
             Vec3  to    = vsub(tpos, m->pos);
             float range = vlen(to);
@@ -132,8 +155,9 @@ void vg_update_missiles(float dt) {
                 // for good -- the missile keeps its heading and sails past. This
                 // is the failure mode a hard break is meant to force, and it is
                 // emergent rather than scripted.
-                if (vdot(m->dir, los) < MISSILE_SEEKER_COS) {
-                    m->locked = false;
+                if (vdot(m->dir, los) < m->spec->msl_seeker_cos) {
+                    m->locked  = false;
+                    m->lost_at = m->age;
                 } else {
                     // Lead pursuit: aim where the target will be, which is what
                     // bends the flight path into the arc you actually see.

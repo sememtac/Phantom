@@ -125,6 +125,7 @@ struct Missile {
     float   age;
     int     target;       // enemy index; -1 means the player
     float   last_range;   // for the proximity fuse
+    float   lost_at;      // age at which the lock broke, for re-acquisition
     float   trail_acc;
     uint8_t trail_n;
     uint8_t trail_head;

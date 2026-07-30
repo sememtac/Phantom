@@ -13,14 +13,25 @@
 #define MISSILE_TRAIL        30       // trail sample points per missile
 #define TRAIL_SAMPLE_DT      0.028f   // seconds between trail samples
 
-// cos(60 deg). Once the bearing to the target leaves the seeker's cone the lock
-// breaks for good and the missile coasts ballistic -- this is what produces the
-// "whizzes past" miss instead of an infinite chase.
+// cos(60 deg), the reference cone. Once the bearing to the target leaves the
+// seeker's cone the lock breaks and the missile coasts ballistic -- this is what
+// produces the "whizzes past" miss instead of an infinite chase.
 //
-// Universal on purpose: a seeker cone that varied by class would make some
-// missiles simply undodgeable, and evasion has to stay a skill the player can
-// rely on against every opponent in the bracket.
+// It is ShipSpec::msl_seeker_cos now, per class, but the old note's warning still
+// holds and is the reason the classes barely differ on it: a seeker cone wide
+// enough to be unshakeable makes evasion stop being a skill, and evasion has to
+// stay something the player can rely on against every opponent in the bracket.
+//
+// BALLISTA gets its tenacity from RE-ACQUISITION instead, which costs the player
+// nothing they had already earned: the lock still breaks, the round still sails
+// past, the dodge still works. It simply comes back for another pass. Beating it
+// once and forgetting about it is the only thing that stops working.
 #define MISSILE_SEEKER_COS   0.50f
+
+// How long a broken seeker coasts before it may try again. Long enough that the
+// player gets the moment of having beaten it -- without that beat, re-acquisition
+// would just read as a lock that never broke.
+#define MISSILE_REACQ_DELAY  0.9f
 
 // Widened with the speed rebalance. A missile closing head-on shuts the range at
 // up to 760 units/sec -- about 12 units per frame -- so a tight hit radius would
@@ -71,15 +82,15 @@
 // is the point. It is still a balance shift and not a neutral one:
 //
 //   class      before   after
-//   AEGIS        4.16    2.69
-//   LANCE        5.20    5.00
-//   CHARIOT      1.82    2.01
-//   BALLISTA     7.80    9.29
+//   AEGIS        4.16    2.78
+//   LANCE        5.20    4.54
+//   CHARIOT      1.82    2.07
+//   BALLISTA     7.80    9.59
 //
 // -- so an enemy AEGIS is the one that got meaningfully harder, and an enemy
 // BALLISTA the one that got easier. Retune this whenever a class's magazine,
 // trigger or reload moves; it is derived from all three.
-#define ENEMY_FIRE_GAP_K     2.02f
+#define ENEMY_FIRE_GAP_K     2.09f
 
 #define ENEMY_FIRE_COS       0.90f
 

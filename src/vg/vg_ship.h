@@ -51,6 +51,14 @@ struct ShipSpec {
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
 
+    // The cone the bearing must stay inside for the lock to hold. Wider is not
+    // better: a round that cannot be shaken is a round that is not a decision.
+    float msl_seeker_cos;
+    // ...and the cone it may RE-acquire through, after coasting ballistic for
+    // MISSILE_REACQ_DELAY. 2.0f means never, which is what a cosine can never
+    // reach and therefore the honest way to spell "this class does not come back".
+    float msl_reacq_cos;
+
     // --- fire control --------------------------------------------------------
     float lock_range;
     float lock_time;           // seconds in the nose cone, at low speed

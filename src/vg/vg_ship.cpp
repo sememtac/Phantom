@@ -21,22 +21,24 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 110.0f,
-        /* warhead    */ 20.0f, 0.60f, 340.0f, 2.50f, 10.0f,
+        /* warhead    */ 20.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.50f, 2.0f,
         /* fire ctrl  */ 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------
     // A 0.20 graze floor is the whole ship: a rim detonation does a fifth of the
-    // damage, so only correct geometry pays. Slightly slower than AEGIS and four
-    // rounds instead of six, so a wasted shot is felt twice -- once as a quarter
-    // of the magazine, and again as six and a half seconds of being unarmed.
+    // damage, so only correct geometry pays. It fires at very nearly AEGIS's
+    // cadence ON PURPOSE -- the two should feel alike on the trigger, so that what
+    // separates them is what happens when the round arrives, not how often one
+    // can be sent. The cost is four rounds instead of six, a longer lock, and six
+    // and a half seconds unarmed if they are spent badly.
     {
         "LANCE", "CLEAN HITS ONLY",
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 95.0f,
-        /* warhead    */ 32.0f, 0.20f, 340.0f, 2.50f, 10.0f,
-        /* fire ctrl  */ 1600.0f, 0.60f, 4, 0.85f, 6.5f,
+        /* warhead    */ 32.0f, 0.20f, 340.0f, 2.50f, 10.0f, 0.50f, 2.0f,
+        /* fire ctrl  */ 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
 
     // ---- CHARIOT -- the speed ------------------------------------------------
@@ -54,22 +56,27 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 70.0f,
-        /* warhead    */ 12.0f, 0.85f, 380.0f, 1.70f, 7.0f,
+        /* warhead    */ 12.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.52f, 2.0f,
         /* fire ctrl  */ 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
     // A missile SLOWER than everything it shoots at but alive for eighteen
-    // seconds: it cannot run you down, it just refuses to go away. Three rounds
-    // on a nine second reload, a slow trigger between them, and it loses almost
-    // all its agility at speed -- so anything fast that gets inside 2800 is its
-    // whole problem, and running the rack dry is how it gets there.
+    // seconds: it cannot run you down, it just refuses to go away -- and now it
+    // means that literally. It is the only seeker in the game that RE-ACQUIRES,
+    // so breaking its lock buys a pass rather than a kill.
+    //
+    // Locks from 3400 out, and takes 1.3 seconds in the cone to do it: the shot
+    // is a decision made long before it is taken. Three rounds on a nine second
+    // reload, a slow trigger between them, and it loses almost all its agility at
+    // speed -- so anything fast that gets inside is its whole problem, and running
+    // the rack dry is how it gets there.
     {
         "BALLISTA", "KILL THEM FIRST",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,
-        /* warhead    */ 40.0f, 0.50f, 300.0f, 2.30f, 18.0f,
-        /* fire ctrl  */ 2800.0f, 1.10f, 3, 1.60f, 9.0f,
+        /* warhead    */ 40.0f, 0.50f, 300.0f, 2.30f, 18.0f, 0.42f, -0.30f,
+        /* fire ctrl  */ 3400.0f, 1.30f, 3, 1.60f, 9.0f,
     },
 };
