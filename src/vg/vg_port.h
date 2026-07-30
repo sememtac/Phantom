@@ -69,12 +69,13 @@ uint8_t vg_buttons_read(void);
 // visible through that chip's interrupt registers over I2C. False if the PMU
 // does not answer, in which case the game simply never sees the key.
 bool vg_pmu_init(void);
-// True if anything was latched since the last call, with the three status
-// registers written to st3. Currently used to identify the power key's bit; see
-// the probe note in vg_port_co5300.cpp.
-bool vg_pmu_irq(uint8_t* st3);
-// Every bit seen since boot, so a press survives nobody watching the port.
+// True once per short press of PWR. Latched, so a press is never missed for
+// having happened between polls.
+bool vg_pmu_pwr_pressed(void);
+// Every PMU interrupt bit seen since boot -- diagnostics only.
 void vg_pmu_seen(uint8_t* st3);
+// One-shot boot dump: bus scan, chip id, interrupt enables and status.
+void vg_pmu_dump(void);
 
 // ---- Persistent storage ----------------------------------------------------
 //

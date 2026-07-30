@@ -291,6 +291,10 @@ void vg_input_update(float dt, VgInput* out) {
     // It reuses the shaped, smoothed yaw axis rather than reading the raw finger,
     // so roll gets the same deadzone and the same ramp as every other control and
     // does not need its own feel.
+    // Already an edge, and already latched: the PMU reports a short press as a
+    // discrete event, so there is no held state to difference against.
+    out->pwr_edge = vg_pmu_pwr_pressed();
+
     out->roll_btn = alt_btn;
     if (alt_btn) {
         out->roll  = out->yaw;

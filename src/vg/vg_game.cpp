@@ -1162,7 +1162,8 @@ void vg_game_update(float dt, const VgInput* in) {
         // Leaves the moment it is finished, or the moment the player says so.
         // The way out is a button on the screen: the + key is the roll control
         // now, and a practice range with no visible exit is a trap.
-        if (vg.course_done || (tap_up && vg_course_exit_at(tap_x, tap_y)))
+        if (vg.course_done || in->pwr_edge
+            || (tap_up && vg_course_exit_at(tap_x, tap_y)))
             vg_tv_go(TVA_BRACKET);
         break;
     }
@@ -1281,9 +1282,9 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
         }
         if (in->fire_edge) player_fire();
-        // NOT the + key any more -- that is hold-to-roll now, and pausing every
-        // time a player rolled would be unusable. This moves to the PWR key.
-        (void)0;
+        // PWR, not the + key: that is hold-to-roll now, and pausing every time a
+        // player rolled would be unusable.
+        if (playing && in->pwr_edge) { vg.state = VG_PAUSE; vg.state_t = 0; break; }
 
         // Unprompted chatter, on a long timer and only when the radio is idle.
         // Taunts are flavour; letting one interrupt a hit or a kill would turn

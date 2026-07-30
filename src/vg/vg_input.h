@@ -26,6 +26,10 @@ struct VgInput {
     // The SAME key still reports alt_edge, because it means two different things
     // in two different places: roll while flying, menu everywhere else. Which one
     // applies is the game's decision, not the input layer's.
+    // PWR. The menu key: it is what the + key used to be, freed up so that key
+    // could become the roll control.
+    bool  pwr_edge;
+
     bool  roll_btn;
     float roll;         // -1..1, left/right. Zero unless roll_btn is held.
 

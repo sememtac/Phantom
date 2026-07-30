@@ -276,24 +276,45 @@ uint8_t vg_buttons_read(void) {
 // ---------------------------------------------------------------------------
 // The power key
 //
-// PWR is not on a GPIO and no pin scan will ever find it. It belongs to the
-// AXP2101, and the only way to see it from software is that chip's interrupt
-// status registers, over the I2C bus the touch panel and the IMU already share.
+// PWR is not on a GPIO and no pin scan will find it. It belongs to the AXP2101,
+// and the only way to see it from software is that chip's interrupt registers,
+// over the I2C bus the touch panel and the IMU already share.
 //
-// This is a PROBE rather than a driver. Which bit means a short press is not
-// something to take on trust from a datasheet for a part we do not otherwise
-// talk to, so it reports whichever bits actually move and the mapping gets read
-// off a real press. Once that is known this collapses into a single mask test.
+// THE BUS RUNS AT 1 MHz FOR THE TOUCH PANEL AND THE AXP2101 IS A 400 kHz PART.
+// That is why the first version of this saw nothing at all: the registers were
+// right, the bits were right, and every transaction was simply out of spec. The
+// clock is dropped for the handful of bytes this needs and put back afterwards,
+// because the touch read is per-frame and wants the speed.
 //
 // Only two register groups are touched, and neither can affect a power rail:
 // 0x40..0x42 gate which events are reported, and 0x48..0x4A latch what happened
 // and are cleared by writing the bits back.
+//
+// Register 0x49, from the AXP2101's IRQ2 group:
+//   bit 0  release edge     bit 1  press edge
+//   bit 2  long press       bit 3  short press
 // ---------------------------------------------------------------------------
 #define AXP2101_ADDR  0x34
 #define AXP_IRQ_EN    0x40
 #define AXP_IRQ_ST    0x48
 
-static bool s_pmu_present = false;
+#define AXP_PKEY_POS   0x01     // in 0x49
+#define AXP_PKEY_NEG   0x02
+#define AXP_PKEY_LONG  0x04
+#define AXP_PKEY_SHORT 0x08
+
+// Fast enough for the panel, too fast for the PMU.
+#define IIC_HZ_FAST   1000000
+#define IIC_HZ_PMU     400000
+
+// Polling every frame would spend three I2C transactions and two clock changes
+// on a key nobody presses. 50 ms is far below the shortest press anyone can make.
+#define PMU_POLL_MS        50
+
+static bool     s_pmu_present  = false;
+static uint32_t s_pmu_last_ms  = 0;
+static bool     s_pwr_short    = false;   // latched until read
+static uint8_t  s_pmu_seen[3]  = { 0, 0, 0 };
 
 static bool pmu_write(uint8_t reg, const uint8_t* v, int n) {
     Wire.beginTransmission(AXP2101_ADDR);
@@ -312,41 +333,81 @@ static bool pmu_read(uint8_t reg, uint8_t* v, int n) {
 }
 
 bool vg_pmu_init(void) {
-    const uint8_t all[3] = { 0xFF, 0xFF, 0xFF };
-    s_pmu_present = pmu_write(AXP_IRQ_EN, all, 3);
-    if (!s_pmu_present) return false;
+    Wire.setClock(IIC_HZ_PMU);
 
-    // Clear whatever is already latched from before we were looking, so the
-    // first thing reported is the first thing that happens.
-    uint8_t st[3];
-    if (pmu_read(AXP_IRQ_ST, st, 3)) pmu_write(AXP_IRQ_ST, st, 3);
-    return true;
+    // ONLY the power-key events. Enabling everything was the probe's expedient
+    // and it would now be actively wrong: battery and VBUS interrupts fire on
+    // their own schedule and would leave the key's bit indistinguishable from
+    // the charger being plugged in.
+    const uint8_t en[3] = { 0x00, AXP_PKEY_POS | AXP_PKEY_NEG
+                                 | AXP_PKEY_LONG | AXP_PKEY_SHORT, 0x00 };
+    s_pmu_present = pmu_write(AXP_IRQ_EN, en, 3);
+
+    if (s_pmu_present) {
+        uint8_t st[3];
+        if (pmu_read(AXP_IRQ_ST, st, 3)) pmu_write(AXP_IRQ_ST, st, 3);   // clear
+    }
+
+    Wire.setClock(IIC_HZ_FAST);
+    return s_pmu_present;
 }
 
-// Sticky, because a press has to survive not being watched.
-//
-// The first version reported a press only at the instant it happened, which is
-// useless for the one thing it exists to do: somebody presses the key while
-// playing, and nobody is reading the port at that moment. Same mistake, and the
-// same fix, as the crash breadcrumb.
-static uint8_t s_pmu_seen[3] = { 0, 0, 0 };
+// Poll, and latch a short press until somebody collects it. A press has to
+// survive not being looked at on the exact frame it happened.
+static void pmu_poll(void) {
+    if (!s_pmu_present) return;
+    const uint32_t now = millis();
+    if (now - s_pmu_last_ms < PMU_POLL_MS) return;
+    s_pmu_last_ms = now;
 
-bool vg_pmu_irq(uint8_t* st3) {
-    if (!s_pmu_present) return false;
+    Wire.setClock(IIC_HZ_PMU);
+
     uint8_t st[3];
-    if (!pmu_read(AXP_IRQ_ST, st, 3)) return false;
-    if (!(st[0] | st[1] | st[2])) return false;
+    if (pmu_read(AXP_IRQ_ST, st, 3) && (st[0] | st[1] | st[2])) {
+        pmu_write(AXP_IRQ_ST, st, 3);            // write the bits back to clear
+        s_pmu_seen[0] |= st[0];
+        s_pmu_seen[1] |= st[1];
+        s_pmu_seen[2] |= st[2];
+        if (st[1] & AXP_PKEY_SHORT) s_pwr_short = true;
+    }
 
-    pmu_write(AXP_IRQ_ST, st, 3);          // write the bits back to clear them
-    s_pmu_seen[0] |= st[0];
-    s_pmu_seen[1] |= st[1];
-    s_pmu_seen[2] |= st[2];
-    st3[0] = st[0]; st3[1] = st[1]; st3[2] = st[2];
+    Wire.setClock(IIC_HZ_FAST);
+}
+
+bool vg_pmu_pwr_pressed(void) {
+    pmu_poll();
+    if (!s_pwr_short) return false;
+    s_pwr_short = false;
     return true;
 }
 
 void vg_pmu_seen(uint8_t* st3) {
     st3[0] = s_pmu_seen[0]; st3[1] = s_pmu_seen[1]; st3[2] = s_pmu_seen[2];
+}
+
+// What is actually on the bus, and what the PMU holds, once at boot. Kept
+// because "nothing happened" has several very different causes -- no such chip,
+// a chip that is not an AXP2101, enable writes that did not stick, a bus out of
+// spec -- and telling them apart from a distance is otherwise guesswork.
+void vg_pmu_dump(void) {
+    Wire.setClock(IIC_HZ_PMU);
+
+    Serial.print("I2C:");
+    for (uint8_t a = 1; a < 0x7F; a++) {
+        Wire.beginTransmission(a);
+        if (Wire.endTransmission() == 0) Serial.printf(" %02X", a);
+    }
+    Serial.println();
+
+    uint8_t v[4];
+    if (pmu_read(0x03, v, 1)) Serial.printf("PMU id 03: %02X\n", v[0]);
+    else                      Serial.println("PMU id 03: read failed");
+    if (pmu_read(AXP_IRQ_EN, v, 3))
+        Serial.printf("PMU en 40-42: %02X %02X %02X\n", v[0], v[1], v[2]);
+    if (pmu_read(AXP_IRQ_ST, v, 3))
+        Serial.printf("PMU st 48-4A: %02X %02X %02X\n", v[0], v[1], v[2]);
+
+    Wire.setClock(IIC_HZ_FAST);
 }
 
 // ---------------------------------------------------------------------------

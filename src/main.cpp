@@ -89,6 +89,7 @@ void setup(void) {
     // Non-fatal like the rest: without the PMU the power key is invisible and
     // every other control still works.
     if (!vg_pmu_init()) Serial.println("WARN: no PMU - power key unavailable");
+    vg_pmu_dump();
 
     vg_input_init();
     vg_game_init();
@@ -112,14 +113,6 @@ void loop(void) {
     // poller would eat them as if they were commands.
     vg_crumb(CRUMB_POLL, (uint8_t)vg.state);
     if (vg_replay_mode() != VG_RP_PLAY) vg_capture_poll();
-
-    // PWR probe: poll and latch. What it saw is reported on the telemetry line
-    // below, which is gated against the capture stream -- printing from here
-    // corrupted a recording, because this runs whether or not one is going.
-    {
-        uint8_t st[3];
-        (void)vg_pmu_irq(st);
-    }
 
     uint32_t now = micros();
     if (last_us == 0) last_us = now;
