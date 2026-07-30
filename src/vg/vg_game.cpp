@@ -130,6 +130,7 @@ static char  s_ift_q[IFT_QUEUE_MAX][48];
 static float s_ift_hold[IFT_QUEUE_MAX];
 static int   s_ift_n = 0;   // lines waiting
 static int   s_ift_i = 0;   // how far through them we are
+static float s_ift_gap = 0.0f;   // silence owed before the next line
 
 static void ift_pop(bool opens_run) {
     if (s_ift_i >= s_ift_n) { s_ift_n = s_ift_i = 0; return; }
@@ -141,6 +142,7 @@ static void ift_pop(bool opens_run) {
 
 void vg_ift_say(const char* line, float hold) {
     if (!line) return;
+    s_ift_gap = 0.0f;
     // An immediate line cuts off anything queued. A broadcast that has moved on
     // must not have the tail of the last announcement surface behind it.
     s_ift_n = s_ift_i = 0;
@@ -163,15 +165,20 @@ void vg_ift_queue(const char* line, float hold) {
     // Leaving them cost more than a stale line: the next announcement appended
     // to the wreckage and popped from the MIDDLE of it, so the wrong line opened
     // the run and took the badge with it. That is how this was found.
-    if (vg.ift_t <= 0.0f && s_ift_i < s_ift_n) s_ift_n = s_ift_i = 0;
+    //
+    // A PENDING GAP IS NOT A DEAD RUN. Mid-announcement the channel is silent by
+    // design, and without this second test the gap between two lines would look
+    // exactly like abandonment and throw away the rest of what was being said.
+    if (vg.ift_t <= 0.0f && s_ift_gap <= 0.0f && s_ift_i < s_ift_n)
+        s_ift_n = s_ift_i = 0;
 
     if (s_ift_n >= IFT_QUEUE_MAX) return;   // silently, rather than shouting over
     snprintf(s_ift_q[s_ift_n], sizeof(s_ift_q[0]), "%s", line);
     s_ift_hold[s_ift_n] = hold;
     s_ift_n++;
-    // Nothing up, so this one starts talking -- and starting is what earns the
-    // badge.
-    if (vg.ift_t <= 0.0f) ift_pop(true);
+    // Nothing up and nothing owed, so this one starts talking -- and starting is
+    // what earns the badge.
+    if (vg.ift_t <= 0.0f && s_ift_gap <= 0.0f) ift_pop(true);
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -803,11 +810,17 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     }
     if (vg.ift_t > 0) {
         vg.ift_t -= dt;
-        // On to the next line if there is one, so a queued announcement reads as
-        // consecutive beats rather than stopping after the first.
-        // A continuation, so no badge: the channel never went quiet and nobody
+        // Down, then a beat of silence before whatever is next -- so a queued
+        // announcement reads as consecutive beats rather than one paragraph.
+        if (vg.ift_t <= 0) {
+            vg.ift_line = nullptr;
+            s_ift_gap   = (s_ift_i < s_ift_n) ? IFT_GAP : 0.0f;
+        }
+    } else if (s_ift_gap > 0.0f) {
+        s_ift_gap -= dt;
+        // A continuation, so no badge: the channel is mid-announcement and nobody
         // else can have taken it.
-        if (vg.ift_t <= 0) { vg.ift_line = nullptr; ift_pop(false); }
+        if (s_ift_gap <= 0.0f) ift_pop(false);
     }
 }
 
@@ -1050,9 +1063,23 @@ static void tv_join(void) {
 static void tv_update(float dt) {
     if (vg.tv_phase == TV_NONE) return;
     vg.tv_t += dt;
+
     if (vg.tv_phase == TV_OUT) {
-        if (vg.tv_t >= TV_OUT_TIME) { tv_join(); vg.tv_phase = TV_IN; vg.tv_t = 0.0f; }
-    } else if (vg.tv_t >= TV_IN_TIME) {
+        if (vg.tv_t >= TV_OUT_TIME) { vg.tv_phase = TV_HOLD; vg.tv_t = 0.0f; }
+        return;
+    }
+    if (vg.tv_phase == TV_HOLD) {
+        // THE SWITCH HAPPENS AT THE END OF THE DEAD AIR, not the start of it.
+        //
+        // Joining at the start would let the new scene run for a whole second
+        // behind a black screen -- and the first thing a scene does is start
+        // talking. The opening line of the ring course would have been a third
+        // spent before the picture existed to show it, which is a mistake already
+        // made once in this file's history and not worth making twice.
+        if (vg.tv_t >= TV_HOLD_TIME) { tv_join(); vg.tv_phase = TV_IN; vg.tv_t = 0.0f; }
+        return;
+    }
+    if (vg.tv_t >= TV_IN_TIME) {
         vg.tv_phase = TV_NONE;
         vg.tv_t     = 0.0f;
     }

@@ -71,6 +71,8 @@ void vg_render_frame(const VgInput* in, float fps) {
     // while the picture comes back up underneath it.
     if (vg.tv_phase == TV_NONE) {
         vg_rast_tv(1.0f, 1.0f, 0.0f, 0.0f);
+    } else if (vg.tv_phase == TV_HOLD) {
+        vg_rast_tv(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
     } else if (vg.tv_phase == TV_OUT) {
         const float u = vg.tv_t / TV_OUT_TIME;
         // Collapse inward to the centre line, whitening as it goes, and only at

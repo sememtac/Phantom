@@ -179,6 +179,7 @@ enum VgState : uint8_t {
 enum TvPhase : uint8_t {
     TV_NONE = 0,
     TV_OUT,        // old scene fading and collapsing to the band
+    TV_HOLD,       // dead air: black, nothing at all
     TV_IN          // new scene opening back up out of it
 };
 
@@ -193,6 +194,10 @@ enum TvAction : uint8_t {
 };
 
 #define TV_OUT_TIME 0.40f
+// Dead air. Without it the set goes out and comes straight back, and the turning
+// ON -- which is the half worth watching -- has nothing to arrive out of. A
+// second of nothing is what makes the next thing an arrival rather than a wipe.
+#define TV_HOLD_TIME 1.00f
 #define TV_IN_TIME  0.55f
 
 // --- launch cutscene schedule ----------------------------------------------
@@ -261,7 +266,14 @@ enum TvAction : uint8_t {
 // One beat of a multi-line announcement. Shorter than a whole statement because
 // these are read consecutively -- three at IFT_SPEECH would run twenty seconds
 // and the player is sitting in a tube waiting to be allowed to fly.
-#define IFT_SPEECH_BEAT  2.2f
+#define IFT_SPEECH_BEAT  3.0f
+
+// Silence between consecutive lines of one announcement. Without it the queue
+// swaps the text on a single frame and three lines read as one paragraph going
+// past -- the player is being handed information faster than they can notice a
+// new sentence has started, which is what the first playtest of the course
+// opening reported. The gap is what makes them three separate things said.
+#define IFT_GAP          0.8f
 #define KILL_REFLECT    4.6f
 #define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 
