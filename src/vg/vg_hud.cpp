@@ -114,53 +114,43 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
     vg_rect(bx - 5, y - 5, bw + 10, bh + 10, ink);
 }
 
-// Incoming missile. A DOUBLE BEAT, the way a threat warning sounds: two pulses
-// and a rest, with the whole cycle shortening as the seeker closes. Inside
-// MSL_ALERT_SOLID it stops beating and stays lit, because at that range the
+// Is an alert lit this instant?
+//
+// `k` is 0 at the far edge of the alert's range and 1 at the thing itself. The
+// rate is the range: a player who cannot spare attention for a number can still
+// feel a rhythm getting faster. Both alerts share this because they now behave
+// identically -- the missile alert had its own double-beat shape and it read as a
+// flicker.
+static bool alert_lit(float k) {
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+    const float period = ALERT_FLASH_SLOW
+                       + (ALERT_FLASH_FAST - ALERT_FLASH_SLOW) * k;
+    return fmodf(vg.state_t, period) <= period * ALERT_FLASH_DUTY;
+}
+
+// Incoming missile. Flashing accelerates as the seeker closes, and inside
+// MSL_ALERT_SOLID it stops flashing and stays lit, because at that range the
 // question is no longer whether to react.
 static void draw_missile_alert(void) {
     if (!vg.threat || vg.threat_range > MSL_ALERT_RANGE) return;
 
     if (vg.threat_range > MSL_ALERT_SOLID) {
-        // 0 at the far edge, 1 just before it goes steady.
-        float k = 1.0f - (vg.threat_range - MSL_ALERT_SOLID)
-                       / (MSL_ALERT_RANGE - MSL_ALERT_SOLID);
-        if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
-
-        // The pair keeps its shape and only the rest shrinks, so no flash can
-        // ever arrive sooner than PULSE + GAP however close the missile gets.
-        const float rest   = MSL_ALERT_REST_FAR
-                           + (MSL_ALERT_REST_NEAR - MSL_ALERT_REST_FAR) * k;
-        const float pair   = MSL_ALERT_PULSE + MSL_ALERT_GAP;
-        const float period = pair * 2.0f + rest;
-        const float t      = fmodf(vg.state_t, period);
-
-        const bool on = (t < MSL_ALERT_PULSE) ||
-                        (t >= pair && t < pair + MSL_ALERT_PULSE);
-        if (!on) return;
+        const float k = 1.0f - (vg.threat_range - MSL_ALERT_SOLID)
+                             / (MSL_ALERT_RANGE - MSL_ALERT_SOLID);
+        if (!alert_lit(k)) return;
     }
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
 
-// The boundary. One flash a second when the wall first matters, four a second at
-// contact. The rate is the range -- a player who cannot spare attention for a
-// distance can still count a rhythm getting faster.
+// The boundary. Same cadence, and RED -- the only place in this interface that
+// spends hue on urgency. The rule is that hue means identity, and the exception
+// earns itself: a collision is instant death, so this is the one warning where
+// being ignored ends the run rather than costing some hull.
 static void draw_boundary_alert(void) {
-    if (vg.wall_clear > ARENA_DANGER_RANGE) return;
+    if (vg.wall_clear > ARENA_ALERT_RANGE) return;
+    if (!alert_lit(1.0f - vg.wall_clear / ARENA_ALERT_RANGE)) return;
 
-    float k = 1.0f - vg.wall_clear / ARENA_DANGER_RANGE;
-    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
-
-    // ARENA_ALERT_FAST is the floor, so a flash is never closer than 0.25s.
-    const float period = ARENA_ALERT_SLOW
-                       + (ARENA_ALERT_FAST - ARENA_ALERT_SLOW) * k;
-    if (fmodf(vg.state_t, period) > period * 0.45f) return;
-
-    // RED, and the only place in the interface that spends hue on urgency. The
-    // rule is that hue means identity, and the exception earns itself: a
-    // collision is now instant death, so this is the one warning where being
-    // ignored is fatal rather than expensive.
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 

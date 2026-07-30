@@ -117,13 +117,7 @@
 #define MSL_ALERT_RANGE      900.0f   // warning starts here
 #define MSL_ALERT_SOLID      190.0f   // steady from here in: no longer blinking
 
-// The pair is FIXED and only the rest after it shortens.
-//
-// The cycle used to scale as a whole, down to 0.26s for a double beat, which put
-// the two pulses 0.08s apart and read as a flicker rather than as a warning. Now
-// a flash can never come sooner than PULSE + GAP = 0.25s, however close the
-// missile is, and the acceleration is carried entirely by the rest between pairs.
-#define MSL_ALERT_PULSE      0.12f    // one flash is lit this long
-#define MSL_ALERT_GAP        0.13f    // ...and this is the dark half of a pair
-#define MSL_ALERT_REST_FAR   0.90f    // silence after a pair, far out
-#define MSL_ALERT_REST_NEAR  0.00f    // ...and just before it goes steady
+// The cadence is ALERT_FLASH_* in cfg_hud.h, shared with the boundary alert.
+// This one used to have a double-beat shape of its own, which is the more
+// authentic thing and read as a flicker on a 480x480 panel held at arm's length.
+// One flash, accelerating, is what the boundary does and it works.

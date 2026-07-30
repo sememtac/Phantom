@@ -84,13 +84,20 @@
 #define ARENA_ATTRACT_MARGIN 450.0f
 
 // --- boundary alert --------------------------------------------------------
-// A flash whose rate IS the range. One a second when the wall first becomes a
-// problem, accelerating to four a second at contact and never faster, because
-// past that it stops reading as a rhythm and becomes a flicker.
-#define ARENA_ALERT_SLOW     1.00f    // seconds per flash at ARENA_DANGER_RANGE
-#define ARENA_ALERT_FAST     0.25f    // ...and at the wall. Never faster.
+// How near is NEAR. The tube is 1100 units in radius, so the centreline sits
+// 1100 from the wall -- and the alert used to fire at 900, which means it fired
+// whenever the player was more than 200 units off centre. That is most of a
+// match, and an alert that is almost always on is not an alert.
+//
+// These are deliberately far tighter than ARENA_DANGER_RANGE. That one stays wide
+// because it drives the GRID reddening, which is a soft directional hint that
+// says "the wall is over there" and costs nothing to ignore. These two interrupt,
+// so they have to be earned.
+//
+// The cadence is ALERT_FLASH_* in cfg_hud.h, shared with the missile alert.
+#define ARENA_ALERT_RANGE    420.0f   // the BOUNDARY annunciator
 
-// The whole picture tints red as the wall closes.
+// The whole picture tints red as the wall closes, just after the annunciator.
 //
 // A subdivided patch of wall was tried here first and did not work: a finer mesh
 // on one cell is still a detail on a wall the player is not looking at, and the
@@ -99,4 +106,4 @@
 //
 // It is applied to the finished band, so it colours the instruments and the enemy
 // too, the way a warning light floods a cockpit rather than lighting one dial.
-#define ARENA_TINT_RANGE     750.0f   // tint starts here
+#define ARENA_TINT_RANGE     380.0f   // tint starts here

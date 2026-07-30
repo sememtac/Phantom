@@ -63,3 +63,17 @@
 
 // --- gestures --------------------------------------------------------------
 // A contact that lifts quickly without travelling counts as a tap, and fires.
+
+// --- caution annunciators --------------------------------------------------
+// Both alerts flash the same way, so the cadence is defined once, here, rather
+// than twice in cfg_world.h and cfg_combat.h. Those keep the DISTANCES, which
+// really are a property of the world and of combat; this is a property of the
+// panel.
+//
+// The rate is the range: slow when the thing first matters, fast when it is
+// about to happen, and floored. The floor has been raised twice. A quarter
+// second still read as spam, and anything faster stops being a rhythm you can
+// count and becomes a flicker you stop seeing.
+#define ALERT_FLASH_SLOW     1.00f    // seconds per flash at the far edge
+#define ALERT_FLASH_FAST     0.35f    // ...and closest. Never faster than this.
+#define ALERT_FLASH_DUTY     0.45f    // fraction of the period the block is lit
