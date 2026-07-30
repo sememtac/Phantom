@@ -98,9 +98,12 @@ uint16_t vg_mix(uint16_t a, uint16_t b, float t);
 // knows how close the wall is.
 void vg_rast_tint(float k);
 
-// The set turning on and off. `open` is how much of the height is picture,
-// centred; `glow` is the bright scan band riding the aperture edge; `dim` is how
-// far what remains is faded toward black. All 0..1, and (1, 0, 0) is a normal
-// picture. See the note in vg_band.cpp.
-void vg_rast_tv(float open, float glow, float dim);
+// The set turning on and off, as an old tube does it: one bar at the centre that
+// grows, not a shutter opening.
+//   open  how much of the height is lit, centred -- the bar growing outward
+//   wide  how much of the width, for the dot that opens into a line first
+//   wash  how far the lit part is still raw white rather than resolved picture
+//   dim   how far the rest of it has gone to black
+// All 0..1, and (1, 1, 0, 0) is a normal picture. See the note in vg_band.cpp.
+void vg_rast_tv(float open, float wide, float wash, float dim);
 bool vg_rast_tv_active(void);

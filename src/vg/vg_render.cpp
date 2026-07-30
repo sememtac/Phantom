@@ -70,22 +70,27 @@ void vg_render_frame(const VgInput* in, float fps) {
     // copy of the scene. IN: the band is already lit, holds a moment, then opens
     // while the picture comes back up underneath it.
     if (vg.tv_phase == TV_NONE) {
-        vg_rast_tv(1.0f, 0.0f, 0.0f);
+        vg_rast_tv(1.0f, 1.0f, 0.0f, 0.0f);
     } else if (vg.tv_phase == TV_OUT) {
         const float u = vg.tv_t / TV_OUT_TIME;
-        // The band comes up, holds, then dies right at the end -- which is what
-        // makes the last moment read as the set cutting out rather than as a
-        // picture that simply got smaller.
-        vg_rast_tv(1.0f - smoothstep(0.22f, 0.95f, u),
-                   smoothstep(0.16f, 0.60f, u) * (1.0f - smoothstep(0.88f, 1.0f, u)),
-                   smoothstep(0.00f, 0.62f, u));
+        // Collapse inward to the centre line, whitening as it goes, and only at
+        // the very end does the line itself shorten to a dot and vanish. The
+        // wash is what makes it read as the tube losing the picture rather than
+        // as a window being shut on it.
+        vg_rast_tv(1.0f - smoothstep(0.12f, 0.78f, u),
+                   1.0f - smoothstep(0.80f, 1.00f, u),
+                   smoothstep(0.30f, 0.78f, u) * (1.0f - smoothstep(0.93f, 1.0f, u)),
+                   smoothstep(0.00f, 0.58f, u));
     } else {
         const float u = vg.tv_t / TV_IN_TIME;
-        // The band holds before it opens. Without that pause the aperture is
-        // already moving on the first frame and the pulse never registers.
-        vg_rast_tv(smoothstep(0.20f, 0.88f, u),
-                   1.0f - smoothstep(0.12f, 0.62f, u),
-                   1.0f - smoothstep(0.14f, 0.70f, u));
+        // Signal arrives: a dot at the centre opens into a line, the line grows
+        // outward into a bar, and only then does the white resolve into picture.
+        // The order matters -- resolve too early and it is a wipe, not a tube
+        // warming up.
+        vg_rast_tv(smoothstep(0.18f, 0.76f, u),
+                   smoothstep(0.00f, 0.16f, u),
+                   1.0f - smoothstep(0.40f, 0.92f, u),
+                   1.0f - smoothstep(0.30f, 0.82f, u));
     }
 
     vg_rast_begin_frame();
