@@ -47,18 +47,50 @@ void vg_course_begin(void) {
     vg.course_done  = false;
     vg.course_end_t = 0.0f;
     vg.health       = vg.health_max;
-    place_ring();
+
+    // NO GATE YET. It used to be placed here, in front of a player who was still
+    // being talked to -- and flying through it mid-briefing posted a score line,
+    // which cuts the announcement off at the knees because an immediate line
+    // clears the queue by design. The player lost most of the opening for the
+    // crime of flying forwards.
+    //
+    // It also read as being tested before being told what the test was.
+    vg.ring_alive      = false;
+    vg.course_briefing = true;
+    vg.course_wait     = COURSE_SETTLE;
+
     vg_ift_line(IFT_COURSE_START);
 }
 
 void vg_course_reset_streak(void) {
     vg.course_hits = 0;
+    // Crashing during the briefing must not conjure the gate early -- that is the
+    // whole thing this was changed to avoid, and the wall is reachable from the
+    // moment the course starts.
+    if (vg.course_briefing) { vg.ring_alive = false; return; }
     place_ring();
 }
 
 void vg_course_update(float dt) {
-    (void)dt;
-    if (!vg.ring_alive) { place_ring(); return; }
+    // Finished. No more gates -- without this the run's last frame sets
+    // ring_alive false and the very next one puts a fresh gate up, in the middle
+    // of the beat that is supposed to be the end of it.
+    if (vg.course_done) return;
+
+    if (!vg.ring_alive) {
+        // Wait out the briefing, then a quiet spell to look around in, and only
+        // then start asking for something. Gates after the first are placed
+        // immediately -- a pass or a miss also posts a line, and holding the next
+        // gate for that would put six seconds of nothing between every attempt.
+        if (vg.course_briefing) {
+            if (vg_ift_busy()) { vg.course_wait = COURSE_SETTLE; return; }
+            vg.course_wait -= dt;
+            if (vg.course_wait > 0.0f) return;
+            vg.course_briefing = false;
+        }
+        place_ring();
+        return;
+    }
 
     const float d = plane_d();
 

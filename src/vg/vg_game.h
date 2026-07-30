@@ -400,6 +400,11 @@ struct VgGame {
     // How hard the airframe is working, 0 at rest and 1 at the reference speed --
     // and past 1 for a light ship at full. Computed once in the world step and
     // read by both the camera and the panel, so the two cannot drift apart.
+    // The course holds its first gate back until the briefing is over. See
+    // vg_course_update.
+    bool        course_briefing;
+    float       course_wait;
+
     // Time since the course was finished. The finish gets a beat of its own
     // rather than cutting straight out; see VG_COURSE.
     float       course_end_t;

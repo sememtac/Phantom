@@ -30,6 +30,10 @@
 #define COURSE_DIST_MAX    1150.0f
 #define COURSE_LOST_DIST   2600.0f  // re-place a ring the player turned away from
 #define COURSE_NEAR_WALL   4        // every Nth ring hugs the boundary
+// Quiet after the briefing, before the first gate appears. Long enough to look
+// around and get a feel for the controls with nothing being asked yet -- the
+// course is a motor test, and the first thing to learn is what the stick does.
+#define COURSE_SETTLE      2.5f
 
 void vg_course_begin(void);
 // Streak back to zero and a fresh gate, without restarting the run. Used after a

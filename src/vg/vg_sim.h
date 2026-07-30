@@ -54,6 +54,9 @@ void vg_ift_say(const char* line, float hold);
 // Add a line to the end of the broadcast's queue, to be read after whatever is
 // already up. The text is copied, so a caller's scratch buffer is safe to reuse.
 void vg_ift_queue(const char* line, float hold);
+// True while the broadcast is still saying something, including the silences
+// inside a multi-line announcement.
+bool vg_ift_busy(void);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

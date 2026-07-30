@@ -151,6 +151,14 @@ void vg_ift_say(const char* line, float hold) {
     vg.ift_mark = true;
 }
 
+// True while the broadcast is mid-announcement: a line up, a pause between two,
+// or lines still waiting to be read. Callers use it to keep out of the way --
+// anything that would post its own line has to wait, or it silently deletes the
+// rest of what was being said.
+bool vg_ift_busy(void) {
+    return (vg.ift_line && vg.ift_t > 0.0f) || s_ift_gap > 0.0f || s_ift_i < s_ift_n;
+}
+
 // Queued lines are COPIED. A caller composing each line in its own scratch
 // buffer and queueing three of them would otherwise end up holding three
 // pointers to the same buffer and hear the last line three times.
