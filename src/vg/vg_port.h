@@ -73,6 +73,8 @@ bool vg_pmu_init(void);
 // registers written to st3. Currently used to identify the power key's bit; see
 // the probe note in vg_port_co5300.cpp.
 bool vg_pmu_irq(uint8_t* st3);
+// Every bit seen since boot, so a press survives nobody watching the port.
+void vg_pmu_seen(uint8_t* st3);
 
 // ---- Persistent storage ----------------------------------------------------
 //

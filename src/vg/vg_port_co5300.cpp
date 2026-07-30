@@ -323,6 +323,14 @@ bool vg_pmu_init(void) {
     return true;
 }
 
+// Sticky, because a press has to survive not being watched.
+//
+// The first version reported a press only at the instant it happened, which is
+// useless for the one thing it exists to do: somebody presses the key while
+// playing, and nobody is reading the port at that moment. Same mistake, and the
+// same fix, as the crash breadcrumb.
+static uint8_t s_pmu_seen[3] = { 0, 0, 0 };
+
 bool vg_pmu_irq(uint8_t* st3) {
     if (!s_pmu_present) return false;
     uint8_t st[3];
@@ -330,8 +338,15 @@ bool vg_pmu_irq(uint8_t* st3) {
     if (!(st[0] | st[1] | st[2])) return false;
 
     pmu_write(AXP_IRQ_ST, st, 3);          // write the bits back to clear them
+    s_pmu_seen[0] |= st[0];
+    s_pmu_seen[1] |= st[1];
+    s_pmu_seen[2] |= st[2];
     st3[0] = st[0]; st3[1] = st[1]; st3[2] = st[2];
     return true;
+}
+
+void vg_pmu_seen(uint8_t* st3) {
+    st3[0] = s_pmu_seen[0]; st3[1] = s_pmu_seen[1]; st3[2] = s_pmu_seen[2];
 }
 
 // ---------------------------------------------------------------------------

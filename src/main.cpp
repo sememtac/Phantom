@@ -113,15 +113,12 @@ void loop(void) {
     vg_crumb(CRUMB_POLL, (uint8_t)vg.state);
     if (vg_replay_mode() != VG_RP_PLAY) vg_capture_poll();
 
-    // PWR probe. Prints whichever AXP2101 status bits move, so the power key's
-    // bit can be read off a real press instead of guessed. Goes away once the
-    // mapping is known and the key becomes an ordinary button.
+    // PWR probe: poll and latch. What it saw is reported on the telemetry line
+    // below, which is gated against the capture stream -- printing from here
+    // corrupted a recording, because this runs whether or not one is going.
     {
         uint8_t st[3];
-        if (vg_pmu_irq(st)) {
-            Serial.printf("PMU IRQ: 0x48=%02X 0x49=%02X 0x4A=%02X\n",
-                          st[0], st[1], st[2]);
-        }
+        (void)vg_pmu_irq(st);
     }
 
     uint32_t now = micros();
@@ -211,12 +208,14 @@ void loop(void) {
     if (!vg_capture_active() && vg_replay_mode() == VG_RP_OFF
         && ms - report_ms >= 2000 && Serial.availableForWrite() > 256) {
         report_ms = ms;
+        uint8_t pmu_seen[3];
+        vg_pmu_seen(pmu_seen);
         // rast is CPU spent building bands; wait is time stalled on the panel
         // DMA. Only the amount by which rast exceeds the transfer window costs
         // frame time, so those two numbers are what any optimisation is aimed at.
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu blit %lu "
                       "| rast %lu = sky %lu prim %lu scan %lu "
-                      "| P %d T %d | heap %luK stack %luB%s\n",
+                      "| P %d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
@@ -233,6 +232,9 @@ void loop(void) {
                       // Both were invisible until now.
                       (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
                       (unsigned long)(uxTaskGetStackHighWaterMark(NULL)),
+                      // Every AXP2101 interrupt bit seen since boot. The power
+                      // key is in here somewhere; one press names it.
+                      pmu_seen[0], pmu_seen[1], pmu_seen[2],
                       vg_rast_overflowed() ? " OVERFLOW" : "");
 #if VG_DEBUG_TILT
         Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
