@@ -1229,11 +1229,18 @@ void vg_game_update(float dt, const VgInput* in) {
             vg_course_reset_streak();
         }
 
-        // Leaves the moment it is finished, or the moment the player says so.
-        // The way out is a button on the screen: the + key is the roll control
-        // now, and a practice range with no visible exit is a trap.
-        if (vg.course_done || in->pwr_edge
-            || (tap_up && vg_course_exit_at(tap_x, tap_y)))
+        // Finishing is a MOMENT, not an exit condition. The gate is already gone
+        // and the player keeps flying while the broadcast marks it, exactly as a
+        // kill does -- see COURSE_DONE_BEAT.
+        if (vg.course_done) {
+            vg.course_end_t += dt;
+            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(TVA_BRACKET);
+        }
+
+        // Leaving early is not a moment and gets none. The way out is a button on
+        // the screen: the + key is the roll control now, and a practice range with
+        // no visible exit is a trap.
+        else if (in->pwr_edge || (tap_up && vg_course_exit_at(tap_x, tap_y)))
             vg_tv_go(TVA_BRACKET);
         break;
     }

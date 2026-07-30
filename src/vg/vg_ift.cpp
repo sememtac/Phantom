@@ -5,15 +5,19 @@
 #include <stdio.h>
 
 // ---------------------------------------------------------------------------
-// THE LINES BELOW ARE PLACEHOLDERS AND ARE NOT WRITING.
+// SOME OF THESE LINES ARE THE AUTHOR'S WRITING. DO NOT EDIT THOSE.
 //
-// They are data labels -- a callsign and a ship class, which is a scoreboard,
-// not a script. The game's writing belongs to the author (see CLAUDE.md), so the
-// mechanism is wired and the voice is left empty on purpose.
+// The course lines -- START and DONE -- are written, and belong to the author
+// like everything else the player reads (see CLAUDE.md). Change them only when
+// asked to, and never to make something fit.
 //
-// To write the real lines, replace the format strings and nothing else. Each slot
-// documents exactly which specifiers it gets and in what order. Keep the count
-// and the order; the arguments are passed positionally.
+// The rest are still PLACEHOLDERS and are not writing: they are data labels, a
+// callsign and a ship class, which is a scoreboard rather than a script. Those
+// are waiting for a voice.
+//
+// To write one, replace the format string and nothing else. Each slot documents
+// exactly which specifiers it gets and in what order. Keep the count and the
+// order; the arguments are passed positionally.
 //
 //   IFT_INTRO_YOU   %s  the player's callsign        (3 characters)
 //                   %s  the player's ship class name
@@ -31,10 +35,10 @@
 //   IFT_COURSE_MISS   no arguments
 //   IFT_COURSE_DONE   no arguments
 //
-// A line is drawn at SCALE 3 across the full width, so about 24 characters fit
-// before it runs into the edges. Longer is not clipped -- it is centred and will
-// overhang. Scale 3 because this is the system talking and scale 2 read as a
-// footnote; the cost is ten characters.
+// A line is drawn at SCALE 3, which fits about 22 characters beside the IFT mark
+// or 26 without it -- continuation lines in a queued run carry no mark and get
+// the extra room. Longer than that drops to scale 2 automatically rather than
+// being clipped, so a written line is never truncated to protect a font size.
 // ---------------------------------------------------------------------------
 
 static const char* const IFT_FMT[IFT_SLOTS] = {
@@ -46,7 +50,7 @@ static const char* const IFT_FMT[IFT_SLOTS] = {
     "-",
     "%d / %d",              // IFT_COURSE_PASS
     "",                     // IFT_COURSE_MISS
-    "",                     // IFT_COURSE_DONE
+    "CALIBRATION COMPLETE.", // IFT_COURSE_DONE
 };
 
 // One buffer, because only one line is ever up: the slot is single and a new line

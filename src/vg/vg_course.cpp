@@ -45,6 +45,7 @@ void vg_course_begin(void) {
     vg.course_hits  = 0;
     vg.course_index = 0;
     vg.course_done  = false;
+    vg.course_end_t = 0.0f;
     vg.health       = vg.health_max;
     place_ring();
     vg_ift_line(IFT_COURSE_START);

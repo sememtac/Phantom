@@ -196,8 +196,16 @@ void vg_draw_ift(void) {
     const bool badge = vg.ift_mark;
     const int mark_end = badge ? (8 + vg_text_width("IFT", 2) + 10 + 6) : 8;
 
+    // Fit against the space the line can ACTUALLY use, which is everything right
+    // of the mark. The test used to reserve the mark's width on BOTH sides, to
+    // keep the line centred on the whole panel -- but the placement below already
+    // gives that up and re-centres in the clear space when it has to. So the test
+    // was stricter than the rule it was testing for, and dropped lines to scale 2
+    // that would have fitted at 3 with room to spare.
+    const int clear = SCR_W - mark_end - 10;
+
     int scale = 3;
-    if (vg_text_width(vg.ift_line, scale) > SCR_W - mark_end * 2) scale = 2;
+    if (vg_text_width(vg.ift_line, scale) > clear) scale = 2;
 
     const int mw = vg_text_width(vg.ift_line, scale);
 

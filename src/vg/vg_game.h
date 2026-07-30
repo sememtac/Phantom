@@ -265,6 +265,18 @@ enum TvAction : uint8_t {
 #define KILL_REFLECT    4.6f
 #define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 
+// Finishing the ring course gets THE SAME TAIL AS A KILL. Structurally it is the
+// same moment: the thing that was in the way is gone, the broadcast says so, and
+// there is silence before the game moves you on. Cutting straight from the last
+// gate to the tournament map would make the course read as a menu that ended,
+// rather than as something the player finished.
+//
+// KILL_REFLECT exactly, because that is how long an IFT line is left standing
+// after a match before the scene changes, and this is meant to land as the same
+// beat. There is no loser's transmission to wait out first, so that part has no
+// equivalent here.
+#define COURSE_DONE_BEAT  KILL_REFLECT
+
 // Victory sequence schedule. The state machine owns it because it decides when
 // the state ends; the overlay only draws to it. Each beat finishes before the
 // next begins -- overlapping them means neither is ever fully present and the
@@ -376,6 +388,10 @@ struct VgGame {
     // How hard the airframe is working, 0 at rest and 1 at the reference speed --
     // and past 1 for a light ship at full. Computed once in the world step and
     // read by both the camera and the panel, so the two cannot drift apart.
+    // Time since the course was finished. The finish gets a beat of its own
+    // rather than cutting straight out; see VG_COURSE.
+    float       course_end_t;
+
     float       buzz;
 
     bool        ift_mark;
