@@ -475,6 +475,16 @@ void vg_match_start(void) {
 // difference between a tumble and a rotated picture: once it is in R, the next
 // frame's pitch and yaw act in the rolled frame and the path actually
 // corkscrews. Flight passes zero -- the player's roll stays cosmetic.
+// The roll command as an angle for this frame. Lives here rather than at the
+// three call sites because it is part of the flight model, and because the
+// throttle it depends on is the smoothed one -- roll authority should lag a
+// shove of the slider exactly as speed does.
+static inline float roll_angle(const VgInput* in, float dt) {
+    const float scale = ROLL_SLOW_SCALE
+                      + (ROLL_FAST_SCALE - ROLL_SLOW_SCALE) * vg.throttle;
+    return in->roll * ROLL_RATE * scale * dt;
+}
+
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
                        float throttle_in) {
     float k = dt * THROTTLE_LERP;
@@ -522,9 +532,21 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // the starfield.
     vg_sky_step(pitch, yaw, vg.bank + vg.roll);
 
+    // The cosmetic lean, from the yaw command as always -- plus a lead into any
+    // roll. Rolling used to have NO visual signature of its own: yaw is forced to
+    // zero while the roll key is held, so the bank actually decayed to nothing
+    // during the one manoeuvre that deserved the most emphasis.
+    //
+    // Same sign as the roll, which is not a guess: vg_sky_step above is handed
+    // `vg.bank + vg.roll` as a single apparent angle, so the two already share a
+    // convention and adding them exaggerates rather than cancels.
+    const float roll_rate_now = (dt > 0.0f) ? (roll_in / dt) : 0.0f;
+    const float bank_target   = (-yaw_in * BANK_MAX)
+                              + roll_rate_now * ROLL_BANK_LEAD;
+
     float kb = dt * BANK_LERP;
     if (kb > 1.0f) kb = 1.0f;
-    vg.bank += ((-yaw_in * BANK_MAX) - vg.bank) * kb;
+    vg.bank += (bank_target - vg.bank) * kb;
 
     for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
 
@@ -1141,8 +1163,7 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_COURSE: {
         // Flying, and nothing else. No opponent, no missiles, no purse. The wall
         // is still lethal because that is one of the things worth learning here.
-        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
-                      in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, roll_angle(in, dt), in->throttle);
         vg_course_update(dt);
         collide_player();
 
@@ -1172,8 +1193,7 @@ void vg_game_update(float dt, const VgInput* in) {
         // The world keeps running -- wreckage still tumbles, their last trail
         // still fades -- but nothing can touch the player. The only job of this
         // state is to let the dead pilot finish talking.
-        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
-                      in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, roll_angle(in, dt), in->throttle);
         vg_update_missiles(dt);
         update_threat();
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
@@ -1263,8 +1283,7 @@ void vg_game_update(float dt, const VgInput* in) {
 
         vg_clear_player_hit();
 
-        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
-                      in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, roll_angle(in, dt), in->throttle);
 
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
 

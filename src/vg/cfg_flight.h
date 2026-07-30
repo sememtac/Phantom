@@ -152,3 +152,31 @@
 // would be worse than none -- the whole point is to break the plane of a turn
 // faster than an opponent can read it.
 #define ROLL_RATE            2.9f
+
+// Roll authority against the throttle, and deliberately the INVERSE of what the
+// throttle does to pitch and yaw.
+//
+// Every other control gets WORSE as you speed up -- that is what agility_fast_malus
+// is for, and it is what makes the throttle a combat control rather than a
+// speed setting. Roll going the other way is what gives the throttle a second
+// meaning instead of just a cost: slow and you turn tight but roll like a barge;
+// fast and you can barely turn but you can snap the airframe round its own axis.
+//
+// It also fixes an accident. Roll used to ignore the throttle completely, which
+// meant it was the only control in the game nobody had made a decision about.
+// At full throttle an AEGIS turns at 1.33 rad/s and rolled at 2.9 -- already
+// more than twice as responsive, purely because everything else had degraded.
+// The relationship existed; it was just invisible, because in absolute terms
+// the roll felt identical at every speed.
+#define ROLL_SLOW_SCALE      0.62f    // x ROLL_RATE at idle
+#define ROLL_FAST_SCALE      1.70f    // x ROLL_RATE at full throttle
+
+// How far the cosmetic bank leads the roll, in seconds of roll rate. The camera
+// lean is smoothed by BANK_LERP and the roll is not, so the picture whips into
+// the manoeuvre and settles out of it -- which is the whole of the drama, and
+// costs nothing in the simulation.
+//
+// NOT shake. Shake means damage everywhere else in this game, and spending it on
+// something the player did on purpose would blunt the one signal that has to
+// read instantly.
+#define ROLL_BANK_LEAD       0.055f
