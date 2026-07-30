@@ -557,24 +557,35 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     int cell = pitch - 6;
     if (cell < 6) cell = 6;
 
-    // The rack fills back up as the reload runs, in the dim ink -- a round that is
-    // coming but is not here yet.
+    // A reload is ONE BODY FILLING, and it has to look like one.
     //
-    // Necessary, not decorative. The magazine refills all at once from empty now,
-    // so without this the rack sits blank for up to nine seconds and the only
-    // thing distinguishing "reloading" from "broken" is that the player happens
-    // to know the rule. Brightness carries it, which is the panel's whole
-    // vocabulary: lit is loaded, dim is promised, outline is empty.
+    // The first version lit the cells one at a time as the clock ran down, which
+    // is a perfectly good progress bar and taught precisely the wrong rule: the
+    // magazine arrives all at once, and a player watching rounds appear one by
+    // one will believe -- correctly, on the evidence in front of them -- that
+    // they can fire as soon as the first one shows. They cannot. Nothing is
+    // loaded until everything is.
+    //
+    // So the progress is drawn as a continuous column that ignores the cell
+    // divisions entirely. It cannot be read as rounds arriving because it is
+    // visibly not made of rounds, and it fills from the bottom, mirroring the
+    // direction the rack empties.
     const float rl = (vg.reload_t > 0.0f && vg.spec->reload > 0.0f)
                    ? (1.0f - vg.reload_t / vg.spec->reload) : 0.0f;
-    const int   coming = (int)((float)mag * rl);
 
     hud_panel(SCR_W - 40, 140, 30, mag * pitch + 8, "MSL");
+
     for (int i = 0; i < mag; i++) {
         int y = 148 + i * pitch;
-        if (i < vg.missiles)   vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
-        else if (i < coming)   vg_fill_rect(SCR_W - 34, y, 18, cell, INK);
-        else                   vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
+        if (i < vg.missiles) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
+        else                 vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
+    }
+
+    if (rl > 0.0f) {
+        const int top = 148;
+        const int bot = 148 + (mag - 1) * pitch + cell;
+        int h = (int)((float)(bot - top) * rl);
+        if (h > 0) vg_fill_rect(SCR_W - 34, bot - h, 18, h, INK);
     }
 
     // Speed reads top-centre, right where the eye already is for the crosshair,
