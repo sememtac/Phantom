@@ -65,19 +65,21 @@
 // sustained rate works out shorter than the old per-round reload for every class,
 // so at 1.30 every enemy would have silently got faster on the trigger.
 //
-// 2.20 holds the AVERAGE cadence across the four classes at what it was. It does
-// NOT hold any individual class there, and no single number could: fire control
-// is per-class now, so the classes have moved relative to each other. That is the
-// point of the change, but it is a balance shift and not a neutral one --
+// 2.02 holds the AVERAGE cadence across the four classes at what it was before
+// fire control became per-class. It does NOT hold any individual class there, and
+// no single number could -- the classes have moved relative to each other, which
+// is the point. It is still a balance shift and not a neutral one:
 //
 //   class      before   after
-//   AEGIS        4.16    2.93
-//   LANCE        5.20    4.90
-//   CHARIOT      1.82    2.00
-//   BALLISTA     7.80    9.02
+//   AEGIS        4.16    2.69
+//   LANCE        5.20    5.00
+//   CHARIOT      1.82    2.01
+//   BALLISTA     7.80    9.29
 //
-// -- so an enemy AEGIS is now the one that got meaningfully harder.
-#define ENEMY_FIRE_GAP_K     2.20f
+// -- so an enemy AEGIS is the one that got meaningfully harder, and an enemy
+// BALLISTA the one that got easier. Retune this whenever a class's magazine,
+// trigger or reload moves; it is derived from all three.
+#define ENEMY_FIRE_GAP_K     2.02f
 
 #define ENEMY_FIRE_COS       0.90f
 
