@@ -59,6 +59,13 @@
 #define COL_STAR_DIM         VGC(0x39E7)
 #define COL_STAR_MID         VGC(0x8410)
 #define COL_STAR_BRIGHT      VGC(0xFFFF)
+
+// The broadcast voice. WHITE, and that is the point: hue in this game means
+// identity, so every ship earns one and vg_tourney spreads fifteen of them while
+// keeping clear of the player's. The IFT is not a competitor. White is the absence
+// of a hue rather than another one, so it can never be mistaken for an entrant and
+// costs nothing from the wheel.
+#define COL_IFT              VGC(0xFFFF)
 #define COL_AST              VGC(0x5FFF)       // pale cyan
 #define COL_DEBRIS           VGC(0xFD20)       // orange
 #define COL_EXHAUST          VGC(0xFF60)       // amber

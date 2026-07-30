@@ -62,3 +62,8 @@ void vg_draw_arena_grid(const VgCam& cam);
 void vg_draw_world(const VgCam& cam);
 void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps);
 void vg_draw_overlays(void);
+
+// The broadcast caption. Drawn by the render layer rather than by the HUD,
+// because the IFT speaks over the INTRO -- which has no instruments at all -- as
+// well as over a finished match.
+void vg_draw_ift(void);

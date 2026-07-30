@@ -5,6 +5,7 @@
 #include "vg_screens.h"
 #include "vg_save.h"
 #include "vg_cine.h"
+#include "vg_ift.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -98,6 +99,20 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // cannot provoke a second time, and the round is already decided -- there is
     // nothing it can be competing with.
     vg.comms_t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
+}
+
+// The broadcast voice. White, and outside the hue system entirely.
+//
+// Every ship in the arena earns a hue, because hue means identity here and a
+// trail is the one colour you never mistake. The IFT is not in the fight, so
+// giving it a hue would make it a sixteenth entrant. White is the absence of one,
+// which is what a broadcast layer should be -- and it costs nothing from the
+// fifteen pilot hues that vg_tourney already has to spread and keep clear of the
+// player's own.
+void vg_ift_say(const char* line) {
+    if (!line) return;
+    vg.ift_line = line;
+    vg.ift_t    = IFT_SPEECH;
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -323,6 +338,12 @@ void vg_match_start(void) {
 
     vg.state       = VG_INTRO;
     vg.state_t     = 0;
+    // Every round is its own broadcast, so the announcer's one-shot flags clear
+    // here rather than at boot. Clearing them at boot only would have introduced
+    // the fighters once and then gone quiet for the rest of the tournament.
+    vg.ift_fired   = 0;
+    vg.ift_line    = nullptr;
+    vg.ift_t       = 0.0f;
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
     vg.bank        = 0;
     vg.cine_on     = false;
@@ -638,6 +659,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.comms_t -= dt;
         if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
     }
+    if (vg.ift_t > 0) {
+        vg.ift_t -= dt;
+        if (vg.ift_t <= 0) vg.ift_line = nullptr;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -942,6 +967,17 @@ void vg_game_update(float dt, const VgInput* in) {
         //
         // Free to do because the handover is a hard cut to black with the
         // instruments rebooting over it. None of the snap is visible.
+        // The broadcast introduces each fighter over its own shot. The cutscene
+        // already hard-cuts between them, so the cues are the shot boundaries.
+        if (vg.state_t > INTRO_DRIFT + 0.4f && !(vg.ift_fired & (1u << IFT_INTRO_YOU))) {
+            vg.ift_fired |= (1u << IFT_INTRO_YOU);
+            vg_ift_line(IFT_INTRO_YOU);
+        }
+        if (vg.state_t > INTRO_OPP_START + 0.4f && !(vg.ift_fired & (1u << IFT_INTRO_OPP))) {
+            vg.ift_fired |= (1u << IFT_INTRO_OPP);
+            vg_ift_line(IFT_INTRO_OPP);
+        }
+
         if (vg_cine_update(dt, tap_up)) {
             vg_cine_clear();
             vg.cam_zoom = 1.0f;              // the cockpit is never zoomed
@@ -970,6 +1006,13 @@ void vg_game_update(float dt, const VgInput* in) {
         vg_update_missiles(dt);
         update_threat();
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
+        // After the last transmission, not over it. KILL_SPEECH is exactly how
+        // long the dying pilot holds the other slot, so this lands in the silence
+        // that follows and runs on into the bracket redraw.
+        if (vg.state_t > KILL_SPEECH && !(vg.ift_fired & (1u << IFT_MATCH_END))) {
+            vg.ift_fired |= (1u << IFT_MATCH_END);
+            vg_ift_line(IFT_MATCH_END);
+        }
         if (vg.state_t > KILL_BEAT) {
             award_purse();
             vg.state   = VG_ROUND_WON;

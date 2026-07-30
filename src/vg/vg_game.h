@@ -216,6 +216,11 @@ enum VgState : uint8_t {
 //
 // The player is invulnerable for both, and free to fly through what is left.
 #define KILL_SPEECH     5.6f
+
+// An IFT line holds longer than a pilot's. It is not competing with anything --
+// the broadcast only speaks between fights -- and it carries information the
+// player cannot get anywhere else, so it is worth reading rather than glancing at.
+#define IFT_SPEECH      6.4f
 #define KILL_REFLECT    4.6f
 #define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 
@@ -306,6 +311,22 @@ struct VgGame {
     const char* comms_line;
     float       comms_t;
     uint8_t     comms_pri;
+
+    // The broadcast voice, on its OWN slot rather than sharing the pilots'.
+    //
+    // Sharing was the obvious thing and it breaks at the one moment that matters:
+    // after a kill the dying pilot holds the comms slot for KILL_SPEECH, which is
+    // exactly when the IFT is supposed to be summing up. Two slots let them
+    // overlap on purpose, and a loser still talking under the summary is the tone
+    // of the whole tournament.
+    //
+    // No priority field. The IFT never interrupts itself -- it speaks between
+    // fights, never during one, so a later line simply replaces an earlier one.
+    const char* ift_line;
+    float       ift_t;
+    // One bit per IftSlot, so each line fires once per match rather than every
+    // frame its cue is true.
+    uint8_t     ift_fired;
     float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around

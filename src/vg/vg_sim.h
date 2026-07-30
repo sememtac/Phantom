@@ -49,6 +49,8 @@ void vg_spawn_opponent(void);
 // Put one of this pilot's lines on the radio. Higher-priority events displace
 // lower ones and never the other way round, so a death is always heard out.
 void vg_comms_say(const Ship* s, VoiceEvent ev);
+// The broadcast voice: white, its own slot, silent during a fight.
+void vg_ift_say(const char* line);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

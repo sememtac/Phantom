@@ -3,6 +3,7 @@
 #include "vg_game.h"
 #include "vg_screens.h"
 #include "vg_glitch.h"
+#include "vg_sim.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -65,8 +66,13 @@ void vg_render_frame(const VgInput* in, float fps) {
         case VG_REPAIR:  vg_draw_repair();   break;
         default:         vg_draw_overlays(); break;
         }
+        vg_draw_ift();
         return;
     }
+
+    // Before the instruments, so a line laid over the cutscene is not competing
+    // with a HUD that is not there yet.
+    vg_draw_ift();
 
     vg_draw_lock_box(cam);
 

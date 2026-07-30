@@ -151,6 +151,39 @@ static void draw_boundary_alert(void) {
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 
+// The broadcast caption. A full-width band low on the screen, in WHITE, with the
+// IFT mark where a pilot's callsign block would be.
+//
+// Distinguished by FORM as well as by colour, deliberately. Colour alone is a weak
+// signal at a glance, and the wall tint can now push the whole frame red -- so the
+// shape has to carry it too. A pilot speaks as a tag and a message on the throttle
+// line; the IFT speaks as a rule across the screen, which reads as broadcast
+// furniture rather than as a pilot who happens to be white.
+//
+// A lower third, because that is where a broadcast puts one, and because the IFT
+// only speaks BETWEEN fights -- so a thumb resting over it costs nothing.
+void vg_draw_ift(void) {
+    if (!vg.ift_line || vg.ift_t <= 0.0f) return;
+
+    const int y  = 384;
+    const int h  = 30;
+    const int mw = vg_text_width(vg.ift_line, 2);
+    const int mx = (SCR_W - mw) / 2;
+
+    // Rules above and below rather than a filled block: a solid white band would
+    // be the brightest thing on a panel whose whole hierarchy is brightness, and
+    // it would bury the instruments it is supposed to sit behind.
+    vg_fill_rect(0, y,         SCR_W, HUD_STROKE, COL_IFT);
+    vg_fill_rect(0, y + h - HUD_STROKE, SCR_W, HUD_STROKE, COL_IFT);
+    vg_text(mx, y + 8, vg.ift_line, COL_IFT, 2);
+
+    // The mark, inverse-video at the left, where a callsign block sits on the
+    // pilots' channel.
+    const int tw = vg_text_width("IFT", 1);
+    vg_fill_rect(8, y + 9, tw + 8, 12, COL_IFT);
+    vg_text(12, y + 11, "IFT", INK_ONFILL, 1);
+}
+
 static void draw_throttle(void) {
     const int x0 = THROTTLE_X0, w = THROTTLE_W;
     const int y0 = THROTTLE_TOP, h = THROTTLE_BOT - THROTTLE_TOP;
