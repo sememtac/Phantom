@@ -128,17 +128,14 @@ static bool alert_lit(float k) {
     return fmodf(vg.state_t, period) <= period * ALERT_FLASH_DUTY;
 }
 
-// Incoming missile. Flashing accelerates as the seeker closes, and inside
-// MSL_ALERT_SOLID it stops flashing and stays lit, because at that range the
-// question is no longer whether to react.
+// Incoming missile. Flashing accelerates as the seeker closes, and that is all
+// it does. There used to be a final stage that held the block solid inside
+// MSL_ALERT_SOLID, on the theory that evasion was no longer the question -- but
+// a warning that stops moving stops being read, and the fastest flash already
+// says everything the solid one did.
 static void draw_missile_alert(void) {
     if (!vg.threat || vg.threat_range > MSL_ALERT_RANGE) return;
-
-    if (vg.threat_range > MSL_ALERT_SOLID) {
-        const float k = 1.0f - (vg.threat_range - MSL_ALERT_SOLID)
-                             / (MSL_ALERT_RANGE - MSL_ALERT_SOLID);
-        if (!alert_lit(k)) return;
-    }
+    if (!alert_lit(1.0f - vg.threat_range / MSL_ALERT_RANGE)) return;
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }

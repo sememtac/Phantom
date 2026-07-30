@@ -93,7 +93,7 @@ uint16_t vg_dim(uint16_t c, float f);
 // byte-swapped storage. Cheap enough for per-object use, not per-pixel.
 uint16_t vg_mix(uint16_t a, uint16_t b, float t);
 
-// Push the finished picture toward red, to the strength given: 0 is off, and
-// larger values take green and blue further down. Set once per frame by the
-// render layer, which is what knows how close the wall is.
-void vg_rast_tint(int shift);
+// How far a red gradient has closed in from the edge of the screen: 0 is off and
+// 1 covers the whole frame. Set once per frame by the render layer, which is what
+// knows how close the wall is.
+void vg_rast_tint(float k);

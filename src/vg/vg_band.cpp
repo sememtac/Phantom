@@ -258,47 +258,142 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // Wall proximity tint
 // ---------------------------------------------------------------------------
 
-// Push TWO packed pixels toward red by attenuating green and blue.
+// Redden a pixel with ONE mask and ONE or, and no byte swap.
 //
-// A mix toward a red would need three multiplies per pixel. Red is already the
-// top bits of RGB565, so taking green and blue DOWN leaves red standing and the
-// picture goes red for a shift and two masks. The masks after the shift are what
-// keep each channel inside its own field -- green's low bit would otherwise land
-// in blue's range, and blue's would fall out of the pixel entirely.
-static inline uint32_t tint_pair(uint32_t v, int shift) {
-    uint32_t n = ((v >> 8) & 0x00FF00FFu) | ((v << 8) & 0xFF00FF00u);
-    const uint32_t r = n & 0xF800F800u;
-    const uint32_t g = ((n & 0x07E007E0u) >> shift) & 0x07E007E0u;
-    const uint32_t b = ((n & 0x001F001Fu) >> shift) & 0x001F001Fu;
-    n = r | g | b;
-    return ((n >> 8) & 0x00FF00FFu) | ((n << 8) & 0xFF00FF00u);
+// The first version swapped each pixel to native order, scaled green and blue by
+// a shift, added the red, and swapped back. Correct, and it cost 17ms a frame at
+// full coverage: 66 fps fell to 35, at the exact moment the player most needs the
+// frame rate. Two swaps and eight masks per pixel pair, over 230,400 pixels.
+//
+// So the work is done in the panel's own byte order instead. The pixels are stored
+// byte-swapped, which puts the fields at:
+//
+//     bits 15..13  green, high 3      bits 7..3   red
+//     bits 12..8   blue               bits 2..0   green, low 3
+//
+// Blue is contiguous there and green's top bit is reachable, so "take blue out and
+// cap green" is a mask, and "add red" is an or into bits 7..3. Green cannot be
+// SCALED without recombining its two halves, and it does not need to be: for a
+// warning tint, removing blue and capping green is what turns the picture red.
+//
+// Amber survives it, which matters -- the HUD is #ffae1e, whose green is 21 of 63
+// with its top bit clear, so the instruments stay readable while everything
+// around them goes red.
+// Twelve rings, not four. Four was a gradient in the sense that it had steps in
+// it, and the steps were the thing you noticed. Each extra ring costs one more
+// square root per ROW and two more spans, which is nothing next to the pixels.
+#define TINT_RINGS 12
+
+// Per ring, from the faint inner edge out to the rim. The mask CLEARS bits and
+// the glow is a red value out of 31, pre-shifted into the swapped red field.
+//
+// The red ramp starts at zero on purpose: the innermost ring changes nothing at
+// all, so the gradient fades out instead of ending on an edge.
+// Pre-paired, so the hot loop does not build them. Each entry is the mask and the
+// glow for TWO pixels at once. Recomputing these inside the span function cost
+// six operations per call, and there are twelve rings on both sides of 480 rows.
+static const uint32_t TINT_KEEP[TINT_RINGS] = {
+    0xFFFFFFFFu, 0xFFFFFFFFu, 0xFEFFFEFFu, 0xFCFFFCFFu,
+    0xF8FFF8FFu, 0xF0FFF0FFu, 0xE0FFE0FFu, 0xE0FFE0FFu,
+    0x60FF60FFu, 0x60FF60FFu, 0x20FF20FFu, 0x00FF00FFu,
+};
+static const uint32_t TINT_GLOW[TINT_RINGS] = {
+    0x00000000u, 0x00080008u, 0x00100010u, 0x00180018u,
+    0x00200020u, 0x00300030u, 0x00400040u, 0x00500050u,
+    0x00600060u, 0x00700070u, 0x00800080u, 0x00900090u,
+};
+
+// Tint [x0,x1) of one row. Unrolled four words at a time, which is what the
+// scanline pass above learned: at five operations of real work per word, the loop
+// itself was most of the cost.
+static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
+    if (x0 < 0)     x0 = 0;
+    if (x1 > SCR_W) x1 = SCR_W;
+    if (x1 <= x0)   return;
+
+    const uint32_t keep = TINT_KEEP[ring];
+    const uint32_t glow = TINT_GLOW[ring];
+    if (keep == 0xFFFFFFFFu && glow == 0u) return;      // the innermost ring
+
+    int x = x0;
+    if (x & 1) {
+        row[x] = (uint16_t)((row[x] & (uint16_t)keep) | (uint16_t)glow);
+        x++;
+    }
+
+    uint32_t* p = (uint32_t*)(row + x);
+    int n = (x1 - x) >> 1;
+    int i = 0;
+    for (; i + 4 <= n; i += 4) {
+        p[i]     = (p[i]     & keep) | glow;
+        p[i + 1] = (p[i + 1] & keep) | glow;
+        p[i + 2] = (p[i + 2] & keep) | glow;
+        p[i + 3] = (p[i + 3] & keep) | glow;
+    }
+    for (; i < n; i++) p[i] = (p[i] & keep) | glow;
+    x += n * 2;
+
+    for (; x < x1; x++)
+        row[x] = (uint16_t)((row[x] & (uint16_t)keep) | (uint16_t)glow);
 }
 
-// The whole band, not a region of it. The point is that the player cannot be
-// looking somewhere else: a tint has no location to miss.
+// A RADIAL gradient that closes inward. The edge of the screen reddens first and
+// the red front travels toward the middle, so at the moment of real danger the
+// whole picture is red and the strongest part is still the rim.
 //
-// This replaced a subdivided patch of wall, which was a finer mesh on a cell the
-// player was not looking at -- they are looking at the enemy. Only runs inside
-// ARENA_TINT_RANGE, which is the only time anything is competing for the frame.
-static inline void band_wall_tint(uint16_t* band, int shift) {
-    uint32_t* p = (uint32_t*)band;
-    const int n = SCR_W * BAND_H / 2;
-    for (int i = 0; i < n; i += 4) {
-        uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
-        if (a) p[i]     = tint_pair(a, shift);
-        if (b) p[i + 1] = tint_pair(b, shift);
-        if (c) p[i + 2] = tint_pair(c, shift);
-        if (d) p[i + 3] = tint_pair(d, shift);
+// This replaced a flat tint over the whole frame, which said "danger" but not
+// "how close", and before that a subdivided patch of wall, which was a detail on
+// a surface the player was not looking at.
+//
+// No square root per pixel. For a row at dy from centre, the ring of radius R
+// crosses it at dx = sqrt(R*R - dy*dy), so four roots per ROW give the four ring
+// boundaries and everything between them is a span. Untinted spans cost nothing.
+#define TINT_RINGS 4
+
+
+static void band_wall_tint(uint16_t* band, int by0, float k) {
+    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
+    // The corner. At k=1 the innermost boundary reaches the centre and the whole
+    // frame is inside the gradient.
+    const float rmax = sqrtf(cx * cx + cy * cy);
+    const float rin  = rmax * (1.0f - k);
+    const float step = (rmax - rin) / (float)TINT_RINGS;
+
+    for (int row = 0; row < BAND_H; row++) {
+        const float dy  = (float)(by0 + row) - cy;
+        const float dy2 = dy * dy;
+        uint16_t*   p   = band + row * SCR_W;
+
+        // Where each ring boundary crosses this row, as a half-width. Rings that
+        // do not reach the row at all clamp to the screen edge and their spans
+        // come out empty.
+        int lim[TINT_RINGS + 1];
+        for (int i = 0; i <= TINT_RINGS; i++) {
+            const float r  = rin + step * (float)i;
+            const float d2 = r * r - dy2;
+            lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
+        }
+
+        // Innermost ring is the faintest. Outside the last boundary is the corner
+        // region, which stays at the strongest setting.
+        for (int i = 0; i < TINT_RINGS; i++) {
+            const int a = lim[i], b = lim[i + 1];
+            tint_span(p, (int)cx + a, (int)cx + b, i);            // right
+            tint_span(p, (int)cx - b, (int)cx - a, i);            // left
+        }
+        // Beyond the last boundary is the corner region, held at the rim setting.
+        tint_span(p, (int)cx + lim[TINT_RINGS], SCR_W, TINT_RINGS - 1);
+        tint_span(p, 0, (int)cx - lim[TINT_RINGS], TINT_RINGS - 1);
     }
 }
 
-// Set from outside, once per frame. The rasteriser does not include vg_game.h
-// and must not: it draws what it is given and knows nothing about walls. The
-// render layer owns the game state and passes the strength down.
-static int s_tint_shift = 0;
+// Set from outside, once per frame: 0 for no tint, up to 1 at the wall. The
+// rasteriser does not include vg_game.h and must not -- it draws what it is given
+// and knows nothing about walls. The render layer owns the game state.
+static float s_tint_k = 0.0f;
 
-void vg_rast_tint(int shift) {
-    s_tint_shift = (shift < 0) ? 0 : (shift > 8 ? 8 : shift);
+void vg_rast_tint(float k) {
+    s_tint_k = (k < 0.0f) ? 0.0f : (k > 1.0f ? 1.0f : k);
 }
 
 static inline void band_scanlines(uint16_t* band, int by0) {
@@ -423,7 +518,7 @@ void vg_rast_flush(void) {
     uint32_t raster = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
 
-    const int tint_shift = s_tint_shift;
+    const float tint_k = s_tint_k;
 
     for (int b = 0; b < NUM_BANDS; b++) {
         uint16_t* buf = s_band[b & 1];
@@ -443,7 +538,7 @@ void vg_rast_flush(void) {
         // After the scanlines, so the tint colours those too. A red warning that
         // left the scanlines amber would read as an overlay rather than as the
         // whole picture going red.
-        if (tint_shift) band_wall_tint(buf, tint_shift);
+        if (tint_k > 0.0f) band_wall_tint(buf, b * BAND_H, tint_k);
         s_scan_us += micros() - t_scan;
         raster += micros() - r0;
 

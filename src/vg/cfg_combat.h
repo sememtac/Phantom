@@ -114,8 +114,7 @@
 // It now starts far enough out to be acted on, and its cadence carries the
 // range: a double beat that gets faster as the seeker closes, and then stops
 // beating and stays lit once evasion is no longer the question.
-#define MSL_ALERT_RANGE      900.0f   // warning starts here
-#define MSL_ALERT_SOLID      190.0f   // steady from here in: no longer blinking
+#define MSL_ALERT_RANGE      900.0f   // warning starts here, and only flashes
 
 // The cadence is ALERT_FLASH_* in cfg_hud.h, shared with the boundary alert.
 // This one used to have a double-beat shape of its own, which is the more
