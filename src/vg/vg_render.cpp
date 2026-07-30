@@ -77,9 +77,6 @@ void vg_render_frame(const VgInput* in, float fps) {
         return;
     }
 
-    // Before the instruments, so a line laid over the cutscene is not competing
-    // with a HUD that is not there yet.
-    vg_draw_ift();
 
     vg_draw_lock_box(cam);
 
@@ -196,6 +193,19 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_threat_indicator(cam);
 
     vg_draw_overlays();
+
+    // The broadcast sits ON TOP of the instruments, not under them.
+    //
+    // It was drawn before the HUD, on the reasoning that a line over the cutscene
+    // must not compete with instruments that are not there yet. That is true and
+    // it is not the constraint that matters: during a match the HUD then painted
+    // straight over the band. Drawn here it works in both places, because the
+    // cutscene has no instruments for it to be on top OF.
+    //
+    // After vg_draw_overlays too, so the intro's own fighter card cannot cover it.
+    // Flat, like everything else past the warp: this is a caption laid over the
+    // picture, not something bolted to the canopy.
+    vg_draw_ift();
 
     // Last of all, over everything including the instruments.
     if (vg.state == VG_PAUSE) vg_draw_pause();
