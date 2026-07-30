@@ -91,14 +91,13 @@
 #define ARENA_ALERT_SLOW     1.00f    // seconds per flash at ARENA_DANGER_RANGE
 #define ARENA_ALERT_FAST     0.25f    // ...and at the wall. Never faster.
 
-// The subdivided patch of wall the player is about to hit.
+// The whole picture tints red as the wall closes.
 //
-// The structural grid is 480 units between hoops and an eighth of the tube
-// between rails, which is a cell hundreds of units across. Reddening a cell that
-// large says "the wall is near" without saying HOW near, and a player can cross
-// the last of it without a cell boundary ever passing them. So the cell the
-// player is closest to gets subdivided, and the mesh appearing and tightening is
-// the cue that the surface is arriving.
-#define ARENA_PATCH_SPAN     520.0f   // world units across the patch
-#define ARENA_PATCH_SUB      3        // extra lines each side of the near point
-#define ARENA_PATCH_SEGS     6        // segments per patch line
+// A subdivided patch of wall was tried here first and did not work: a finer mesh
+// on one cell is still a detail on a wall the player is not looking at, and the
+// player is looking at the enemy. A tint cannot be missed, because it is not
+// somewhere on the screen -- it IS the screen.
+//
+// It is applied to the finished band, so it colours the instruments and the enemy
+// too, the way a warning light floods a cockpit rather than lighting one dial.
+#define ARENA_TINT_RANGE     750.0f   // tint starts here

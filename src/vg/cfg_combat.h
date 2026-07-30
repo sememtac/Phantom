@@ -116,5 +116,14 @@
 // beating and stays lit once evasion is no longer the question.
 #define MSL_ALERT_RANGE      900.0f   // warning starts here
 #define MSL_ALERT_SOLID      190.0f   // steady from here in: no longer blinking
-#define MSL_ALERT_BEAT_FAR   0.90f    // seconds per double beat, far out
-#define MSL_ALERT_BEAT_NEAR  0.26f    // ...and just before it goes steady
+
+// The pair is FIXED and only the rest after it shortens.
+//
+// The cycle used to scale as a whole, down to 0.26s for a double beat, which put
+// the two pulses 0.08s apart and read as a flicker rather than as a warning. Now
+// a flash can never come sooner than PULSE + GAP = 0.25s, however close the
+// missile is, and the acceleration is carried entirely by the rest between pairs.
+#define MSL_ALERT_PULSE      0.12f    // one flash is lit this long
+#define MSL_ALERT_GAP        0.13f    // ...and this is the dark half of a pair
+#define MSL_ALERT_REST_FAR   0.90f    // silence after a pair, far out
+#define MSL_ALERT_REST_NEAR  0.00f    // ...and just before it goes steady

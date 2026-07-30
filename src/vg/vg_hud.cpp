@@ -100,18 +100,18 @@ static void draw_comms(void) {
 // use it instead of red text. They used to be COL_DANGER and COL_WARN, which
 // spent hue on urgency -- and hue is reserved for identity here, so a red word
 // was competing with the one thing colour is allowed to mean.
-static void hud_annunciator(int y, const char* s, int scale) {
+static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
     const int tw = vg_text_width(s, scale);
     const int bw = tw + 28;
     const int bh = 7 * scale + 14;
     const int bx = (SCR_W - bw) / 2;
 
-    vg_fill_rect(bx, y, bw, bh, INK_MAX);
+    vg_fill_rect(bx, y, bw, bh, ink);
     // INK_ONFILL, not COL_BLACK: vg_text discards colour 0, so a black label
     // would leave a blank block.
     vg_text(bx + 14, y + 7, s, INK_ONFILL, scale);
     // Outer rule standing off the block -- the bracketed-caution motif.
-    vg_rect(bx - 5, y - 5, bw + 10, bh + 10, INK_MAX);
+    vg_rect(bx - 5, y - 5, bw + 10, bh + 10, ink);
 }
 
 // Incoming missile. A DOUBLE BEAT, the way a threat warning sounds: two pulses
@@ -127,17 +127,20 @@ static void draw_missile_alert(void) {
                        / (MSL_ALERT_RANGE - MSL_ALERT_SOLID);
         if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
 
-        const float period = MSL_ALERT_BEAT_FAR
-                           + (MSL_ALERT_BEAT_NEAR - MSL_ALERT_BEAT_FAR) * k;
-        const float ph = fmodf(vg.state_t, period) / period;
+        // The pair keeps its shape and only the rest shrinks, so no flash can
+        // ever arrive sooner than PULSE + GAP however close the missile gets.
+        const float rest   = MSL_ALERT_REST_FAR
+                           + (MSL_ALERT_REST_NEAR - MSL_ALERT_REST_FAR) * k;
+        const float pair   = MSL_ALERT_PULSE + MSL_ALERT_GAP;
+        const float period = pair * 2.0f + rest;
+        const float t      = fmodf(vg.state_t, period);
 
-        // Beat, gap, beat, then a longer rest. The rest is what makes it read as
-        // a pair rather than as a fast even blink.
-        const bool on = (ph < 0.18f) || (ph >= 0.30f && ph < 0.48f);
+        const bool on = (t < MSL_ALERT_PULSE) ||
+                        (t >= pair && t < pair + MSL_ALERT_PULSE);
         if (!on) return;
     }
 
-    hud_annunciator(62, "MISSILE", 2);
+    hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
 
 // The boundary. One flash a second when the wall first matters, four a second at
@@ -149,11 +152,16 @@ static void draw_boundary_alert(void) {
     float k = 1.0f - vg.wall_clear / ARENA_DANGER_RANGE;
     if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
 
+    // ARENA_ALERT_FAST is the floor, so a flash is never closer than 0.25s.
     const float period = ARENA_ALERT_SLOW
                        + (ARENA_ALERT_FAST - ARENA_ALERT_SLOW) * k;
     if (fmodf(vg.state_t, period) > period * 0.45f) return;
 
-    hud_annunciator(128, "BOUNDARY", 2);
+    // RED, and the only place in the interface that spends hue on urgency. The
+    // rule is that hue means identity, and the exception earns itself: a
+    // collision is now instant death, so this is the one warning where being
+    // ignored is fatal rather than expensive.
+    hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 
 static void draw_throttle(void) {

@@ -99,6 +99,7 @@ void vg_draw_arena_grid(const VgCam& cam) {
     Vec3  pl = vg_arena_local_of(v3(0, 0, 0));
     float u0, v0, clearance;
     vg_arena_nearest(pl, &u0, &v0, &clearance);
+    (void)v0; (void)clearance;   // the torus only needs u0, to centre its hoops
 
     const uint16_t col_struct = COL_ARENA;
 
@@ -139,48 +140,6 @@ void vg_draw_arena_grid(const VgCam& cam) {
             int segs = (int)(26.0f * cosf(v));
             if (segs < 8) segs = 8;
             arena_line(cam, false, v, 0.0f, TAU, segs, col_struct);
-        }
-    }
-
-    // The cell the player is about to hit, subdivided.
-    //
-    // vg_arena_nearest already gives the surface point directly ahead of the
-    // ship, and until now v0 and clearance were thrown away. A structural cell
-    // is 480 units between hoops and an eighth of the tube between rails, so the
-    // last few hundred units of an approach can pass without a single grid line
-    // crossing the view: the wall reddens, but nothing about it moves, and the
-    // impact arrives out of a surface that looked the same at 900 units as at 90.
-    //
-    // Subdividing that one cell puts real geometry in front of the player, and it
-    // is the mesh TIGHTENING that carries the distance. It costs 84 segments and
-    // only exists inside ARENA_DANGER_RANGE, which is the only moment anything
-    // else is competing for the frame.
-    if (clearance < ARENA_DANGER_RANGE) {
-        // Full brightness at the wall, invisible at the edge of the range, so it
-        // fades up rather than snapping into existence.
-        float near_k = 1.0f - clearance / ARENA_DANGER_RANGE;
-        if (near_k < 0.0f) near_k = 0.0f; else if (near_k > 1.0f) near_k = 1.0f;
-
-        const uint16_t col_patch =
-            vg_mix(vg_dim(COL_ARENA, 0.55f + 0.45f * near_k), COL_DANGER, near_k);
-
-        // The window is expressed in WORLD units and converted to angle here, so
-        // the patch is the same size on the tube as along the tunnel even though
-        // those radii differ by a factor of four.
-        const float half_u = (ARENA_PATCH_SPAN * 0.5f) / vg_arena.r_major;
-        const float half_v = (ARENA_PATCH_SPAN * 0.5f)
-                           / ((vg_arena.kind == ARENA_TORUS) ? vg_arena.r_minor
-                                                             : vg_arena.r_major);
-
-        for (int i = -ARENA_PATCH_SUB; i <= ARENA_PATCH_SUB; i++) {
-            float u = u0 + half_u * (float)i / (float)ARENA_PATCH_SUB;
-            arena_line(cam, true, u, v0 - half_v, v0 + half_v,
-                       ARENA_PATCH_SEGS, col_patch);
-        }
-        for (int j = -ARENA_PATCH_SUB; j <= ARENA_PATCH_SUB; j++) {
-            float v = v0 + half_v * (float)j / (float)ARENA_PATCH_SUB;
-            arena_line(cam, false, v, u0 - half_u, u0 + half_u,
-                       ARENA_PATCH_SEGS, col_patch);
         }
     }
 

@@ -92,3 +92,8 @@ uint16_t vg_dim(uint16_t c, float f);
 // Blend two colours, t=0 -> a, t=1 -> b. Per-channel, so it survives the
 // byte-swapped storage. Cheap enough for per-object use, not per-pixel.
 uint16_t vg_mix(uint16_t a, uint16_t b, float t);
+
+// Push the finished picture toward red, to the strength given: 0 is off, and
+// larger values take green and blue further down. Set once per frame by the
+// render layer, which is what knows how close the wall is.
+void vg_rast_tint(int shift);

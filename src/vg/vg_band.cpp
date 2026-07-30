@@ -254,6 +254,53 @@ static inline uint32_t scanline_pair(uint32_t v) {
     return ((n >> 8) & 0x00FF00FFu) | ((n << 8) & 0xFF00FF00u);
 }
 
+// ---------------------------------------------------------------------------
+// Wall proximity tint
+// ---------------------------------------------------------------------------
+
+// Push TWO packed pixels toward red by attenuating green and blue.
+//
+// A mix toward a red would need three multiplies per pixel. Red is already the
+// top bits of RGB565, so taking green and blue DOWN leaves red standing and the
+// picture goes red for a shift and two masks. The masks after the shift are what
+// keep each channel inside its own field -- green's low bit would otherwise land
+// in blue's range, and blue's would fall out of the pixel entirely.
+static inline uint32_t tint_pair(uint32_t v, int shift) {
+    uint32_t n = ((v >> 8) & 0x00FF00FFu) | ((v << 8) & 0xFF00FF00u);
+    const uint32_t r = n & 0xF800F800u;
+    const uint32_t g = ((n & 0x07E007E0u) >> shift) & 0x07E007E0u;
+    const uint32_t b = ((n & 0x001F001Fu) >> shift) & 0x001F001Fu;
+    n = r | g | b;
+    return ((n >> 8) & 0x00FF00FFu) | ((n << 8) & 0xFF00FF00u);
+}
+
+// The whole band, not a region of it. The point is that the player cannot be
+// looking somewhere else: a tint has no location to miss.
+//
+// This replaced a subdivided patch of wall, which was a finer mesh on a cell the
+// player was not looking at -- they are looking at the enemy. Only runs inside
+// ARENA_TINT_RANGE, which is the only time anything is competing for the frame.
+static inline void band_wall_tint(uint16_t* band, int shift) {
+    uint32_t* p = (uint32_t*)band;
+    const int n = SCR_W * BAND_H / 2;
+    for (int i = 0; i < n; i += 4) {
+        uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
+        if (a) p[i]     = tint_pair(a, shift);
+        if (b) p[i + 1] = tint_pair(b, shift);
+        if (c) p[i + 2] = tint_pair(c, shift);
+        if (d) p[i + 3] = tint_pair(d, shift);
+    }
+}
+
+// Set from outside, once per frame. The rasteriser does not include vg_game.h
+// and must not: it draws what it is given and knows nothing about walls. The
+// render layer owns the game state and passes the strength down.
+static int s_tint_shift = 0;
+
+void vg_rast_tint(int shift) {
+    s_tint_shift = (shift < 0) ? 0 : (shift > 8 ? 8 : shift);
+}
+
 static inline void band_scanlines(uint16_t* band, int by0) {
     int first = (SCANLINE_PITCH - (by0 % SCANLINE_PITCH)) % SCANLINE_PITCH;
 
@@ -376,6 +423,8 @@ void vg_rast_flush(void) {
     uint32_t raster = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
 
+    const int tint_shift = s_tint_shift;
+
     for (int b = 0; b < NUM_BANDS; b++) {
         uint16_t* buf = s_band[b & 1];
 
@@ -391,6 +440,10 @@ void vg_rast_flush(void) {
         // instead silently skipped every vector element.
         const uint32_t t_scan = micros();
         band_scanlines(buf, b * BAND_H);
+        // After the scanlines, so the tint colours those too. A red warning that
+        // left the scanlines amber would read as an overlay rather than as the
+        // whole picture going red.
+        if (tint_shift) band_wall_tint(buf, tint_shift);
         s_scan_us += micros() - t_scan;
         raster += micros() - r0;
 

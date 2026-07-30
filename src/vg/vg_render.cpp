@@ -36,6 +36,19 @@ static void draw_fps(float fps) {
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
 
+    // How red the whole picture goes. Decided here because this is the layer that
+    // knows both the wall distance and the rasteriser; the rasteriser itself has
+    // no idea a wall exists. Only while flying: a menu has no boundary to hit,
+    // and the attract loop tinting itself red would be nonsense.
+    int tint = 0;
+    if ((vg.state == VG_PLAYING || vg.state == VG_HIT) &&
+        vg.wall_clear < ARENA_TINT_RANGE) {
+        float k = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
+        if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+        tint = 1 + (int)(k * 3.99f);        // 1..4
+    }
+    vg_rast_tint(tint);
+
     vg_rast_begin_frame();
 
     // World, back to front. The boundary goes down before anything solid so the
