@@ -90,6 +90,12 @@ bool vg_store_init(void);
 bool vg_store_load(void* data, unsigned len);   // false if nothing stored yet
 bool vg_store_save(const void* data, unsigned len);
 
+// A SECOND, separate blob, for diagnostics only. Deliberately not part of the
+// save: a crash record is written by code that has just established something
+// went wrong, and it must not be able to take the player's progress with it.
+bool vg_store_diag_load(void* data, unsigned len);
+bool vg_store_diag_save(const void* data, unsigned len);
+
 // ---- IMU -------------------------------------------------------------------
 
 bool vg_imu_init(void);

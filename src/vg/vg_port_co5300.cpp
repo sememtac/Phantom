@@ -444,6 +444,17 @@ bool vg_store_save(const void* data, unsigned len) {
     return s_prefs.putBytes("save", data, len) == len;
 }
 
+bool vg_store_diag_load(void* data, unsigned len) {
+    if (!s_store_ok) return false;
+    if (!s_prefs.isKey("diag")) return false;
+    return s_prefs.getBytes("diag", data, len) == len;
+}
+
+bool vg_store_diag_save(const void* data, unsigned len) {
+    if (!s_store_ok) return false;
+    return s_prefs.putBytes("diag", data, len) == len;
+}
+
 // ---------------------------------------------------------------------------
 
 bool vg_imu_init(void) {

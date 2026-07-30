@@ -61,11 +61,6 @@ void setup(void) {
     //   1 power-on   3 software   4 PANIC   5 int watchdog   6 task watchdog
     //   7 watchdog   9 brownout  11 USB, which is our own reset pulse
     //
-    // The reason alone says which kind of death it was and nothing about where.
-    // vg_crumb_report() prints the reason AND the last position of the frame that
-    // died -- see vg_crumb.h.
-    vg_crumb_report();
-
     if (!vg_panel_init()) {
         Serial.println("FATAL: no panel");
         s_halted = true;
@@ -85,6 +80,13 @@ void setup(void) {
     // Also non-fatal: without storage the game forgets between power cycles,
     // which is worse than persisting and far better than refusing to boot.
     if (!vg_store_init()) Serial.println("WARN: no NVS - progress will not persist");
+
+    // AFTER storage, not before. The crash record is mirrored into flash so that
+    // unplugging a locked-up board does not erase the reason it locked up, and
+    // reporting it before the store exists would quietly skip exactly the case it
+    // was added for. It prints the reset reason too -- see vg_crumb.h.
+    vg_crumb_report();
+
     vg_buttons_init();
     // Non-fatal like the rest: without the PMU the power key is invisible and
     // every other control still works.
@@ -119,6 +121,12 @@ void loop(void) {
     float frame_dt = (now - last_us) * 1e-6f;
     last_us = now;
     if (frame_dt < 0.0005f) frame_dt = 0.0005f;
+
+    // Before the clamp below throws the evidence away. A quarter of a second is
+    // fifteen frames' worth: far past a hitch, and the only trace a freeze that
+    // never resets will ever leave.
+    if (frame_dt > 0.25f)
+        vg_crumb_stall((uint32_t)(frame_dt * 1000.0f), (uint8_t)vg.state);
     // Past half a second the frame is not late, something has blocked -- a flash
     // write, a reconnect. Catching up on it is worse than dropping it.
     if (frame_dt > 0.50f) frame_dt = 0.50f;

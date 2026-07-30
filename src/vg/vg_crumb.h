@@ -32,6 +32,16 @@ enum VgCrumb : uint8_t {
 // frame; keep it cheap.
 void vg_crumb(uint8_t where, uint8_t state);
 
+// A frame that took far longer than a frame should. A freeze is NOT a crash --
+// nothing resets, so the reset reason and the breadcrumb both stay silent about
+// it, and to the player the two are indistinguishable. This is the only thing
+// that would catch one.
+void vg_crumb_stall(uint32_t ms, uint8_t state);
+
+// Forget everything: no crash, no stall. For after a report has been collected,
+// so the next one is not read against a stale worst-case that nothing can beat.
+void vg_crumb_reset(void);
+
 // Print the previous run's last position, at boot. Says nothing useful after a
 // clean power-on, which is exactly when there is nothing to say.
 void vg_crumb_report(void);
