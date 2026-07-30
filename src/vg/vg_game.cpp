@@ -272,9 +272,9 @@ static void update_lock(float dt) {
         if (c > best_c) { best_c = c; best = i; }
     }
 
-    // Lock time scales with speed. This is what puts a fast ship out of effective
-    // engagement range, and because it is re-evaluated every frame, accelerating
-    // away also drops a lock you had already earned.
+    // Lock time scales with speed: acquiring is harder the faster you are going,
+    // which is the trade the throttle is supposed to be. ACQUIRING -- not holding.
+    // See the latch below.
     float sn = (vg.speed - vg.spec->speed_min)
              / (vg.spec->speed_max - vg.spec->speed_min);
     if (sn < 0.0f) sn = 0.0f;
@@ -291,9 +291,26 @@ static void update_lock(float dt) {
     if (best != vg.lock_target) {
         vg.lock_target = best;
         vg.lock_t      = 0;
+        vg.locked      = false;
     }
     vg.lock_t += dt;
-    vg.locked = (vg.lock_t >= vg.lock_need);
+
+    // ONCE EARNED, A LOCK IS HELD. It used to be re-evaluated from scratch every
+    // frame against a threshold that rises with speed, so opening the throttle
+    // after locking instantly revoked it -- the player was forbidden from using
+    // the one control the fight is supposed to be about, at the exact moment they
+    // had committed to an attack.
+    //
+    // That was the sharpest tooth in a set of three, all pushing the same way:
+    // turn rate is 2.5x better at idle, acquisition is far slower at speed, and
+    // this. Any one of them is a trade. Together they made "stop and shoot" not a
+    // style but the only style, which is what the playtest found.
+    //
+    // The lock still drops the moment the target leaves the cone or the range, so
+    // it is held by keeping the nose on them -- not by having once been fast
+    // enough. Acquiring at speed is still hard; that trade is the point and it
+    // stays.
+    if (vg.lock_t >= vg.lock_need) vg.locked = true;
 }
 
 // The magazine refills ALL AT ONCE, and only from empty.

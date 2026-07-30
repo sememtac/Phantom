@@ -49,11 +49,19 @@
 // trigger.
 #define PLAYER_LOCK_COS      0.86f    // cos(~31 deg) nose cone to acquire lock
 
-// Lock time scales with speed: at full throttle it takes (1 + this) times as
-// long, far more than the geometry will hold a target in the cone for. This is
-// the mechanism that puts high speed OUT of effective engagement range -- and
-// because it is re-evaluated every frame, accelerating also drops a lock you had.
-#define LOCK_SPEED_PENALTY   4.5f
+// Lock time scales with speed: at full throttle it takes (1 + this) times as long
+// to ACQUIRE. Holding is unaffected -- see the latch in update_lock.
+//
+// Was 4.5, which at full throttle meant 5.5x the base time: far more than the
+// geometry will hold a target in the cone for, so the number did not read as
+// "harder at speed" but as "impossible at speed". Combined with a turn rate 2.5x
+// better at idle, that made stopping the only way to fight, which is exactly what
+// the first playtest reported back.
+//
+// 1.8 keeps the trade legible -- an AEGIS wants 0.45s at rest and 1.26s at full,
+// which is a real cost you can still choose to pay -- without deciding the fight
+// on the player's behalf.
+#define LOCK_SPEED_PENALTY   1.8f
 
 // --- enemy -----------------------------------------------------------------
 #define MAX_ENEMIES          2
