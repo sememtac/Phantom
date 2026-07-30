@@ -54,8 +54,13 @@ struct ShipSpec {
     // --- fire control --------------------------------------------------------
     float lock_range;
     float lock_time;           // seconds in the nose cone, at low speed
-    int   magazine;
-    float reload;              // seconds per rearmed round
+    int   magazine;            // rounds per clip
+    float fire_gap;            // seconds between launches -- the rate of fire
+    // Seconds to refill the WHOLE clip, and only once it is empty. Not a trickle
+    // of one round at a time: emptying the rack is a decision the class is built
+    // around, and a magazine that refills while you are still shooting out of it
+    // never lets that decision cost anything.
+    float reload;
 };
 
 extern const ShipSpec vg_ship_class[SHIP_CLASSES];

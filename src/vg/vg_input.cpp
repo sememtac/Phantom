@@ -271,7 +271,7 @@ void vg_input_update(float dt, VgInput* out) {
     // Launch on the press EDGE, not while held: one press, one missile. Holding
     // would empty the rack in three seconds, which is the opposite of the
     // deliberate, committed shot the lock mechanic is built around. No debounce
-    // needed -- PLAYER_FIRE_GAP already swallows any contact chatter.
+    // needed -- the class's own fire_gap already swallows any contact chatter.
     const uint8_t btns = vg_buttons_read();
 
     const bool fire_btn = (btns & FIRE_BUTTON_MASK) != 0;

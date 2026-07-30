@@ -22,7 +22,7 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 110.0f,
         /* warhead    */ 20.0f, 0.60f, 340.0f, 2.50f, 10.0f,
-        /* fire ctrl  */ 1600.0f, 0.45f, 6, 3.2f,
+        /* fire ctrl  */ 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------
@@ -35,33 +35,39 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 95.0f,
         /* warhead    */ 32.0f, 0.20f, 340.0f, 2.50f, 10.0f,
-        /* fire ctrl  */ 1600.0f, 0.60f, 4, 4.0f,
+        /* fire ctrl  */ 1600.0f, 0.60f, 4, 0.85f, 5.5f,
     },
 
     // ---- CHARIOT -- the speed ------------------------------------------------
     // The inverse of LANCE: a 0.85 floor means aim barely matters and volume
     // does. Keeps far more of its agility at full throttle than anything else,
     // which is what lets it run circles -- paid for with a 70-point hull.
+    //
+    // RUN AND GUN, and the fire control is where that lives now: twelve rounds at
+    // a sixth of a second empties the whole rack in under two, and then nine
+    // seconds of nothing. It is the only class that can delete an opponent in one
+    // pass and the only one that is completely toothless if it does not.
     {
         "CHARIOT", "FAST, LOUD, FRAGILE",
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 70.0f,
         /* warhead    */ 12.0f, 0.85f, 380.0f, 1.70f, 7.0f,
-        /* fire ctrl  */ 1300.0f, 0.25f, 12, 1.4f,
+        /* fire ctrl  */ 1300.0f, 0.25f, 12, 0.16f, 9.0f,
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
     // A missile SLOWER than everything it shoots at but alive for eighteen
     // seconds: it cannot run you down, it just refuses to go away. Three rounds
-    // on a six second reload, and it loses almost all its agility at speed, so
-    // anything fast that gets inside 2800 is its whole problem.
+    // on a seven and a half second reload, a slow trigger between them, and it
+    // loses almost all its agility at speed -- so anything fast that gets inside
+    // 2800 is its whole problem.
     {
         "BALLISTA", "KILL THEM FIRST",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,
         /* warhead    */ 40.0f, 0.50f, 300.0f, 2.30f, 18.0f,
-        /* fire ctrl  */ 2800.0f, 1.10f, 3, 6.0f,
+        /* fire ctrl  */ 2800.0f, 1.10f, 3, 1.60f, 7.5f,
     },
 };

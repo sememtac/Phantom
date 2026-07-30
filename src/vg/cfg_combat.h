@@ -32,7 +32,10 @@
 #define MISSILE_ARM_TIME     0.22f    // no lead correction while clearing the rail
 
 // --- player weapons --------------------------------------------------------
-#define PLAYER_FIRE_GAP      0.5f
+// Rate of fire is ShipSpec::fire_gap now, not one number for everybody: it is
+// most of what separates CHARIOT's twelve-round dump from BALLISTA's three
+// deliberate shots, and a class cannot have a firing style if the game owns the
+// trigger.
 #define PLAYER_LOCK_COS      0.86f    // cos(~31 deg) nose cone to acquire lock
 
 // Lock time scales with speed: at full throttle it takes (1 + this) times as
@@ -56,7 +59,25 @@
 #define ENEMY_SKILL          0.82f    // turn-rate scale; 1.0 = as good as a player
 #define ENEMY_FIRE_RANGE_K   0.875f   // fraction of its own lock range
 #define ENEMY_CLOSE_RANGE_K  0.94f    // ...at which it settles to a fighting speed
-#define ENEMY_FIRE_GAP_K     1.30f    // fraction slower to shoot than its reload
+// Fraction slower to shoot than the class's own sustained rate.
+//
+// Raised from 1.30 when the player's magazine became a whole-clip affair. The
+// sustained rate works out shorter than the old per-round reload for every class,
+// so at 1.30 every enemy would have silently got faster on the trigger.
+//
+// 2.20 holds the AVERAGE cadence across the four classes at what it was. It does
+// NOT hold any individual class there, and no single number could: fire control
+// is per-class now, so the classes have moved relative to each other. That is the
+// point of the change, but it is a balance shift and not a neutral one --
+//
+//   class      before   after
+//   AEGIS        4.16    2.93
+//   LANCE        5.20    4.90
+//   CHARIOT      1.82    2.00
+//   BALLISTA     7.80    9.02
+//
+// -- so an enemy AEGIS is now the one that got meaningfully harder.
+#define ENEMY_FIRE_GAP_K     2.20f
 
 #define ENEMY_FIRE_COS       0.90f
 

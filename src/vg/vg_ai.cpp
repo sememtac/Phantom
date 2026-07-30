@@ -193,7 +193,17 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         fire_sn < ENEMY_ENGAGE_SPEED &&
         vdot(s->fwd, vnorm(to)) > ENEMY_FIRE_COS) {
         vg_launch_missile(false, vadd(s->pos, vmul(s->fwd, 4.0f)), s->fwd, -1, sp);
-        s->fire_cd = sp->reload * ENEMY_FIRE_GAP_K * vg_frand(0.8f, 1.3f);
+        // The class's SUSTAINED rate: a full clip at its own trigger speed, plus
+        // the reload, spread over the rounds. Enemies carry no magazine of their
+        // own, so this is how a class's fire control reaches them at all.
+        //
+        // It used to read sp->reload directly, which was seconds-per-round until
+        // that field became seconds-per-clip. Left alone, an enemy CHARIOT would
+        // have gone from firing every 1.4s to every 9 -- a class deleted by a
+        // change to a word's meaning, with nothing to show it had happened.
+        const float sustained = ((float)sp->magazine * sp->fire_gap + sp->reload)
+                              / (float)(sp->magazine > 0 ? sp->magazine : 1);
+        s->fire_cd = sustained * ENEMY_FIRE_GAP_K * vg_frand(0.8f, 1.3f);
         // Called on the launch, not on the lock: the line and the missile leave
         // together, so the radio is a warning rather than a commentary.
         vg_comms_say(s, VOICE_FIRE);

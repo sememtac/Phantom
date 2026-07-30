@@ -549,11 +549,24 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     int cell = pitch - 6;
     if (cell < 6) cell = 6;
 
+    // The rack fills back up as the reload runs, in the dim ink -- a round that is
+    // coming but is not here yet.
+    //
+    // Necessary, not decorative. The magazine refills all at once from empty now,
+    // so without this the rack sits blank for up to nine seconds and the only
+    // thing distinguishing "reloading" from "broken" is that the player happens
+    // to know the rule. Brightness carries it, which is the panel's whole
+    // vocabulary: lit is loaded, dim is promised, outline is empty.
+    const float rl = (vg.reload_t > 0.0f && vg.spec->reload > 0.0f)
+                   ? (1.0f - vg.reload_t / vg.spec->reload) : 0.0f;
+    const int   coming = (int)((float)mag * rl);
+
     hud_panel(SCR_W - 40, 140, 30, mag * pitch + 8, "MSL");
     for (int i = 0; i < mag; i++) {
         int y = 148 + i * pitch;
-        if (i < vg.missiles) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
-        else                 vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
+        if (i < vg.missiles)   vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
+        else if (i < coming)   vg_fill_rect(SCR_W - 34, y, 18, cell, INK);
+        else                   vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
     }
 
     // Speed reads top-centre, right where the eye already is for the crosshair,

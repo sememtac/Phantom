@@ -296,6 +296,26 @@ static void update_lock(float dt) {
     vg.locked = (vg.lock_t >= vg.lock_need);
 }
 
+// The magazine refills ALL AT ONCE, and only from empty.
+//
+// It used to trickle a round back every `reload` seconds whenever the rack was
+// below full, which quietly meant a class could never actually run dry: shoot
+// four of six, wait, and you were topped up without ever having made a decision.
+// A clip that refills while you are still shooting out of it cannot cost
+// anything, so it cannot define a playstyle either.
+//
+// Now emptying the rack is the commitment. CHARIOT dumps twelve rounds in under
+// two seconds and then has nine seconds of nothing; BALLISTA has three and has to
+// mean all of them.
+static void update_reload(float dt) {
+    if (vg.missiles > 0 || vg.reload_t <= 0.0f) return;
+    vg.reload_t -= dt;
+    if (vg.reload_t <= 0.0f) {
+        vg.reload_t = 0.0f;
+        vg.missiles = vg.spec->magazine;
+    }
+}
+
 static void player_fire(void) {
     if (vg.missiles <= 0 || vg.fire_gap > 0) return;
     if (!vg.locked || vg.lock_target < 0) return;
@@ -317,7 +337,12 @@ static void player_fire(void) {
         return;
 
     vg.missiles--;
-    vg.fire_gap = PLAYER_FIRE_GAP;
+    vg.fire_gap = vg.spec->fire_gap;
+
+    // Emptying the rack starts the clock. Doing it here rather than in the tick
+    // means the reload is timed from the shot that emptied it, not from the next
+    // frame that happened to notice.
+    if (vg.missiles <= 0) vg.reload_t = vg.spec->reload;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +446,7 @@ void vg_match_start(void) {
     vg.shake       = 0;
     vg.hit_flash   = 0;
     vg.missiles    = vg.spec->magazine;
-    vg.reload_t    = vg.spec->reload;
+    vg.reload_t    = 0.0f;          // a full rack is not reloading
     vg.fire_gap    = 0;
     vg.lock_target = -1;
     vg.lock_t      = 0;
@@ -1067,10 +1092,7 @@ void vg_game_update(float dt, const VgInput* in) {
             for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
             update_lock(dt);
             if (vg.fire_gap > 0) vg.fire_gap -= dt;
-            if (vg.missiles < vg.spec->magazine) {
-                vg.reload_t -= dt;
-                if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
-            }
+            update_reload(dt);
             if (vg.locked) player_fire();
             vg.health = vg.health_max;      // never let the load generator "die"
         }
@@ -1299,10 +1321,7 @@ void vg_game_update(float dt, const VgInput* in) {
         // repair economy the difficulty curve rather than a side system.
 
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
-        if (vg.missiles < vg.spec->magazine) {
-            vg.reload_t -= dt;
-            if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
-        }
+        update_reload(dt);
         if (in->fire_edge) player_fire();
         // PWR, not the + key: that is hold-to-roll now, and pausing every time a
         // player rolled would be unusable.
