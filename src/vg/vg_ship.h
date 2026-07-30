@@ -63,3 +63,28 @@ extern const ShipSpec vg_ship_class[SHIP_CLASSES];
 static inline const ShipSpec* vg_spec(ShipClass c) {
     return &vg_ship_class[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
 }
+
+// How well this airframe rolls, relative to the baseline class. 1.0 is AEGIS.
+//
+// DERIVED, not a new number to keep in step. A dedicated roll_rate per class
+// would be one more field to retune every time a ship's handling moved, and the
+// first time somebody forgot, a ship would turn like a knife and roll like a
+// barge for no reason anybody could find in the table.
+//
+// Two terms, and the second is the interesting one. turn_rate is the obvious
+// part: a nimble airframe rolls nimbly. agility_fast_malus is what a class loses
+// at full throttle, and roll is the HIGH-SPEED control -- so the class built to
+// keep working fast should be the one that gets the most out of it, and the one
+// that seizes up at speed should be denied its best tool exactly where it is
+// already struggling. That turns a 1.4x spread in turn rate into better than 2x
+// in roll, which is the difference between a stat and a personality.
+//
+// Normalised against AEGIS by reading its spec rather than against a constant,
+// so retuning the baseline moves everything with it instead of silently
+// rescaling every other class.
+static inline float vg_ship_mobility(const ShipSpec* s) {
+    const ShipSpec* base = &vg_ship_class[SHIP_AEGIS];
+    const float b = base->turn_rate * (1.0f - base->agility_fast_malus);
+    if (b <= 0.0f) return 1.0f;
+    return (s->turn_rate * (1.0f - s->agility_fast_malus)) / b;
+}

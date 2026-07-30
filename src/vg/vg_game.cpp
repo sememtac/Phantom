@@ -482,7 +482,10 @@ void vg_match_start(void) {
 static inline float roll_angle(const VgInput* in, float dt) {
     const float scale = ROLL_SLOW_SCALE
                       + (ROLL_FAST_SCALE - ROLL_SLOW_SCALE) * vg.throttle;
-    return in->roll * ROLL_RATE * scale * dt;
+    // ...and the airframe. A LANCE and a CHARIOT rolled at exactly the same rate
+    // before this, which quietly said the classes were interchangeable on the one
+    // axis the player had just been handed.
+    return in->roll * ROLL_RATE * scale * vg_ship_mobility(vg.spec) * dt;
 }
 
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
