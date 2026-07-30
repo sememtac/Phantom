@@ -527,6 +527,14 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     vg.speed = vg.spec->speed_min
              + (vg.spec->speed_max - vg.spec->speed_min) * vg.throttle;
 
+    // What the airframe is doing about it. Quadratic in speed against the fastest
+    // class, times this ship's own nervousness -- so a CHARIOT at full is rougher
+    // than a BALLISTA at full, rather than the two merely being equally rough at
+    // their own maxima, which is what a throttle-fraction curve gives you and is
+    // not the same fantasy at all.
+    const float sn = vg.speed / SPEED_SHAKE_REF;
+    vg.buzz = sn * sn * vg.spec->shake;
+
     // Visual-only tracking of the same command, several times faster.
     float kv = dt * THROTTLE_VIS_LERP;
     if (kv > 1.0f) kv = 1.0f;
@@ -744,12 +752,11 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.shake_x = vg.shake_y = 0;
     }
 
-    // Buzz, on top of whatever the impact shake is doing. Squared so it stays
-    // out of the way until the last fifth of the travel and then comes on hard,
-    // which is what makes firewalling it feel like a decision.
-    if (vg.throttle > SPEED_SHAKE_AT) {
-        const float k = (vg.throttle - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
-        const float a = SPEED_SHAKE_MAX * k * k;
+    // Buzz, on top of whatever the impact shake is doing. Quadratic in speed, so
+    // it is present the whole way up rather than switching on near the stop, and
+    // scaled by the airframe -- see vg.buzz in the world step.
+    if (vg.buzz > 0.0f) {
+        const float a = SPEED_SHAKE_MAX * vg.buzz;
         vg.shake_x += vg_frand(-a, a);
         vg.shake_y += vg_frand(-a, a);
     }

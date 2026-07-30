@@ -43,6 +43,10 @@ struct ShipSpec {
     float agility_slow_bonus;  // extra turn-rate fraction at idle
     float agility_fast_malus;  // turn-rate fraction lost at full throttle
     float hull;                // absolute hull points, NOT a fraction
+    // How nervous the airframe is under power, as a multiplier on the buzz. This
+    // is mass and structure as the player feels it rather than as a number they
+    // are shown: a light hull rattles, a gun platform does not.
+    float shake;
 
     // --- the warhead this ship launches --------------------------------------
     float msl_damage;          // hull points on a dead-centre detonation

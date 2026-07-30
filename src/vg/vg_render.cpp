@@ -158,10 +158,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     const bool  live = (vg.state != VG_PAUSE);
     const float thr  = vg.throttle_vis;
 
-    // Strain, from holding the throttle against the stop.
-    float strain = 0.0f;
-    if (live && thr > SPEED_SHAKE_AT)
-        strain = (thr - SPEED_SHAKE_AT) / (1.0f - SPEED_SHAKE_AT);
+    // Strain, from what the airframe is actually doing. The same number the camera
+    // shake uses, so the panel and the world agree about how hard the ship is
+    // working even though they jitter on separate clocks.
+    (void)thr;
+    const float strain = live ? vg.buzz : 0.0f;
 
     // Damage, and it escalates. A hit on a fresh hull is a flicker; the same hit
     // on a wreck nearly takes the display out, because the systems taking it
@@ -187,7 +188,8 @@ void vg_render_frame(const VgInput* in, float fps) {
 
     float jx = 0.0f, jy = 0.0f;
     if (strain > 0.0f)
-        vg_glitch_offset(vg.state_t, 47.0f, HUD_SHAKE_MAX * strain * strain, &jx, &jy);
+        // Not squared again: vg.buzz already carries the speed-squared curve.
+        vg_glitch_offset(vg.state_t, 47.0f, HUD_SHAKE_MAX * strain, &jx, &jy);
     if (hurt > 0.0f) {
         // A hit throws the panel much harder than speed ever does, and on its
         // own clock again so the two never resolve into one motion.
@@ -208,7 +210,14 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Panel damage, at whichever severity is worse. Kept low for strain -- a
     // readout struggling, not failing, since anything more would make the
     // instruments unusable at exactly the moment they matter most.
-    const float sev = (hurt > strain * 0.12f) ? hurt : strain * 0.12f;
+    //
+    // The strain term is capped before it is scaled. `strain` is vg.buzz now,
+    // which deliberately runs PAST 1.0 for a light airframe at full throttle, and
+    // this coefficient was chosen back when it could not. Without the cap a
+    // CHARIOT would sit at a glitch level its hull never earned, just for going
+    // fast -- which would say "damaged" using the vocabulary that means damaged.
+    const float sev_strain = (strain > 1.0f ? 1.0f : strain) * 0.12f;
+    const float sev = (hurt > sev_strain) ? hurt : sev_strain;
     if (sev > 0.0f) {
         vg_glitch_patches(vg.state_t, sev);
         // Tears only once it is genuinely bad. They displace the whole width of

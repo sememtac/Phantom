@@ -373,6 +373,11 @@ struct VgGame {
     // Whether this line is the one that OPENS a run of speech, and so carries
     // the speaker's badge. A continuation does not: see the note on
     // draw_comms() in vg_hud.cpp.
+    // How hard the airframe is working, 0 at rest and 1 at the reference speed --
+    // and past 1 for a light ship at full. Computed once in the world step and
+    // read by both the camera and the panel, so the two cannot drift apart.
+    float       buzz;
+
     bool        ift_mark;
 
     // The set turning on and off, between the menus and the game.

@@ -100,8 +100,20 @@
 //
 // Applied to the CAMERA, so the world shakes and the panel-mounted instruments
 // do not, which is the right way round for something bolted to the airframe.
-#define SPEED_SHAKE_AT       0.80f    // throttle at which it starts
-#define SPEED_SHAKE_MAX      2.7f     // px at full
+// It runs off SPEED, across the WHOLE range, and it is scaled by the airframe.
+//
+// It used to be a threshold: nothing at all below 0.8 throttle, then a squared
+// ramp. That made the buzz an event rather than a quality -- the ship was either
+// calm or straining, with nothing in between, and every class did it identically
+// at the same point on the slider. Nothing about it belonged to the ship.
+//
+// Now it is quadratic in the ship's actual speed rather than in its throttle
+// fraction, which is what makes a CHARIOT at full noticeably rougher than a
+// BALLISTA at full instead of merely equally rough at its own maximum. The
+// reference is the fastest airframe in the game, so that class reaches 1.0 and
+// the rest sit below it honestly.
+#define SPEED_SHAKE_REF      460.0f   // speed at which the curve reaches 1.0
+#define SPEED_SHAKE_MAX      2.7f     // px at the reference, before the class term
 
 // The instruments feel it too. Smaller than the airframe shake and running on
 // its own clock, so the panel is clearly not rigidly bolted to the view -- what
