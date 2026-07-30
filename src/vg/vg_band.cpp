@@ -276,9 +276,12 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // SCALED without recombining its two halves, and it does not need to be: for a
 // warning tint, removing blue and capping green is what turns the picture red.
 //
-// Amber survives it, which matters -- the HUD is #ffae1e, whose green is 21 of 63
-// with its top bit clear, so the instruments stay readable while everything
-// around them goes red.
+// The masks take green down in stages, and they have to reach far enough to catch
+// AMBER. The HUD is #ffae1e, whose green is 21 of 63 -- binary 010101, with its
+// top bit already clear. An earlier ramp only cleared green's top bit, so it did
+// nothing at all to amber and the instruments sat there untouched inside a red
+// cockpit. Clearing G4 is what actually reddens them, and by the rim green is
+// gone entirely.
 // Twelve rings, not four. Four was a gradient in the sense that it had steps in
 // it, and the steps were the thing you noticed. Each extra ring costs one more
 // square root per ROW and two more spans, which is nothing next to the pixels.
@@ -293,14 +296,22 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // glow for TWO pixels at once. Recomputing these inside the span function cost
 // six operations per call, and there are twelve rings on both sides of 480 rows.
 static const uint32_t TINT_KEEP[TINT_RINGS] = {
-    0xFFFFFFFFu, 0xFFFFFFFFu, 0xFEFFFEFFu, 0xFCFFFCFFu,
-    0xF8FFF8FFu, 0xF0FFF0FFu, 0xE0FFE0FFu, 0xE0FFE0FFu,
-    0x60FF60FFu, 0x60FF60FFu, 0x20FF20FFu, 0x00FF00FFu,
+    0x1FFF1FFFu, 0x1EFF1EFFu, 0x1CFF1CFFu, 0x18FF18FFu,
+    0x10FF10FFu, 0x00FE00FEu, 0x00FF00FFu, 0x00FE00FEu,
+    0x00FE00FEu, 0x00FA00FAu, 0x00F800F8u, 0x00F800F8u,
 };
 static const uint32_t TINT_GLOW[TINT_RINGS] = {
     0x00000000u, 0x00080008u, 0x00100010u, 0x00180018u,
     0x00200020u, 0x00300030u, 0x00400040u, 0x00500050u,
     0x00600060u, 0x00700070u, 0x00800080u, 0x00900090u,
+};
+// Shift applied to green's HIGH three bits, which are contiguous at 15..13 in
+// the swapped word. This is what gives amber intermediate levels: masks alone
+// could only take its green from 21 straight to 0, because 010101 has no bits
+// left to remove in between.
+static const uint8_t TINT_GSHIFT[TINT_RINGS] = {
+    0, 0, 0, 1, 1, 1,
+    2, 2, 3, 3, 3, 3,
 };
 
 // Tint [x0,x1) of one row. Unrolled four words at a time, which is what the
@@ -313,11 +324,18 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
 
     const uint32_t keep = TINT_KEEP[ring];
     const uint32_t glow = TINT_GLOW[ring];
-    if (keep == 0xFFFFFFFFu && glow == 0u) return;      // the innermost ring
+    const int       gs  = TINT_GSHIFT[ring];
+    if (glow == 0u && gs == 0 && keep == 0xE000E000u) { /* nothing to do */ }
+    // Green's high field is rebuilt rather than kept, so it is cleared in `keep`
+    // and re-inserted shifted. GH is the mask for that field, in both pixels.
+    const uint32_t GH = 0xE000E000u;
 
     int x = x0;
     if (x & 1) {
-        row[x] = (uint16_t)((row[x] & (uint16_t)keep) | (uint16_t)glow);
+        const uint16_t v = row[x];
+        row[x] = (uint16_t)((v & (uint16_t)keep)
+                          | (((v & (uint16_t)GH) >> gs) & (uint16_t)GH)
+                          | (uint16_t)glow);
         x++;
     }
 
@@ -325,16 +343,24 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
     int n = (x1 - x) >> 1;
     int i = 0;
     for (; i + 4 <= n; i += 4) {
-        p[i]     = (p[i]     & keep) | glow;
-        p[i + 1] = (p[i + 1] & keep) | glow;
-        p[i + 2] = (p[i + 2] & keep) | glow;
-        p[i + 3] = (p[i + 3] & keep) | glow;
+        uint32_t a = p[i], b2 = p[i + 1], c = p[i + 2], d = p[i + 3];
+        p[i]     = (a  & keep) | (((a  & GH) >> gs) & GH) | glow;
+        p[i + 1] = (b2 & keep) | (((b2 & GH) >> gs) & GH) | glow;
+        p[i + 2] = (c  & keep) | (((c  & GH) >> gs) & GH) | glow;
+        p[i + 3] = (d  & keep) | (((d  & GH) >> gs) & GH) | glow;
     }
-    for (; i < n; i++) p[i] = (p[i] & keep) | glow;
+    for (; i < n; i++) {
+        const uint32_t v = p[i];
+        p[i] = (v & keep) | (((v & GH) >> gs) & GH) | glow;
+    }
     x += n * 2;
 
-    for (; x < x1; x++)
-        row[x] = (uint16_t)((row[x] & (uint16_t)keep) | (uint16_t)glow);
+    for (; x < x1; x++) {
+        const uint16_t v = row[x];
+        row[x] = (uint16_t)((v & (uint16_t)keep)
+                          | (((v & (uint16_t)GH) >> gs) & (uint16_t)GH)
+                          | (uint16_t)glow);
+    }
 }
 
 // A RADIAL gradient that closes inward. The edge of the screen reddens first and
@@ -346,9 +372,15 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
 // a surface the player was not looking at.
 //
 // No square root per pixel. For a row at dy from centre, the ring of radius R
-// crosses it at dx = sqrt(R*R - dy*dy), so four roots per ROW give the four ring
+// crosses it at dx = sqrt(R*R - dy*dy), so one root per ring per ROW gives the
 // boundaries and everything between them is a span. Untinted spans cost nothing.
-#define TINT_RINGS 4
+//
+// TINT_RINGS is defined once, above the tables. It was defined a second time
+// here, at 4, left behind by an edit -- so the tables held twelve entries and the
+// loop only ever read the first four, which are the faintest. The gradient was
+// running over the whole screen, writing 153,600 pixels a frame, and doing
+// almost nothing visible with them. The compiler warned about the redefinition
+// and the warning was filtered out of the build output.
 
 
 static void band_wall_tint(uint16_t* band, int by0, float k) {
@@ -360,6 +392,18 @@ static void band_wall_tint(uint16_t* band, int by0, float k) {
     const float step = (rmax - rin) / (float)TINT_RINGS;
 
     for (int row = 0; row < BAND_H; row++) {
+        // Only the rows the scanline pass left BRIGHT.
+        //
+        // This halves the pixel work, which is what pays for reddening amber at
+        // all: rebuilding green's high field costs three more operations a word
+        // than a mask does, and at full coverage that was 5.8ms and 48 fps.
+        //
+        // It is not a compromise on the look. band_scanlines has already darkened
+        // the other rows, so the red lands exactly where there is brightness to
+        // colour, and the result reads as a red vignette with the scanline texture
+        // still in it rather than as stripes.
+        if (((by0 + row) % SCANLINE_PITCH) == 0) continue;
+
         const float dy  = (float)(by0 + row) - cy;
         const float dy2 = dy * dy;
         uint16_t*   p   = band + row * SCR_W;

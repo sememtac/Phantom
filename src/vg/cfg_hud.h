@@ -70,10 +70,20 @@
 // really are a property of the world and of combat; this is a property of the
 // panel.
 //
-// The rate is the range: slow when the thing first matters, fast when it is
-// about to happen, and floored. The floor has been raised twice. A quarter
-// second still read as spam, and anything faster stops being a rhythm you can
-// count and becomes a flicker you stop seeing.
-#define ALERT_FLASH_SLOW     1.00f    // seconds per flash at the far edge
-#define ALERT_FLASH_FAST     0.35f    // ...and closest. Never faster than this.
-#define ALERT_FLASH_DUTY     0.45f    // fraction of the period the block is lit
+// The rate is the range: slow when the thing first matters, fast when it is about
+// to happen, and floored.
+//
+// The floor is 0.5s, which is 2 Hz, and it has been raised three times to get
+// there. Aviation human-factors standards put attention-getting flash rates at
+// roughly 3-5 Hz, so 0.35s (2.9 Hz) was inside that band -- but those figures are
+// for a small lamp on a panel, and photosensitivity guidance caps LARGE flashing
+// areas at about 3 Hz. This alert is a filled block on a screen held at arm's
+// length, which is the large-area case, so the lower limit is the one that
+// applies. A real cockpit also puts the urgency in an aural alert rather than in
+// the flash rate, and this game has no sound yet.
+//
+// 1 Hz at the far edge matches the convention for a caution; 2 Hz at the near
+// edge is a warning without being a strobe.
+#define ALERT_FLASH_SLOW     1.00f    // seconds per flash at the far edge, 1 Hz
+#define ALERT_FLASH_FAST     0.50f    // ...and closest, 2 Hz. Never faster.
+#define ALERT_FLASH_DUTY     0.50f    // fraction of the period the block is lit
