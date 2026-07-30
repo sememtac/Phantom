@@ -97,3 +97,10 @@ uint16_t vg_mix(uint16_t a, uint16_t b, float t);
 // 1 covers the whole frame. Set once per frame by the render layer, which is what
 // knows how close the wall is.
 void vg_rast_tint(float k);
+
+// The set turning on and off. `open` is how much of the height is picture,
+// centred; `glow` is the bright scan band riding the aperture edge; `dim` is how
+// far what remains is faded toward black. All 0..1, and (1, 0, 0) is a normal
+// picture. See the note in vg_band.cpp.
+void vg_rast_tv(float open, float glow, float dim);
+bool vg_rast_tv_active(void);

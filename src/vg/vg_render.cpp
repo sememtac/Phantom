@@ -35,6 +35,16 @@ static void draw_fps(float fps) {
             fps >= 59.0f ? INK_BRIGHT : INK_FAINT, 2);
 }
 
+// Hermite ease between two edges. The transition curves want acceleration at
+// both ends -- a linear wipe reads as a slide, not as a tube.
+static inline float smoothstep(float e0, float e1, float x) {
+    if (e1 <= e0) return (x < e0) ? 0.0f : 1.0f;
+    float t = (x - e0) / (e1 - e0);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return t * t * (3.0f - 2.0f * t);
+}
+
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
 
@@ -50,6 +60,33 @@ void vg_render_frame(const VgInput* in, float fps) {
         tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
     }
     vg_rast_tint(tint);
+
+    // The set turning on and off. Both directions are the same two phases, but
+    // they are not mirror images and each control has its own timing, which is
+    // why this is three curves and not one progress number.
+    //
+    // OUT: the picture fades, the aperture closes on it, and the scan band comes
+    // up as it goes -- so the last thing on screen is the band and not a shrunken
+    // copy of the scene. IN: the band is already lit, holds a moment, then opens
+    // while the picture comes back up underneath it.
+    if (vg.tv_phase == TV_NONE) {
+        vg_rast_tv(1.0f, 0.0f, 0.0f);
+    } else if (vg.tv_phase == TV_OUT) {
+        const float u = vg.tv_t / TV_OUT_TIME;
+        // The band comes up, holds, then dies right at the end -- which is what
+        // makes the last moment read as the set cutting out rather than as a
+        // picture that simply got smaller.
+        vg_rast_tv(1.0f - smoothstep(0.22f, 0.95f, u),
+                   smoothstep(0.16f, 0.60f, u) * (1.0f - smoothstep(0.88f, 1.0f, u)),
+                   smoothstep(0.00f, 0.62f, u));
+    } else {
+        const float u = vg.tv_t / TV_IN_TIME;
+        // The band holds before it opens. Without that pause the aperture is
+        // already moving on the first frame and the pulse never registers.
+        vg_rast_tv(smoothstep(0.20f, 0.88f, u),
+                   1.0f - smoothstep(0.12f, 0.62f, u),
+                   1.0f - smoothstep(0.14f, 0.70f, u));
+    }
 
     vg_rast_begin_frame();
 
@@ -191,6 +228,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_steer_indicator(in);
     vg_draw_target_markers(cam);
     vg_draw_threat_indicator(cam);
+
+    // Only in the course, and only with the instruments, so it arrives as part
+    // of the panel rather than ahead of it.
+    if (vg.state == VG_COURSE) vg_draw_course_exit();
 
     vg_draw_overlays();
 

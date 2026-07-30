@@ -444,6 +444,170 @@ void vg_rast_tint(float k) {
     s_tint_k = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
 }
 
+// ---------------------------------------------------------------------------
+// The set turning on and off
+//
+// A picture that cuts straight from the menu to the cockpit is a scene change.
+// A picture that collapses to a line and comes back is a BROADCAST, which is
+// what the tournament is meant to be -- so the transition carries the fiction
+// rather than just covering the seam.
+//
+// Three independent controls, because the two directions are not mirror images
+// and one "progress" number could not express either:
+//   open  how much of the height is picture at all, centred; the aperture
+//   glow  the bright scan band riding the aperture edge
+//   dim   how far what remains is faded toward black
+//
+// All of it is per-ROW work. Whole rows go black, whole rows go white, and only
+// the rows that are still picture pay for anything per-pixel -- which is what
+// makes an effect over the whole screen affordable at all.
+// ---------------------------------------------------------------------------
+
+static float s_tv_open = 1.0f;
+static float s_tv_glow = 0.0f;
+static float s_tv_dim  = 0.0f;
+
+void vg_rast_tv(float open, float glow, float dim) {
+    // Same "keep it only if it is in range" shape as vg_rast_tint, and for the
+    // same reason: a NaN fails every rejection test written the obvious way.
+    s_tv_open = (open >= 0.0f && open <= 1.0f) ? open : ((open > 0.0f) ? 1.0f : 0.0f);
+    s_tv_glow = (glow >= 0.0f && glow <= 1.0f) ? glow : ((glow > 0.0f) ? 1.0f : 0.0f);
+    s_tv_dim  = (dim  >= 0.0f && dim  <= 1.0f) ? dim  : ((dim  > 0.0f) ? 1.0f : 0.0f);
+}
+
+bool vg_rast_tv_active(void) {
+    return s_tv_open < 1.0f || s_tv_glow > 0.0f || s_tv_dim > 0.0f;
+}
+
+// Dim a span by shifting every channel right, which is a halving per step.
+//
+// MASK FIRST, THEN SHIFT. Shifting the packed word first would drag blue's low
+// bit into red's top bit and green's into blue's, so each field is isolated
+// before it moves and re-masked after.
+//
+// Green's six bits are split across the word in this byte order, high at 15..13
+// and low at 2..0. Only the high field is carried; the low three bits are
+// dropped rather than recombined across the gap. That is a small hue error on a
+// picture that is on its way to black inside a third of a second, and it is the
+// difference between four instructions and a table.
+#define TV_R   0x00F800F8u
+#define TV_B   0x1F001F00u
+#define TV_GH  0xE000E000u
+#define TV_R16 0x00F8u
+#define TV_B16 0x1F00u
+#define TV_G16 0xE000u
+
+static inline uint16_t tv_dim_px(uint16_t v, int s) {
+    return (uint16_t)((((v & TV_R16)  >> s) & TV_R16)
+                    | (((v & TV_B16)  >> s) & TV_B16)
+                    | (((v & TV_G16)  >> s) & TV_G16));
+}
+
+static inline void tv_dim_span(uint16_t* row, int x0, int x1, int s) {
+    if (s <= 0 || x1 <= x0) return;
+    if (s >= 5) { memset(row + x0, 0, (size_t)(x1 - x0) * 2); return; }
+
+    int x = x0;
+    if (x & 1) { row[x] = tv_dim_px(row[x], s); x++; }        // reach alignment
+
+    uint32_t* p = (uint32_t*)(row + x);
+    const int n = (x1 - x) >> 1;
+    for (int i = 0; i < n; i++) {
+        const uint32_t v = p[i];
+        p[i] = (((v & TV_R)  >> s) & TV_R)
+             | (((v & TV_B)  >> s) & TV_B)
+             | (((v & TV_GH) >> s) & TV_GH);
+    }
+    const int xt = x + n * 2;
+    if (xt < x1) row[xt] = tv_dim_px(row[xt], s);             // odd tail
+}
+
+static inline void tv_white(uint16_t* row, int x0, int x1) {
+    for (int x = x0; x < x1; x++) row[x] = 0xFFFF;
+}
+
+static void band_tv(uint16_t* band, int by0) {
+    (void)by0;
+
+    const float half = SCR_H * 0.5f;
+    const float edge = s_tv_glow * 30.0f + 1.0f;  // how thick the bright band is
+
+    // The aperture has a FLOOR while the band is lit, and that floor is the whole
+    // effect. Letting it close to nothing means nothing is inside it, so the
+    // screen goes black and the scan band -- the one thing the transition is
+    // actually about -- is never drawn at all. Measured before this: eleven
+    // consecutive black frames where the line should have been.
+    float ap = s_tv_open * half;
+    if (s_tv_glow > 0.0f) {
+        const float minap = 1.5f + s_tv_glow * 2.5f;
+        if (ap < minap) ap = minap;
+    }
+
+    // THE APERTURE RUNS ACROSS THE BAND, NOT DOWN IT.
+    //
+    // The band buffer is in PANEL space and the game is drawn through a quarter
+    // turn (see rot_pt in vg_raster.cpp): logical (lx,ly) lands at panel
+    // (ly, H-1-lx). So a whole buffer row is a logical COLUMN, and closing the
+    // aperture row by row -- which is what a display effect obviously wants to do
+    // -- produced a perfectly working wipe running sideways.
+    //
+    // A quarter turn either way puts logical y on the panel's x axis, and the
+    // aperture is symmetric about the centre, so 1 and 3 need no distinguishing
+    // here; nor do 0 and 2.
+#if VG_ROTATE == 1 || VG_ROTATE == 3
+    int lo = (int)(half - ap);
+    int hi = (int)(half + ap);
+    if (lo < 0)     lo = 0;
+    if (hi > SCR_W) hi = SCR_W;
+    if (hi < lo)    hi = lo;
+
+    const int e   = (int)edge;
+    const int w0  = (lo + e < hi) ? lo + e : hi;      // end of the leading edge
+    const int w1  = (hi - e > lo) ? hi - e : lo;      // start of the trailing one
+
+    static const float ROWD[4] = { 0.125f, 0.625f, 0.375f, 0.875f };
+    const float dimf = s_tv_dim * 5.0f;
+    const int   dim0 = (int)dimf;
+    const float frac = dimf - (float)dim0;
+
+    for (int r = 0; r < BAND_H; r++) {
+        uint16_t* row = band + r * SCR_W;
+
+        if (lo > 0)     memset(row,      0, (size_t)lo * 2);          // outside
+        if (hi < SCR_W) memset(row + hi, 0, (size_t)(SCR_W - hi) * 2);
+
+        if (s_tv_glow > 0.0f) {
+            // The scan band itself. Full white rather than the interface amber:
+            // this is the tube, not the instrument, and it is the one thing on
+            // screen allowed to be brighter than anything drawn.
+            tv_white(row, lo, w0);
+            tv_white(row, w1, hi);
+        }
+        // A six-level shift would band visibly across a fade this short, so the
+        // fractional level is dithered by row. Adjacent rows sit either side of
+        // the true level and the eye blends them, at no per-pixel cost.
+        tv_dim_span(row, w0, w1, dim0 + (ROWD[r & 3] < frac ? 1 : 0));
+    }
+#else
+    const int lo = (int)(half - ap), hi = (int)(half + ap);
+    static const float ROWD[4] = { 0.125f, 0.625f, 0.375f, 0.875f };
+    const float dimf = s_tv_dim * 5.0f;
+    const int   dim0 = (int)dimf;
+    const float frac = dimf - (float)dim0;
+
+    for (int r = 0; r < BAND_H; r++) {
+        const int y   = by0 + r;
+        uint16_t* row = band + r * SCR_W;
+        if (y < lo || y >= hi) { memset(row, 0, SCR_W * 2); continue; }
+        if (s_tv_glow > 0.0f && (y - lo < (int)edge || hi - y <= (int)edge)) {
+            tv_white(row, 0, SCR_W);
+            continue;
+        }
+        tv_dim_span(row, 0, SCR_W, dim0 + (ROWD[y & 3] < frac ? 1 : 0));
+    }
+#endif
+}
+
 static inline void band_scanlines(uint16_t* band, int by0) {
     int first = (SCANLINE_PITCH - (by0 % SCANLINE_PITCH)) % SCANLINE_PITCH;
 
@@ -587,6 +751,10 @@ void vg_rast_flush(void) {
         // left the scanlines amber would read as an overlay rather than as the
         // whole picture going red.
         if (tint_k > 0.0f) band_wall_tint(buf, b * BAND_H, tint_k);
+        // Last of all. The set turning off takes the whole picture with it --
+        // scanlines, tint, instruments and all -- because it is the display
+        // going away rather than another layer drawn on top of it.
+        if (vg_rast_tv_active()) band_tv(buf, b * BAND_H);
         s_scan_us += micros() - t_scan;
         raster += micros() - r0;
 

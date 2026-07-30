@@ -283,6 +283,23 @@ void vg_input_update(float dt, VgInput* out) {
     out->alt_edge = alt_btn && !s_prev_alt_btn;
     s_prev_alt_btn = alt_btn;
 
+    // Roll takes over the HORIZONTAL axis only, and the vertical one is dropped
+    // rather than reassigned. Rolling and pitching at once from a single contact
+    // would be two commands from one gesture, and the pitch would be the one the
+    // player did not mean.
+    //
+    // It reuses the shaped, smoothed yaw axis rather than reading the raw finger,
+    // so roll gets the same deadzone and the same ramp as every other control and
+    // does not need its own feel.
+    out->roll_btn = alt_btn;
+    if (alt_btn) {
+        out->roll  = out->yaw;
+        out->pitch = 0.0f;
+        out->yaw   = 0.0f;
+    } else {
+        out->roll = 0.0f;
+    }
+
     out->tap_edge  = steer_contact && !s_prev_steer_contact;
     out->any_touch = (n > 0);
 

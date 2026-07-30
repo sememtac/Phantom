@@ -19,6 +19,16 @@ struct VgInput {
 
     bool  alt_edge;     // press edge of the second hardware button (menus)
 
+    // Hold the + key and the steering swipe rolls instead of turning. There is
+    // otherwise no way to roll at all, and roll is what makes a turn
+    // unpredictable rather than merely fast.
+    //
+    // The SAME key still reports alt_edge, because it means two different things
+    // in two different places: roll while flying, menu everywhere else. Which one
+    // applies is the game's decision, not the input layer's.
+    bool  roll_btn;
+    float roll;         // -1..1, left/right. Zero unless roll_btn is held.
+
     bool  tap_edge;     // first frame of any new steering-side contact
     bool  any_touch;
 

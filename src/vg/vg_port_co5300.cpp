@@ -274,6 +274,67 @@ uint8_t vg_buttons_read(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The power key
+//
+// PWR is not on a GPIO and no pin scan will ever find it. It belongs to the
+// AXP2101, and the only way to see it from software is that chip's interrupt
+// status registers, over the I2C bus the touch panel and the IMU already share.
+//
+// This is a PROBE rather than a driver. Which bit means a short press is not
+// something to take on trust from a datasheet for a part we do not otherwise
+// talk to, so it reports whichever bits actually move and the mapping gets read
+// off a real press. Once that is known this collapses into a single mask test.
+//
+// Only two register groups are touched, and neither can affect a power rail:
+// 0x40..0x42 gate which events are reported, and 0x48..0x4A latch what happened
+// and are cleared by writing the bits back.
+// ---------------------------------------------------------------------------
+#define AXP2101_ADDR  0x34
+#define AXP_IRQ_EN    0x40
+#define AXP_IRQ_ST    0x48
+
+static bool s_pmu_present = false;
+
+static bool pmu_write(uint8_t reg, const uint8_t* v, int n) {
+    Wire.beginTransmission(AXP2101_ADDR);
+    Wire.write(reg);
+    for (int i = 0; i < n; i++) Wire.write(v[i]);
+    return Wire.endTransmission() == 0;
+}
+
+static bool pmu_read(uint8_t reg, uint8_t* v, int n) {
+    Wire.beginTransmission(AXP2101_ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0) return false;
+    if ((int)Wire.requestFrom((int)AXP2101_ADDR, n) != n) return false;
+    for (int i = 0; i < n; i++) v[i] = (uint8_t)Wire.read();
+    return true;
+}
+
+bool vg_pmu_init(void) {
+    const uint8_t all[3] = { 0xFF, 0xFF, 0xFF };
+    s_pmu_present = pmu_write(AXP_IRQ_EN, all, 3);
+    if (!s_pmu_present) return false;
+
+    // Clear whatever is already latched from before we were looking, so the
+    // first thing reported is the first thing that happens.
+    uint8_t st[3];
+    if (pmu_read(AXP_IRQ_ST, st, 3)) pmu_write(AXP_IRQ_ST, st, 3);
+    return true;
+}
+
+bool vg_pmu_irq(uint8_t* st3) {
+    if (!s_pmu_present) return false;
+    uint8_t st[3];
+    if (!pmu_read(AXP_IRQ_ST, st, 3)) return false;
+    if (!(st[0] | st[1] | st[2])) return false;
+
+    pmu_write(AXP_IRQ_ST, st, 3);          // write the bits back to clear them
+    st3[0] = st[0]; st3[1] = st[1]; st3[2] = st[2];
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // IMU
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,7 @@
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
+#include "vg_draw.h"
 #include "vg_save.h"
 #include "vg_cine.h"
 #include "vg_ift.h"
@@ -110,10 +111,44 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
 // which is what a broadcast layer should be -- and it costs nothing from the
 // fifteen pilot hues that vg_tourney already has to spread and keep clear of the
 // player's own.
+//
+// It can be given several lines at once and will read them in order. One line at
+// a time was right while it only ever announced a result; it is wrong the moment
+// it has to say something conversational, because a paragraph delivered as one
+// overlong line is not the same performance as three beats.
+#define IFT_QUEUE_MAX 4
+
+static char  s_ift_q[IFT_QUEUE_MAX][48];
+static float s_ift_hold[IFT_QUEUE_MAX];
+static int   s_ift_n = 0;   // lines waiting
+static int   s_ift_i = 0;   // how far through them we are
+
+static void ift_pop(void) {
+    if (s_ift_i >= s_ift_n) { s_ift_n = s_ift_i = 0; return; }
+    vg.ift_line = s_ift_q[s_ift_i];
+    vg.ift_t    = s_ift_hold[s_ift_i];
+    s_ift_i++;
+}
+
 void vg_ift_say(const char* line, float hold) {
     if (!line) return;
+    // An immediate line cuts off anything queued. A broadcast that has moved on
+    // must not have the tail of the last announcement surface behind it.
+    s_ift_n = s_ift_i = 0;
     vg.ift_line = line;
     vg.ift_t    = hold;
+}
+
+// Queued lines are COPIED. A caller composing each line in its own scratch
+// buffer and queueing three of them would otherwise end up holding three
+// pointers to the same buffer and hear the last line three times.
+void vg_ift_queue(const char* line, float hold) {
+    if (!line || !*line) return;
+    if (s_ift_n >= IFT_QUEUE_MAX) return;   // silently, rather than shouting over
+    snprintf(s_ift_q[s_ift_n], sizeof(s_ift_q[0]), "%s", line);
+    s_ift_hold[s_ift_n] = hold;
+    s_ift_n++;
+    if (vg.ift_t <= 0.0f) ift_pop();        // nothing up: start speaking now
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -671,7 +706,9 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     }
     if (vg.ift_t > 0) {
         vg.ift_t -= dt;
-        if (vg.ift_t <= 0) vg.ift_line = nullptr;
+        // On to the next line if there is one, so a queued announcement reads as
+        // consecutive beats rather than stopping after the first.
+        if (vg.ift_t <= 0) { vg.ift_line = nullptr; ift_pop(); }
     }
 }
 
@@ -866,7 +903,75 @@ static void menu_world(float dt) {
     vg_update_missiles(dt);
 }
 
+// ---------------------------------------------------------------------------
+// The set turning on and off
+// ---------------------------------------------------------------------------
+
+static void enter_course(void) {
+    vg_arena_init(ARENA_TORUS);
+    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
+    for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
+    for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
+    vg_course_begin();
+    vg.state    = VG_COURSE;
+    vg.state_t  = 0;
+    vg.roll     = 0;
+    vg.bank     = 0;
+    vg.hud_boot = HUD_BOOT_TIME;
+    vg_input_calibrate();
+}
+
+void vg_tv_go(TvAction a) {
+    if (vg.tv_phase != TV_NONE) return;   // one transition at a time
+    vg.tv_phase = TV_OUT;
+    vg.tv_act   = (uint8_t)a;
+    vg.tv_t     = 0.0f;
+}
+
+// Runs at the JOIN, with the screen black. Everything a transition target needs
+// set up happens here rather than at the button, so the old scene is never the
+// one the aperture opens back onto.
+static void tv_join(void) {
+    switch ((TvAction)vg.tv_act) {
+    case TVA_MATCH:   vg_match_start(); break;
+    case TVA_COURSE:  enter_course();   break;
+    case TVA_BRACKET:
+        vg.ring_alive = false;
+        vg_bracket_focus_player();
+        vg.state   = VG_BRACKET;
+        vg.state_t = 0;
+        break;
+    case TVA_ATTRACT: enter_attract();  break;
+    case TVA_NONE:    break;
+    }
+    vg.tv_act = TVA_NONE;
+}
+
+static void tv_update(float dt) {
+    if (vg.tv_phase == TV_NONE) return;
+    vg.tv_t += dt;
+    if (vg.tv_phase == TV_OUT) {
+        if (vg.tv_t >= TV_OUT_TIME) { tv_join(); vg.tv_phase = TV_IN; vg.tv_t = 0.0f; }
+    } else if (vg.tv_t >= TV_IN_TIME) {
+        vg.tv_phase = TV_NONE;
+        vg.tv_t     = 0.0f;
+    }
+}
+
 void vg_game_update(float dt, const VgInput* in) {
+    tv_update(dt);
+
+    // A press during the wipe belongs to neither scene. Without this a tap that
+    // started the transition is still live when the new screen appears and gets
+    // spent on whatever happens to be under the finger.
+    VgInput gated;
+    if (vg.tv_phase != TV_NONE) {
+        gated = *in;
+        gated.fire_edge = gated.alt_edge = gated.tap_edge = gated.menu_edge = false;
+        in = &gated;
+    }
+
     vg.state_t += dt;
 
     vg.difficulty = 1.0f + (float)vg.kills * 0.35f;
@@ -1011,7 +1116,8 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_COURSE: {
         // Flying, and nothing else. No opponent, no missiles, no purse. The wall
         // is still lethal because that is one of the things worth learning here.
-        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
+                      in->throttle);
         vg_course_update(dt);
         collide_player();
 
@@ -1029,13 +1135,10 @@ void vg_game_update(float dt, const VgInput* in) {
         }
 
         // Leaves the moment it is finished, or the moment the player says so.
-        // ALT is the pause key everywhere else; here it is simply the way out.
-        if (vg.course_done || in->alt_edge) {
-            vg.ring_alive = false;
-            vg_bracket_focus_player();
-            vg.state   = VG_BRACKET;
-            vg.state_t = 0;
-        }
+        // The way out is a button on the screen: the + key is the roll control
+        // now, and a practice range with no visible exit is a trap.
+        if (vg.course_done || (tap_up && vg_course_exit_at(tap_x, tap_y)))
+            vg_tv_go(TVA_BRACKET);
         break;
     }
 
@@ -1043,7 +1146,8 @@ void vg_game_update(float dt, const VgInput* in) {
         // The world keeps running -- wreckage still tumbles, their last trail
         // still fades -- but nothing can touch the player. The only job of this
         // state is to let the dead pilot finish talking.
-        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
+                      in->throttle);
         vg_update_missiles(dt);
         update_threat();
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
@@ -1067,20 +1171,9 @@ void vg_game_update(float dt, const VgInput* in) {
         if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
         if (tap_up) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
-                vg_match_start();
+                vg_tv_go(TVA_MATCH);
             } else if (vg_bracket_course_at(tap_x, tap_y)) {
-                vg_arena_init(ARENA_TORUS);
-                vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
-                for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
-                for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
-                for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
-                vg_course_begin();
-                vg.state    = VG_COURSE;
-                vg.state_t  = 0;
-                vg.roll     = 0;
-                vg.bank     = 0;
-                vg.hud_boot = HUD_BOOT_TIME;
-                vg_input_calibrate();
+                vg_tv_go(TVA_COURSE);
             } else if (vg_bracket_repair_at(tap_x, tap_y)) {
                 vg_repair_reset();
                 vg.state   = VG_REPAIR;
@@ -1098,7 +1191,7 @@ void vg_game_update(float dt, const VgInput* in) {
                 vg.state = VG_PLAYING;
                 vg.state_t = 0;
             } else if (vg_pause_quit_at(tap_x, tap_y)) {
-                enter_attract();
+                vg_tv_go(TVA_ATTRACT);
             }
         }
         break;
@@ -1144,7 +1237,8 @@ void vg_game_update(float dt, const VgInput* in) {
 
         vg_clear_player_hit();
 
-        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_world_step(dt, in->pitch, in->yaw, in->roll * ROLL_RATE * dt,
+                      in->throttle);
 
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
 
@@ -1162,7 +1256,9 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.reload_t <= 0) { vg.missiles++; vg.reload_t = vg.spec->reload; }
         }
         if (in->fire_edge) player_fire();
-        if (playing && in->alt_edge) { vg.state = VG_PAUSE; vg.state_t = 0; break; }
+        // NOT the + key any more -- that is hold-to-roll now, and pausing every
+        // time a player rolled would be unusable. This moves to the PWR key.
+        (void)0;
 
         // Unprompted chatter, on a long timer and only when the radio is idle.
         // Taunts are flavour; letting one interrupt a hit or a kill would turn
@@ -1277,7 +1373,7 @@ void vg_game_update(float dt, const VgInput* in) {
         vg.shake_y += vg_frand(-3.4f, 3.4f);
 
         // Knocked out is knocked out: back to the main menu, not a restart.
-        if (vg.state_t > 2.2f && tap_up) { vg_cine_clear(); enter_attract(); }
+        if (vg.state_t > 2.2f && tap_up) { vg_cine_clear(); vg_tv_go(TVA_ATTRACT); }
         break;
     }
     }

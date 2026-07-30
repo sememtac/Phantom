@@ -3,6 +3,7 @@
 #include "vg_voice.h"
 #include "vg_arena.h"
 #include "vg_course.h"
+#include "vg_screens.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -173,24 +174,63 @@ static void draw_boundary_alert(void) {
 void vg_draw_ift(void) {
     if (!vg.ift_line || vg.ift_t <= 0.0f) return;
 
-    const int y     = 300;
-    const int h     = 46;
-    const int scale = 3;
-    const int mw    = vg_text_width(vg.ift_line, scale);
-    const int mx    = (SCR_W - mw) / 2;
+    const int y = 300;
+    const int h = 46;
+
+    // Scale 3 is the voice this thing speaks in, and it holds unless the line
+    // genuinely will not fit. Dropping to 2 is a fallback, not a choice: the
+    // alternative is overhanging both edges, and a sentence the author wrote is
+    // not something to truncate to protect a font size.
+    // The mark is drawn at x=8 and is this wide. Text has to clear it.
+    const int mark_end = 8 + vg_text_width("IFT", 2) + 10 + 6;
+
+    int scale = 3;
+    if (vg_text_width(vg.ift_line, scale) > SCR_W - mark_end * 2) scale = 2;
+
+    const int mw = vg_text_width(vg.ift_line, scale);
+
+    // Centred on the whole width while it fits, because that is where a caption
+    // belongs. A line long enough to reach the mark is re-centred in the clear
+    // space to the right of it instead -- off-centre by twenty pixels is not
+    // something anyone will see, and the first version ran the author's longest
+    // line straight through the IFT badge.
+    int mx = (SCR_W - mw) / 2;
+    if (mx < mark_end) {
+        mx = mark_end + (SCR_W - mark_end - mw) / 2;
+        if (mx < mark_end) mx = mark_end;
+    }
 
     // Rules rather than a filled band: a solid white block would be the brightest
     // thing on a panel whose whole hierarchy is brightness, and it would bury the
     // instruments it is meant to sit behind.
     vg_fill_rect(0, y,                  SCR_W, HUD_STROKE, COL_IFT);
     vg_fill_rect(0, y + h - HUD_STROKE, SCR_W, HUD_STROKE, COL_IFT);
-    vg_text(mx, y + 13, vg.ift_line, COL_IFT, scale);
+    // Vertically centred on the band whichever size it ended up at: a glyph is
+    // 7 rows tall before scaling.
+    vg_text(mx, y + (h - 7 * scale) / 2, vg.ift_line, COL_IFT, scale);
 
     // The mark, inverse-video at the left, where a callsign block sits on the
     // pilots' channel.
     const int tw = vg_text_width("IFT", 2);
     vg_fill_rect(8, y + 12, tw + 10, 18, COL_IFT);
     vg_text(13, y + 15, "IFT", INK_ONFILL, 2);
+}
+
+// The way out of the ring course.
+//
+// Top left, which is the only corner of the panel that carries no instrument:
+// the throttle owns the left edge from 110 down, the speed and kill tallies own
+// the top centre and right, and the radar owns everything below 374.
+//
+// It exists because the course took the + key as its exit, and the + key is the
+// roll control now. A practice range you cannot leave without dying is not
+// practice.
+void vg_draw_course_exit(void) {
+    vg_button(CRS_EXIT_X, CRS_EXIT_Y, CRS_EXIT_W, CRS_EXIT_H, "MENU", false, true);
+}
+
+bool vg_course_exit_at(float x, float y) {
+    return vg_in_rect(x, y, CRS_EXIT_X, CRS_EXIT_Y, CRS_EXIT_W, CRS_EXIT_H);
 }
 
 static void draw_throttle(void) {

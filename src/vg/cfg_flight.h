@@ -145,3 +145,10 @@
 // eased off. So the floor is now a brightness clamp, not a skip.
 #define SHIP_TRAIL_IDLE      0.30f    // emission strength at zero throttle
 #define SHIP_TRAIL_MIN       0.09f    // dimmest a segment may get -- never zero
+
+// --- roll ------------------------------------------------------------------
+// Radians per second at full stick, with the + key held. Deliberately brisk:
+// roll is an expert control that nobody is forced to touch, and a timid one
+// would be worse than none -- the whole point is to break the plane of a turn
+// faster than an opponent can read it.
+#define ROLL_RATE            2.9f

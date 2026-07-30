@@ -86,6 +86,9 @@ void setup(void) {
     // which is worse than persisting and far better than refusing to boot.
     if (!vg_store_init()) Serial.println("WARN: no NVS - progress will not persist");
     vg_buttons_init();
+    // Non-fatal like the rest: without the PMU the power key is invisible and
+    // every other control still works.
+    if (!vg_pmu_init()) Serial.println("WARN: no PMU - power key unavailable");
 
     vg_input_init();
     vg_game_init();
@@ -109,6 +112,17 @@ void loop(void) {
     // poller would eat them as if they were commands.
     vg_crumb(CRUMB_POLL, (uint8_t)vg.state);
     if (vg_replay_mode() != VG_RP_PLAY) vg_capture_poll();
+
+    // PWR probe. Prints whichever AXP2101 status bits move, so the power key's
+    // bit can be read off a real press instead of guessed. Goes away once the
+    // mapping is known and the key becomes an ordinary button.
+    {
+        uint8_t st[3];
+        if (vg_pmu_irq(st)) {
+            Serial.printf("PMU IRQ: 0x48=%02X 0x49=%02X 0x4A=%02X\n",
+                          st[0], st[1], st[2]);
+        }
+    }
 
     uint32_t now = micros();
     if (last_us == 0) last_us = now;

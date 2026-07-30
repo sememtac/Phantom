@@ -165,6 +165,35 @@ enum VgState : uint8_t {
     VG_WON                // took the whole tournament
 };
 
+// --- the set turning on and off --------------------------------------------
+//
+// Crossing between the menus and the game is a BROADCAST cutting to and from the
+// action, so the picture collapses to a scan band and comes back rather than
+// simply changing. The effect itself lives in vg_band.cpp; this is the schedule.
+//
+// The change of state happens at the JOIN, while the screen is black. That is
+// the whole reason this is two phases and not one animation: the old scene has
+// to be gone before the new one is built, or the wipe closes on one picture and
+// opens on the same one.
+enum TvPhase : uint8_t {
+    TV_NONE = 0,
+    TV_OUT,        // old scene fading and collapsing to the band
+    TV_IN          // new scene opening back up out of it
+};
+
+// What to do at the join. A plain target state is not enough -- every one of
+// these carries setup that has to run at the moment of the switch.
+enum TvAction : uint8_t {
+    TVA_NONE = 0,
+    TVA_MATCH,     // into the launch cutscene
+    TVA_COURSE,    // into the ring course
+    TVA_BRACKET,   // back out to the tournament map
+    TVA_ATTRACT    // back out to the title
+};
+
+#define TV_OUT_TIME 0.40f
+#define TV_IN_TIME  0.55f
+
 // --- launch cutscene schedule ----------------------------------------------
 // Camera adrift, then each fighter flown across the view in turn, with a hard
 // cut between them. Skippable, because the fifth time through it is furniture.
@@ -228,6 +257,10 @@ enum VgState : uint8_t {
 // the IFT takes the first part of the shot and the card takes the rest, so the
 // two SEQUENCE instead of stacking. Overlapped, they read as one garbled caption.
 #define IFT_SPEECH_INTRO 3.2f
+// One beat of a multi-line announcement. Shorter than a whole statement because
+// these are read consecutively -- three at IFT_SPEECH would run twenty seconds
+// and the player is sitting in a tube waiting to be allowed to fly.
+#define IFT_SPEECH_BEAT  2.2f
 #define KILL_REFLECT    4.6f
 #define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 
@@ -335,6 +368,11 @@ struct VgGame {
     // frame its cue is true.
     uint8_t     ift_fired;
 
+    // The set turning on and off, between the menus and the game.
+    uint8_t     tv_phase;    // TvPhase
+    uint8_t     tv_act;      // TvAction, performed at the join
+    float       tv_t;
+
     // --- ring course -------------------------------------------------------
     // One gate at a time, in VIEW space like every other object, so the world
     // step carries it without the course needing to know how the world moves.
@@ -430,6 +468,9 @@ void vg_tournament_begin(ShipClass c);
 // Set up the next match against whoever the bracket says. Hull is NOT restored
 // here -- damage carries between rounds, and only credits will ever undo it.
 void vg_match_start(void);
+// Begin a broadcast transition. The action is performed at the join, while the
+// screen is black; see the TvPhase note above.
+void vg_tv_go(TvAction a);
 
 void vg_game_select_ship(ShipClass c);
 

@@ -51,6 +51,9 @@ void vg_spawn_opponent(void);
 void vg_comms_say(const Ship* s, VoiceEvent ev);
 // The broadcast voice: white, its own slot, silent during a fight.
 void vg_ift_say(const char* line, float hold);
+// Add a line to the end of the broadcast's queue, to be read after whatever is
+// already up. The text is copied, so a caller's scratch buffer is safe to reuse.
+void vg_ift_queue(const char* line, float hold);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

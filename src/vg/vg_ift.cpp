@@ -41,7 +41,9 @@ static const char* const IFT_FMT[IFT_SLOTS] = {
     "%s   %s",              // IFT_INTRO_YOU
     "%s   %s   %d",         // IFT_INTRO_OPP
     "%s   %s   %s",         // IFT_MATCH_END
-    "",                     // IFT_COURSE_START -- silent until written
+    // IFT_COURSE_START is three lines, read in order, so it is composed below
+    // rather than here. The table holds one line per slot by construction.
+    "-",
     "%d / %d",              // IFT_COURSE_PASS
     "",                     // IFT_COURSE_MISS
     "",                     // IFT_COURSE_DONE
@@ -85,8 +87,19 @@ void vg_ift_line(IftSlot slot) {
         snprintf(s_buf, sizeof(s_buf), fmt, (int)vg.course_hits, COURSE_TARGET);
         break;
 
+    // The course opening: three beats, not one line. The IFT reads the player in
+    // before it hands over the assignment, which is the only place in the game
+    // the broadcast addresses them directly rather than about them.
+    case IFT_COURSE_START: {
+        char welcome[48];
+        snprintf(welcome, sizeof(welcome), "Welcome %s", vg.callsign);
+        vg_ift_queue("Analyzing biometrics...", IFT_SPEECH_BEAT);
+        vg_ift_queue(welcome,                   IFT_SPEECH_BEAT);
+        vg_ift_queue("Complete this assignment to proceed", IFT_SPEECH);
+        return;
+    }
+
     // No arguments, so the author's line is the whole of it.
-    case IFT_COURSE_START:
     case IFT_COURSE_MISS:
     case IFT_COURSE_DONE:
         snprintf(s_buf, sizeof(s_buf), "%s", fmt);
