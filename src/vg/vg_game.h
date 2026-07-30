@@ -222,6 +222,12 @@ enum VgState : uint8_t {
 // the broadcast only speaks between fights -- and it carries information the
 // player cannot get anywhere else, so it is worth reading rather than glancing at.
 #define IFT_SPEECH      6.4f
+
+// Shorter over the cutscene, because there the broadcast is not the only thing
+// talking. Each fighter's shot runs about 6.8s and already carries a name card;
+// the IFT takes the first part of the shot and the card takes the rest, so the
+// two SEQUENCE instead of stacking. Overlapped, they read as one garbled caption.
+#define IFT_SPEECH_INTRO 3.2f
 #define KILL_REFLECT    4.6f
 #define KILL_BEAT       (KILL_SPEECH + KILL_REFLECT)
 

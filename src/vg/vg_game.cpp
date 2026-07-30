@@ -110,10 +110,10 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
 // which is what a broadcast layer should be -- and it costs nothing from the
 // fifteen pilot hues that vg_tourney already has to spread and keep clear of the
 // player's own.
-void vg_ift_say(const char* line) {
+void vg_ift_say(const char* line, float hold) {
     if (!line) return;
     vg.ift_line = line;
-    vg.ift_t    = IFT_SPEECH;
+    vg.ift_t    = hold;
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -339,6 +339,7 @@ void vg_match_start(void) {
 
     vg.state       = VG_INTRO;
     vg.state_t     = 0;
+    vg.ring_alive  = false;      // no gate follows the player into a round
     // Every round is its own broadcast, so the announcer's one-shot flags clear
     // here rather than at boot. Clearing them at boot only would have introduced
     // the fighters once and then gone quiet for the rest of the tournament.

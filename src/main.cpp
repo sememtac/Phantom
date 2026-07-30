@@ -5,6 +5,7 @@
 //   vg_input_update() -> vg_game_update() -> vg_render_frame() -> vg_rast_flush()
 
 #include <Arduino.h>
+#include <esp_system.h>
 #include "vg/vg_port.h"
 #include "vg/vg_raster.h"
 #include "vg/vg_input.h"
@@ -50,6 +51,14 @@ void setup(void) {
 
     delay(300);
     Serial.println("\n=== PHANTOM ===");
+
+    // Why the LAST run ended. A panic on this part with USB-CDC prints nothing --
+    // the USB task dies with it -- so a crash is silent and indistinguishable from
+    // a hang. This survives the reboot and is the only thing that will tell us.
+    //
+    //   1 power-on   3 software   4 PANIC   5 int watchdog   6 task watchdog
+    //   7 watchdog   9 brownout  14 USB, which is our own reset pulse
+    Serial.printf("reset reason: %d\n", (int)esp_reset_reason());
 
     if (!vg_panel_init()) {
         Serial.println("FATAL: no panel");

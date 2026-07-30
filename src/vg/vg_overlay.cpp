@@ -334,6 +334,11 @@ void vg_draw_overlays(void) {
             }
         }
 
+        // The name card WAITS for the broadcast to finish. The IFT band sits at
+        // 384..414 and the card at 360 and 414, so on screen together they were
+        // one illegible pile -- and they were saying the same thing twice.
+        if (vg.ift_t > 0.0f) break;
+
         if (t > INTRO_DRIFT && t < INTRO_YOU_END) {
             centred(360, vg.callsign, INK_MAX, 5);
             centred(414, vg.spec->name, INK_BRIGHT, 2);

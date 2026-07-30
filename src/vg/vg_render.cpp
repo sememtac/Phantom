@@ -58,7 +58,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_starfield(cam);
     vg_draw_arena_grid(cam);
     vg_draw_world(cam);
-    vg_course_draw(cam);
+    // Gated on the state, not just on ring_alive. A stale gate drawn into a match
+    // would be confusing at best, and its normal is only guaranteed sane while
+    // the course owns it.
+    if (vg.state == VG_COURSE) vg_course_draw(cam);
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on
     // the ship-select screen would be reporting on a fight that is not happening.

@@ -94,5 +94,8 @@ void vg_ift_line(IftSlot slot) {
     default: return;
     }
 
-    vg_ift_say(s_buf);
+    // The intro lines hold for less time, so the fighter's name card can follow
+    // them within the same shot rather than fighting them for the same rows.
+    const bool intro = (slot == IFT_INTRO_YOU || slot == IFT_INTRO_OPP);
+    vg_ift_say(s_buf, intro ? IFT_SPEECH_INTRO : IFT_SPEECH);
 }
