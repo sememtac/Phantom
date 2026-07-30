@@ -351,6 +351,7 @@ struct VgGame {
     const char* comms_line;
     float       comms_t;
     uint8_t     comms_pri;
+    bool        comms_mark;   // this line opens a run, so it is badged
 
     // The broadcast voice, on its OWN slot rather than sharing the pilots'.
     //
@@ -367,6 +368,11 @@ struct VgGame {
     // One bit per IftSlot, so each line fires once per match rather than every
     // frame its cue is true.
     uint8_t     ift_fired;
+
+    // Whether this line is the one that OPENS a run of speech, and so carries
+    // the speaker's badge. A continuation does not: see the note on
+    // draw_comms() in vg_hud.cpp.
+    bool        ift_mark;
 
     // The set turning on and off, between the menus and the game.
     uint8_t     tv_phase;    // TvPhase

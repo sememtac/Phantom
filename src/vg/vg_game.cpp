@@ -92,6 +92,14 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
         vg.comms_line = vg_voice_champion_line(pick >> 1);
     else
         vg.comms_line = vg_voice_line(s->voice, ev, pick);
+    // Badge this line only if it OPENS a run: the channel was quiet, or somebody
+    // else had it. A pilot carrying straight on gets the space instead. Compared
+    // before the tag is overwritten, obviously.
+    vg.comms_mark = !(vg.comms_t > 0.0f
+                      && vg.comms_tag[0] == s->tag[0]
+                      && vg.comms_tag[1] == s->tag[1]
+                      && vg.comms_tag[2] == s->tag[2]);
+
     vg.comms_tag[0] = s->tag[0];
     vg.comms_tag[1] = s->tag[1];
     vg.comms_tag[2] = s->tag[2];
@@ -123,10 +131,11 @@ static float s_ift_hold[IFT_QUEUE_MAX];
 static int   s_ift_n = 0;   // lines waiting
 static int   s_ift_i = 0;   // how far through them we are
 
-static void ift_pop(void) {
+static void ift_pop(bool opens_run) {
     if (s_ift_i >= s_ift_n) { s_ift_n = s_ift_i = 0; return; }
     vg.ift_line = s_ift_q[s_ift_i];
     vg.ift_t    = s_ift_hold[s_ift_i];
+    vg.ift_mark = opens_run;
     s_ift_i++;
 }
 
@@ -137,6 +146,7 @@ void vg_ift_say(const char* line, float hold) {
     s_ift_n = s_ift_i = 0;
     vg.ift_line = line;
     vg.ift_t    = hold;
+    vg.ift_mark = true;
 }
 
 // Queued lines are COPIED. A caller composing each line in its own scratch
@@ -144,11 +154,24 @@ void vg_ift_say(const char* line, float hold) {
 // pointers to the same buffer and hear the last line three times.
 void vg_ift_queue(const char* line, float hold) {
     if (!line || !*line) return;
+
+    // A SILENT CHANNEL WITH LINES STILL QUEUED means somebody zeroed the timer
+    // out from under a run -- vg_match_start does exactly that -- and those
+    // lines will never be read now. Discarding them here is what keeps the queue
+    // honest without every such caller having to remember the indices exist.
+    //
+    // Leaving them cost more than a stale line: the next announcement appended
+    // to the wreckage and popped from the MIDDLE of it, so the wrong line opened
+    // the run and took the badge with it. That is how this was found.
+    if (vg.ift_t <= 0.0f && s_ift_i < s_ift_n) s_ift_n = s_ift_i = 0;
+
     if (s_ift_n >= IFT_QUEUE_MAX) return;   // silently, rather than shouting over
     snprintf(s_ift_q[s_ift_n], sizeof(s_ift_q[0]), "%s", line);
     s_ift_hold[s_ift_n] = hold;
     s_ift_n++;
-    if (vg.ift_t <= 0.0f) ift_pop();        // nothing up: start speaking now
+    // Nothing up, so this one starts talking -- and starting is what earns the
+    // badge.
+    if (vg.ift_t <= 0.0f) ift_pop(true);
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
@@ -708,7 +731,9 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.ift_t -= dt;
         // On to the next line if there is one, so a queued announcement reads as
         // consecutive beats rather than stopping after the first.
-        if (vg.ift_t <= 0) { vg.ift_line = nullptr; ift_pop(); }
+        // A continuation, so no badge: the channel never went quiet and nobody
+        // else can have taken it.
+        if (vg.ift_t <= 0) { vg.ift_line = nullptr; ift_pop(false); }
     }
 }
 

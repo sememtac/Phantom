@@ -82,18 +82,22 @@ static void draw_comms(void) {
 
     // +4 so the tag block's top edge, not its baseline, lines up with the strip.
     const int   y  = THROTTLE_TOP + 4;
-    const int   tw = vg_text_width(vg.comms_tag, 2);
+    const bool  badge = vg.comms_mark;
+    const int   tw = badge ? vg_text_width(vg.comms_tag, 2) : 0;
+    const int   gap = badge ? 14 : 0;
     const int   mw = vg_text_width(vg.comms_line, 2);
-    const int   x  = (SCR_W - (tw + 14 + mw)) / 2;
+    const int   x  = (SCR_W - (tw + gap + mw)) / 2;
 
     // A last transmission blinks. Brightness and blink are the whole vocabulary
     // here, and a death is the one line worth interrupting the player for.
     const bool  dying = (vg.comms_pri == (uint8_t)VOICE_DEATH);
     if (dying && fmodf(vg.comms_t, 0.44f) < 0.16f) return;
 
-    vg_fill_rect(x - 5, y - 4, tw + 10, 22, dying ? INK_MAX : INK);
-    vg_text(x, y, vg.comms_tag, INK_ONFILL, 2);
-    vg_text(x + tw + 14, y, vg.comms_line, dying ? INK_MAX : INK_BRIGHT, 2);
+    if (badge) {
+        vg_fill_rect(x - 5, y - 4, tw + 10, 22, dying ? INK_MAX : INK);
+        vg_text(x, y, vg.comms_tag, INK_ONFILL, 2);
+    }
+    vg_text(x + tw + gap, y, vg.comms_line, dying ? INK_MAX : INK_BRIGHT, 2);
 }
 
 // A caution annunciator: a solid block with the label knocked out of it.
@@ -181,8 +185,16 @@ void vg_draw_ift(void) {
     // genuinely will not fit. Dropping to 2 is a fallback, not a choice: the
     // alternative is overhanging both edges, and a sentence the author wrote is
     // not something to truncate to protect a font size.
-    // The mark is drawn at x=8 and is this wide. Text has to clear it.
-    const int mark_end = 8 + vg_text_width("IFT", 2) + 10 + 6;
+    // Only the line that OPENS a run carries the mark. Everything after it is
+    // the same voice continuing, so the badge is forty-odd pixels spent
+    // repeating what the player already knows -- and it costs the line six
+    // characters at scale 3, which is the difference between fitting and not.
+    //
+    // This works because the game is a duel. There is no third party and no
+    // crowded channel: whoever started talking is still talking, and the only
+    // question a badge ever answers is who just started.
+    const bool badge = vg.ift_mark;
+    const int mark_end = badge ? (8 + vg_text_width("IFT", 2) + 10 + 6) : 8;
 
     int scale = 3;
     if (vg_text_width(vg.ift_line, scale) > SCR_W - mark_end * 2) scale = 2;
@@ -195,10 +207,11 @@ void vg_draw_ift(void) {
     // something anyone will see, and the first version ran the author's longest
     // line straight through the IFT badge.
     int mx = (SCR_W - mw) / 2;
-    if (mx < mark_end) {
+    if (badge && mx < mark_end) {
         mx = mark_end + (SCR_W - mark_end - mw) / 2;
         if (mx < mark_end) mx = mark_end;
     }
+    if (mx < 4) mx = 4;
 
     // Rules rather than a filled band: a solid white block would be the brightest
     // thing on a panel whose whole hierarchy is brightness, and it would bury the
@@ -210,10 +223,12 @@ void vg_draw_ift(void) {
     vg_text(mx, y + (h - 7 * scale) / 2, vg.ift_line, COL_IFT, scale);
 
     // The mark, inverse-video at the left, where a callsign block sits on the
-    // pilots' channel.
-    const int tw = vg_text_width("IFT", 2);
-    vg_fill_rect(8, y + 12, tw + 10, 18, COL_IFT);
-    vg_text(13, y + 15, "IFT", INK_ONFILL, 2);
+    // pilots' channel. First line of a run only.
+    if (badge) {
+        const int tw = vg_text_width("IFT", 2);
+        vg_fill_rect(8, y + 12, tw + 10, 18, COL_IFT);
+        vg_text(13, y + 15, "IFT", INK_ONFILL, 2);
+    }
 }
 
 // The way out of the ring course.
