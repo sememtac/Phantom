@@ -50,6 +50,10 @@ void vg_bracket_pan(float dx, float dy) {
     clamp_pan();
 }
 
+bool vg_bracket_course_at(float x, float y) {
+    return vg_in_rect(x, y, BRK_CRS_X, BRK_CRS_Y, BRK_CRS_W, BRK_CRS_H);
+}
+
 bool vg_bracket_ready_at(float x, float y) {
     return vg_in_rect(x, y, BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H);
 }
@@ -273,5 +277,9 @@ void vg_draw_bracket(void) {
     const bool can_repair = hurt > 0 && vg.credits >= CREDIT_PER_HULL;
     vg_button(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, "REPAIR",
               false, can_repair);
+    // Always offered, never required. A player can spend a whole tournament
+    // without touching it, and one who wants to practise can come back between
+    // any two rounds.
+    vg_button(BRK_CRS_X, BRK_CRS_Y, BRK_CRS_W, BRK_CRS_H, "COURSE", true, false);
     vg_button(BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H, "READY", true, true);
 }

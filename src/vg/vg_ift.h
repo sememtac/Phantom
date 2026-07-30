@@ -30,6 +30,10 @@ enum IftSlot : unsigned char {
     IFT_INTRO_YOU = 0,   // over the player's shot in the cutscene
     IFT_INTRO_OPP,       // over the opponent's shot
     IFT_MATCH_END,       // after the loser's last transmission
+    IFT_COURSE_START,    // the ring course, which the IFT runs
+    IFT_COURSE_PASS,
+    IFT_COURSE_MISS,
+    IFT_COURSE_DONE,
     IFT_SLOTS
 };
 

@@ -6,6 +6,7 @@
 #include "vg_save.h"
 #include "vg_cine.h"
 #include "vg_ift.h"
+#include "vg_course.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -587,6 +588,14 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         // so there is nothing left for a cull to save us from.
     }
 
+    // The gate is world geometry like anything else: it counter-rotates and
+    // recedes, so the course needs no idea how flight works.
+    if (vg.ring_alive) {
+        vg.ring_pos  = mat3_apply(R, vg.ring_pos);
+        vg.ring_norm = vnorm(mat3_apply(R, vg.ring_norm));
+        vg.ring_pos.z -= dz;
+    }
+
     for (int i = 0; i < MAX_MISSILES; i++) {
         Missile* m = &vg.msl[i];
         if (!m->alive) continue;
@@ -998,6 +1007,37 @@ void vg_game_update(float dt, const VgInput* in) {
         break;
     }
 
+    case VG_COURSE: {
+        // Flying, and nothing else. No opponent, no missiles, no purse. The wall
+        // is still lethal because that is one of the things worth learning here.
+        vg_world_step(dt, in->pitch, in->yaw, 0.0f, in->throttle);
+        vg_course_update(dt);
+        collide_player();
+
+        if (vg_player_was_hit()) {
+            // A crash costs the streak and nothing else. Full hull, back in the
+            // tube, count at zero -- this is a practice range, and ending a
+            // tournament that has not started would be absurd.
+            vg_clear_player_hit();
+            vg.health      = vg.health_max;
+            vg.course_hits = 0;
+            vg_arena_init(ARENA_TORUS);
+            vg.wall_clear  = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+            vg_ift_line(IFT_COURSE_MISS);
+            vg_course_reset_streak();
+        }
+
+        // Leaves the moment it is finished, or the moment the player says so.
+        // ALT is the pause key everywhere else; here it is simply the way out.
+        if (vg.course_done || in->alt_edge) {
+            vg.ring_alive = false;
+            vg_bracket_focus_player();
+            vg.state   = VG_BRACKET;
+            vg.state_t = 0;
+        }
+        break;
+    }
+
     case VG_KILL: {
         // The world keeps running -- wreckage still tumbles, their last trail
         // still fades -- but nothing can touch the player. The only job of this
@@ -1027,6 +1067,19 @@ void vg_game_update(float dt, const VgInput* in) {
         if (tap_up) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
                 vg_match_start();
+            } else if (vg_bracket_course_at(tap_x, tap_y)) {
+                vg_arena_init(ARENA_TORUS);
+                vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+                for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
+                for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
+                for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
+                vg_course_begin();
+                vg.state    = VG_COURSE;
+                vg.state_t  = 0;
+                vg.roll     = 0;
+                vg.bank     = 0;
+                vg.hud_boot = HUD_BOOT_TIME;
+                vg_input_calibrate();
             } else if (vg_bracket_repair_at(tap_x, tap_y)) {
                 vg_repair_reset();
                 vg.state   = VG_REPAIR;

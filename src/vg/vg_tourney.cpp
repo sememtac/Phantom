@@ -104,7 +104,12 @@ void vg_tourney_begin(ShipClass player_class) {
     for (int i = 1; i < TOURNEY_ENTRANTS; i++) {
         Entrant* e = &vt.entrant[i];
         strcpy(e->tag, CALLSIGNS[pool[i - 1]]);
-        e->cls = (ShipClass)((uint32_t)(vg_frand01() * SHIP_CLASSES) % SHIP_CLASSES);
+        // SHIP_CLASSES cast explicitly: it is an enumerator, and multiplying a
+        // float by an enum is deprecated. It compiled and did the right thing,
+        // which is exactly why it was worth removing -- a warning on every build
+        // is a warning nobody reads, and this file now builds silent.
+        e->cls = (ShipClass)((uint32_t)(vg_frand01() * (float)(int)SHIP_CLASSES)
+                             % (uint32_t)(int)SHIP_CLASSES);
         // Ship class is a sidegrade, so it must not decide the seeding -- pilot
         // quality does. Otherwise the bracket would just sort by ship and the
         // player could read the whole tournament off the class glyphs.

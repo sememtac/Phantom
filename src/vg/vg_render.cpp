@@ -3,6 +3,7 @@
 #include "vg_game.h"
 #include "vg_screens.h"
 #include "vg_glitch.h"
+#include "vg_course.h"
 #include "vg_sim.h"
 #include <stdio.h>
 #include <math.h>
@@ -42,7 +43,9 @@ void vg_render_frame(const VgInput* in, float fps) {
     // no idea a wall exists. Only while flying: a menu has no boundary to hit,
     // and the attract loop tinting itself red would be nonsense.
     float tint = 0.0f;
-    if ((vg.state == VG_PLAYING || vg.state == VG_HIT) &&
+    // VG_COURSE included deliberately: meeting the wall warning somewhere free
+    // is the reason one gate in four is placed against the boundary.
+    if ((vg.state == VG_PLAYING || vg.state == VG_HIT || vg.state == VG_COURSE) &&
         vg.wall_clear < ARENA_TINT_RANGE) {
         tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
     }
@@ -55,6 +58,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_starfield(cam);
     vg_draw_arena_grid(cam);
     vg_draw_world(cam);
+    vg_course_draw(cam);
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on
     // the ship-select screen would be reporting on a fight that is not happening.

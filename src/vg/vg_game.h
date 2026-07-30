@@ -159,6 +159,7 @@ enum VgState : uint8_t {
     VG_HIT,               // brief invulnerable pause after taking a hit
     VG_KILL,              // opponent is down and talking; player cannot be hurt
     VG_PAUSE,
+    VG_COURSE,            // the optional ring course, no stakes
     VG_ROUND_WON,         // beat between winning a match and the bracket redraw
     VG_OVER,              // knocked out -- the run is finished
     VG_WON                // took the whole tournament
@@ -327,6 +328,22 @@ struct VgGame {
     // One bit per IftSlot, so each line fires once per match rather than every
     // frame its cue is true.
     uint8_t     ift_fired;
+
+    // --- ring course -------------------------------------------------------
+    // One gate at a time, in VIEW space like every other object, so the world
+    // step carries it without the course needing to know how the world moves.
+    //
+    // prev_d is the signed distance from the player to the ring's plane on the
+    // PREVIOUS frame. A sign change is the crossing, which is what makes the gate
+    // passable from either side -- there is no front and no back, only the moment
+    // the plane goes by and whether you were inside the circle when it did.
+    bool        ring_alive;
+    Vec3        ring_pos;
+    Vec3        ring_norm;
+    float       ring_prev_d;
+    uint8_t     course_hits;      // consecutive, 0..COURSE_TARGET
+    uint8_t     course_index;     // rings placed this run, for the wall-hugger
+    bool        course_done;
     float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around

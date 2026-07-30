@@ -1,6 +1,7 @@
 #include "vg_ift.h"
 #include "vg_sim.h"
 #include "vg_tourney.h"
+#include "vg_course.h"
 #include <stdio.h>
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,11 @@
 //                   %s  the loser's callsign
 //                   %s  the name of the round just finished
 //
+//   IFT_COURSE_START  no arguments
+//   IFT_COURSE_PASS   %d  gates cleared in a row   %d  the target
+//   IFT_COURSE_MISS   no arguments
+//   IFT_COURSE_DONE   no arguments
+//
 // A line is drawn at scale 2 across the full width, so about 34 characters fit
 // before it runs into the edges. Longer is not clipped, it is centred and will
 // overhang.
@@ -34,6 +40,10 @@ static const char* const IFT_FMT[IFT_SLOTS] = {
     "%s   %s",              // IFT_INTRO_YOU
     "%s   %s   %d",         // IFT_INTRO_OPP
     "%s   %s   %s",         // IFT_MATCH_END
+    "",                     // IFT_COURSE_START -- silent until written
+    "%d / %d",              // IFT_COURSE_PASS
+    "",                     // IFT_COURSE_MISS
+    "",                     // IFT_COURSE_DONE
 };
 
 // One buffer, because only one line is ever up: the slot is single and a new line
@@ -69,6 +79,17 @@ void vg_ift_line(IftSlot slot) {
                  vg_tourney_round_name(vt.round));
         break;
     }
+
+    case IFT_COURSE_PASS:
+        snprintf(s_buf, sizeof(s_buf), fmt, (int)vg.course_hits, COURSE_TARGET);
+        break;
+
+    // No arguments, so the author's line is the whole of it.
+    case IFT_COURSE_START:
+    case IFT_COURSE_MISS:
+    case IFT_COURSE_DONE:
+        snprintf(s_buf, sizeof(s_buf), "%s", fmt);
+        break;
 
     default: return;
     }

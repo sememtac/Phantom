@@ -53,14 +53,21 @@
 #define ENT_GO_H        50
 
 // --- tournament map --------------------------------------------------------
-#define BRK_GO_X        250
-#define BRK_GO_Y        414
-#define BRK_GO_W        170
-#define BRK_GO_H        48
+// Three buttons now, so they are narrower. The row still starts at 60 and ends
+// at 412: the screen is round, and the bottom corners are cut, which is why the
+// original two did not run to the edges either.
 #define BRK_REP_X       60
 #define BRK_REP_Y       414
-#define BRK_REP_W       170
+#define BRK_REP_W       112
 #define BRK_REP_H       48
+#define BRK_CRS_X       180
+#define BRK_CRS_Y       414
+#define BRK_CRS_W       112
+#define BRK_CRS_H       48
+#define BRK_GO_X        300
+#define BRK_GO_Y        414
+#define BRK_GO_W        112
+#define BRK_GO_H        48
 
 // --- repair ----------------------------------------------------------------
 #define REP_BAR_X       40
@@ -91,6 +98,7 @@ bool vg_select_confirm_at(float x, float y);
 bool vg_pause_resume_at(float x, float y);
 bool vg_pause_quit_at(float x, float y);
 bool vg_bracket_ready_at(float x, float y);
+bool vg_bracket_course_at(float x, float y);
 bool vg_bracket_repair_at(float x, float y);
 
 // Screens carrying interaction state of their own -- a wheel mid-drag, a slider
