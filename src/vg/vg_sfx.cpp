@@ -185,46 +185,54 @@ void vg_sfx_play(SfxId id, float pitch) {
     // player's own ship being hurt should land like structure giving way, not
     // like a scoring event.
     //
-    // Lower than it was -- 74 Hz down to 48, falling to 19 -- but the growl is
-    // not the frequency. It is the 26 Hz tremolo, slow enough to hear as
-    // ROUGHNESS rather than as pulses: the same trick as the missile's quack
-    // moved down where it stops sounding electronic and starts sounding like
-    // something tearing. A low tone alone at this pitch is just a thump.
+    // Third attempt at this, and the first two were wrong about WHY it sounded
+    // high. Dropping the fundamental did almost nothing, because the speaker on
+    // this board reproduces very little below a few hundred Hz -- the note itself
+    // was never what was being heard. What was being heard is the material above
+    // it: a noise burst at 1600 Hz, then at 700, sitting where the speaker is
+    // most efficient and telling the ear "small and sharp" no matter what the
+    // tone underneath was doing.
+    //
+    // So the noise is nearly gone, everything is filtered to 240 Hz, and the
+    // growl is carried by a SLOW tremolo -- 13 Hz, which is under the rate the
+    // ear fuses into timbre, so it is heard as a thing juddering rather than as
+    // a buzz. Longer, too: structure fails over time, and 0.5s was an impact.
     case SFX_HIT: {
-        voice_set(v, W_SQUARE, 48.0f, 19.0f, 0.50f, 0.002f, 0.95f, 380.0f);
-        v->mod_hz = 26.0f; v->mod_depth = 0.55f;
+        voice_set(v, W_SQUARE, 38.0f, 15.0f, 0.85f, 0.003f, 1.00f, 240.0f);
+        v->mod_hz = 13.0f; v->mod_depth = 0.70f;
         Voice* rasp = grab();
         if (rasp && rasp != v) {
-            // The noise drops with it -- 1600 Hz was a crack of glass over a
-            // groan, two events rather than one.
-            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.26f, 0.001f, 0.50f, 700.0f);
-            rasp->mod_hz = 26.0f; rasp->mod_depth = 0.4f;
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.30f, 0.001f, 0.22f, 380.0f);
+            rasp->mod_hz = 13.0f; rasp->mod_depth = 0.6f;
         }
         break;
     }
 
-    // THE SET FINDING THE SIGNAL. A thump as it strikes, then a whine rising out
-    // of it -- the sound the picture makes arriving, which is what the dot
-    // growing out of the middle of the screen is doing at the same moment.
+    // THE SET FINDING THE SIGNAL: STATIC AND A ZIP, no tone at all.
+    //
+    // It was a noise thump with a rising SINE over it, and the sine was the
+    // problem -- a clean tone sweeping upward is a musical gesture, and it made
+    // the transition sound cheerful. A tube does not sing. It hisses, and the
+    // scan snaps across.
+    //
+    // So: broadband static, and the zip is a square swept so fast it never reads
+    // as a note -- ninety milliseconds from bottom to top, which is heard as a
+    // movement rather than as a pitch.
     case SFX_TV_ON: {
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.10f, 0.001f, 0.55f, 500.0f);
-        Voice* whine = grab();
-        if (whine && whine != v) {
-            voice_set(whine, W_SINE, 260.0f, 2100.0f, 0.42f, 0.02f, 0.20f, 6000.0f);
-            whine->delay = 0.04f;
-        }
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.20f, 0.001f, 0.60f, 7000.0f);
+        Voice* zip = grab();
+        if (zip && zip != v)
+            voice_set(zip, W_SQUARE, 240.0f, 2800.0f, 0.09f, 0.001f, 0.26f, 7000.0f);
         break;
     }
 
-    // ...and losing it. The same shape backwards, which is what the picture is
-    // doing: the whine falls away and the thump is last, as the line goes out.
+    // ...and losing it: the zip runs the other way and the static collapses
+    // behind it, which is what the picture is doing at the same moment.
     case SFX_TV_OFF: {
-        voice_set(v, W_SINE, 1900.0f, 190.0f, 0.30f, 0.01f, 0.20f, 6000.0f);
-        Voice* thump = grab();
-        if (thump && thump != v) {
-            voice_set(thump, W_NOISE, 0.0f, 0.0f, 0.09f, 0.001f, 0.50f, 450.0f);
-            thump->delay = 0.28f;
-        }
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.22f, 0.001f, 0.55f, 6000.0f);
+        Voice* zip = grab();
+        if (zip && zip != v)
+            voice_set(zip, W_SQUARE, 2600.0f, 200.0f, 0.10f, 0.001f, 0.26f, 6000.0f);
         break;
     }
 
