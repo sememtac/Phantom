@@ -103,10 +103,18 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     //
     // Continuing means immediately. Anything after a beat is a new statement,
     // and a new statement says who is making it.
+    //
+    // A LAST TRANSMISSION IS NEVER A CONTINUATION. A pilot almost always takes
+    // hits on the way down, and a salvo puts those hurt lines well inside the
+    // threshold -- so the one line in the match that most needs a name on it was
+    // the one reliably losing it. It is not the end of a sentence somebody was
+    // already saying. It is a different kind of statement, and it is the last
+    // thing that pilot ever says.
     const bool same_voice = (vg.comms_tag[0] == s->tag[0]
                           && vg.comms_tag[1] == s->tag[1]
                           && vg.comms_tag[2] == s->tag[2]);
-    vg.comms_mark  = !(same_voice && vg.comms_since < 0.7f);
+    vg.comms_mark  = (ev == VOICE_DEATH)
+                  || !(same_voice && vg.comms_since < 0.7f);
     vg.comms_since = 0.0f;
 
     vg.comms_tag[0] = s->tag[0];
