@@ -125,8 +125,12 @@ void loop(void) {
     // Before the clamp below throws the evidence away. A quarter of a second is
     // fifteen frames' worth: far past a hitch, and the only trace a freeze that
     // never resets will ever leave.
-    if (frame_dt > 0.25f)
-        vg_crumb_stall((uint32_t)(frame_dt * 1000.0f), (uint8_t)vg.state);
+    //
+    // The PHASE is worked out at the end of the frame, where the timings already
+    // exist -- see below. Recorded here it would always say "flush", because that
+    // is simply the last crumb the previous frame happened to set.
+    const bool stalled = (frame_dt > 0.25f);
+    const uint32_t stall_ms = (uint32_t)(frame_dt * 1000.0f);
     // Past half a second the frame is not late, something has blocked -- a flash
     // write, a reconnect. Catching up on it is worse than dropping it.
     if (frame_dt > 0.50f) frame_dt = 0.50f;
@@ -185,6 +189,21 @@ void loop(void) {
     // implementation detail of a long frame and would read as a speed-up.
     float inst = 1.0f / sim_dt;   // NOLINT: sim_dt is never zero, clamped above
     fps += (inst - fps) * 0.08f;
+
+    // Which quarter of the frame actually ate the time. The gap is measured
+    // between loop entries, so the offender is in the frame that just finished --
+    // and if none of the four phases accounts for it, the time went somewhere
+    // outside them, which means the capture poll or the telemetry write.
+    if (stalled) {
+        const uint32_t d_in  = t1 - t0, d_upd = t2 - t1;
+        const uint32_t d_ren = t3 - t2, d_fls = t4 - t3;
+        uint32_t worst = d_in; uint8_t phase = CRUMB_INPUT;
+        if (d_upd > worst) { worst = d_upd; phase = CRUMB_UPDATE; }
+        if (d_ren > worst) { worst = d_ren; phase = CRUMB_RENDER; }
+        if (d_fls > worst) { worst = d_fls; phase = CRUMB_FLUSH;  }
+        if (worst < 200000u) phase = CRUMB_POLL;      // none of them: outside
+        vg_crumb_stall(stall_ms, (uint8_t)vg.state, phase);
+    }
 
     acc_input  += t1 - t0;
     acc_update += t2 - t1;

@@ -406,6 +406,10 @@ struct VgGame {
     // rather than cutting straight out; see VG_COURSE.
     float       course_end_t;
 
+    // Current roll rate, rad/sec. Carried rather than recomputed, so the airframe
+    // has to be spun up and has to be allowed to stop.
+    float       roll_rate;
+
     float       buzz;
 
     bool        ift_mark;

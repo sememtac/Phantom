@@ -113,6 +113,22 @@ static inline void flush(void) {
 }
 
 void vg_capture_poll(void) {
+    // THE GAME MUST NEVER BE LEFT BLOCKING ON A LINK NOBODY IS READING.
+    //
+    // A blocking write is correct only while a session is running, because only
+    // then is a host draining the port. Turning it back off is the 'E' command's
+    // job -- and a host that dies, disconnects, or aborts mid-record never sends
+    // one. The timeout then stays at five seconds forever, and with a capture
+    // still armed that is fifteen band writes of five seconds each: over a
+    // minute per frame, which is not a hitch, it is a dead machine.
+    //
+    // That is not hypothetical. It is the best explanation on the evidence for a
+    // 130-second frame this recorded in the launch cutscene, and the host that
+    // aborted was our own recording tool.
+    //
+    // Cheap enough to assert every frame, and an invariant beats remembering.
+    if (!s_mode && vg_replay_mode() == VG_RP_OFF) vg_link_blocking(false);
+
     while (Serial.available()) {
         const int c = Serial.read();
         // Replay commands first: they read their own payload straight off the

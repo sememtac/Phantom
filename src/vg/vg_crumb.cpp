@@ -41,10 +41,11 @@ static RTC_NOINIT_ATTR uint32_t s_crash_state;
 // the only thing that would catch one.
 static RTC_NOINIT_ATTR uint32_t s_stall_ms;
 static RTC_NOINIT_ATTR uint32_t s_stall_state;
+static RTC_NOINIT_ATTR uint32_t s_stall_where;
 
 // The same record in flash, which power does not clear.
 struct CrashRec {
-    uint32_t magic, reason, frame, where, state, stall_ms, stall_state;
+    uint32_t magic, reason, frame, where, state, stall_ms, stall_state, stall_where;
 };
 
 static const char* const CRUMB_NAME[CRUMB_SLOTS] = {
@@ -69,7 +70,7 @@ static const char* state_name(uint32_t s) {
 
 static void crash_store(void) {
     CrashRec r = { CRUMB_MAGIC, s_crash_reason, s_crash_frame, s_crash_where,
-                   s_crash_state, s_stall_ms, s_stall_state };
+                   s_crash_state, s_stall_ms, s_stall_state, s_stall_where };
     vg_store_diag_save(&r, sizeof(r));
 }
 
@@ -80,13 +81,15 @@ static bool crash_recall(void) {
     s_crash_reason = r.reason;   s_crash_frame = r.frame;
     s_crash_where  = r.where;    s_crash_state = r.state;
     s_stall_ms     = r.stall_ms; s_stall_state = r.stall_state;
+    s_stall_where  = r.stall_where;
     return true;
 }
 
-void vg_crumb_stall(uint32_t ms, uint8_t state) {
+void vg_crumb_stall(uint32_t ms, uint8_t state, uint8_t where) {
     if (ms <= s_stall_ms) return;
     s_stall_ms    = ms;
     s_stall_state = state;
+    s_stall_where = where;
     // Written through immediately: a hang deep enough to matter may never get
     // another chance to write anything, and a flash write costs nothing on a
     // frame that has already lost a quarter of a second.
@@ -96,7 +99,7 @@ void vg_crumb_stall(uint32_t ms, uint8_t state) {
 void vg_crumb_reset(void) {
     s_crash_valid = 0; s_crash_reason = 0; s_crash_frame = 0;
     s_crash_where = 0; s_crash_state  = 0;
-    s_stall_ms    = 0; s_stall_state  = 0;
+    s_stall_ms    = 0; s_stall_state  = 0; s_stall_where = 0;
     crash_store();
 }
 
@@ -125,6 +128,7 @@ void vg_crumb_report(void) {
         s_crash_valid = 0;
         s_stall_ms    = 0;
         s_stall_state = 0;
+        s_stall_where = 0;
         if (crash_recall()) {
             s_crash_valid = 1;
             Serial.println("crumb: cold start, recovered from flash");
@@ -157,8 +161,9 @@ void vg_crumb_report(void) {
     // resets, so everything above stays silent about it while the player watches
     // a dead screen and reasonably calls it a crash.
     if (s_stall_ms > 0)
-        Serial.printf("CRUMB: worst frame %lu ms, in state %s\n",
-                      (unsigned long)s_stall_ms, state_name(s_stall_state));
+        Serial.printf("CRUMB: worst frame %lu ms, in state %s, phase %s\n",
+                      (unsigned long)s_stall_ms, state_name(s_stall_state),
+                      where_name(s_stall_where));
 
     s_magic = CRUMB_MAGIC;
     s_frame = 0;

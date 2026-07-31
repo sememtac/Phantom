@@ -114,6 +114,12 @@ void vg_ift_line(IftSlot slot) {
 
     // The intro lines hold for less time, so the fighter's name card can follow
     // them within the same shot rather than fighting them for the same rows.
+    //
+    // AND THEY CARRY NO MARK. They are a caption on a fighter -- a callsign and a
+    // class -- and an IFT block sitting in front of one reads as whose fighter it
+    // is rather than as who is telling you about it. The broadcast identifies
+    // itself when it is speaking for itself; over somebody else's ship it gets
+    // out of the way.
     const bool intro = (slot == IFT_INTRO_YOU || slot == IFT_INTRO_OPP);
-    vg_ift_say(s_buf, intro ? IFT_SPEECH_INTRO : IFT_SPEECH);
+    vg_ift_say(s_buf, intro ? IFT_SPEECH_INTRO : IFT_SPEECH, !intro);
 }

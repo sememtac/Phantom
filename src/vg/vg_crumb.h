@@ -36,7 +36,7 @@ void vg_crumb(uint8_t where, uint8_t state);
 // nothing resets, so the reset reason and the breadcrumb both stay silent about
 // it, and to the player the two are indistinguishable. This is the only thing
 // that would catch one.
-void vg_crumb_stall(uint32_t ms, uint8_t state);
+void vg_crumb_stall(uint32_t ms, uint8_t state, uint8_t where);
 
 // Forget everything: no crash, no stall. For after a report has been collected,
 // so the next one is not read against a stale worst-case that nothing can beat.

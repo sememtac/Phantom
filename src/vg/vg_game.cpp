@@ -140,7 +140,7 @@ static void ift_pop(bool opens_run) {
     s_ift_i++;
 }
 
-void vg_ift_say(const char* line, float hold) {
+void vg_ift_say(const char* line, float hold, bool badge) {
     if (!line) return;
     s_ift_gap = 0.0f;
     // An immediate line cuts off anything queued. A broadcast that has moved on
@@ -148,7 +148,7 @@ void vg_ift_say(const char* line, float hold) {
     s_ift_n = s_ift_i = 0;
     vg.ift_line = line;
     vg.ift_t    = hold;
-    vg.ift_mark = true;
+    vg.ift_mark = badge;
 }
 
 // True while the broadcast is mid-announcement: a line up, a pause between two,
@@ -459,6 +459,7 @@ void vg_match_start(void) {
     vg.ift_line    = nullptr;
     vg.ift_t       = 0.0f;
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
+    vg.roll_rate   = 0;
     vg.bank        = 0;
     vg.cine_on     = false;
     vg.hud_boot    = 0;
@@ -538,7 +539,18 @@ static inline float roll_angle(const VgInput* in, float dt) {
     // ...and the airframe. A LANCE and a CHARIOT rolled at exactly the same rate
     // before this, which quietly said the classes were interchangeable on the one
     // axis the player had just been handed.
-    return in->roll * ROLL_RATE * scale * vg_ship_mobility(vg.spec) * dt;
+    const float want = in->roll * ROLL_RATE * scale * vg_ship_mobility(vg.spec);
+
+    // CHASED, not set. The rate the player asks for is where the airframe is
+    // going, not where it already is -- so a roll has to be started and has to be
+    // allowed to stop, and letting go leaves the ship still turning for a moment.
+    // That carried-through part is the difference between flying it and rotating
+    // the picture.
+    float k = dt * ROLL_LERP;
+    if (k > 1.0f) k = 1.0f;
+    vg.roll_rate += (want - vg.roll_rate) * k;
+
+    return vg.roll_rate * dt;
 }
 
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
@@ -561,7 +573,12 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // their own maxima, which is what a throttle-fraction curve gives you and is
     // not the same fantasy at all.
     const float sn = vg.speed / SPEED_SHAKE_REF;
-    vg.buzz = sn * sn * vg.spec->shake;
+    vg.buzz = sn * sn * vg.spec->shake
+    // Rolling is work, and the airframe should be seen doing it. Without this the
+    // ship rattled harder the faster it went and then rolled through ninety
+    // degrees in perfect calm, which is the picture turning rather than anything
+    // happening to the machine.
+            + fabsf(vg.roll_rate) * ROLL_BUZZ;
 
     // Visual-only tracking of the same command, several times faster.
     float kv = dt * THROTTLE_VIS_LERP;
@@ -1003,6 +1020,12 @@ static void enter_attract(void) {
 // Every menu state flies the same idle scene underneath, so the tournament map
 // and the ship select sit over moving space rather than a dead background.
 static void menu_world(float dt) {
+    // Nobody is holding the roll key on a menu, and the airframe buzz reads
+    // vg.roll_rate whatever the state. Left alone, a player who backed out of the
+    // course mid-roll would carry that rattle into the tournament map and keep it
+    // there. The menu's own slow tumble below is a local, and unrelated.
+    vg.roll_rate = 0.0f;
+
     float pitch_in, yaw_in;
     vg_attract_autopilot(vg.state_t, &pitch_in, &yaw_in);
 
@@ -1032,8 +1055,9 @@ static void enter_course(void) {
     vg_course_begin();
     vg.state    = VG_COURSE;
     vg.state_t  = 0;
-    vg.roll     = 0;
-    vg.bank     = 0;
+    vg.roll      = 0;
+    vg.roll_rate = 0;
+    vg.bank      = 0;
     vg.hud_boot = HUD_BOOT_TIME;
     vg_input_calibrate();
 }

@@ -192,3 +192,20 @@
 // something the player did on purpose would blunt the one signal that has to
 // read instantly.
 #define ROLL_BANK_LEAD       0.055f
+
+// The airframe has MASS. Roll rate is chased rather than set, so it spins up
+// against inertia and keeps turning for a moment after the stick is let go.
+//
+// Without this the roll was a rate that switched on and off, which is the whole
+// of why it read as mechanical: nothing else on this ship starts or stops
+// instantly, and a manoeuvre that does feels like the view being rotated rather
+// than the machine being flown.
+#define ROLL_LERP            5.5f
+
+// ...and it costs the airframe something. Roll folds into the same buzz that
+// speed does, so a hard roll at speed rattles harder than either alone.
+//
+// The buzz is STRAIN, not damage -- damage is the hit flash and the panel glitch
+// and those stay untouched. This is the game's one vocabulary for the ship
+// working hard, and a roll is the ship working hard.
+#define ROLL_BUZZ            0.055f

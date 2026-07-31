@@ -50,7 +50,10 @@ void vg_spawn_opponent(void);
 // lower ones and never the other way round, so a death is always heard out.
 void vg_comms_say(const Ship* s, VoiceEvent ev);
 // The broadcast voice: white, its own slot, silent during a fight.
-void vg_ift_say(const char* line, float hold);
+// `badge` puts the IFT mark on the line. Off for anything that is ABOUT somebody
+// else -- a fighter's name and class read as a label on that fighter, and a
+// callsign block in front of it looks like whose fighter it is.
+void vg_ift_say(const char* line, float hold, bool badge = true);
 // Add a line to the end of the broadcast's queue, to be read after whatever is
 // already up. The text is copied, so a caller's scratch buffer is safe to reuse.
 void vg_ift_queue(const char* line, float hold);

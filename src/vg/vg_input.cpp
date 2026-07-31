@@ -283,23 +283,26 @@ void vg_input_update(float dt, VgInput* out) {
     out->alt_edge = alt_btn && !s_prev_alt_btn;
     s_prev_alt_btn = alt_btn;
 
-    // Roll takes over the HORIZONTAL axis only, and the vertical one is dropped
-    // rather than reassigned. Rolling and pitching at once from a single contact
-    // would be two commands from one gesture, and the pitch would be the one the
-    // player did not mean.
-    //
-    // It reuses the shaped, smoothed yaw axis rather than reading the raw finger,
-    // so roll gets the same deadzone and the same ramp as every other control and
-    // does not need its own feel.
     // Already an edge, and already latched: the PMU reports a short press as a
     // discrete event, so there is no held state to difference against.
     out->pwr_edge = vg_pmu_pwr_pressed();
 
+    // Roll takes over the HORIZONTAL axis. PITCH KEEPS WORKING.
+    //
+    // It used to be zeroed too, on the reasoning that rolling and pitching from
+    // one contact was two commands from one gesture. That is exactly backwards
+    // for a flying machine: rolling to set the plane of a turn and then pulling
+    // through it IS the manoeuvre, and forbidding the pull left the roll as a
+    // rotation of the view with nothing on the other end of it -- the ship
+    // rolled, and then waited to be told what the roll had been for.
+    //
+    // It reuses the shaped, smoothed yaw axis rather than reading the raw finger,
+    // so roll gets the same deadzone and the same ramp as every other control and
+    // does not need its own feel.
     out->roll_btn = alt_btn;
     if (alt_btn) {
-        out->roll  = out->yaw;
-        out->pitch = 0.0f;
-        out->yaw   = 0.0f;
+        out->roll = out->yaw;
+        out->yaw  = 0.0f;
     } else {
         out->roll = 0.0f;
     }
