@@ -30,6 +30,7 @@ enum SfxId : unsigned char {
     SFX_TV_ON,           // the set finding the signal
     SFX_TV_OFF,          // ...and losing it
     SFX_READY,           // the cockpit coming up: systems online
+    SFX_IFT,             // the broadcast, about to say something
     SFX_COUNT
 };
 

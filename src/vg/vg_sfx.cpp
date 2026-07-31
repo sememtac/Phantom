@@ -198,41 +198,53 @@ void vg_sfx_play(SfxId id, float pitch) {
     // ear fuses into timbre, so it is heard as a thing juddering rather than as
     // a buzz. Longer, too: structure fails over time, and 0.5s was an impact.
     case SFX_HIT: {
-        voice_set(v, W_SQUARE, 38.0f, 15.0f, 0.85f, 0.003f, 1.00f, 240.0f);
-        v->mod_hz = 13.0f; v->mod_depth = 0.70f;
+        // 240 Hz down to 130. This is the number that decides what actually
+        // leaves the speaker, and it is worth being blunt about the cost: every
+        // step down here trades loudness for depth, because it is taking away
+        // the harmonics the driver is efficient at and keeping the ones it is
+        // not. Quieter and lower is the deal on a speaker this size; there is no
+        // setting that is both.
+        voice_set(v, W_SQUARE, 34.0f, 14.0f, 0.90f, 0.003f, 1.00f, 130.0f);
+        v->mod_hz = 12.0f; v->mod_depth = 0.72f;
         Voice* rasp = grab();
         if (rasp && rasp != v) {
-            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.30f, 0.001f, 0.22f, 380.0f);
-            rasp->mod_hz = 13.0f; rasp->mod_depth = 0.6f;
+            // Down with it. At 380 this was the brightest thing in the cue and
+            // therefore the thing setting its apparent pitch.
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.30f, 0.001f, 0.16f, 200.0f);
+            rasp->mod_hz = 12.0f; rasp->mod_depth = 0.6f;
         }
         break;
     }
 
-    // THE SET FINDING THE SIGNAL: STATIC AND A ZIP, no tone at all.
+    // A TICK, THEN A LOW ZAP. The tick is the relay; the zap is the tube.
     //
-    // It was a noise thump with a rising SINE over it, and the sine was the
-    // problem -- a clean tone sweeping upward is a musical gesture, and it made
-    // the transition sound cheerful. A tube does not sing. It hisses, and the
-    // scan snaps across.
-    //
-    // So: broadband static, and the zip is a square swept so fast it never reads
-    // as a note -- ninety milliseconds from bottom to top, which is heard as a
-    // movement rather than as a pitch.
+    // The static went the way the sine did. Broadband hiss reads as a fault --
+    // an untuned channel, something wrong -- and this transition is the set
+    // working correctly. A tick is a mechanism operating, and a zap that lives
+    // down in the low register is a lot of energy moving without being musical
+    // about it.
     case SFX_TV_ON: {
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.20f, 0.001f, 0.60f, 7000.0f);
-        Voice* zip = grab();
-        if (zip && zip != v)
-            voice_set(zip, W_SQUARE, 240.0f, 2800.0f, 0.09f, 0.001f, 0.26f, 7000.0f);
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.014f, 0.0005f, 0.70f, 3500.0f);
+        Voice* zap = grab();
+        if (zap && zap != v) {
+            // Upward, because the picture is opening. Kept under 620 Hz: a zap
+            // that climbs into the top of the band is a laser, not a tube.
+            voice_set(zap, W_SQUARE, 95.0f, 610.0f, 0.13f, 0.001f, 0.45f, 900.0f);
+            zap->delay = 0.020f;
+        }
         break;
     }
 
-    // ...and losing it: the zip runs the other way and the static collapses
-    // behind it, which is what the picture is doing at the same moment.
+    // Off is the same two events in the same order -- tick, then zap -- with the
+    // zap running down as the picture collapses. Not reversed: the relay comes
+    // first either way, because the mechanism acts and the tube answers.
     case SFX_TV_OFF: {
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.22f, 0.001f, 0.55f, 6000.0f);
-        Voice* zip = grab();
-        if (zip && zip != v)
-            voice_set(zip, W_SQUARE, 2600.0f, 200.0f, 0.10f, 0.001f, 0.26f, 6000.0f);
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.014f, 0.0005f, 0.70f, 3500.0f);
+        Voice* zap = grab();
+        if (zap && zap != v) {
+            voice_set(zap, W_SQUARE, 580.0f, 80.0f, 0.15f, 0.001f, 0.45f, 900.0f);
+            zap->delay = 0.020f;
+        }
         break;
     }
 
@@ -243,6 +255,26 @@ void vg_sfx_play(SfxId id, float pitch) {
     //
     // Squares rather than sines: this is the instrument talking, in the same
     // voice as the warnings, and it should be recognisably the same panel.
+    // THE BROADCAST, ABOUT TO SPEAK. Two tones, twice -- the shape a public
+    // address system uses before it tells you something, and recognisable as
+    // "listen" long before anybody reads the words.
+    //
+    // Deliberately the HIGHEST thing in the mix. Everything else has been pushed
+    // down for the tournament's weight; this one has to come over the top of all
+    // of it, because it is the only voice in the game that is not in the room.
+    case SFX_IFT: {
+        static const float note[4] = { 1046.0f, 740.0f, 1046.0f, 740.0f };
+        static const float when[4] = { 0.00f,   0.11f,  0.30f,   0.41f  };
+        for (int i = 0; i < 4; i++) {
+            Voice* n = (i == 0) ? v : grab();
+            if (!n) break;
+            if (i > 0 && n == v) break;
+            voice_set(n, W_SQUARE, note[i], note[i], 0.10f, 0.004f, 0.30f, 5200.0f);
+            n->delay = when[i];
+        }
+        break;
+    }
+
     // HELD BACK HALF A SECOND. Entering the course sets the panel booting inside
     // the transition's join, one frame before the set strikes -- so without this
     // the two cues land together and neither is heard. The delay lets the tube

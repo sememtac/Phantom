@@ -142,6 +142,11 @@ static void ift_pop(bool opens_run) {
     vg.ift_line = s_ift_q[s_ift_i];
     vg.ift_t    = s_ift_hold[s_ift_i];
     vg.ift_mark = opens_run;
+    // The jingle heralds an ANNOUNCEMENT, not a line. It goes with the badge and
+    // for the same reason: both answer "somebody has started talking", and a
+    // three-line briefing that chimed before every line would be three
+    // announcements as far as the ear is concerned.
+    if (opens_run) vg_sfx_play(SFX_IFT, 1.0f);
     s_ift_i++;
 }
 
@@ -154,6 +159,9 @@ void vg_ift_say(const char* line, float hold, bool badge) {
     vg.ift_line = line;
     vg.ift_t    = hold;
     vg.ift_mark = badge;
+    // Same rule as the badge: an unbadged line is a caption on somebody else's
+    // ship, and captions do not announce themselves.
+    if (badge) vg_sfx_play(SFX_IFT, 1.0f);
 }
 
 // True while the broadcast is mid-announcement: a line up, a pause between two,

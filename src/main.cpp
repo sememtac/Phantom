@@ -97,13 +97,13 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the two that changed. Off, on, then three hull hits -- three, because
-    // the growl is a 13 Hz judder and one of them is over before the ear has
-    // decided what it heard.
+    // TEMP: the three that changed -- the set off and on, the broadcast's
+    // jingle, and three hull hits.
     {
-        const SfxId demo[5] = { SFX_TV_OFF, SFX_TV_ON, SFX_HIT, SFX_HIT, SFX_HIT };
-        const int   hold[5] = { 55, 60, 110, 110, 130 };
-        for (int i = 0; i < 5; i++) {
+        const SfxId demo[6] = { SFX_TV_OFF, SFX_TV_ON, SFX_IFT,
+                                SFX_HIT, SFX_HIT, SFX_HIT };
+        const int   hold[6] = { 45, 50, 90, 115, 115, 130 };
+        for (int i = 0; i < 6; i++) {
             vg_sfx_play(demo[i], 1.0f);
             for (int k = 0; k < hold[i]; k++) { vg_sfx_update(); delay(10); }
         }
