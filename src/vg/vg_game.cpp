@@ -1113,6 +1113,12 @@ static void enter_course(void) {
 
 void vg_tv_go(TvAction a) {
     if (vg.tv_phase != TV_NONE) return;   // one transition at a time
+    // THE SHIP IS OFF BEFORE THE PICTURE IS. Gating the per-frame sources below
+    // stops them being asked for again, but it cannot retract what is already
+    // sounding -- an alert beep, a hull hit, the tail of a transmission -- and
+    // those carried on over the black. The set going off is the end of the
+    // session, so it takes everything with it and then makes its own noise.
+    vg_sfx_silence();
     vg_sfx_play(SFX_TV_OFF, 1.0f);
     vg.tv_phase = TV_OUT;
     vg.tv_act   = (uint8_t)a;
@@ -1127,6 +1133,11 @@ static void tv_join(void) {
     case TVA_MATCH:   vg_match_start(); break;
     case TVA_COURSE:  enter_course();   break;
     case TVA_BRACKET:
+        // The table is a menu, so it gets the menu's backdrop. It used to keep
+        // whatever the last venue built, which after the course is a sky with
+        // the hole 135 degrees off the nose -- open space behind the one screen
+        // that is meant to feel like somewhere official.
+        use_menu_sky();
         vg.ring_alive = false;
         vg_bracket_focus_player();
         vg.state   = VG_BRACKET;
@@ -1235,12 +1246,18 @@ void vg_game_update(float dt, const VgInput* in) {
     // the player could do nothing about followed them out of the match and kept
     // beeping over the title card. Whatever the threat was, it stopped being
     // theirs the moment they died.
-    const bool alive  = (vg.state == VG_PLAYING || vg.state == VG_HIT
+    //
+    // A TRANSITION ENDS THE SESSION. The state does not change until the join,
+    // which is halfway through the wipe, so without this the alerts and the hum
+    // ran the whole way out into the black and only stopped once the next scene
+    // had already been built. Nothing flies during a transition.
+    const bool alive  = (vg.tv_phase == TV_NONE)
+                     && (vg.state == VG_PLAYING || vg.state == VG_HIT
                       || vg.state == VG_COURSE);
     // The engine runs a little wider: through VG_KILL the ship is still flying,
     // and cutting the hum the instant the opponent dies would be the loudest
     // thing about that moment.
-    const bool flying = alive || (vg.state == VG_KILL);
+    const bool flying = alive || (vg.tv_phase == TV_NONE && vg.state == VG_KILL);
 
     update_alerts(alive ? dt : 0.0f, alive);
     vg_sfx_engine(flying, vg.throttle_vis);
@@ -1254,8 +1271,9 @@ void vg_game_update(float dt, const VgInput* in) {
     // Outlasts the last transmission rather than ending with it: the loser stops
     // talking and the tone is still there, which is the silence doing the work.
     // On the player's own death it simply does not stop until they tap away.
-    vg_sfx_flatline((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
-                 || (vg.state == VG_OVER));
+    vg_sfx_flatline(vg.tv_phase == TV_NONE
+                 && ((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
+                  || (vg.state == VG_OVER)));
 
     // ---- PAUSE, from anywhere that flies ----------------------------------
     //

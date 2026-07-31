@@ -55,6 +55,14 @@ void vg_sfx_engine(bool on, float throttle);
 // player taps away.
 void vg_sfx_flatline(bool on);
 
+// Cut every sound the ship is making, immediately.
+//
+// For the set going off. The transition is the end of a session, and a session
+// that ends with a boundary warning still beeping over the black has not ended.
+// The held sounds do not fade here: a fade is what you want when a ship stops
+// flying, and this is the picture being taken away.
+void vg_sfx_silence(void);
+
 // Generate and hand over whatever the output will take. Called once a frame, and
 // deliberately not from a task: the mixer is cheap, and a frame that is late has
 // bigger problems than a gap in the audio.

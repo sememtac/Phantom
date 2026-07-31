@@ -194,11 +194,21 @@ void vg_sfx_engine(bool on, float throttle) { vg_synth_engine(on, throttle); }
 // The static is fired on the EDGE, here rather than in the synth, because it is a
 // cue and cues live in this file. The tone that follows is held, and the two
 // together are one event: the signal breaking up, and then what is left.
+// File scope rather than function scope so that a silence can clear it. Left
+// inside the function, a cut taken while the tone was sounding would leave the
+// edge latched, and the next death would ramp up a flatline with no static in
+// front of it.
+static bool s_flat_was = false;
+
 void vg_sfx_flatline(bool on) {
-    static bool was = false;
-    if (on && !was) vg_sfx_play(SFX_DEATH_STATIC, 1.0f);
-    was = on;
+    if (on && !s_flat_was) vg_sfx_play(SFX_DEATH_STATIC, 1.0f);
+    s_flat_was = on;
     vg_synth_flatline(on);
+}
+
+void vg_sfx_silence(void) {
+    s_flat_was = false;
+    vg_synth_silence();
 }
 
 void vg_sfx_update(float dt) {

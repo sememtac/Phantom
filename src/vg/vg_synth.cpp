@@ -108,6 +108,20 @@ void vg_synth_reset(void) {
     for (int i = 0; i < VOICES; i++) s_v[i].on = false;
 }
 
+void vg_synth_silence(void) {
+    // Everything, and at once. vg_synth_reset only frees the voices, and the two
+    // held sounds are not voices: the engine smooths towards its target and the
+    // flatline ramps, both of which are right when a ship stops flying and wrong
+    // when the picture has already gone. Their levels go to zero here rather
+    // than their targets.
+    for (int i = 0; i < VOICES; i++) s_v[i].on = false;
+    s_eng_on   = false;
+    s_eng_want = 0.0f;
+    s_eng_lvl  = 0.0f;
+    s_flat_want = 0.0f;
+    s_flat_lvl  = 0.0f;
+}
+
 void vg_synth_layer(const SynthLayer* l, float pitch) {
     Voice* v = grab();
     if (!v) return;

@@ -46,6 +46,9 @@ struct SynthLayer {
 
 void vg_synth_reset(void);
 
+// Stop everything now, held sounds included, with no ramp and no tail.
+void vg_synth_silence(void);
+
 // Start one layer. `pitch` scales its frequencies; 1.0 is as written.
 void vg_synth_layer(const SynthLayer* l, float pitch);
 
