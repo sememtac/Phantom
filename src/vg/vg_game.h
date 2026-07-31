@@ -310,10 +310,32 @@ enum TvAction : uint8_t {
 // Menu states run the attract autopilot underneath and draw no instruments.
 // States that carry no instruments. The cutscene and the death sequence are in
 // here for the same reason the menus are: there is no cockpit to report from.
+// How many there are. vg_crumb.cpp keeps its own copy of the names and must not
+// include this header -- a crash in the game's headers would take the crash
+// reporter down with it -- so this number is the contract between the two.
+#define VG_STATE_COUNT 14
+
+// WHAT a state is, rather than WHICH state it is.
+//
+// Every question the rest of the game asks about the current state used to be
+// answered by a list of state names written out at the point of asking: one for
+// the menus here, one for whether the alerts run, one for whether the engine
+// hums, one in the renderer, one in the overlay. Five lists, none of them
+// visible from any of the others, all of them needing a new entry whenever a
+// state was added -- and nothing to say which one had been forgotten.
+//
+// The lists are one table now, in vg_game.cpp. Ask what a state IS and the
+// answer is the same wherever it is asked from.
+#define VGS_MENU    0x01u   // a screen, not a cockpit: no HUD, no ship systems
+#define VGS_LIVE    0x02u   // the panel answers -- alerts, threat, instruments
+#define VGS_ENGINE  0x04u   // the airframe is still under power
+#define VGS_COMBAT  0x08u   // a fight is actually in progress
+
+uint8_t     vg_state_flags(VgState s);
+const char* vg_state_name(VgState s);
+
 static inline bool vg_state_is_menu(VgState s) {
-    return s == VG_ATTRACT || s == VG_ENTRY   || s == VG_SELECT ||
-           s == VG_BRACKET || s == VG_REPAIR  || s == VG_INTRO  ||
-           s == VG_ROUND_WON || s == VG_WON   || s == VG_OVER;
+    return (vg_state_flags(s) & VGS_MENU) != 0u;
 }
 
 struct VgGame {
@@ -551,6 +573,10 @@ void vg_tournament_begin(ShipClass c);
 // Set up the next match against whoever the bracket says. Hull is NOT restored
 // here -- damage carries between rounds, and only credits will ever undo it.
 void vg_match_start(void);
+
+// Go to a state: reset its clock and run its set-up, both of which belong to
+// the state rather than to whoever sent us there. See the table in vg_game.cpp.
+void vg_state_go(VgState to);
 // Begin a broadcast transition. The action is performed at the join, while the
 // screen is black; see the TvPhase note above.
 void vg_tv_go(TvAction a);

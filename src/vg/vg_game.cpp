@@ -1111,6 +1111,96 @@ static void enter_course(void) {
     vg_input_calibrate();
 }
 
+// Arriving at the tournament table. Pulled out of the transition's switch so
+// that it is the STATE's set-up and not one caller's: the table is reachable
+// from the transition, from the repair screen and from the end of a round, and
+// each of those used to prepare it differently.
+static void enter_bracket(void) {
+    // The table is a menu, so it gets the menu's backdrop -- it used to keep
+    // whatever the last venue built.
+    use_menu_sky();
+    vg.ring_alive = false;
+    vg_bracket_focus_player();
+    vg.state   = VG_BRACKET;
+    vg.state_t = 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE STATES
+//
+// One row each. What a state is, what it is called, whether arriving at it is a
+// cut on the broadcast, and what has to be true before it can be flown.
+//
+// The point of the table is not tidiness. It is that a state's properties are
+// declared ONCE. They used to be spread over five hand-kept lists in four
+// files, and the failure mode of a hand-kept list is not that it is wrong when
+// written -- it is that adding a state silently leaves it right in four places
+// and wrong in the fifth, with nothing to point at the one that was missed.
+//
+// `enter` is the set-up that arriving at the state requires, and it belongs to
+// the STATE rather than to whoever sent us there. That distinction is not
+// theoretical: the course reached VG_COURSE without ever generating a sky,
+// because entering a state had no fixed meaning and each caller did whatever it
+// remembered to. The backdrop was then whatever the last scene had built.
+//
+// The names are duplicated in vg_crumb.cpp, deliberately -- see the note there.
+// VG_STATE_COUNT is what keeps the two the same length.
+struct VgStateDef {
+    const char* name;
+    uint8_t     flags;
+    bool        broadcast;    // arriving cuts through the set
+    void      (*enter)(void); // may be null: not every state sets anything up
+};
+
+// In enum order. Positional, like the crumb table, so the two read the same way
+// side by side.
+static const VgStateDef STATES[VG_STATE_COUNT] = {
+    { "ATTRACT",   VGS_MENU,                          true,  enter_attract   },
+    { "ENTRY",     VGS_MENU,                          false, nullptr         },
+    { "SELECT",    VGS_MENU,                          false, nullptr         },
+    { "REPAIR",    VGS_MENU,                          false, nullptr         },
+    { "BRACKET",   VGS_MENU,                          true,  enter_bracket   },
+    { "INTRO",     VGS_MENU,                          true,  vg_match_start  },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT,false, nullptr         },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT,false, nullptr         },
+    // Still flying, and that is the whole of it: the opponent is down and
+    // talking, the player cannot be hurt, and cutting the hum at that moment
+    // would be the loudest thing about it.
+    { "KILL",      VGS_ENGINE,                        false, nullptr         },
+    // Nothing. A pause is not a place -- it suspends one.
+    { "PAUSE",     0,                                 false, nullptr         },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,             true,  enter_course    },
+    { "ROUND_WON", VGS_MENU,                          false, nullptr         },
+    { "OVER",      VGS_MENU,                          false, nullptr         },
+    { "WON",       VGS_MENU,                          false, nullptr         },
+};
+
+static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
+              "a state was added without a row, or a row without a state");
+static_assert((int)VG_WON + 1 == VG_STATE_COUNT,
+              "VG_STATE_COUNT does not match the enum -- vg_crumb.cpp's copy "
+              "of the names is the same length and would now be misaligned");
+
+uint8_t vg_state_flags(VgState s) {
+    return ((int)s < VG_STATE_COUNT) ? STATES[s].flags : 0u;
+}
+
+const char* vg_state_name(VgState s) {
+    return ((int)s < VG_STATE_COUNT) ? STATES[s].name : "?";
+}
+
+void vg_state_go(VgState to) {
+    if ((int)to >= VG_STATE_COUNT) return;
+    const VgStateDef* d = &STATES[to];
+
+    // The clock belongs to the state, not to the caller. It was reset by hand at
+    // all nineteen sites that changed state, and it happened to be right at all
+    // nineteen -- which is the good version of a rule that nothing enforces.
+    vg.state   = to;
+    vg.state_t = 0.0f;
+    if (d->enter) d->enter();
+}
+
 void vg_tv_go(TvAction a) {
     if (vg.tv_phase != TV_NONE) return;   // one transition at a time
     // THE SHIP IS OFF BEFORE THE PICTURE IS. Gating the per-frame sources below
@@ -1132,17 +1222,7 @@ static void tv_join(void) {
     switch ((TvAction)vg.tv_act) {
     case TVA_MATCH:   vg_match_start(); break;
     case TVA_COURSE:  enter_course();   break;
-    case TVA_BRACKET:
-        // The table is a menu, so it gets the menu's backdrop. It used to keep
-        // whatever the last venue built, which after the course is a sky with
-        // the hole 135 degrees off the nose -- open space behind the one screen
-        // that is meant to feel like somewhere official.
-        use_menu_sky();
-        vg.ring_alive = false;
-        vg_bracket_focus_player();
-        vg.state   = VG_BRACKET;
-        vg.state_t = 0;
-        break;
+    case TVA_BRACKET: enter_bracket(); break;
     case TVA_ATTRACT: enter_attract();  break;
     case TVA_NONE:    break;
     }
@@ -1251,13 +1331,12 @@ void vg_game_update(float dt, const VgInput* in) {
     // which is halfway through the wipe, so without this the alerts and the hum
     // ran the whole way out into the black and only stopped once the next scene
     // had already been built. Nothing flies during a transition.
-    const bool alive  = (vg.tv_phase == TV_NONE)
-                     && (vg.state == VG_PLAYING || vg.state == VG_HIT
-                      || vg.state == VG_COURSE);
+    const uint8_t sf  = vg_state_flags(vg.state);
+    const bool alive  = (vg.tv_phase == TV_NONE) && (sf & VGS_LIVE);
     // The engine runs a little wider: through VG_KILL the ship is still flying,
     // and cutting the hum the instant the opponent dies would be the loudest
     // thing about that moment.
-    const bool flying = alive || (vg.tv_phase == TV_NONE && vg.state == VG_KILL);
+    const bool flying = (vg.tv_phase == TV_NONE) && (sf & VGS_ENGINE);
 
     update_alerts(alive ? dt : 0.0f, alive);
     vg_sfx_engine(flying, vg.throttle_vis);

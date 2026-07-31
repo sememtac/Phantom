@@ -53,9 +53,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // no idea a wall exists. Only while flying: a menu has no boundary to hit,
     // and the attract loop tinting itself red would be nonsense.
     float tint = 0.0f;
-    // VG_COURSE included deliberately: meeting the wall warning somewhere free
-    // is the reason one gate in four is placed against the boundary.
-    if ((vg.state == VG_PLAYING || vg.state == VG_HIT || vg.state == VG_COURSE) &&
+    // VGS_LIVE, which includes the course deliberately: meeting the wall warning
+    // somewhere free is the reason one gate in four is placed against the
+    // boundary.
+    if ((vg_state_flags(vg.state) & VGS_LIVE) &&
         vg.wall_clear < ARENA_TINT_RANGE) {
         tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
     }

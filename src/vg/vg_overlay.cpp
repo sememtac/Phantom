@@ -293,7 +293,8 @@ void vg_draw_overlays(void) {
     char buf[40];
 
     draw_damage_vignette();
-    if (vg.state == VG_PLAYING || vg.state == VG_HIT) draw_missile_banner();
+    // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
+    if (vg_state_flags(vg.state) & VGS_COMBAT) draw_missile_banner();
 
     switch (vg.state) {
     case VG_ATTRACT: {
