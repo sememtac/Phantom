@@ -89,16 +89,38 @@ void vg_input_update(float dt, VgInput* out) {
     // Three buckets, not two. The rear-view patch is held down like a button,
     // and a thumb resting on it must not also be flying the ship -- the whole
     // point of looking behind is to hold heading while you do it.
+    //
+    // THE STEERING FINGER KEEPS THE STEERING FINGER'S JOB. A swipe that runs up
+    // into the top right is still a swipe: the patch used to claim any contact
+    // inside its zone, so carrying a turn that far dropped the contact out of
+    // the steering set -- which both threw the view aft and let go of the stick,
+    // in the middle of the turn that got there.
+    //
+    // So the patch only takes a contact that ARRIVED in it. The test is the same
+    // one the throttle uses to keep hold of its own thumb: a real finger moves
+    // tens of pixels a frame, not hundreds, so anything close to where the stick
+    // was last frame IS the stick, wherever it has got to.
     bool rear = false;
     for (int i = 0; i < n; i++) {
         if (xs[i] <= THROTTLE_ZONE_X1) {
             if (nzone < VG_MAX_TOUCH) zone[nzone++] = i;
-        } else if (xs[i] >= REAR_ZONE_X0 && xs[i] <= REAR_ZONE_X1 &&
-                   ys[i] >= REAR_ZONE_Y0 && ys[i] <= REAR_ZONE_Y1) {
-            rear = true;
-        } else if (nother < VG_MAX_TOUCH) {
-            other[nother++] = i;
+            continue;
         }
+
+        const bool in_rear = (xs[i] >= REAR_ZONE_X0 && xs[i] <= REAR_ZONE_X1 &&
+                              ys[i] >= REAR_ZONE_Y0 && ys[i] <= REAR_ZONE_Y1);
+        if (in_rear) {
+            bool is_stick = false;
+            if (s_steer_active) {
+                const float dx = (float)xs[i] - s_steer_x;
+                const float dy = (float)ys[i] - s_steer_y;
+                is_stick = (dx * dx + dy * dy) <=
+                           (THROTTLE_MAX_JUMP * THROTTLE_MAX_JUMP);
+            }
+            if (!is_stick) { rear = true; continue; }
+        }
+
+        if (nother < VG_MAX_TOUCH) other[nother++] = i;
     }
     out->rear_held = rear;
 

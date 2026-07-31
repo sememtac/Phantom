@@ -75,12 +75,28 @@ static void draw_motes(const VgCam& cam) {
     // streak runs along +z in this frame, so it always runs to the vanishing
     // point and the motes converge on the middle of the mirror -- which is what
     // dust being left behind does.
+    // WHICH WAY THE STREAK POINTS is the whole difference between the two
+    // views, and it is one sign.
+    //
+    // A streak is laid from the mote along z, and z is depth, so laying it
+    // AWAY puts the tail nearer the vanishing point and laying it TOWARD puts
+    // the tail out at the edge. Ahead, the tail belongs inward: dust sweeps out
+    // past you and what it leaves behind points back at the middle. Astern it
+    // belongs outward, and drawn the other way the mirror read as flying INTO
+    // something rather than away from it.
+    const float sdir = cam.rear ? -streak : streak;
+
     VgCam fwd = cam;
     fwd.rear = false;
     for (int i = 0; i < NUM_MOTES; i++) {
         Vec3 p = vg.mote[i];
         if (p.z < NEAR_Z) continue;
-        vg_edge_w(fwd, p, v3(p.x, p.y, p.z + streak), col, w);
+        // Toward the camera the tail can cross the near plane, where the
+        // projection is meaningless. Stop it short instead of clipping: a
+        // shortened streak on the closest motes is invisible, a wild one is not.
+        float tz = p.z + sdir;
+        if (tz < NEAR_Z) tz = NEAR_Z;
+        vg_edge_w(fwd, p, v3(p.x, p.y, tz), col, w);
     }
     vg_line_aa_mode(true);
 }
