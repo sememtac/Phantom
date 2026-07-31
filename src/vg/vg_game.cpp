@@ -145,7 +145,7 @@ static void ift_pop(bool opens_run) {
     // EVERY line is announced, because every line is a system message. The
     // opener gets the full double beat and the lines continuing it get the short
     // form -- the distinction the badge draws visually, drawn again by ear.
-    vg_sfx_play(SFX_IFT, opens_run ? 1.0f : 0.5f);
+    vg_sfx_play(opens_run ? SFX_IFT : SFX_IFT_SHORT, 1.0f);
     s_ift_i++;
 }
 

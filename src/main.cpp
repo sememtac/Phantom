@@ -95,21 +95,6 @@ void setup(void) {
     // Non-fatal like the rest. A silent game is a lesser game; a game that
     // refuses to boot because a codec did not answer is a broken one.
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
-
-#if VG_AUDIO_CHIRP
-    // TEMP: the hull cue twice, then what dying actually sounds like -- the
-    // explosion and the hull cue together, which is the case the beeps were
-    // added for and the only one where all ten voices are in use at once.
-    {
-        for (int i = 0; i < 2; i++) {
-            vg_sfx_play(SFX_HIT, 1.0f);
-            for (int k = 0; k < 240; k++) { vg_sfx_update(); delay(10); }
-        }
-        vg_sfx_play(SFX_EXPLODE, 0.8f);
-        vg_sfx_play(SFX_HIT, 1.0f);
-        for (int k = 0; k < 260; k++) { vg_sfx_update(); delay(10); }
-    }
-#endif
     vg_pmu_dump();
 
     vg_input_init();
@@ -197,7 +182,31 @@ void loop(void) {
 
     uint32_t t1 = micros();
     vg_crumb(CRUMB_UPDATE, (uint8_t)vg.state);
-    for (int s = 0; s < steps; s++) vg_game_update(dt, &in);
+
+    // AN EDGE IS CONSUMED ONCE, not once per sub-step.
+    //
+    // The same VgInput used to be handed to every sub-step, so on any frame long
+    // enough to be split, every press happened as many times as there were
+    // steps. For a toggle that is catastrophic and silent: PWR paused on the
+    // first step and un-paused on the second, so an even split left the player
+    // exactly where they started and the key looked dead.
+    //
+    // Which is why it looked like the BOUNDARY ALARM was blocking pause. It was
+    // not. Being near a wall means the screen tint is running, the tint costs
+    // about four milliseconds, four milliseconds is what pushes a 16ms frame past
+    // the 20ms sub-step threshold -- and from there the alarm and the broken
+    // pause key share a cause without one causing the other.
+    //
+    // Firing, tapping and menu presses were all doubling too, on exactly the
+    // frames where the game was already struggling.
+    VgInput sub = in;
+    for (int s = 0; s < steps; s++) {
+        vg_game_update(dt, &sub);
+        if (s == 0) {
+            sub.fire_edge = sub.alt_edge = sub.tap_edge = false;
+            sub.menu_edge = sub.pwr_edge = false;
+        }
+    }
 
     // Straight after the step, so seeds drawn during it belong to this frame.
     vg_replay_note_frame(sim_dt, &in);

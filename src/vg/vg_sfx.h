@@ -3,20 +3,17 @@
 // ===========================================================================
 // SOUND
 //
-// GENERATED, not played. Every cue here is a few oscillators and an envelope,
-// which is not a compromise forced by the 2.8MB of free flash -- twenty short
-// samples would have fitted easily. It is the right instrument for the machine:
-// a wireframe dogfight scored by square waves and filtered noise is coherent in
-// a way a compressed recording of a real explosion would not be, and the whole
-// synth costs less flash than one second of PCM.
+// GENERATED, not played. The catalogue of cues is a table in vg_sfx.cpp and the
+// machine that renders them is vg_synth.cpp -- what the sounds ARE, kept apart
+// from how sound is MADE.
 //
-// It also means a cue can respond. A missile alert that rises in pitch as the
-// range closes is one line here and a directory of variants otherwise.
-//
-// AUDIO NEVER TOUCHES THE SIMULATION. It draws no random numbers from the game's
-// seeded stream, sets no state the game reads, and takes no decision. Replay
-// determinism depends on the sim being a pure function of (seed, dt, input), and
-// a sound that could nudge any of those would take the capture tool down with it.
+// Nothing is sampled. That is not a compromise forced by flash, since 2.8MB is
+// free and twenty short samples would have fitted easily. It is the right
+// instrument for the machine: a wireframe dogfight scored by square waves and
+// filtered noise is coherent in a way a recording would not be, the whole synth
+// costs less flash than one second of PCM, and a generated cue can respond --
+// the missile alert climbs, a dying pilot's blip is pitched lower than a routine
+// one. One line each here; a directory of variants if these were files.
 // ===========================================================================
 
 enum SfxId : unsigned char {
@@ -31,6 +28,7 @@ enum SfxId : unsigned char {
     SFX_TV_OFF,          // ...and losing it
     SFX_READY,           // the cockpit coming up: systems online
     SFX_IFT,             // the broadcast, about to say something
+    SFX_IFT_SHORT,       // ...and continuing to
     SFX_COUNT
 };
 

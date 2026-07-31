@@ -620,15 +620,6 @@ bool vg_audio_init(void) {
     s_audio_ok = true;
     Serial.printf("vg_audio: ES8311 up @%d Hz\n", VG_AUDIO_RATE);
 
-    // TEMP: is the write path real? availableForWrite() comes from Print, whose
-    // default returns zero -- if I2SClass does not override it, every frame
-    // decides there is no room and the game is silent by arithmetic.
-    {
-        static int16_t probe[256];
-        for (int i = 0; i < 256; i++) probe[i] = (int16_t)((i & 32) ? 9000 : -9000);
-        const int wrote = vg_audio_write(probe, 256);
-        Serial.printf("vg_audio: probe wrote=%d\n", wrote);
-    }
     return true;
 }
 
