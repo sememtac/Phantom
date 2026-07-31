@@ -27,6 +27,9 @@ enum SfxId : unsigned char {
     SFX_LAUNCH,          // one of ours leaves the rail
     SFX_HIT,             // the player's hull takes it
     SFX_EXPLODE,
+    SFX_TV_ON,           // the set finding the signal
+    SFX_TV_OFF,          // ...and losing it
+    SFX_READY,           // the cockpit coming up: systems online
     SFX_COUNT
 };
 

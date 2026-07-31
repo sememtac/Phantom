@@ -97,22 +97,16 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the heavy end of the mix, which is what changed -- a hull hit, then
-    // an explosion, then the engine idle to full and back.
+    // TEMP: what changed, in order -- the set off, the set on, the panel
+    // reporting ready, then a hull hit twice so the growl can be heard wearing.
     {
-        const SfxId demo[3] = { SFX_HIT, SFX_MSL_EVENT, SFX_EXPLODE };
-        for (int i = 0; i < 3; i++) {
+        const SfxId demo[5] = { SFX_TV_OFF, SFX_TV_ON, SFX_READY,
+                                SFX_HIT, SFX_HIT };
+        const int   hold[5] = { 60, 70, 130, 80, 90 };
+        for (int i = 0; i < 5; i++) {
             vg_sfx_play(demo[i], 1.0f);
-            for (int k = 0; k < 90; k++) { vg_sfx_update(); delay(10); }
+            for (int k = 0; k < hold[i]; k++) { vg_sfx_update(); delay(10); }
         }
-        for (int k = 0; k < 400; k++) {
-            const float u = (float)k / 400.0f;
-            vg_sfx_engine(true, (u < 0.5f) ? (u * 2.0f) : (2.0f - u * 2.0f));
-            vg_sfx_update();
-            delay(10);
-        }
-        vg_sfx_engine(false, 0.0f);
-        for (int k = 0; k < 60; k++) { vg_sfx_update(); delay(10); }
     }
 #endif
     vg_pmu_dump();

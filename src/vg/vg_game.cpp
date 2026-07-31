@@ -1071,11 +1071,13 @@ static void enter_course(void) {
     vg.roll_rate = 0;
     vg.bank      = 0;
     vg.hud_boot = HUD_BOOT_TIME;
+    vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
     vg_input_calibrate();
 }
 
 void vg_tv_go(TvAction a) {
     if (vg.tv_phase != TV_NONE) return;   // one transition at a time
+    vg_sfx_play(SFX_TV_OFF, 1.0f);
     vg.tv_phase = TV_OUT;
     vg.tv_act   = (uint8_t)a;
     vg.tv_t     = 0.0f;
@@ -1116,7 +1118,15 @@ static void tv_update(float dt) {
         // talking. The opening line of the ring course would have been a third
         // spent before the picture existed to show it, which is a mistake already
         // made once in this file's history and not worth making twice.
-        if (vg.tv_t >= TV_HOLD_TIME) { tv_join(); vg.tv_phase = TV_IN; vg.tv_t = 0.0f; }
+        if (vg.tv_t >= TV_HOLD_TIME) {
+            tv_join();
+            vg.tv_phase = TV_IN;
+            vg.tv_t     = 0.0f;
+            // With the picture, not before it: the thump and the dot are the
+            // same moment, and hearing it during the dead air would put the
+            // sound of the set striking over a screen that is still black.
+            vg_sfx_play(SFX_TV_ON, 1.0f);
+        }
         return;
     }
     if (vg.tv_t >= TV_IN_TIME) {
@@ -1353,6 +1363,7 @@ void vg_game_update(float dt, const VgInput* in) {
             vg.state    = VG_PLAYING;
             vg.state_t  = 0;
             vg.hud_boot = HUD_BOOT_TIME;
+    vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
             vg.roll     = 0;
             vg.bank     = 0;
             vg.taunt_t  = 1.6f;

@@ -30,10 +30,14 @@ struct Voice {
     float lp1, lp2, lp_k;
 };
 
-// Four is enough and the ceiling matters: alerts repeat, and an unbounded mixer
-// would let a boundary warning and a missile warning and a comms beep stack into
-// something louder than any of them was designed to be.
-#define VOICES 4
+// Six. Four was enough while every cue was one voice; the two-tone boundary, the
+// explosion's falling thud and a three-note startup all want more than one at
+// once, and a cue that steals its own second half is worse than no cue.
+//
+// The ceiling still matters: alerts repeat, and an unbounded mixer would let a
+// boundary warning and a missile warning and a comms beep stack into something
+// louder than any of them was designed to be.
+#define VOICES 6
 static Voice s_v[VOICES];
 
 static uint32_t s_rng = 0x1234567u;   // NOT the game's. See the note in the header.
@@ -177,15 +181,78 @@ void vg_sfx_play(SfxId id, float pitch) {
         break;
     }
 
-    // THE HULL TAKING IT. The heaviest thing in the game, deliberately: this is
-    // the sound of the player's own ship being hurt, and in a tournament that
-    // kills people it should land like something structural giving way rather
-    // than like a scoring event.
+    // THE HULL TAKING IT, and it GROWLS. The heaviest thing in the game: the
+    // player's own ship being hurt should land like structure giving way, not
+    // like a scoring event.
+    //
+    // Lower than it was -- 74 Hz down to 48, falling to 19 -- but the growl is
+    // not the frequency. It is the 26 Hz tremolo, slow enough to hear as
+    // ROUGHNESS rather than as pulses: the same trick as the missile's quack
+    // moved down where it stops sounding electronic and starts sounding like
+    // something tearing. A low tone alone at this pitch is just a thump.
     case SFX_HIT: {
-        voice_set(v, W_SQUARE, 74.0f, 34.0f, 0.42f, 0.002f, 0.85f, 600.0f);
-        Voice* crack = grab();
-        if (crack && crack != v)
-            voice_set(crack, W_NOISE, 0.0f, 0.0f, 0.22f, 0.001f, 0.55f, 1600.0f);
+        voice_set(v, W_SQUARE, 48.0f, 19.0f, 0.50f, 0.002f, 0.95f, 380.0f);
+        v->mod_hz = 26.0f; v->mod_depth = 0.55f;
+        Voice* rasp = grab();
+        if (rasp && rasp != v) {
+            // The noise drops with it -- 1600 Hz was a crack of glass over a
+            // groan, two events rather than one.
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.26f, 0.001f, 0.50f, 700.0f);
+            rasp->mod_hz = 26.0f; rasp->mod_depth = 0.4f;
+        }
+        break;
+    }
+
+    // THE SET FINDING THE SIGNAL. A thump as it strikes, then a whine rising out
+    // of it -- the sound the picture makes arriving, which is what the dot
+    // growing out of the middle of the screen is doing at the same moment.
+    case SFX_TV_ON: {
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.10f, 0.001f, 0.55f, 500.0f);
+        Voice* whine = grab();
+        if (whine && whine != v) {
+            voice_set(whine, W_SINE, 260.0f, 2100.0f, 0.42f, 0.02f, 0.20f, 6000.0f);
+            whine->delay = 0.04f;
+        }
+        break;
+    }
+
+    // ...and losing it. The same shape backwards, which is what the picture is
+    // doing: the whine falls away and the thump is last, as the line goes out.
+    case SFX_TV_OFF: {
+        voice_set(v, W_SINE, 1900.0f, 190.0f, 0.30f, 0.01f, 0.20f, 6000.0f);
+        Voice* thump = grab();
+        if (thump && thump != v) {
+            voice_set(thump, W_NOISE, 0.0f, 0.0f, 0.09f, 0.001f, 0.50f, 450.0f);
+            thump->delay = 0.28f;
+        }
+        break;
+    }
+
+    // SYSTEMS ONLINE. Three rising tones over a low one, which is the only cue
+    // in the game that is a SEQUENCE rather than a sound -- because it is not
+    // reporting an event, it is a machine finishing something, and finishing
+    // takes steps.
+    //
+    // Squares rather than sines: this is the instrument talking, in the same
+    // voice as the warnings, and it should be recognisably the same panel.
+    // HELD BACK HALF A SECOND. Entering the course sets the panel booting inside
+    // the transition's join, one frame before the set strikes -- so without this
+    // the two cues land together and neither is heard. The delay lets the tube
+    // finish arriving and then the panel reports in, which is the order the
+    // player is watching anyway.
+    case SFX_READY: {
+        const float t0 = 0.45f;
+        voice_set(v, W_SQUARE, 62.0f, 44.0f, 0.55f, 0.006f, 0.40f, 500.0f);
+        v->delay = t0;
+        static const float note[3] = { 392.0f, 523.0f, 784.0f };
+        static const float when[3] = { 0.02f,  0.15f,  0.28f  };
+        for (int i = 0; i < 3; i++) {
+            Voice* n = grab();
+            if (!n || n == v) break;
+            voice_set(n, W_SQUARE, note[i], note[i], (i == 2) ? 0.26f : 0.12f,
+                      0.004f, 0.26f, 4200.0f);
+            n->delay = t0 + when[i];
+        }
         break;
     }
 
