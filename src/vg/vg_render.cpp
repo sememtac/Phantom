@@ -73,26 +73,28 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg_rast_tv(1.0f, 1.0f, 0.0f, 0.0f);
     } else if (vg.tv_phase == TV_HOLD) {
         vg_rast_tv(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
-    } else if (vg.tv_phase == TV_OUT) {
-        const float u = vg.tv_t / TV_OUT_TIME;
-        // Collapse inward to the centre line, whitening as it goes, and only at
-        // the very end does the line itself shorten to a dot and vanish. The
-        // wash is what makes it read as the tube losing the picture rather than
-        // as a window being shut on it.
-        vg_rast_tv(1.0f - smoothstep(0.12f, 0.78f, u),
-                   1.0f - smoothstep(0.80f, 1.00f, u),
-                   smoothstep(0.30f, 0.78f, u) * (1.0f - smoothstep(0.93f, 1.0f, u)),
-                   smoothstep(0.00f, 0.58f, u));
     } else {
-        const float u = vg.tv_t / TV_IN_TIME;
-        // Signal arrives: a dot at the centre opens into a line, the line grows
-        // outward into a bar, and only then does the white resolve into picture.
-        // The order matters -- resolve too early and it is a wipe, not a tube
-        // warming up.
-        vg_rast_tv(smoothstep(0.18f, 0.76f, u),
-                   smoothstep(0.00f, 0.16f, u),
-                   1.0f - smoothstep(0.40f, 0.92f, u),
-                   1.0f - smoothstep(0.30f, 0.82f, u));
+        // ONE CURVE, RUN BOTH WAYS. `c` is how far the set is toward being off:
+        // 0 is a picture, 1 is a dot about to vanish. Going out it runs forward,
+        // coming back it runs in reverse, so the two are the same shape by
+        // construction rather than by two sets of numbers agreeing.
+        //
+        // They were separate before, and the turn-on had drifted into something
+        // else entirely -- the white resolving away before the bar had finished
+        // opening, which reads as two bands travelling apart rather than as one
+        // line growing out of the middle.
+        //
+        // Phases, in the order they happen going OUT:
+        //   the picture darkens                  dim  rises first
+        //   it collapses to the centre line      open falls
+        //   what is left whitens                 wash rises
+        //   the line shortens to a dot and goes  wide falls, wash dies
+        const float c = (vg.tv_phase == TV_OUT) ? (vg.tv_t / TV_OUT_TIME)
+                                                : (1.0f - vg.tv_t / TV_IN_TIME);
+        vg_rast_tv(1.0f - smoothstep(0.12f, 0.78f, c),
+                   1.0f - smoothstep(0.80f, 1.00f, c),
+                   smoothstep(0.30f, 0.78f, c) * (1.0f - smoothstep(0.93f, 1.0f, c)),
+                   smoothstep(0.00f, 0.58f, c));
     }
 
     vg_rast_begin_frame();
