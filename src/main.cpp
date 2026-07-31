@@ -97,20 +97,23 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the two long ones. A launch, then two hull hits, then a launch and a
-    // hit together -- which is what a bad moment in a match actually sounds like
-    // and the only way to hear whether they fight each other.
+    // TEMP: the broadcast's jingle first -- the thing that was being stolen --
+    // then two hull hits so the beeps over the groan can be heard, then the
+    // three-cue pile-up the course entry actually fires in one frame.
     {
-        vg_sfx_play(SFX_LAUNCH, 1.0f);
-        for (int k = 0; k < 110; k++) { vg_sfx_update(); delay(10); }
+        vg_sfx_play(SFX_IFT, 1.0f);
+        for (int k = 0; k < 90; k++) { vg_sfx_update(); delay(10); }
+
         for (int i = 0; i < 2; i++) {
             vg_sfx_play(SFX_HIT, 1.0f);
-            for (int k = 0; k < 180; k++) { vg_sfx_update(); delay(10); }
+            for (int k = 0; k < 190; k++) { vg_sfx_update(); delay(10); }
         }
-        vg_sfx_play(SFX_LAUNCH, 1.0f);
-        for (int k = 0; k < 20; k++) { vg_sfx_update(); delay(10); }
-        vg_sfx_play(SFX_HIT, 1.0f);
-        for (int k = 0; k < 190; k++) { vg_sfx_update(); delay(10); }
+
+        // All three at once, exactly as entering the course does it.
+        vg_sfx_play(SFX_IFT, 1.0f);
+        vg_sfx_play(SFX_READY, 1.0f);
+        vg_sfx_play(SFX_TV_ON, 1.0f);
+        for (int k = 0; k < 160; k++) { vg_sfx_update(); delay(10); }
     }
 #endif
     vg_pmu_dump();

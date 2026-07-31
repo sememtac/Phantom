@@ -36,14 +36,16 @@ struct Voice {
     float lp1, lp2, lp_k;
 };
 
-// Six. Four was enough while every cue was one voice; the two-tone boundary, the
-// explosion's falling thud and a three-note startup all want more than one at
-// once, and a cue that steals its own second half is worse than no cue.
+// Ten. Six was not enough for the moment the course begins, which fires the
+// broadcast's four-note jingle, the panel's four-note ready cue and the set's
+// two-part turn-on inside a single frame -- ten voices asked for, six available,
+// and the loser was whichever had least left to do.
 //
 // The ceiling still matters: alerts repeat, and an unbounded mixer would let a
 // boundary warning and a missile warning and a comms beep stack into something
-// louder than any of them was designed to be.
-#define VOICES 6
+// louder than any of them was designed to be. Ten is the busiest real moment
+// plus a little, not a number chosen to stop thinking about it.
+#define VOICES 10
 static Voice s_v[VOICES];
 
 static uint32_t s_rng = 0x1234567u;   // NOT the game's. See the note in the header.
@@ -53,13 +55,19 @@ static inline float noise(void) {
 }
 
 static Voice* grab(void) {
-    // A free voice, or the one with least life left. Stealing the oldest is what
-    // keeps a repeating alert from being cut off by its own next beep.
+    // A free voice, or the one with least left to do.
+    //
+    // THE DELAY COUNTS. It did not, and that is why the broadcast's jingle never
+    // sounded at the start of the course: the four notes of it are queued with
+    // delays and a life of a tenth of a second each, so by this measure they
+    // looked like the most expendable voices in the mixer -- and the panel's
+    // ready cue, fired one line later in the same frame, took all four before the
+    // first had played. A note waiting its turn has not had its turn.
     Voice* best = nullptr;
     float  worst = 1e9f;
     for (int i = 0; i < VOICES; i++) {
         if (!s_v[i].on) return &s_v[i];
-        const float left = s_v[i].life - s_v[i].t;
+        const float left = s_v[i].delay + (s_v[i].life - s_v[i].t);
         if (left < worst) { worst = left; best = &s_v[i]; }
     }
     return best;
@@ -226,14 +234,33 @@ void vg_sfx_play(SfxId id, float pitch) {
         // be the hull failing -- something that keeps happening after it starts.
         // The judder runs through the whole of it, which is what a held note
         // buys that a decaying one cannot.
-        voice_set(v, W_SQUARE, 34.0f, 12.0f, 1.50f, 0.004f, 1.00f, 130.0f);
+        // Lower again: 130 Hz down to 92, and the note under it from 34 to 26.
+        voice_set(v, W_SQUARE, 26.0f, 11.0f, 1.50f, 0.004f, 1.00f, 92.0f);
         v->sustain = 0.34f;
         v->mod_hz  = 11.0f; v->mod_depth = 0.75f;
         Voice* rasp = grab();
         if (rasp && rasp != v) {
-            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.55f, 0.002f, 0.16f, 200.0f);
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.55f, 0.002f, 0.16f, 150.0f);
             rasp->sustain = 0.30f;
             rasp->mod_hz  = 11.0f; rasp->mod_depth = 0.6f;
+        }
+
+        // AND THE PANEL SHOUTING ABOUT IT. Four quick high beeps, each quieter
+        // than the last, over the top of the groan.
+        //
+        // This is the contrast doing the work rather than the depth alone. A low
+        // sound on its own has nothing to be low against, and on a speaker this
+        // small the bottom end is barely there -- so what sells the weight is
+        // something bright and thin sitting above it and losing. The systems
+        // reporting damage while the airframe answers underneath.
+        static const float beep_at[4] = { 0.02f, 0.13f, 0.24f, 0.35f };
+        static const float beep_g [4] = { 0.30f, 0.22f, 0.15f, 0.09f };
+        for (int i = 0; i < 4; i++) {
+            Voice* b = grab();
+            if (!b || b == v) break;
+            voice_set(b, W_SQUARE, 1320.0f, 1320.0f, 0.055f, 0.002f,
+                      beep_g[i], 6000.0f);
+            b->delay = beep_at[i];
         }
         break;
     }
