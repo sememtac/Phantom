@@ -86,8 +86,15 @@ void vg_link_write(const void* p, int n) {
 
 // A host that has stopped reading. Bounding each write was not enough on its own:
 // the session stayed armed, so EVERY frame paid three seconds a band for ever,
-// which is a dead machine rather than a slow one. Two in a row is the host gone.
-static bool link_dead(void) { return s_wr_giveups >= 2; }
+// which is a dead machine rather than a slow one.
+//
+// FOUR, not two. Two killed a perfectly healthy recording: a host that is merely
+// busy for six seconds -- writing a file, or garbage collecting -- looks exactly
+// like a host that has gone, and the session died under it. Twelve seconds does
+// not, and the thing being prevented is a freeze that lasts until the board is
+// unplugged, so the cost of waiting a little longer to be sure is nothing.
+#define LINK_DEAD_GIVEUPS 4
+static bool link_dead(void) { return s_wr_giveups >= LINK_DEAD_GIVEUPS; }
 
 void vg_link_stats(uint32_t* bytes, uint32_t* shorts, uint32_t* stalls,
                    uint32_t* mismatch) {

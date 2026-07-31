@@ -417,6 +417,14 @@ struct VgGame {
     // match -- and the second button on that screen means different things
     // depending on the answer.
     uint8_t     pause_from;
+    uint8_t     pause_page;   // 0 the menu, 1 the audio page
+
+    // Kept whether or not anything is listening yet. The board has an ES8311 and
+    // a speaker; these are the settings that will drive it, and having them
+    // saved and adjustable first means sound arrives as a mix rather than as a
+    // feature that then needs a menu built around it.
+    float       vol_music;
+    float       vol_sfx;
 
     // Time since the course was finished. The finish gets a beat of its own
     // rather than cutting straight out; see VG_COURSE.

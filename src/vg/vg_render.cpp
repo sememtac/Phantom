@@ -269,7 +269,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // After vg_draw_overlays too, so the intro's own fighter card cannot cover it.
     // Flat, like everything else past the warp: this is a caption laid over the
     // picture, not something bolted to the canopy.
-    vg_draw_ift();
+    // NOT WHILE PAUSED. The pause screen covers most of it and the rest shows
+    // through the gaps between the buttons, so a caption the player cannot act on
+    // ends up threaded between the ones they can. The broadcast is part of the
+    // game that is currently suspended.
+    if (vg.state != VG_PAUSE) vg_draw_ift();
 
     // Last of all, over everything including the instruments.
     if (vg.state == VG_PAUSE) vg_draw_pause();

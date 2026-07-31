@@ -402,6 +402,10 @@ void vg_game_init(void) {
     vg.callsign[0] = 'A'; vg.callsign[1] = 'C'; vg.callsign[2] = 'E';
     vg.callsign[3] = 0;
     vg.trail_hue   = 0.52f;          // cyan by default: nothing else on screen is
+    // Not full. A first run should be able to get louder as well as quieter, and
+    // a mix that starts at the ceiling can only ever be turned down.
+    vg.vol_music   = 0.70f;
+    vg.vol_sfx     = 0.85f;
     vg.ship        = SHIP_AEGIS;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
@@ -1347,25 +1351,53 @@ void vg_game_update(float dt, const VgInput* in) {
         // No world step: paused means paused.
         const bool from_course = (vg.pause_from == VG_COURSE);
         const VgState back     = from_course ? VG_COURSE : VG_PLAYING;
+        (void)dt;
 
         // PWR again, which is what paused it. NOT the + key -- that is the roll
         // control, and a paused player leaning on it would be thrown back into
         // the fight mid-roll.
-        if (in->pwr_edge) { vg.state = back; vg.state_t = 0; }
+        // PWR backs out of the audio page first, then unpauses. One key, one
+        // meaning -- "take me back one" -- rather than a key that unpauses from a
+        // sub-page the player is still reading.
+        if (in->pwr_edge) {
+            if (vg.pause_page) { vg.pause_page = 0; }
+            else               { vg.state = back; vg.state_t = 0; }
+        }
+
+        if (vg.pause_page == 1) {
+            // Dragged, not tapped: held rather than on release, so the fill
+            // follows the finger instead of jumping when it lifts.
+            if (in->menu_held) {
+                if (vg_pause_music_at(in->menu_x, in->menu_y))
+                    vg.vol_music = vg_pause_slider_value(in->menu_x);
+                else if (vg_pause_sfx_at(in->menu_x, in->menu_y))
+                    vg.vol_sfx = vg_pause_slider_value(in->menu_x);
+            }
+            if (tap_up && vg_pause_back_at(tap_x, tap_y)) {
+                vg.pause_page = 0;
+                vg_save_store();        // settings outlive the session
+            }
+            break;
+        }
+
         if (tap_up) {
-            if (vg_pause_resume_at(tap_x, tap_y)) {
+            switch (vg_pause_item_at(tap_x, tap_y, from_course)) {
+            case PAUSE_RESUME:
                 vg.state   = back;
                 vg.state_t = 0;
-            } else if (vg_pause_quit_at(tap_x, tap_y)) {
-                // SKIP out of the course, QUIT out of a match -- the same slot,
-                // because they are the same idea at different stakes. Skipping is
-                // refused while the briefing runs: the player may pause over it,
-                // read it, and think about it, but not walk out of it.
-                if (from_course) {
-                    if (!vg.course_briefing) vg_tv_go(TVA_BRACKET);
-                } else {
-                    vg_tv_go(TVA_ATTRACT);
-                }
+                break;
+            case PAUSE_AUDIO:
+                vg.pause_page = 1;
+                break;
+            case PAUSE_SKIP:
+                // Refused while the briefing runs: the player may pause over it,
+                // read it and think about it, but not walk out of it.
+                if (!vg.course_briefing) vg_tv_go(TVA_BRACKET);
+                break;
+            case PAUSE_QUIT:
+                vg_tv_go(TVA_ATTRACT);
+                break;
+            default: break;
             }
         }
         break;

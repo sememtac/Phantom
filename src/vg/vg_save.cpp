@@ -14,7 +14,11 @@
 // an older layout is read as garbage and the player arrives at the menu with a
 // callsign of random bytes and a five-figure bank.
 #define SAVE_MAGIC   0x504E544Du   // 'PNTM'
-#define SAVE_VERSION 1
+// 2 adds the mix. Bumping this DISCARDS an older save rather than trying to read
+// it, which is what the version field is for -- a record of a different size read
+// as if it were this one is exactly the "callsign of random bytes" the note above
+// is about.
+#define SAVE_VERSION 2
 
 struct SaveRecord {
     uint32_t magic;
@@ -24,7 +28,9 @@ struct SaveRecord {
     uint8_t  ship;
     uint8_t  champion;
     uint8_t  hue;         // trail colour, quantised to 0..255
-    uint8_t  reserved;    // keeps the record 16 bytes and leaves room to grow
+    uint8_t  vol_music;   // 0..255
+    uint8_t  vol_sfx;
+    uint8_t  reserved[3]; // keeps the record 16 bytes and leaves room to grow
 };
 
 void vg_save_load(void) {
@@ -50,6 +56,8 @@ void vg_save_load(void) {
     vg.spec      = vg_spec(vg.ship);
     vg.champion  = (r.champion != 0);
     vg.trail_hue = (float)r.hue * (1.0f / 255.0f);
+    vg.vol_music = (float)r.vol_music * (1.0f / 255.0f);
+    vg.vol_sfx   = (float)r.vol_sfx   * (1.0f / 255.0f);
 
     // Hull follows the class, or a CHARIOT saved last session would come back
     // carrying an AEGIS-sized bar.
@@ -79,6 +87,9 @@ void vg_save_store(void) {
     float h = vg.trail_hue - (float)(int)vg.trail_hue;
     if (h < 0.0f) h += 1.0f;
     r.hue = (uint8_t)(h * 255.0f);
+
+    r.vol_music = (uint8_t)(vg.vol_music * 255.0f + 0.5f);
+    r.vol_sfx   = (uint8_t)(vg.vol_sfx   * 255.0f + 0.5f);
 
     memcpy(r.callsign, vg.callsign, 4);
 
