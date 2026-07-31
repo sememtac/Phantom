@@ -61,6 +61,10 @@ static uint32_t s_begins = 0, s_ends = 0;
 
 static uint32_t s_wr_giveups = 0;
 
+// Whether this host wants audio in the stream. Off until it says so; see the
+// 'A' command.
+static int s_audio_on = 0;
+
 void vg_link_write(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
     s_wr_bytes += (uint32_t)n;
@@ -150,7 +154,18 @@ void vg_capture_poll(void) {
         // Replay commands first: they read their own payload straight off the
         // stream, so they must not be mistaken for capture bytes.
         if (vg_replay_command(c)) continue;
-        if (c == 'z') {
+        if (c == 'A') {
+            // ASKED FOR, never assumed. Audio in the capture stream is an extra
+            // chunk inside each frame, and a host that predates it treats an
+            // unknown tag as a desync -- so it drops every frame and renders
+            // nothing while its progress bar sits still, which looks exactly
+            // like a hang and reports nothing.
+            //
+            // That is not hypothetical: the packaged recorder is built ahead of
+            // time and was three days older than the change. Sending only when
+            // asked means an old host is simply an old host.
+            s_audio_on = 1;
+        } else if (c == 'z') {
             // Forget the diagnostic record. Wanted from the host because the
             // alternative was building and flashing a one-line firmware to clear
             // a stale worst-case, which is how the last one got cleared.
@@ -158,6 +173,7 @@ void vg_capture_poll(void) {
             Serial.println("\nvg_crumb: cleared");
         } else if (c == 's' && s_mode) {
             s_mode = 0;
+            s_audio_on = 0;
             Serial.printf("\nvg_capture: DONE %u frames\n", (unsigned)s_index);
         } else if (c == 'b' && !s_mode) {
             // Link benchmark. Blasts a fixed blob with no rendering and no
@@ -361,11 +377,13 @@ static int16_t s_au[512];
 static int     s_au_n = 0;
 
 void vg_capture_audio(const int16_t* samples, int n) {
-    if (!s_mode || n <= 0) return;
+    if (!s_mode || !s_audio_on || n <= 0) return;
     if (n > (int)(sizeof(s_au) / sizeof(s_au[0]))) n = (int)(sizeof(s_au) / sizeof(s_au[0]));
     memcpy(s_au, samples, (size_t)n * 2);
     s_au_n = n;
 }
+
+void vg_capture_audio_off(void) { s_audio_on = 0; s_au_n = 0; }
 
 void vg_capture_frame_end(void) {
     if (!s_mode) return;

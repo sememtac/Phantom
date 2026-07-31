@@ -361,6 +361,8 @@ class Recorder(tk.Tk):
                 except Desync:
                     continue
                 writer.write(rgb)
+                writer.add_audio(link.audio)
+                link.audio = bytearray()
                 done += 1
                 self.q.put(("ren", done, len(ses.frames), time.time() - started,
                             subsample_ppm(rgb, w, h, PREVIEW)))

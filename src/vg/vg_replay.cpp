@@ -205,6 +205,7 @@ bool vg_replay_command(int c) {
         const bool was_play = (s_mode == VG_RP_PLAY);
         s_mode = VG_RP_OFF;
         if (was_play) vg_capture_set(VG_CAP_OFF);
+        vg_capture_audio_off();
         vg_link_blocking(false);    // back to never blocking the game
         uint32_t wb, ws, wt, wm;
         vg_link_stats(&wb, &ws, &wt, &wm);

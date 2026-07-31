@@ -120,6 +120,8 @@ def render(args):
                 print(f"\n  {e}. The host synchronises again.")
                 continue
             writer.write(rgb)
+            writer.add_audio(link.audio)
+            link.audio = bytearray()
             done += 1
             el = time.time() - started
             rate = done / max(0.001, el)

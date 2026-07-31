@@ -226,8 +226,14 @@ class PhantomLink:
         self.ser.write(b"E")
         self.ser.flush()
 
-    def replay_start(self, hdr):
+    def replay_start(self, hdr, audio=True):
         self._rx_clear()
+        # Ask for sound before the frames start. The device sends none unless a
+        # host asks, so a tool built before this existed still works.
+        if audio:
+            self.ser.write(b"A")
+            self.ser.flush()
+        self.audio = bytearray()
         self.ser.write(b"P")
         self.ser.write(struct.pack("<HHB", hdr["ver"], hdr["blob"],
                                    len(hdr["seeds"]) // 4))
