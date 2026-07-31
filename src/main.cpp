@@ -97,16 +97,20 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the three that changed -- the set off and on, the broadcast's
-    // jingle, and three hull hits.
+    // TEMP: the two long ones. A launch, then two hull hits, then a launch and a
+    // hit together -- which is what a bad moment in a match actually sounds like
+    // and the only way to hear whether they fight each other.
     {
-        const SfxId demo[6] = { SFX_TV_OFF, SFX_TV_ON, SFX_IFT,
-                                SFX_HIT, SFX_HIT, SFX_HIT };
-        const int   hold[6] = { 45, 50, 90, 115, 115, 130 };
-        for (int i = 0; i < 6; i++) {
-            vg_sfx_play(demo[i], 1.0f);
-            for (int k = 0; k < hold[i]; k++) { vg_sfx_update(); delay(10); }
+        vg_sfx_play(SFX_LAUNCH, 1.0f);
+        for (int k = 0; k < 110; k++) { vg_sfx_update(); delay(10); }
+        for (int i = 0; i < 2; i++) {
+            vg_sfx_play(SFX_HIT, 1.0f);
+            for (int k = 0; k < 180; k++) { vg_sfx_update(); delay(10); }
         }
+        vg_sfx_play(SFX_LAUNCH, 1.0f);
+        for (int k = 0; k < 20; k++) { vg_sfx_update(); delay(10); }
+        vg_sfx_play(SFX_HIT, 1.0f);
+        for (int k = 0; k < 190; k++) { vg_sfx_update(); delay(10); }
     }
 #endif
     vg_pmu_dump();

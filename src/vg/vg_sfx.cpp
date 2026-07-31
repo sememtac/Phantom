@@ -19,6 +19,12 @@ struct Voice {
     float freq_to;      // Hz, swept toward over the life of the voice
     float t, life;      // seconds
     float attack;       // seconds to full
+    // Fraction of the life HELD at full before the decay starts. Zero is the
+    // shape everything had until now -- rise, then fall away immediately -- which
+    // is right for a click and wrong for anything meant to read as sustained
+    // damage. A single decaying beat is an event; something that holds and then
+    // gives way is a thing failing.
+    float sustain;
     float gain;
     float delay;        // seconds before it starts, for two-tone cues
     // Amplitude modulation. What turns a plain square into something reedy --
@@ -64,6 +70,7 @@ static void voice_set(Voice* v, Wave w, float f0, float f1, float life,
     v->on = true; v->wave = w; v->phase = 0.0f;
     v->freq = f0; v->freq_to = f1;
     v->t = 0.0f; v->life = life; v->attack = attack; v->gain = gain;
+    v->sustain = 0.0f;
     v->delay = 0.0f;
     v->mod_hz = 0.0f; v->mod_phase = 0.0f; v->mod_depth = 0.0f;
     v->lp1 = v->lp2 = 0.0f;
@@ -157,11 +164,21 @@ void vg_sfx_play(SfxId id, float pitch) {
 
     // LOWER. A rocket leaving the rail is felt more than heard, so most of this
     // is a falling tone with the noise sitting underneath it rather than on top.
+    // DEEP AND GROWLING, and long enough to be a departure rather than a click.
+    // A rocket leaving the rail is a sustained thing -- the motor keeps burning
+    // after the round has gone -- so this holds like the hull cue does, with the
+    // same judder on it an octave up in modulation rate.
     case SFX_LAUNCH: {
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.38f, 0.004f, 0.30f, 1300.0f);
-        Voice* tone = grab();
-        if (tone && tone != v)
-            voice_set(tone, W_SQUARE, 165.0f, 62.0f, 0.34f, 0.006f, 0.34f, 1100.0f);
+        voice_set(v, W_SQUARE, 104.0f, 34.0f, 0.80f, 0.004f, 0.60f, 220.0f);
+        v->sustain = 0.25f;
+        v->mod_hz  = 19.0f; v->mod_depth = 0.5f;
+        Voice* wash = grab();
+        if (wash && wash != v) {
+            // The motor, under the tone rather than over it. 1300 Hz put the
+            // whole cue up where the speaker is bright and made it a hiss.
+            voice_set(wash, W_NOISE, 0.0f, 0.0f, 0.60f, 0.006f, 0.30f, 420.0f);
+            wash->sustain = 0.20f;
+        }
         break;
     }
 
@@ -204,14 +221,19 @@ void vg_sfx_play(SfxId id, float pitch) {
         // the harmonics the driver is efficient at and keeping the ones it is
         // not. Quieter and lower is the deal on a speaker this size; there is no
         // setting that is both.
-        voice_set(v, W_SQUARE, 34.0f, 14.0f, 0.90f, 0.003f, 1.00f, 130.0f);
-        v->mod_hz = 12.0f; v->mod_depth = 0.72f;
+        // A SECOND AND A HALF, and a third of it held. The pitch was right and the
+        // shape was not: one decaying beat is an impact, and this is supposed to
+        // be the hull failing -- something that keeps happening after it starts.
+        // The judder runs through the whole of it, which is what a held note
+        // buys that a decaying one cannot.
+        voice_set(v, W_SQUARE, 34.0f, 12.0f, 1.50f, 0.004f, 1.00f, 130.0f);
+        v->sustain = 0.34f;
+        v->mod_hz  = 11.0f; v->mod_depth = 0.75f;
         Voice* rasp = grab();
         if (rasp && rasp != v) {
-            // Down with it. At 380 this was the brightest thing in the cue and
-            // therefore the thing setting its apparent pitch.
-            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.30f, 0.001f, 0.16f, 200.0f);
-            rasp->mod_hz = 12.0f; rasp->mod_depth = 0.6f;
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.55f, 0.002f, 0.16f, 200.0f);
+            rasp->sustain = 0.30f;
+            rasp->mod_hz  = 11.0f; rasp->mod_depth = 0.6f;
         }
         break;
     }
@@ -369,7 +391,15 @@ void vg_sfx_update(void) {
             // Attack then decay. The attack is short and exists only to stop the
             // click that starting a waveform at full amplitude would make -- a
             // click that would be audible on every single cue.
-            float env = (v->t < v->attack) ? (v->t / v->attack) : (1.0f - u);
+            float env;
+            if (v->t < v->attack) {
+                env = v->t / v->attack;
+            } else if (u < v->sustain) {
+                env = 1.0f;                 // held: the part that is not a beat
+            } else {
+                const float d = 1.0f - v->sustain;
+                env = (d > 0.0001f) ? (1.0f - (u - v->sustain) / d) : (1.0f - u);
+            }
             if (env < 0.0f) env = 0.0f;
             env *= env;                     // fall away faster than linearly
 
