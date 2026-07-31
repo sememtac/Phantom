@@ -1082,10 +1082,6 @@ static void tv_join(void) {
         vg.state   = VG_BRACKET;
         vg.state_t = 0;
         break;
-    case TVA_SELECT:
-        vg.state   = VG_SELECT;
-        vg.state_t = 0;
-        break;
     case TVA_ATTRACT: enter_attract();  break;
     case TVA_NONE:    break;
     }
@@ -1188,10 +1184,8 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_ENTRY: {
         menu_world(dt);
         if (vg_entry_update(in, tap_up, tap_x, tap_y)) {
-            // Straight to the IFT. A callsign is a registration, and what follows
-            // a registration is being checked in -- not being shown a hangar.
-            vg.course_checkin = true;
-            vg_tv_go(TVA_COURSE);
+            vg.state   = VG_SELECT;
+            vg.state_t = 0;
         }
         break;
     }
@@ -1216,10 +1210,12 @@ void vg_game_update(float dt, const VgInput* in) {
             if (card >= 0) {
                 vg_game_select_ship((ShipClass)card);
             } else if (vg_select_confirm_at(tap_x, tap_y)) {
+                // The draw is made HERE, so the course that follows has a
+                // tournament to return to and the player flies it in the airframe
+                // they actually picked.
                 vg_tournament_begin(vg.ship);
                 vg_bracket_focus_player();
-                vg.state   = VG_BRACKET;
-                vg.state_t = 0;
+                vg_tv_go(TVA_COURSE);
             }
         }
         break;
@@ -1290,28 +1286,20 @@ void vg_game_update(float dt, const VgInput* in) {
         // Finishing is a MOMENT, not an exit condition. The gate is already gone
         // and the player keeps flying while the broadcast marks it, exactly as a
         // kill does -- see COURSE_DONE_BEAT.
-        // Where leaving leads. A check-in has no tournament behind it yet -- the
-        // draw is made when the ship is chosen -- so it goes on to the hangar
-        // instead of back to a map that does not exist.
-        const TvAction course_out = vg.course_checkin ? TVA_SELECT : TVA_BRACKET;
-
         if (vg.course_done) {
             vg.course_end_t += dt;
-            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(course_out);
+            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(TVA_BRACKET);
         }
 
-        // NOT WHILE THE BRIEFING IS RUNNING. Being checked in is not something you
-        // walk out of halfway through, and letting the player leave mid-sentence
-        // would make the one moment the broadcast addresses them directly into
-        // something skippable by accident.
-        //
-        // The test is the briefing and NOT vg_ift_busy(), which is also true for
-        // six seconds after every gate: that would have left the way out dead for
-        // most of a run, on and off, with nothing to tell the player why.
-        //
-        // PWR is the way out otherwise, the same key that opens the menu
-        // everywhere else.
-        else if (in->pwr_edge && !vg.course_briefing) vg_tv_go(course_out);
+        // PWR PAUSES. It does that in a match and it does it here, and a key that
+        // means one thing everywhere is worth more than a key that means the
+        // right thing in each place. Leaving is a button on the pause screen, and
+        // that button is what waits for the briefing -- not the key.
+        else if (in->pwr_edge) {
+            vg.pause_from = VG_COURSE;
+            vg.state      = VG_PAUSE;
+            vg.state_t    = 0;
+        }
         break;
     }
 
@@ -1345,7 +1333,6 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
                 vg_tv_go(TVA_MATCH);
             } else if (vg_bracket_course_at(tap_x, tap_y)) {
-                vg.course_checkin = false;
                 vg_tv_go(TVA_COURSE);
             } else if (vg_bracket_repair_at(tap_x, tap_y)) {
                 vg_repair_reset();
@@ -1358,13 +1345,27 @@ void vg_game_update(float dt, const VgInput* in) {
 
     case VG_PAUSE: {
         // No world step: paused means paused.
-        if (in->alt_edge) { vg.state = VG_PLAYING; vg.state_t = 0; }
+        const bool from_course = (vg.pause_from == VG_COURSE);
+        const VgState back     = from_course ? VG_COURSE : VG_PLAYING;
+
+        // PWR again, which is what paused it. NOT the + key -- that is the roll
+        // control, and a paused player leaning on it would be thrown back into
+        // the fight mid-roll.
+        if (in->pwr_edge) { vg.state = back; vg.state_t = 0; }
         if (tap_up) {
             if (vg_pause_resume_at(tap_x, tap_y)) {
-                vg.state = VG_PLAYING;
+                vg.state   = back;
                 vg.state_t = 0;
             } else if (vg_pause_quit_at(tap_x, tap_y)) {
-                vg_tv_go(TVA_ATTRACT);
+                // SKIP out of the course, QUIT out of a match -- the same slot,
+                // because they are the same idea at different stakes. Skipping is
+                // refused while the briefing runs: the player may pause over it,
+                // read it, and think about it, but not walk out of it.
+                if (from_course) {
+                    if (!vg.course_briefing) vg_tv_go(TVA_BRACKET);
+                } else {
+                    vg_tv_go(TVA_ATTRACT);
+                }
             }
         }
         break;
@@ -1427,7 +1428,12 @@ void vg_game_update(float dt, const VgInput* in) {
         if (in->fire_edge) player_fire();
         // PWR, not the + key: that is hold-to-roll now, and pausing every time a
         // player rolled would be unusable.
-        if (playing && in->pwr_edge) { vg.state = VG_PAUSE; vg.state_t = 0; break; }
+        if (playing && in->pwr_edge) {
+            vg.pause_from = VG_PLAYING;
+            vg.state      = VG_PAUSE;
+            vg.state_t    = 0;
+            break;
+        }
 
         // Unprompted chatter, on a long timer and only when the radio is idle.
         // Taunts are flavour; letting one interrupt a hit or a kill would turn

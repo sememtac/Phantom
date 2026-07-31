@@ -130,9 +130,27 @@ void vg_draw_pause(void) {
 
     centred(140, "PAUSED", INK_MAX, 5);
 
-    vg_button(PAU_BTN_X, PAU_RESUME_Y, PAU_BTN_W, PAU_BTN_H, "RESUME", true,  true);
-    vg_button(PAU_BTN_X, PAU_QUIT_Y,   PAU_BTN_W, PAU_BTN_H, "QUIT",   false, true);
+    vg_button(PAU_BTN_X, PAU_RESUME_Y, PAU_BTN_W, PAU_BTN_H, "RESUME", true, true);
 
-    centred(370, "QUIT ABANDONS THE TOURNAMENT", INK_FAINT, 1);
-    centred(392, "+/- RESUMES", INK_FAINT, 1);
+    // The second slot is whatever leaving means from here. Out of a match that is
+    // abandoning a tournament; out of the course it is skipping an exercise, and
+    // those do not deserve the same word.
+    //
+    // SKIP is drawn DEAD, not hidden, while the broadcast is still talking. A
+    // button that is missing reads as a game that forgot it; a button that is
+    // visibly not available reads as a rule, and the player can see it become
+    // available rather than discover it by trying.
+    const bool from_course = (vg.pause_from == VG_COURSE);
+    const bool live        = !from_course || !vg.course_briefing;
+
+    vg_button(PAU_BTN_X, PAU_QUIT_Y, PAU_BTN_W, PAU_BTN_H,
+              from_course ? "SKIP" : "QUIT", false, live);
+
+    if (from_course)
+        centred(370, live ? "SKIP RETURNS TO THE TOURNAMENT"
+                          : "SKIP AVAILABLE AFTER THE BRIEFING", INK_FAINT, 1);
+    else
+        centred(370, "QUIT ABANDONS THE TOURNAMENT", INK_FAINT, 1);
+
+    centred(392, "PWR RESUMES", INK_FAINT, 1);
 }

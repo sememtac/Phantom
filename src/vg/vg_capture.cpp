@@ -59,6 +59,8 @@ static uint32_t s_wr_bytes = 0, s_wr_short = 0, s_wr_stall = 0;
 static uint32_t s_band_mismatch = 0;
 static uint32_t s_begins = 0, s_ends = 0;
 
+static uint32_t s_wr_giveups = 0;
+
 void vg_link_write(const void* p, int n) {
     const uint8_t* b = (const uint8_t*)p;
     s_wr_bytes += (uint32_t)n;
@@ -71,7 +73,7 @@ void vg_link_write(const void* p, int n) {
         if (k < (size_t)n) s_wr_short++;
         if (k == 0) {
             s_wr_stall++;
-            if (++spins > 3000) return;      // ~3s, then give up on these bytes
+            if (++spins > 3000) { s_wr_giveups++; return; }  // ~3s, then drop it
             delay(1);
             continue;
         }
@@ -79,7 +81,13 @@ void vg_link_write(const void* p, int n) {
         b += k;
         n -= (int)k;
     }
+    s_wr_giveups = 0;       // a write that completed means somebody is reading
 }
+
+// A host that has stopped reading. Bounding each write was not enough on its own:
+// the session stayed armed, so EVERY frame paid three seconds a band for ever,
+// which is a dead machine rather than a slow one. Two in a row is the host gone.
+static bool link_dead(void) { return s_wr_giveups >= 2; }
 
 void vg_link_stats(uint32_t* bytes, uint32_t* shorts, uint32_t* stalls,
                    uint32_t* mismatch) {
@@ -169,6 +177,19 @@ void vg_capture_poll(void) {
 
 void vg_capture_frame_begin(void) {
     if (!s_mode) return;
+
+    // The host is gone. End the session rather than spending the rest of the run
+    // three seconds a band talking to nobody -- a permanent freeze from the
+    // player's side, and indistinguishable from a crash.
+    //
+    // Replay is left alone: it is driven by the host asking for each frame, so a
+    // host that stopped simply stops asking, and vg_replay has its own timeout.
+    if (link_dead()) {
+        s_mode = 0;
+        s_len  = 0;
+        vg_link_blocking(false);
+        return;
+    }
     s_begins++;
     const uint8_t hdr[4] = { 'P', 'H', 'F', 'R' };
     const uint16_t w = SCR_W, h = SCR_H;

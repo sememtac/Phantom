@@ -130,8 +130,14 @@ void vg_crumb_report(void) {
         s_stall_state = 0;
         s_stall_where = 0;
         if (crash_recall()) {
-            s_crash_valid = 1;
-            Serial.println("crumb: cold start, recovered from flash");
+            // A STORED RECORD IS NOT A STORED CRASH. vg_crumb_reset writes an
+            // all-zero record deliberately, and reading that back as valid
+            // reported "LAST CRASH reason 0, died in boot, frame 0" -- a crash
+            // that never happened, in a place nothing runs, which is exactly the
+            // sort of thing that costs an hour later.
+            s_crash_valid = (s_crash_reason != 0) ? 1u : 0u;
+            Serial.println(s_crash_valid ? "crumb: cold start, crash recovered from flash"
+                                         : "crumb: cold start, flash record is clear");
         } else {
             Serial.println("crumb: cold start");
         }
