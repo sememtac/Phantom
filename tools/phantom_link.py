@@ -11,6 +11,7 @@ the other copy.
 
 import os
 import struct
+import wave
 import threading
 import time
 
@@ -73,6 +74,12 @@ class Desync(Exception):
     pass
 
 
+# Sample rate of the captured audio. This must match VG_AUDIO_RATE in
+# src/vg/vg_port.h. If the two disagree, the sound in the video plays at the
+# wrong speed and nothing reports an error.
+AUDIO_RATE = 22050
+
+
 def reset_board(port, settle=3.0):
     """Pulse the reset line of the device and wait for the device to start.
 
@@ -103,6 +110,7 @@ class PhantomLink:
         self.ser = None
         self._synced = False
         self._blob = 0          # size of the input structure, from the header
+        self.audio = bytearray()    # 16-bit mono samples, from the frames
 
     # -- connection ---------------------------------------------------------
 
@@ -290,6 +298,8 @@ class PhantomLink:
     def read_frame(self):
         """Read one frame as upright RGB888 bytes.
 
+        Audio for the frame collects in self.audio.
+
         Raises Desync if the stream breaks inside a frame. The caller can then
         ask for the next frame."""
         # Synchronise ONCE, then read each tag at its position.
@@ -316,6 +326,12 @@ class PhantomLink:
             if tag == b"PHEN":
                 self._read_exact(4)
                 break
+            if tag == b"PHAU":
+                # The frame's audio. Sent inside the frame, so it stays in step
+                # with the picture.
+                (n,) = struct.unpack("<H", self._read_exact(2))
+                self.audio += self._read_exact(n * 2)
+                continue
             if tag == b"PHBP":
                 # A band with a colour table. Each run is a count and an index,
                 # which is 2 bytes instead of 3.
@@ -588,6 +604,7 @@ class FrameWriter:
         self._fps = fps
         self._pending = []          # frames held while the rate is measured
         self._t0 = None
+        self._audio = bytearray()
 
         if fps is None:
             self.path = None        # decided when the encoder is started
@@ -710,7 +727,41 @@ class FrameWriter:
             except Exception:
                 self._proc.kill()
             self._proc = None
+        if self._audio:
+            self._mux_audio()
         return self.path
+
+    def add_audio(self, samples):
+        """Add 16-bit mono samples for the video. Call once per frame."""
+        self._audio += samples
+
+    def _mux_audio(self):
+        """Write the samples as a WAV, then put them into the video file.
+
+        Two steps, because the video is written while the frames arrive and the
+        audio is not complete until the end. ffmpeg copies the video stream, so
+        the picture is not encoded a second time."""
+        if not self.path:
+            return
+        wav = os.path.splitext(self.path)[0] + ".wav"
+        with wave.open(wav, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(AUDIO_RATE)
+            w.writeframes(bytes(self._audio))
+
+        import subprocess
+        out = os.path.splitext(self.path)[0] + "-av.mp4"
+        cmd = ["ffmpeg", "-y", "-loglevel", "error",
+               "-i", self.path, "-i", wav,
+               "-c:v", "copy", "-c:a", "aac", "-b:a", "96k",
+               "-shortest", out]
+        try:
+            subprocess.run(cmd, check=True)
+        except Exception as e:
+            print(f"audio mux failed: {e}")
+            return
+        self.path = out
 
 
 def subsample_ppm(rgb, w, h, out_w):

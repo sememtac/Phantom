@@ -55,6 +55,10 @@ void vg_link_write(const void* p, int n);
 // Let writes block, or not. On for the duration of a session only.
 void vg_link_blocking(bool on);
 
+// Put this frame's audio into the capture stream. Called once per frame with
+// whatever the mixer produced, and does nothing unless a capture is running.
+void vg_capture_audio(const int16_t* samples, int n);
+
 // What the write path actually did. `bytes` is what was handed to it; if the
 // host received fewer than this, the loss happened after the device, which is
 // the only way to tell the two apart.

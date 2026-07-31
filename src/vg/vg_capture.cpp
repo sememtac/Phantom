@@ -349,9 +349,37 @@ void vg_capture_band(int y, int h, const uint16_t* px) {
     if (emitted != runs) s_band_mismatch++;
 }
 
+// Audio rides INSIDE the frame, as one more chunk the host dispatches on, and it
+// is held here until the frame closes rather than written when it arrives.
+//
+// The mixer runs before vg_rast_flush, which is where the frame is opened and
+// closed -- so writing on arrival put the chunk between one frame's end tag and
+// the next frame's header, where the host is looking for 'PHFR', finds 'PHAU',
+// and rescans. The frames survived that and the audio was silently discarded,
+// every frame, with nothing reporting a problem.
+static int16_t s_au[512];
+static int     s_au_n = 0;
+
+void vg_capture_audio(const int16_t* samples, int n) {
+    if (!s_mode || n <= 0) return;
+    if (n > (int)(sizeof(s_au) / sizeof(s_au[0]))) n = (int)(sizeof(s_au) / sizeof(s_au[0]));
+    memcpy(s_au, samples, (size_t)n * 2);
+    s_au_n = n;
+}
+
 void vg_capture_frame_end(void) {
     if (!s_mode) return;
     s_ends++;
+
+    if (s_au_n > 0) {
+        const uint8_t ahdr[4] = { 'P', 'H', 'A', 'U' };
+        const uint16_t count = (uint16_t)s_au_n;
+        put(ahdr, 4);
+        put(&count, 2);
+        put(s_au, s_au_n * 2);
+        s_au_n = 0;
+    }
+
     const uint8_t hdr[4] = { 'P', 'H', 'E', 'N' };
     put(hdr, 4);
     put(&s_index, 4);

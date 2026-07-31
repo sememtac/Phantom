@@ -2,6 +2,8 @@
 #include "vg_synth.h"
 #include "vg_port.h"
 #include "vg_game.h"
+#include "vg_capture.h"
+#include "vg_replay.h"
 
 // ===========================================================================
 // THE CATALOGUE
@@ -199,8 +201,11 @@ void vg_sfx_flatline(bool on) {
     vg_synth_flatline(on);
 }
 
-void vg_sfx_update(void) {
-    int n = vg_audio_due();
+void vg_sfx_update(float dt) {
+    // Simulated time while a replay renders, wall time otherwise. See vg_sfx.h.
+    int n = (vg_replay_mode() == VG_RP_PLAY)
+          ? (int)(dt * (float)VG_AUDIO_RATE + 0.5f)
+          : vg_audio_due();
     if (n <= 0) return;
     if (n > 512) n = 512;               // a frame's worth is ~370; cap the burst
 
@@ -209,6 +214,15 @@ void vg_sfx_update(void) {
     // The player's setting, squared: a linear volume slider spends most of its
     // travel doing very little, because loudness is not linear and a slider that
     // behaves as if it were feels broken at the bottom.
-    vg_synth_render(buf, n, vg.vol_sfx * vg.vol_sfx);
+    // Recorded at FULL level, not at the player's setting. A capture is the game
+    // as it sounds, and baking somebody's volume slider into a recording is the
+    // kind of thing nobody notices until the file is the only copy left.
+    vg_synth_render(buf, n, 1.0f);
+    vg_capture_audio(buf, n);
+
+    if (vg.vol_sfx < 0.999f) {
+        const float mix = vg.vol_sfx * vg.vol_sfx;
+        for (int i = 0; i < n; i++) buf[i] = (int16_t)((float)buf[i] * mix);
+    }
     vg_audio_write(buf, n);
 }

@@ -218,3 +218,24 @@ step is very slow.
 You need `ffmpeg` on the PATH to write mp4 files. Without `ffmpeg`, the tools
 write a sequence of PPM files, and another program can convert them later. The
 `.exe` file contains all three.
+
+## Sound
+
+The video contains the sound. The device sends the samples inside each frame,
+and the tool writes them into the file. The result is `<name>-av.mp4`. The
+`.wav` and the silent `.mp4` stay next to it.
+
+The device makes the sound; the tool does not. There is no second copy of the
+synthesiser on this computer, so the recording is what the speaker played.
+
+Two things must agree:
+
+- `AUDIO_RATE` in `phantom_link.py` and `VG_AUDIO_RATE` in `src/vg/vg_port.h`.
+  If they differ, the sound plays at the wrong speed. Nothing reports an error.
+- The recording must be a REPLAY. During a replay the device makes one frame of
+  sound for each frame of picture. It does not use the clock, because the frames
+  arrive as fast as the link allows and the clock would stretch the sound
+  against its own picture.
+
+The recorded sound is at full level. The volume setting in the game does not
+change it, so a recording is not quiet because somebody moved a slider.

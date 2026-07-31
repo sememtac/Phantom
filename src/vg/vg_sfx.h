@@ -58,4 +58,11 @@ void vg_sfx_flatline(bool on);
 // Generate and hand over whatever the output will take. Called once a frame, and
 // deliberately not from a task: the mixer is cheap, and a frame that is late has
 // bigger problems than a gap in the audio.
-void vg_sfx_update(void);
+//
+// `dt` is the frame's simulated length, and it matters only while a replay is
+// rendering. Live, the mixer follows the clock -- 22050 samples a second, however
+// long the frame took. Rendering, the frames come as fast as the link allows and
+// wall time means nothing, so it follows the SIMULATION instead and produces
+// exactly one frame's worth. Otherwise the captured audio is stretched against
+// its own picture by whatever the link happened to be doing.
+void vg_sfx_update(float dt);
