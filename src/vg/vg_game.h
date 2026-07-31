@@ -411,6 +411,7 @@ struct VgGame {
     // vg_course_update.
     bool        course_briefing;
     float       course_wait;
+    float       course_greet;   // until the briefing starts
 
     // What PAUSE suspended. Pause is reachable from more than one state now, so
     // resuming has to put the player back where they were rather than assuming a

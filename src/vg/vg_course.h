@@ -35,6 +35,13 @@
 // course is a motor test, and the first thing to learn is what the stick does.
 #define COURSE_SETTLE      2.5f
 
+// Quiet between arriving and being spoken to. The transition, the panel coming
+// up and the broadcast's opening line all landed together -- three things asking
+// for attention in the same second, and no way to attend to any of them. Long
+// enough for the set to finish striking and the instruments to settle, so the
+// greeting arrives at somebody who is already sitting down.
+#define COURSE_GREET       2.2f
+
 void vg_course_begin(void);
 // Streak back to zero and a fresh gate, without restarting the run. Used after a
 // crash, which costs the streak and nothing else.

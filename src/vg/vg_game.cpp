@@ -142,11 +142,10 @@ static void ift_pop(bool opens_run) {
     vg.ift_line = s_ift_q[s_ift_i];
     vg.ift_t    = s_ift_hold[s_ift_i];
     vg.ift_mark = opens_run;
-    // The jingle heralds an ANNOUNCEMENT, not a line. It goes with the badge and
-    // for the same reason: both answer "somebody has started talking", and a
-    // three-line briefing that chimed before every line would be three
-    // announcements as far as the ear is concerned.
-    if (opens_run) vg_sfx_play(SFX_IFT, 1.0f);
+    // EVERY line is announced, because every line is a system message. The
+    // opener gets the full double beat and the lines continuing it get the short
+    // form -- the distinction the badge draws visually, drawn again by ear.
+    vg_sfx_play(SFX_IFT, opens_run ? 1.0f : 0.5f);
     s_ift_i++;
 }
 
@@ -258,7 +257,12 @@ void vg_clear_player_hit(void) { s_player_hit = false; }
 // round is decided, and a win must not be taken back after the fact.
 void vg_kill_player(void) {
     if (vg.state == VG_KILL) return;
+    // BOTH. The hull cue carries the panel's damage beeps, and dying is the one
+    // moment they most belong -- a collision comes straight through here without
+    // ever touching vg_damage_player, so the loudest thing that can happen to the
+    // player was also the quietest thing on the panel.
     vg_sfx_play(SFX_EXPLODE, 0.8f);
+    vg_sfx_play(SFX_HIT, 1.0f);
     vg.health        = 0.0f;
     vg.hit_flash     = 0.6f;
     vg.damage_glitch = DAMAGE_GLITCH;

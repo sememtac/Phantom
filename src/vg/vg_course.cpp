@@ -59,7 +59,10 @@ void vg_course_begin(void) {
     vg.course_briefing = true;
     vg.course_wait     = COURSE_SETTLE;
 
-    vg_ift_line(IFT_COURSE_START);
+    // NOT YET. The set is still striking, the panel is still coming up and the
+    // player has just been dropped into a seat -- three things arriving at once
+    // with the broadcast talking over all of them. It waits; see COURSE_GREET.
+    vg.course_greet = COURSE_GREET;
 }
 
 void vg_course_reset_streak(void) {
@@ -72,6 +75,12 @@ void vg_course_reset_streak(void) {
 }
 
 void vg_course_update(float dt) {
+    // The briefing, once the arriving has finished happening.
+    if (vg.course_greet > 0.0f) {
+        vg.course_greet -= dt;
+        if (vg.course_greet <= 0.0f) vg_ift_line(IFT_COURSE_START);
+    }
+
     // Finished. No more gates -- without this the run's last frame sets
     // ring_alive false and the very next one puts a fresh gate up, in the middle
     // of the beat that is supposed to be the end of it.
@@ -83,7 +92,15 @@ void vg_course_update(float dt) {
         // immediately -- a pass or a miss also posts a line, and holding the next
         // gate for that would put six seconds of nothing between every attempt.
         if (vg.course_briefing) {
-            if (vg_ift_busy()) { vg.course_wait = COURSE_SETTLE; return; }
+            // The greeting has not started yet counts as still talking. Without
+            // this the settle timer runs during the pause BEFORE the briefing,
+            // expires, and puts a gate up exactly as the broadcast begins --
+            // which is the thing the briefing gate exists to prevent, arriving
+            // by a different door.
+            if (vg_ift_busy() || vg.course_greet > 0.0f) {
+                vg.course_wait = COURSE_SETTLE;
+                return;
+            }
             vg.course_wait -= dt;
             if (vg.course_wait > 0.0f) return;
             vg.course_briefing = false;

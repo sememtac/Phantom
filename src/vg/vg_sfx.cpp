@@ -234,13 +234,19 @@ void vg_sfx_play(SfxId id, float pitch) {
         // be the hull failing -- something that keeps happening after it starts.
         // The judder runs through the whole of it, which is what a held note
         // buys that a decaying one cannot.
-        // Lower again: 130 Hz down to 92, and the note under it from 34 to 26.
-        voice_set(v, W_SQUARE, 26.0f, 11.0f, 1.50f, 0.004f, 1.00f, 92.0f);
-        v->sustain = 0.34f;
+        // PITCHED AGAINST THE ENGINE, deliberately: the drive sits at 29-50 Hz
+        // under a 198 Hz filter, and this sits just above both. Chasing it ever
+        // downward was wrong -- at 26 Hz under a 92 Hz filter almost nothing was
+        // leaving the driver, and what did was the beeps, which is why the cue
+        // kept being reported as high no matter how far the note fell.
+        //
+        // Two seconds now. It is meant to outlast the moment that caused it.
+        voice_set(v, W_SQUARE, 66.0f, 28.0f, 2.00f, 0.004f, 1.00f, 240.0f);
+        v->sustain = 0.40f;
         v->mod_hz  = 11.0f; v->mod_depth = 0.75f;
         Voice* rasp = grab();
         if (rasp && rasp != v) {
-            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.55f, 0.002f, 0.16f, 150.0f);
+            voice_set(rasp, W_NOISE, 0.0f, 0.0f, 0.60f, 0.002f, 0.16f, 300.0f);
             rasp->sustain = 0.30f;
             rasp->mod_hz  = 11.0f; rasp->mod_depth = 0.6f;
         }
@@ -253,13 +259,17 @@ void vg_sfx_play(SfxId id, float pitch) {
         // small the bottom end is barely there -- so what sells the weight is
         // something bright and thin sitting above it and losing. The systems
         // reporting damage while the airframe answers underneath.
-        static const float beep_at[4] = { 0.02f, 0.13f, 0.24f, 0.35f };
-        static const float beep_g [4] = { 0.30f, 0.22f, 0.15f, 0.09f };
+        // 1320 Hz was too high and too close together: it did not read as four
+        // beeps over a groan, it read as the whole cue being bright. 700 Hz and
+        // nearly three times the spacing, so they are heard as separate events
+        // sitting above the airframe rather than as part of its timbre.
+        static const float beep_at[4] = { 0.06f, 0.24f, 0.42f, 0.60f };
+        static const float beep_g [4] = { 0.32f, 0.24f, 0.16f, 0.09f };
         for (int i = 0; i < 4; i++) {
             Voice* b = grab();
             if (!b || b == v) break;
-            voice_set(b, W_SQUARE, 1320.0f, 1320.0f, 0.055f, 0.002f,
-                      beep_g[i], 6000.0f);
+            voice_set(b, W_SQUARE, 700.0f, 700.0f, 0.07f, 0.002f,
+                      beep_g[i], 3200.0f);
             b->delay = beep_at[i];
         }
         break;
@@ -311,10 +321,16 @@ void vg_sfx_play(SfxId id, float pitch) {
     // Deliberately the HIGHEST thing in the mix. Everything else has been pushed
     // down for the tournament's weight; this one has to come over the top of all
     // of it, because it is the only voice in the game that is not in the room.
+    // `pitch` below 1 asks for the SHORT form: one pair instead of two. Every
+    // line the broadcast speaks is announced, but a three-line briefing that
+    // played the full double beat three times would be three announcements as
+    // far as the ear is concerned. The opener gets the whole thing; the lines
+    // that continue it get the tail of it.
     case SFX_IFT: {
+        const int pairs = (pitch < 1.0f) ? 2 : 4;
         static const float note[4] = { 1046.0f, 740.0f, 1046.0f, 740.0f };
         static const float when[4] = { 0.00f,   0.11f,  0.30f,   0.41f  };
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < pairs; i++) {
             Voice* n = (i == 0) ? v : grab();
             if (!n) break;
             if (i > 0 && n == v) break;
