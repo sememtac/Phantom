@@ -95,6 +95,17 @@ void setup(void) {
     // Non-fatal like the rest. A silent game is a lesser game; a game that
     // refuses to boot because a codec did not answer is a broken one.
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
+
+#if VG_AUDIO_CHIRP
+    // TEMP: a death. Static, the tone settling out from under it, held, then let
+    // go -- which is the whole shape and cannot be judged from any part of it.
+    {
+        vg_sfx_flatline(true);
+        for (int k = 0; k < 550; k++) { vg_sfx_update(); delay(10); }
+        vg_sfx_flatline(false);
+        for (int k = 0; k < 150; k++) { vg_sfx_update(); delay(10); }
+    }
+#endif
     vg_pmu_dump();
 
     vg_input_init();

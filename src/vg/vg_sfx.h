@@ -29,6 +29,7 @@ enum SfxId : unsigned char {
     SFX_READY,           // the cockpit coming up: systems online
     SFX_IFT,             // the broadcast, about to say something
     SFX_IFT_SHORT,       // ...and continuing to
+    SFX_DEATH_STATIC,    // the signal going, before the flatline settles
     SFX_COUNT
 };
 

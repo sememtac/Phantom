@@ -139,13 +139,17 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
 
     // Per-sample smoothing constant for the engine level. Slow enough that
     // slamming the throttle is a swell rather than a step.
-    const float eng_k = 1.0f - expf(-dt * 3.0f);
+    const float eng_k  = 1.0f - expf(-dt * 3.0f);
+    const float flat_k = 1.0f - expf(-dt * 1.1f);
 
     for (int n = 0; n < room; n++) {
         float acc = 0.0f;
 
         // --- somebody is dead ----------------------------------------------
-        s_flat_lvl += (s_flat_want - s_flat_lvl) * eng_k;
+        // Slower than the engine's ramp, deliberately: the tone should emerge
+        // from under the static rather than start with it. Roughly a second to
+        // settle, which is about as long as the noise in front of it lasts.
+        s_flat_lvl += (s_flat_want - s_flat_lvl) * flat_k;
         if (s_flat_lvl > 0.0005f) {
             s_flat_ph += 988.0f * dt;
             if (s_flat_ph >= 1.0f) s_flat_ph -= (float)(int)s_flat_ph;
@@ -153,7 +157,11 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
             // signal; the edge is what makes it an instrument in a room.
             const float sn = sinf(s_flat_ph * 6.2831853f);
             const float sq = (s_flat_ph < 0.5f) ? 1.0f : -1.0f;
-            acc += (sn * 0.82f + sq * 0.18f) * s_flat_lvl * 0.26f;
+            // QUIET. 0.26 down to 0.115 -- this is not an alarm demanding
+            // anything, it is a reading nobody is going to act on, and a faint
+            // one you have to notice is worse to sit with than a loud one you
+            // are being told to react to.
+            acc += (sn * 0.82f + sq * 0.18f) * s_flat_lvl * 0.115f;
         }
 
         // --- the airframe --------------------------------------------------

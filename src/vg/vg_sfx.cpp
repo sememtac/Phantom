@@ -141,6 +141,17 @@ static const SynthLayer L_IFT_SHORT[] = {
     { SW_SQUARE,  740,   740,   0.10f,  0.004f,  0,     0.30f, 5200,  0.11f,   0,  0 },
 };
 
+static const SynthLayer L_DEATH_STATIC[] = {
+    // THE SIGNAL GOING. Static first, then the tone settling out from under it --
+    // the flatline arriving rather than being switched on, which is the
+    // difference between a monitor reporting and a monitor being audible.
+    //
+    // Two layers because one band of noise is a hiss and two is a transmission
+    // failing: something bright breaking up over something duller collapsing.
+    { SW_NOISE,     0,     0,   0.55f,  0.010f,  0.20f, 0.34f, 5200,  0,       0,  0 },
+    { SW_NOISE,     0,     0,   0.85f,  0.020f,  0.10f, 0.22f, 1100,  0.06f,   0,  0 },
+};
+
 struct SfxDef { const SynthLayer* layers; int n; };
 #define CUE(a) { a, (int)(sizeof(a) / sizeof((a)[0])) }
 
@@ -158,6 +169,7 @@ static const SfxDef SFX[SFX_COUNT] = {
     CUE(L_READY),
     CUE(L_IFT),
     CUE(L_IFT_SHORT),
+    CUE(L_DEATH_STATIC),
 };
 
 // ---------------------------------------------------------------------------
@@ -177,7 +189,15 @@ void vg_sfx_play(SfxId id, float pitch) {
 }
 
 void vg_sfx_engine(bool on, float throttle) { vg_synth_engine(on, throttle); }
-void vg_sfx_flatline(bool on)                { vg_synth_flatline(on); }
+// The static is fired on the EDGE, here rather than in the synth, because it is a
+// cue and cues live in this file. The tone that follows is held, and the two
+// together are one event: the signal breaking up, and then what is left.
+void vg_sfx_flatline(bool on) {
+    static bool was = false;
+    if (on && !was) vg_sfx_play(SFX_DEATH_STATIC, 1.0f);
+    was = on;
+    vg_synth_flatline(on);
+}
 
 void vg_sfx_update(void) {
     int n = vg_audio_due();
