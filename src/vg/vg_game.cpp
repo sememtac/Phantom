@@ -432,6 +432,12 @@ void vg_game_init(void) {
     vg_sky_init();
     vg_sky_generate(SKY_MENU, vg_replay_rand());   // we boot straight into the menu
 
+    // Set directly, and the only place left that does. This is not an arrival:
+    // the sky was built four lines up, and vg_state_go would run enter_attract
+    // and build a second one. That costs a draw from the seeded stream, which
+    // is not a cosmetic difference -- it is every venue and every opponent in
+    // the tournament shifting by one, and a recorded session no longer meaning
+    // what it meant.
     vg.state       = VG_ATTRACT;
     vg.cam_zoom    = 1.0f;
     vg.credits     = CREDIT_START;
@@ -489,8 +495,6 @@ void vg_match_start(void) {
     for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
 
-    vg.state       = VG_INTRO;
-    vg.state_t     = 0;
     vg.ring_alive  = false;      // no gate follows the player into a round
     // Every round is its own broadcast, so the announcer's one-shot flags clear
     // here rather than at boot. Clearing them at boot only would have introduced
@@ -1054,9 +1058,6 @@ static void enter_attract(void) {
     vg.locked      = false;
     vg.hit_flash   = 0;
     vg.shake       = 0;
-
-    vg.state   = VG_ATTRACT;
-    vg.state_t = 0;
 }
 
 // Every menu state flies the same idle scene underneath, so the tournament map
@@ -1101,8 +1102,6 @@ static void enter_course(void) {
     // is a place now, at a fixed bearing, found by turning towards it.
     vg_sky_generate(SKY_COURSE, vg_replay_rand());
     vg_course_begin();
-    vg.state    = VG_COURSE;
-    vg.state_t  = 0;
     vg.roll      = 0;
     vg.roll_rate = 0;
     vg.bank      = 0;
@@ -1121,15 +1120,18 @@ static void enter_bracket(void) {
     use_menu_sky();
     vg.ring_alive = false;
     vg_bracket_focus_player();
-    vg.state   = VG_BRACKET;
-    vg.state_t = 0;
 }
 
 // ---------------------------------------------------------------------------
 // THE STATES
 //
-// One row each. What a state is, what it is called, whether arriving at it is a
-// cut on the broadcast, and what has to be true before it can be flown.
+// One row each: what a state is called, what it is, and what arriving at it
+// sets up.
+//
+// There is no column for "arriving here cuts through the set". There was, and
+// it was wrong: the tournament table is arrived at instantly from the repair
+// screen and from the end of a round, and on a cut from the course and from the
+// pause menu. A cut belongs to the edge, and the caller says so.
 //
 // The point of the table is not tidiness. It is that a state's properties are
 // declared ONCE. They used to be spread over five hand-kept lists in four
@@ -1148,31 +1150,30 @@ static void enter_bracket(void) {
 struct VgStateDef {
     const char* name;
     uint8_t     flags;
-    bool        broadcast;    // arriving cuts through the set
     void      (*enter)(void); // may be null: not every state sets anything up
 };
 
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
 static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU,                          true,  enter_attract   },
-    { "ENTRY",     VGS_MENU,                          false, nullptr         },
-    { "SELECT",    VGS_MENU,                          false, nullptr         },
-    { "REPAIR",    VGS_MENU,                          false, nullptr         },
-    { "BRACKET",   VGS_MENU,                          true,  enter_bracket   },
-    { "INTRO",     VGS_MENU,                          true,  vg_match_start  },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT,false, nullptr         },
-    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT,false, nullptr         },
+    { "ATTRACT",   VGS_MENU,                           enter_attract   },
+    { "ENTRY",     VGS_MENU,                           nullptr         },
+    { "SELECT",    VGS_MENU,                           nullptr         },
+    { "REPAIR",    VGS_MENU,                           nullptr         },
+    { "BRACKET",   VGS_MENU,                           enter_bracket   },
+    { "INTRO",     VGS_MENU,                           vg_match_start  },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr         },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr         },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
     // would be the loudest thing about it.
-    { "KILL",      VGS_ENGINE,                        false, nullptr         },
+    { "KILL",      VGS_ENGINE,                         nullptr         },
     // Nothing. A pause is not a place -- it suspends one.
-    { "PAUSE",     0,                                 false, nullptr         },
-    { "COURSE",    VGS_LIVE | VGS_ENGINE,             true,  enter_course    },
-    { "ROUND_WON", VGS_MENU,                          false, nullptr         },
-    { "OVER",      VGS_MENU,                          false, nullptr         },
-    { "WON",       VGS_MENU,                          false, nullptr         },
+    { "PAUSE",     0,                                  nullptr         },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course    },
+    { "ROUND_WON", VGS_MENU,                           nullptr         },
+    { "OVER",      VGS_MENU,                           nullptr         },
+    { "WON",       VGS_MENU,                           nullptr         },
 };
 
 static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
@@ -1201,7 +1202,13 @@ void vg_state_go(VgState to) {
     if (d->enter) d->enter();
 }
 
-void vg_tv_go(TvAction a) {
+void vg_state_resume(VgState to) {
+    if ((int)to >= VG_STATE_COUNT) return;
+    vg.state   = to;
+    vg.state_t = 0.0f;
+}
+
+void vg_state_cut(VgState to) {
     if (vg.tv_phase != TV_NONE) return;   // one transition at a time
     // THE SHIP IS OFF BEFORE THE PICTURE IS. Gating the per-frame sources below
     // stops them being asked for again, but it cannot retract what is already
@@ -1211,22 +1218,19 @@ void vg_tv_go(TvAction a) {
     vg_sfx_silence();
     vg_sfx_play(SFX_TV_OFF, 1.0f);
     vg.tv_phase = TV_OUT;
-    vg.tv_act   = (uint8_t)a;
+    vg.tv_to    = (uint8_t)to;
     vg.tv_t     = 0.0f;
 }
 
-// Runs at the JOIN, with the screen black. Everything a transition target needs
-// set up happens here rather than at the button, so the old scene is never the
-// one the aperture opens back onto.
+// Runs at the JOIN, with the screen black. The set-up a state needs happens here
+// rather than at the button, so the old scene is never the one the aperture
+// opens back onto.
+//
+// It used to be a switch with a case for each destination, each calling that
+// destination's set-up. There is nothing left to switch on: the far side of a
+// cut is a state, and entering a state is one thing.
 static void tv_join(void) {
-    switch ((TvAction)vg.tv_act) {
-    case TVA_MATCH:   vg_match_start(); break;
-    case TVA_COURSE:  enter_course();   break;
-    case TVA_BRACKET: enter_bracket(); break;
-    case TVA_ATTRACT: enter_attract();  break;
-    case TVA_NONE:    break;
-    }
-    vg.tv_act = TVA_NONE;
+    vg_state_go((VgState)vg.tv_to);
 }
 
 static void tv_update(float dt) {
@@ -1370,14 +1374,13 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.pause_page) {
                 vg.pause_page = 0;
             } else {
-                vg.state   = (vg.pause_from == VG_COURSE) ? VG_COURSE : VG_PLAYING;
-                vg.state_t = 0;
+                vg_state_resume((vg.pause_from == VG_COURSE) ? VG_COURSE
+                                                            : VG_PLAYING);
             }
         } else if (flying) {
             vg.pause_from = (vg.state == VG_COURSE) ? VG_COURSE : VG_PLAYING;
             vg.pause_page = 0;
-            vg.state      = VG_PAUSE;
-            vg.state_t    = 0;
+            vg_state_go(VG_PAUSE);
         }
     }
 
@@ -1428,8 +1431,7 @@ void vg_game_update(float dt, const VgInput* in) {
 #endif
         if (tap_up) {
             vg_entry_reset();
-            vg.state   = VG_ENTRY;
-            vg.state_t = 0;
+            vg_state_go(VG_ENTRY);
         }
         break;
     }
@@ -1437,18 +1439,14 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_ENTRY: {
         menu_world(dt);
         if (vg_entry_update(in, tap_up, tap_x, tap_y)) {
-            vg.state   = VG_SELECT;
-            vg.state_t = 0;
+            vg_state_go(VG_SELECT);
         }
         break;
     }
 
     case VG_REPAIR: {
         menu_world(dt);
-        if (vg_repair_update(in, tap_up, tap_x, tap_y)) {
-            vg.state   = VG_BRACKET;
-            vg.state_t = 0;
-        }
+        if (vg_repair_update(in, tap_up, tap_x, tap_y)) vg_state_go(VG_BRACKET);
         break;
     }
 
@@ -1468,7 +1466,7 @@ void vg_game_update(float dt, const VgInput* in) {
                 // they actually picked.
                 vg_tournament_begin(vg.ship);
                 vg_bracket_focus_player();
-                vg_tv_go(TVA_COURSE);
+                vg_state_cut(VG_COURSE);
             }
         }
         break;
@@ -1505,8 +1503,7 @@ void vg_game_update(float dt, const VgInput* in) {
             for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive = false;
             vg_spawn_opponent();
 
-            vg.state    = VG_PLAYING;
-            vg.state_t  = 0;
+            vg_state_go(VG_PLAYING);
             vg.hud_boot = HUD_BOOT_TIME;
     vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
             vg.roll     = 0;
@@ -1542,7 +1539,7 @@ void vg_game_update(float dt, const VgInput* in) {
         // kill does -- see COURSE_DONE_BEAT.
         if (vg.course_done) {
             vg.course_end_t += dt;
-            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(TVA_BRACKET);
+            if (vg.course_end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
         }
 
 
@@ -1566,8 +1563,7 @@ void vg_game_update(float dt, const VgInput* in) {
         }
         if (vg.state_t > KILL_BEAT) {
             award_purse();
-            vg.state   = VG_ROUND_WON;
-            vg.state_t = 0;
+            vg_state_go(VG_ROUND_WON);
         }
         break;
     }
@@ -1577,13 +1573,12 @@ void vg_game_update(float dt, const VgInput* in) {
         if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
         if (tap_up) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
-                vg_tv_go(TVA_MATCH);
+                vg_state_cut(VG_INTRO);
             } else if (vg_bracket_course_at(tap_x, tap_y)) {
-                vg_tv_go(TVA_COURSE);
+                vg_state_cut(VG_COURSE);
             } else if (vg_bracket_repair_at(tap_x, tap_y)) {
                 vg_repair_reset();
-                vg.state   = VG_REPAIR;
-                vg.state_t = 0;
+                vg_state_go(VG_REPAIR);
             }
         }
         break;
@@ -1617,8 +1612,7 @@ void vg_game_update(float dt, const VgInput* in) {
         if (tap_up) {
             switch (vg_pause_item_at(tap_x, tap_y, from_course)) {
             case PAUSE_RESUME:
-                vg.state   = back;
-                vg.state_t = 0;
+                vg_state_resume(back);
                 break;
             case PAUSE_AUDIO:
                 vg.pause_page = 1;
@@ -1626,10 +1620,10 @@ void vg_game_update(float dt, const VgInput* in) {
             case PAUSE_SKIP:
                 // Refused while the briefing runs: the player may pause over it,
                 // read it and think about it, but not walk out of it.
-                if (!vg.course_briefing) vg_tv_go(TVA_BRACKET);
+                if (!vg.course_briefing) vg_state_cut(VG_BRACKET);
                 break;
             case PAUSE_QUIT:
-                vg_tv_go(TVA_ATTRACT);
+                vg_state_cut(VG_ATTRACT);
                 break;
             default: break;
             }
@@ -1641,18 +1635,17 @@ void vg_game_update(float dt, const VgInput* in) {
         menu_world(dt);
         if (vg.state_t > 2.4f) {
             vg_tourney_resolve(true);
-            // Back out of combat, so back to the menu sky -- the bracket and
-            // the repair screen are not a fight.
-            use_menu_sky();
             if (vt.complete) {
                 vg.champion = true;
-                vg.state    = VG_WON;
+                // Back out of combat, so back to the menu sky. The bracket
+                // gets this from enter_bracket; the winner's card does not
+                // pass through it.
+                use_menu_sky();
+                vg_state_go(VG_WON);
                 vg_save_store();      // the name sticks from here on
             } else {
-                vg_bracket_focus_player();
-                vg.state = VG_BRACKET;
+                vg_state_go(VG_BRACKET);
             }
-            vg.state_t = 0;
         }
         break;
     }
@@ -1723,8 +1716,7 @@ void vg_game_update(float dt, const VgInput* in) {
             // a loss: you died, so you do not advance, regardless of whether the
             // opponent went down in the same frame.
             if (vg_player_was_hit()) {
-                vg.state   = (vg.health > 0.0f) ? VG_HIT : VG_OVER;
-                vg.state_t = 0;
+                vg_state_go((vg.health > 0.0f) ? VG_HIT : VG_OVER);
                 if (vg.state == VG_OVER) {
                     // Your own ship, left drifting just ahead of the camera.
                     // There is no third-person view in a renderer where the
@@ -1776,12 +1768,10 @@ void vg_game_update(float dt, const VgInput* in) {
                 // Not straight to the scorecard. They are still talking, and
                 // cutting to a purse over the top of a dying pilot is the whole
                 // difference between a tournament and a spreadsheet.
-                vg.state   = VG_KILL;
-                vg.state_t = 0;
+                vg_state_go(VG_KILL);
             }
         } else if (vg.state_t > 1.2f) {
-            vg.state   = VG_PLAYING;
-            vg.state_t = 0;
+            vg_state_go(VG_PLAYING);
         }
         break;
     }
@@ -1806,7 +1796,7 @@ void vg_game_update(float dt, const VgInput* in) {
         vg.shake_y += vg_frand(-3.4f, 3.4f);
 
         // Knocked out is knocked out: back to the main menu, not a restart.
-        if (vg.state_t > 2.2f && tap_up) { vg_cine_clear(); vg_tv_go(TVA_ATTRACT); }
+        if (vg.state_t > 2.2f && tap_up) { vg_cine_clear(); vg_state_cut(VG_ATTRACT); }
         break;
     }
     }

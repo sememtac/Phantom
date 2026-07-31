@@ -195,13 +195,14 @@ enum TvPhase : uint8_t {
 
 // What to do at the join. A plain target state is not enough -- every one of
 // these carries setup that has to run at the moment of the switch.
-enum TvAction : uint8_t {
-    TVA_NONE = 0,
-    TVA_MATCH,     // into the launch cutscene
-    TVA_COURSE,    // into the ring course
-    TVA_BRACKET,   // back out to the tournament map
-    TVA_ATTRACT    // back out to the title
-};
+// What the transition arrives at is simply a state, held in `tv_to`.
+//
+// It used to be a TvAction: four named destinations, each with a case in the
+// join that did that destination's set-up. So a state could only be reached
+// through the set if somebody had added an action for it, and the set-up for
+// arriving there lived in the transition rather than in the state. Both of
+// those are gone -- the join now just enters the state, and any state can be
+// the far side of a cut.
 
 #define TV_OUT_TIME 0.40f
 // Dead air. Without it the set goes out and comes straight back, and the turning
@@ -475,7 +476,7 @@ struct VgGame {
 
     // The set turning on and off, between the menus and the game.
     uint8_t     tv_phase;    // TvPhase
-    uint8_t     tv_act;      // TvAction, performed at the join
+    uint8_t     tv_to;       // VgState, entered at the join
     float       tv_t;
 
     // --- ring course -------------------------------------------------------
@@ -579,7 +580,24 @@ void vg_match_start(void);
 void vg_state_go(VgState to);
 // Begin a broadcast transition. The action is performed at the join, while the
 // screen is black; see the TvPhase note above.
-void vg_tv_go(TvAction a);
+// --- changing state ---------------------------------------------------------
+//
+// Three verbs, because there are three different things being done and they
+// were previously told apart by which lines the author wrote out at the site.
+//
+// WHETHER A CHANGE CUTS THROUGH THE SET IS A PROPERTY OF THE EDGE, NOT OF THE
+// DESTINATION. It was briefly modelled as a column on the state, which is wrong
+// and the code says so plainly: the tournament table is arrived at instantly
+// from the repair screen and from the end of a round, and on a cut from the
+// course and from the pause menu. Same destination, four callers, two
+// behaviours. So the caller says which.
+void vg_state_go(VgState to);      // now: enter it, and run its set-up
+void vg_state_cut(VgState to);     // through the set, then the same at the join
+
+// Coming back from a suspension, which is NOT an arrival: the state was never
+// left. It is not entered again and its set-up does not run -- re-entering
+// VG_COURSE here would rebuild the course the player is sitting in.
+void vg_state_resume(VgState to);
 
 void vg_game_select_ship(ShipClass c);
 
