@@ -1,4 +1,5 @@
 #include "vg_render.h"
+#include "vg_sky.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_screens.h"
@@ -92,6 +93,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // grows -- there is nothing to reacquire.
     const bool rear_view = vg.rear_view;
     cam.rear = rear_view;
+
+    // The backdrop is filled during the band flush, long after this, and has no
+    // camera to consult -- so it is told. Only the main window: the patch is
+    // backed with INK_WELL and never shows sky.
+    vg_sky_set_rear(rear_view);
 
     // How red the whole picture goes. Decided here because this is the layer that
     // knows both the wall distance and the rasteriser; the rasteriser itself has

@@ -70,5 +70,9 @@ void vg_sky_generate(SkyKind kind, uint32_t seed);
 // Advance the backdrop by this frame's rotation. Angles in radians.
 void vg_sky_step(float d_pitch, float d_yaw, float bank);
 
+// Turn the backdrop to match a camera looking aft. The backdrop is not geometry
+// and never passes through the camera, so it has to be told.
+void vg_sky_set_rear(bool on);
+
 // Fill one band from the texture. Replaces the memset entirely.
 void vg_sky_fill_band(uint16_t* band, int band_y0);

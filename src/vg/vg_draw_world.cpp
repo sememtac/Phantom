@@ -61,13 +61,25 @@ static void draw_motes(const VgCam& cam) {
     // primitives once it thickens, and there is no such thing as a visible
     // stair-step on a two-pixel speck moving at 460 units a second.
     vg_line_aa_mode(false);
+    // THE FIELD IS NOT TURNED, and that is not a shortcut. Motes spawn between
+    // z 450 and 950 ahead and are recycled at MOTE_CULL_Z, fifty units after
+    // they pass -- so there is no dust behind the ship at all, and a turned
+    // camera correctly showed an empty mirror.
+    //
+    // Dust has no identity. It is a uniform random field with nothing in it to
+    // recognise, so the field behind is the field ahead, and reflecting it is
+    // undetectable. Drawing it untouched gives the mirror a full field for no
+    // extra motes, no extra primitives and no change to the forward view.
+    //
+    // The MOTION still comes out right, which is the part worth checking: the
+    // streak runs along +z in this frame, so it always runs to the vanishing
+    // point and the motes converge on the middle of the mirror -- which is what
+    // dust being left behind does.
+    VgCam fwd = cam;
+    fwd.rear = false;
     for (int i = 0; i < NUM_MOTES; i++) {
-        // Turned here, so the near test is against where the camera points.
-        // The streak is added in the TURNED frame, so motes still trail the
-        // way the world is moving rather than into it.
-        Vec3 p = vg_view(cam, vg.mote[i]);
+        Vec3 p = vg.mote[i];
         if (p.z < NEAR_Z) continue;
-        VgCam fwd = cam; fwd.rear = false;   // p is already turned
         vg_edge_w(fwd, p, v3(p.x, p.y, p.z + streak), col, w);
     }
     vg_line_aa_mode(true);

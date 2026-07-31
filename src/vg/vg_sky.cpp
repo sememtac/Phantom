@@ -127,6 +127,10 @@ static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
 static float s_u = 0.0f, s_v = 0.0f, s_bank = 0.0f;
+// Whether the next fill is for a camera looking aft. Set per frame by the
+// renderer, because the backdrop has no camera of its own to ask.
+static bool  s_rear = false;
+void vg_sky_set_rear(bool on) { s_rear = on; }
 
 // 4x4 Bayer, recentred and scaled to +-0.5 texel in 16.16 fixed point.
 static const int32_t s_dither[16] = {
@@ -663,8 +667,25 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     const int32_t duy = (int32_t)(-sb * s_scale * 65536.0f);
     const int32_t dvy = (int32_t)( cb * s_scale * 65536.0f);
 
-    const int32_t u_org = (int32_t)(s_u * 65536.0f);
-    const int32_t v_org = (int32_t)(s_v * 65536.0f);
+    // LOOKING AFT MOVES THE SKY, and it is the one layer that would not have
+    // noticed. Everything else turns because it is geometry that goes through
+    // the camera; the backdrop is a table lookup that replaces the band clear,
+    // so with the view turned it went on drawing the sky ahead. Gargantua was
+    // off the nose and in the mirror at the same time.
+    //
+    // Half a turn is pi radians of yaw, and yaw is worth `s_pan` texels a
+    // radian, so it is the pan step from vg_sky_step run once with d_yaw = pi --
+    // carried through the bank the same way, because the offset has to rotate
+    // with the horizon exactly as the panning does.
+    float su = s_u, sv = s_v;
+    if (s_rear) {
+        const float off = 3.14159265f * s_pan;
+        su += off * cosf(s_bank);
+        sv += off * sinf(s_bank);
+    }
+
+    const int32_t u_org = (int32_t)(su * 65536.0f);
+    const int32_t v_org = (int32_t)(sv * 65536.0f);
 
     // One sample per EIGHT pixels. At SKY_SCALE 0.10 a texel covers ten screen
     // pixels, so even an 8px span rarely straddles two texels.
