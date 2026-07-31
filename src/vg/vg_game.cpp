@@ -1124,6 +1124,43 @@ static void tv_update(float dt) {
     }
 }
 
+// The caution annunciators: how close the thing is, how fast that should blink,
+// and the beep that goes with each time it lights.
+//
+// HERE, not in the HUD, for two reasons. The phase has to be advanced by dt and
+// the draw does not have one; and a sound triggered from drawing code is a sound
+// that does not happen when the panel is not drawn, which is a very strange rule
+// for a warning.
+static void alert_step(float* phase, bool* lit, bool active, float k, float dt,
+                       SfxId cue) {
+    if (!active) { *phase = 0.0f; *lit = false; return; }
+
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+    const float period = ALERT_FLASH_SLOW
+                       + (ALERT_FLASH_FAST - ALERT_FLASH_SLOW) * k;
+
+    // Advanced, never sampled. The rate follows the period smoothly and the
+    // phase cannot jump when the period changes.
+    *phase += dt / period;
+    if (*phase >= 1.0f) *phase -= (float)(int)*phase;
+
+    const bool now = (*phase <= ALERT_FLASH_DUTY);
+    if (now && !*lit) vg_sfx_play(cue, 1.0f);   // on the lit edge, once
+    *lit = now;
+}
+
+static void update_alerts(float dt) {
+    const bool msl = vg.threat && vg.threat_range <= MSL_ALERT_RANGE;
+    alert_step(&vg.alert_msl_ph, &vg.alert_msl_lit, msl,
+               msl ? (1.0f - vg.threat_range / MSL_ALERT_RANGE) : 0.0f,
+               dt, SFX_MSL_ALERT);
+
+    const bool wall = (vg.wall_clear <= ARENA_ALERT_RANGE);
+    alert_step(&vg.alert_wall_ph, &vg.alert_wall_lit, wall,
+               wall ? (1.0f - vg.wall_clear / ARENA_ALERT_RANGE) : 0.0f,
+               dt, SFX_WALL_ALERT);
+}
+
 void vg_game_update(float dt, const VgInput* in) {
     tv_update(dt);
 
@@ -1138,6 +1175,8 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     vg.state_t += dt;
+
+    update_alerts(dt);
 
     // The airframe, for as long as there is one being flown. Not the menus and
     // not the attract loop: a hum under the title card is a hum with nothing to

@@ -128,15 +128,7 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
 // feel a rhythm getting faster. Both alerts share this because they now behave
 // identically -- the missile alert had its own double-beat shape and it read as a
 // flicker.
-static bool s_wall_was_lit = false;
-static bool s_msl_was_lit  = false;
 
-static bool alert_lit(float k) {
-    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
-    const float period = ALERT_FLASH_SLOW
-                       + (ALERT_FLASH_FAST - ALERT_FLASH_SLOW) * k;
-    return fmodf(vg.state_t, period) <= period * ALERT_FLASH_DUTY;
-}
 
 // Incoming missile. Flashing accelerates as the seeker closes, and that is all
 // it does. There used to be a final stage that held the block solid inside
@@ -144,12 +136,9 @@ static bool alert_lit(float k) {
 // a warning that stops moving stops being read, and the fastest flash already
 // says everything the solid one did.
 static void draw_missile_alert(void) {
-    if (!vg.threat || vg.threat_range > MSL_ALERT_RANGE) { s_msl_was_lit = false; return; }
-    const float mk = 1.0f - vg.threat_range / MSL_ALERT_RANGE;   // cadence only
-    if (!alert_lit(mk)) { s_msl_was_lit = false; return; }
-    // Climbs as it closes, which is a line here and a folder of variants if these
-    // were samples.
-    if (!s_msl_was_lit) { s_msl_was_lit = true; vg_sfx_play(SFX_MSL_ALERT, 1.0f); }
+    // Decided in the update -- range, cadence and beep together. See
+    // update_alerts() in vg_game.cpp.
+    if (!vg.alert_msl_lit) return;
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
@@ -159,13 +148,8 @@ static void draw_missile_alert(void) {
 // earns itself: a collision is instant death, so this is the one warning where
 // being ignored ends the run rather than costing some hull.
 static void draw_boundary_alert(void) {
-    if (vg.wall_clear > ARENA_ALERT_RANGE) return;
-    const float wk = 1.0f - vg.wall_clear / ARENA_ALERT_RANGE;   // cadence only
-    if (!alert_lit(wk)) { s_wall_was_lit = false; return; }
-    // On the LIT EDGE, so the beep is the annunciator rather than a timer running
-    // alongside it -- the two can never drift apart, because there is only one.
-    if (!s_wall_was_lit) { s_wall_was_lit = true; vg_sfx_play(SFX_WALL_ALERT, 1.0f); }
-
+    // Decided in the update, alongside the beep, so the two cannot drift apart.
+    if (!vg.alert_wall_lit) return;
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 

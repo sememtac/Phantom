@@ -207,7 +207,10 @@ void vg_sfx_update(void) {
             // One pole, low. Everything above a few hundred Hz in a saw is what
             // makes it a buzz instead of a hum.
             s_eng_lp += (e - s_eng_lp) * 0.06f;
-            acc += s_eng_lp * s_eng_lvl * 0.22f;
+            // Louder than it was. At 0.22 it was technically present and
+            // practically inaudible under everything else -- an engine you have
+            // to listen for is not doing the job an engine is there to do.
+            acc += s_eng_lp * s_eng_lvl * 0.55f;
         }
 
         for (int i = 0; i < VOICES; i++) {

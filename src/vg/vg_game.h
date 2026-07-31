@@ -434,6 +434,17 @@ struct VgGame {
     // has to be spun up and has to be allowed to stop.
     float       roll_rate;
 
+    // The caution annunciators, decided in the update rather than in the draw.
+    //
+    // They used to be fmodf(state_t, period) inside the HUD, and a modulo of an
+    // ever-growing clock by a CHANGING period does not merely change rate -- the
+    // phase jumps every time the period moves. The faster the range changed, the
+    // more it scrambled, so the blink rate tracked the SHIP'S SPEED instead of
+    // the distance, and flying away from a wall beeped exactly as fast as flying
+    // into one. A phase that is advanced by dt cannot do that.
+    float       alert_msl_ph,  alert_wall_ph;
+    bool        alert_msl_lit, alert_wall_lit;
+
     float       buzz;
 
     bool        ift_mark;
