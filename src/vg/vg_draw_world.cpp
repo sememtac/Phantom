@@ -8,10 +8,10 @@
 void vg_draw_starfield(const VgCam& cam) {
     static const uint16_t shades[3] = { COL_STAR_DIM, COL_STAR_MID, COL_STAR_BRIGHT };
     for (int i = 0; i < NUM_STARS; i++) {
-        Vec3 s = vg.star[i];
+        Vec3 s = vg_view(cam, vg.star[i]);
         if (s.z < NEAR_Z) continue;
         float x, y;
-        if (!vg_project(cam, vg_view(cam, s), &x, &y)) continue;
+        if (!vg_project(cam, s, &x, &y)) continue;
         vg_point((int)x, (int)y, shades[vg.star_b[i]]);
     }
 }
@@ -45,9 +45,13 @@ static void draw_motes(const VgCam& cam) {
     // stair-step on a two-pixel speck moving at 460 units a second.
     vg_line_aa_mode(false);
     for (int i = 0; i < NUM_MOTES; i++) {
-        Vec3 p = vg.mote[i];
+        // Turned here, so the near test is against where the camera points.
+        // The streak is added in the TURNED frame, so motes still trail the
+        // way the world is moving rather than into it.
+        Vec3 p = vg_view(cam, vg.mote[i]);
         if (p.z < NEAR_Z) continue;
-        vg_edge_w(cam, p, v3(p.x, p.y, p.z + streak), col, w);
+        VgCam fwd = cam; fwd.rear = false;   // p is already turned
+        vg_edge_w(fwd, p, v3(p.x, p.y, p.z + streak), col, w);
     }
     vg_line_aa_mode(true);
 }
@@ -117,7 +121,9 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
 
     bool front[AST_FACES];
     for (int f = 0; f < M->face_count; f++) {
-        Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
+        Vec3 A = vg_view(cam, wv[M->f[f][0]]),
+             B = vg_view(cam, wv[M->f[f][1]]),
+             C = vg_view(cam, wv[M->f[f][2]]);
         // Eye is the origin, so the view vector to the face is just A.
         front[f] = (vdot(vcross(vsub(B, A), vsub(C, A)), A) < 0.0f);
     }
@@ -130,9 +136,9 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         // already a collision. The edges still clip properly.
         if (A.z < NEAR_Z || B.z < NEAR_Z || C.z < NEAR_Z) continue;
         float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, vg_view(cam, A), &ax, &ay))   continue;
-        if (!vg_project(cam, vg_view(cam, B), &bx, &by))   continue;
-        if (!vg_project(cam, vg_view(cam, C), &cx2, &cy2)) continue;
+        if (!vg_project(cam, A, &ax, &ay))   continue;
+        if (!vg_project(cam, B, &bx, &by))   continue;
+        if (!vg_project(cam, C, &cx2, &cy2)) continue;
         vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
     }
 
@@ -181,9 +187,9 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
 
     bool front[SHIP_FACES];
     for (int f = 0; f < SHIP_FACES; f++) {
-        Vec3 A  = wv[vg_ship_faces[f][0]];
-        Vec3 Bv = wv[vg_ship_faces[f][1]];
-        Vec3 C  = wv[vg_ship_faces[f][2]];
+        Vec3 A  = vg_view(cam, wv[vg_ship_faces[f][0]]);
+        Vec3 Bv = vg_view(cam, wv[vg_ship_faces[f][1]]);
+        Vec3 C  = vg_view(cam, wv[vg_ship_faces[f][2]]);
         front[f] = (vdot(vcross(vsub(Bv, A), vsub(C, A)), A) < 0.0f);
     }
 
@@ -194,9 +200,9 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
         Vec3 C  = wv[vg_ship_faces[f][2]];
         if (A.z < NEAR_Z || Bv.z < NEAR_Z || C.z < NEAR_Z) continue;
         float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, vg_view(cam, A),  &ax,  &ay))  continue;
-        if (!vg_project(cam, vg_view(cam, Bv), &bx,  &by))  continue;
-        if (!vg_project(cam, vg_view(cam, C),  &cx2, &cy2)) continue;
+        if (!vg_project(cam, A,  &ax,  &ay))  continue;
+        if (!vg_project(cam, Bv, &bx,  &by))  continue;
+        if (!vg_project(cam, C,  &cx2, &cy2)) continue;
         vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
     }
 

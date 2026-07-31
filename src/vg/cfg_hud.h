@@ -97,19 +97,25 @@
 // That is deliberate rather than convenient -- hold the patch and its picture
 // fills the screen, and a patch with its own wider field would appear to zoom in
 // at the moment the player is trying to judge a closing shot.
-#define REAR_W               118
-#define REAR_H               118
+#define REAR_W               152
+#define REAR_H               44
+// Clear of the missile rack, which hud_panel puts at x=440, y=140. The square
+// patch this replaced ran to x=442 and y=164 and sat on the corner of it.
 #define REAR_X               (SCR_W - SCR_SAFE - REAR_W)
-#define REAR_Y               46
+#define REAR_Y               48
 #define REAR_CX              (REAR_X + REAR_W * 0.5f)
 #define REAR_CY              (REAR_Y + REAR_H * 0.5f)
-// Same field of view means the focal length scales with the window.
+// Same ANGULAR scale as the main window, set by the width. So the picture does
+// not change size when the patch is held and fills the screen -- it is the same
+// view, uncropped. Vertically that makes the patch a letterbox on it, roughly 20
+// degrees against the main window's 61, which is what a mirror is: a wide, short
+// band of what is behind you.
 #define REAR_FOCAL_K         ((float)REAR_W / (float)SCR_W)
 
 // Touch zone, generous around the drawn patch: it is a button held under a
 // thumb, not a control that needs accuracy. A contact here does NOT steer --
-// see the partition in vg_input.cpp.
-#define REAR_ZONE_X0         (REAR_X - 22)
-#define REAR_ZONE_Y0         (REAR_Y - 22)
-#define REAR_ZONE_X1         (REAR_X + REAR_W + 22)
-#define REAR_ZONE_Y1         (REAR_Y + REAR_H + 22)
+// see the partition in vg_input.cpp. Kept off the missile rack.
+#define REAR_ZONE_X0         (REAR_X - 24)
+#define REAR_ZONE_Y0         (REAR_Y - 30)
+#define REAR_ZONE_X1         (REAR_X + REAR_W + 24)
+#define REAR_ZONE_Y1         (REAR_Y + REAR_H + 30)

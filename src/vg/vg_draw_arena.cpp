@@ -11,15 +11,26 @@
 // One grid segment, already in view space, faded by distance. The player sits at
 // the origin, so a view-space point's length IS its distance from the ship.
 static void arena_seg(const VgCam& cam, Vec3 a, Vec3 b, uint16_t base) {
+    // TESTED in the direction the camera is pointing, DRAWN from the untouched
+    // points -- vg_edge turns them itself, and turning them twice is not turning
+    // them at all.
+    //
+    // These two rejects duplicate vg_edge's on purpose, to save the sqrt and the
+    // colour work below on a segment that will not land. Reading the untouched z
+    // is what made the rear view show no boundary at all: "wholly behind" is
+    // exactly the half of the grid that a pilot looking aft is looking at, and
+    // the comment below is a fair description of how much of it that is.
+    const Vec3 va = vg_view(cam, a), vb = vg_view(cam, b);
+
     // Reject wholly-behind segments before paying for the sqrt and the colour
     // scale -- with the player inside a closed world, roughly half the grid is
     // behind them at any moment.
-    if (a.z < NEAR_Z && b.z < NEAR_Z) return;
+    if (va.z < NEAR_Z && vb.z < NEAR_Z) return;
 
     // Reject here too, not just inside vg_edge: everything below -- a sqrt, a
     // colour scale and possibly a mix -- is wasted on a segment that is never
     // going to land on screen, and most of this grid does not.
-    if (vg_cull_code(a) & vg_cull_code(b)) return;
+    if (vg_cull_code(va) & vg_cull_code(vb)) return;
 
     float d = vlen(vmul(vadd(a, b), 0.5f));
     float f = 1.15f - d / ARENA_FADE_FAR;
