@@ -165,6 +165,18 @@ static void ift_pop(bool opens_run) {
     s_ift_i++;
 }
 
+// Off the air: the line showing, the gap owed, and everything still queued.
+//
+// The whole queue, not just the timer. Zeroing vg.ift_t alone leaves the
+// indices saying there is more to read, and the next caller to queue anything
+// inherits the leftovers.
+static void ift_clear(void) {
+    vg.ift_line = nullptr;
+    vg.ift_t    = 0.0f;
+    s_ift_gap   = 0.0f;
+    s_ift_n = s_ift_i = 0;
+}
+
 void vg_ift_say(const char* line, float hold, bool badge) {
     if (!line) return;
     s_ift_gap = 0.0f;
@@ -500,8 +512,9 @@ void vg_match_start(void) {
     // here rather than at boot. Clearing them at boot only would have introduced
     // the fighters once and then gone quiet for the rest of the tournament.
     vg.ift_fired   = 0;
-    vg.ift_line    = nullptr;
-    vg.ift_t       = 0.0f;
+    // Properly, queue included. This used to zero the timer and leave the
+    // indices, which is the case vg_ift_queue's self-heal was written for.
+    ift_clear();
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
     vg.roll_rate   = 0;
     vg.bank        = 0;
@@ -1216,6 +1229,17 @@ void vg_state_cut(VgState to) {
     // those carried on over the black. The set going off is the end of the
     // session, so it takes everything with it and then makes its own noise.
     vg_sfx_silence();
+    // AND THE BROADCAST IS OFF THE AIR. Same rule as the audio and for the same
+    // reason: a cut ends the session, and an announcement is part of one. Skip
+    // out of the course while the announcer is mid-line and the line used to
+    // ride the transition and finish over the tournament table -- a system
+    // message about a course the player has just left.
+    //
+    // The CUT, not every change of state. IFT_MATCH_END is posted over the
+    // wreck and is meant to run on through the redraw, and that path is a
+    // vg_state_go rather than a cut. The set never goes off, so the announcer
+    // never does either.
+    ift_clear();
     vg_sfx_play(SFX_TV_OFF, 1.0f);
     vg.tv_phase = TV_OUT;
     vg.tv_to    = (uint8_t)to;
