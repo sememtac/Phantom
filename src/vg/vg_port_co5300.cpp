@@ -619,12 +619,41 @@ bool vg_audio_init(void) {
     digitalWrite(SND_PA_PIN, HIGH);
     s_audio_ok = true;
     Serial.printf("vg_audio: ES8311 up @%d Hz\n", VG_AUDIO_RATE);
+
+    // TEMP: is the write path real? availableForWrite() comes from Print, whose
+    // default returns zero -- if I2SClass does not override it, every frame
+    // decides there is no room and the game is silent by arithmetic.
+    {
+        static int16_t probe[256];
+        for (int i = 0; i < 256; i++) probe[i] = (int16_t)((i & 32) ? 9000 : -9000);
+        const int wrote = vg_audio_write(probe, 256);
+        Serial.printf("vg_audio: probe wrote=%d\n", wrote);
+    }
     return true;
 }
 
-int vg_audio_room(void) {
+// Driven by the CLOCK, not by the driver. See the note in vg_port.h: the
+// buffer-space question has no honest answer through this API, but the rate
+// does -- 22050 samples a second, however many microseconds have passed.
+static uint32_t s_audio_us = 0;
+
+int vg_audio_due(void) {
     if (!s_audio_ok) return 0;
-    return s_i2s.availableForWrite() / 4;    // stereo, 16-bit: 4 bytes a sample
+
+    const uint32_t now = micros();
+    if (s_audio_us == 0) {
+        s_audio_us = now;
+        return 512;              // prime the buffer with some slack to run on
+    }
+    const uint32_t dt = now - s_audio_us;
+    s_audio_us = now;
+
+    int n = (int)(((uint64_t)dt * VG_AUDIO_RATE) / 1000000u);
+    // A long frame gets a GAP, not a stall. Writing the whole backlog would
+    // block until the DMA drained it, which is the frame paying for the audio
+    // instead of the other way round.
+    if (n > 1024) n = 1024;
+    return n;
 }
 
 int vg_audio_write(const int16_t* samples, int n) {

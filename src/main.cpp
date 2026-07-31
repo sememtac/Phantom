@@ -95,6 +95,33 @@ void setup(void) {
     // Non-fatal like the rest. A silent game is a lesser game; a game that
     // refuses to boot because a codec did not answer is a broken one.
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
+
+#if VG_AUDIO_CHIRP
+    // TEMP: a demo of everything that changed, in order, so it can be judged in
+    // one listen rather than by hunting for each cue in play.
+    {
+        // Boundary: beep-boop. Missile: the quack. Launch: lower. Twice each,
+        // because a warning is a thing you hear repeatedly and one of anything
+        // tells you very little about how it will wear.
+        const SfxId demo[6] = { SFX_WALL_ALERT, SFX_WALL_ALERT,
+                                SFX_MSL_ALERT,  SFX_MSL_ALERT,
+                                SFX_LAUNCH,     SFX_EXPLODE };
+        for (int i = 0; i < 6; i++) {
+            vg_sfx_play(demo[i], 1.0f);
+            for (int k = 0; k < 55; k++) { vg_sfx_update(); delay(10); }
+        }
+        // ...then the airframe, idle to full and back, over four seconds.
+        for (int k = 0; k < 400; k++) {
+            const float u = (float)k / 400.0f;
+            const float thr = (u < 0.5f) ? (u * 2.0f) : (2.0f - u * 2.0f);
+            vg_sfx_engine(true, thr);
+            vg_sfx_update();
+            delay(10);
+        }
+        vg_sfx_engine(false, 0.0f);
+        for (int k = 0; k < 60; k++) { vg_sfx_update(); delay(10); }
+    }
+#endif
     vg_pmu_dump();
 
     vg_input_init();

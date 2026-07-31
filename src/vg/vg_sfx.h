@@ -31,9 +31,20 @@ enum SfxId : unsigned char {
 
 bool vg_sfx_init(void);
 
-// Fire a cue. `pitch` scales the whole thing, 1.0 being its natural voice --
-// used by the alerts, which climb as the thing they are warning about closes.
+// Fire a cue. `pitch` scales the whole thing, 1.0 being its natural voice.
+//
+// THE WARNINGS IGNORE IT. An annunciator that changed pitch with range would be
+// telling the pilot two things with one sound, and the second one badly -- real
+// aircraft warnings are fixed, identical every time, so that recognising one
+// costs nothing and hearing it wrong is impossible. The alerts pass 1.0 and the
+// argument stays for the cues that are sounds rather than instruments.
 void vg_sfx_play(SfxId id, float pitch);
+
+// The airframe, which is not a cue: it is on for as long as the ship is flying
+// and follows the throttle. Called every frame with the current setting; `on`
+// false lets it fall silent rather than cutting, so leaving a match does not
+// clip the hum off mid-cycle.
+void vg_sfx_engine(bool on, float throttle);
 
 // Generate and hand over whatever the output will take. Called once a frame, and
 // deliberately not from a task: the mixer is cheap, and a frame that is late has

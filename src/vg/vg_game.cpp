@@ -1139,6 +1139,15 @@ void vg_game_update(float dt, const VgInput* in) {
 
     vg.state_t += dt;
 
+    // The airframe, for as long as there is one being flown. Not the menus and
+    // not the attract loop: a hum under the title card is a hum with nothing to
+    // be the sound OF.
+    {
+        const bool flying = (vg.state == VG_PLAYING || vg.state == VG_HIT
+                          || vg.state == VG_KILL    || vg.state == VG_COURSE);
+        vg_sfx_engine(flying, vg.throttle_vis);
+    }
+
     // A menu tap is a contact that lifts WITHOUT travelling. Resolved here
     // rather than in the input layer because the bracket needs one contact to
     // serve as both a pan drag and a button press, and only the consumer can

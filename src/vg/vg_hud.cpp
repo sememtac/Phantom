@@ -145,11 +145,11 @@ static bool alert_lit(float k) {
 // says everything the solid one did.
 static void draw_missile_alert(void) {
     if (!vg.threat || vg.threat_range > MSL_ALERT_RANGE) { s_msl_was_lit = false; return; }
-    const float mk = 1.0f - vg.threat_range / MSL_ALERT_RANGE;
+    const float mk = 1.0f - vg.threat_range / MSL_ALERT_RANGE;   // cadence only
     if (!alert_lit(mk)) { s_msl_was_lit = false; return; }
     // Climbs as it closes, which is a line here and a folder of variants if these
     // were samples.
-    if (!s_msl_was_lit) { s_msl_was_lit = true; vg_sfx_play(SFX_MSL_ALERT, 0.85f + mk * 0.9f); }
+    if (!s_msl_was_lit) { s_msl_was_lit = true; vg_sfx_play(SFX_MSL_ALERT, 1.0f); }
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
@@ -160,11 +160,11 @@ static void draw_missile_alert(void) {
 // being ignored ends the run rather than costing some hull.
 static void draw_boundary_alert(void) {
     if (vg.wall_clear > ARENA_ALERT_RANGE) return;
-    const float wk = 1.0f - vg.wall_clear / ARENA_ALERT_RANGE;
+    const float wk = 1.0f - vg.wall_clear / ARENA_ALERT_RANGE;   // cadence only
     if (!alert_lit(wk)) { s_wall_was_lit = false; return; }
     // On the LIT EDGE, so the beep is the annunciator rather than a timer running
     // alongside it -- the two can never drift apart, because there is only one.
-    if (!s_wall_was_lit) { s_wall_was_lit = true; vg_sfx_play(SFX_WALL_ALERT, 0.9f + wk * 0.5f); }
+    if (!s_wall_was_lit) { s_wall_was_lit = true; vg_sfx_play(SFX_WALL_ALERT, 1.0f); }
 
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }

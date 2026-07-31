@@ -110,9 +110,15 @@ bool vg_store_diag_save(const void* data, unsigned len);
 
 bool vg_audio_init(void);
 int  vg_audio_write(const int16_t* samples, int n);
-// Room, in samples, before a write would be short. Lets the caller generate
-// exactly what will fit rather than generating and discarding.
-int  vg_audio_room(void);
+// How many samples the output has CONSUMED since the last call, which is how
+// many the caller now owes it. Advances an internal clock, so call it once per
+// frame and use what it returns.
+//
+// Not "room". The obvious implementation asked I2SClass::availableForWrite() --
+// and that comes from Print, which returns 0 unless a subclass overrides it, and
+// I2SClass does not. Every frame concluded there was no space, generated nothing,
+// and the game was silent by arithmetic while the codec sat there working.
+int  vg_audio_due(void);
 
 // ---- IMU -------------------------------------------------------------------
 
