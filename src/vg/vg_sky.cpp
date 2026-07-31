@@ -1,4 +1,5 @@
 #include "vg_sky.h"
+#include "vg_raster.h"
 #include "vg_config.h"
 #include "vg_capture.h"
 #include <Arduino.h>
@@ -131,6 +132,22 @@ static float s_u = 0.0f, s_v = 0.0f, s_bank = 0.0f;
 // renderer, because the backdrop has no camera of its own to ask.
 static bool  s_rear = false;
 void vg_sky_set_rear(bool on) { s_rear = on; }
+
+// The rear-view patch, as a PANEL rectangle. Zero width means no patch this
+// frame, which is the case in every menu and whenever the main window is
+// already looking aft.
+static int s_px0 = 0, s_py0 = 0, s_px1 = -1, s_py1 = -1;
+
+void vg_sky_set_patch(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) { s_px1 = -1; return; }
+    vg_rast_rot_rect(&x, &y, &w, &h);     // the raster's own turn, not a copy
+    s_px0 = x; s_py0 = y;
+    s_px1 = x + w - 1; s_py1 = y + h - 1;
+    if (s_px0 < 0) s_px0 = 0;
+    if (s_py0 < 0) s_py0 = 0;
+    if (s_px1 > SCR_W - 1) s_px1 = SCR_W - 1;
+    if (s_py1 > SCR_H - 1) s_py1 = SCR_H - 1;
+}
 
 // 4x4 Bayer, recentred and scaled to +-0.5 texel in 16.16 fixed point.
 static const int32_t s_dither[16] = {
@@ -744,6 +761,78 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
             dst += 4;
             u += du8;
             v += dv8;
+        }
+    }
+}
+
+// The patch's backdrop, called from the band raster when it meets a PRIM_SKY.
+    // --- the rear-view patch ------------------------------------------------
+    //
+    // A second pass over its rows, because the backdrop is not geometry and the
+    // submit-time viewport cannot reach it: this fill REPLACES the band clear,
+    // which is exactly why it costs nothing and exactly why the patch had a
+    // hole in it.
+    //
+    // Three things differ from the pass above and nothing else does.
+    //
+    //   scale   the patch shows the same field of view as the main window in
+    //           REAR_W pixels instead of SCR_W, so a pixel covers 480/145 as
+    //           much sky. Isotropic, so the quarter turn does not enter into it.
+    //   origin  the PATCH centre maps to the sample point, not the screen's.
+    //   heading half a turn, always -- the patch is the aft view by definition,
+    //           and it is not drawn at all when the main window is already aft.
+    //
+    // Per pixel rather than one sample per eight. The patch is 44 panel columns
+    // wide, so the whole pass is a few thousand pixels against the 230,400 above
+    // it, and at this scale a texel covers three pixels instead of ten -- eight
+    // would be sampling coarser than the texture.
+void vg_sky_fill_patch(uint16_t* band, int band_y0) {
+    if (!s_ready || s_px1 < s_px0) return;
+
+#if VG_ROTATE == 1
+    const float bank_eff = s_bank + 1.57079633f;
+#elif VG_ROTATE == 2
+    const float bank_eff = s_bank + 3.14159265f;
+#elif VG_ROTATE == 3
+    const float bank_eff = s_bank - 1.57079633f;
+#else
+    const float bank_eff = s_bank;
+#endif
+    const float cb = cosf(bank_eff), sb = sinf(bank_eff);
+
+    {
+        int r0 = s_py0 - band_y0, r1 = s_py1 - band_y0;
+        if (r0 < 0) r0 = 0;
+        if (r1 > BAND_H - 1) r1 = BAND_H - 1;
+
+        if (r1 >= r0) {
+            const float ps = s_scale / REAR_FOCAL_K;
+            const int32_t pdux = (int32_t)( cb * ps * 65536.0f);
+            const int32_t pdvx = (int32_t)( sb * ps * 65536.0f);
+            const int32_t pduy = (int32_t)(-sb * ps * 65536.0f);
+            const int32_t pdvy = (int32_t)( cb * ps * 65536.0f);
+
+            const float off = 3.14159265f * s_pan;
+            const int32_t pu = (int32_t)((s_u + off * cosf(s_bank)) * 65536.0f);
+            const int32_t pv = (int32_t)((s_v + off * sinf(s_bank)) * 65536.0f);
+
+            const int pcx = (s_px0 + s_px1) / 2;
+            const int pcy = (s_py0 + s_py1) / 2;
+
+            for (int row = r0; row <= r1; row++) {
+                const int sy = band_y0 + row;
+                int32_t u = pu + pdux * (int32_t)(s_px0 - pcx)
+                               + pduy * (int32_t)(sy - pcy);
+                int32_t v = pv + pdvx * (int32_t)(s_px0 - pcx)
+                               + pdvy * (int32_t)(sy - pcy);
+                uint16_t* dst = &band[row * SCR_W + s_px0];
+                for (int x = s_px0; x <= s_px1; x++) {
+                    *dst++ = s_tex[(((v >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
+                                    ((u >> 16) & SKY_TEX_MASK)];
+                    u += pdux;
+                    v += pdvx;
+                }
+            }
         }
     }
 }

@@ -56,10 +56,17 @@ static inline float smoothstep(float e0, float e1, float x) {
 // Fills are off, so no triangle work. And the patch is clipped at submit, so
 // everything outside it is discarded before it can reach the band lists.
 static void draw_rear_patch(const VgCam& base) {
-    // Backing, so the main scene does not show through the patch. INK_WELL and
-    // not COL_BLACK: the rasteriser drops colour 0 as "nothing to draw", so a
-    // black fill would submit nothing at all.
-    vg_fill_rect(REAR_X, REAR_Y, REAR_W, REAR_H, INK_WELL);
+    // The backdrop, aft, which is also what hides the forward scene inside the
+    // patch. It was a flat INK_WELL fill: opaque was the requirement, and a sky
+    // is opaque too.
+    //
+    // It cannot ride in the band clear with the main sky, which is what the
+    // first attempt did. The clear runs before anything is drawn, so the forward
+    // world -- which has no reason to avoid the patch -- was painted straight
+    // over it. As a primitive it lands here in submission order instead: after
+    // the world, before the patch's own geometry.
+    vg_sky_set_patch(REAR_X, REAR_Y, REAR_W, REAR_H);
+    vg_sky_patch_prim(REAR_X, REAR_Y, REAR_W, REAR_H);
 
     VgCam rc = base;
     rc.rear  = true;

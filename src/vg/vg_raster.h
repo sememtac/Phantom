@@ -56,6 +56,12 @@ void vg_line_aa_mode(bool on);
 void vg_rast_viewport(int x, int y, int w, int h);
 void vg_rast_viewport_full(void);
 
+// Map a logical rectangle to the panel rectangle it occupies.
+void vg_rast_rot_rect(int* x, int* y, int* w, int* h);
+
+// The rear-view patch's backdrop, as a primitive so it draws in order.
+void vg_sky_patch_prim(int x, int y, int w, int h);
+
 // Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.
 void vg_rast_fills(bool on);
 

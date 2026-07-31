@@ -74,5 +74,13 @@ void vg_sky_step(float d_pitch, float d_yaw, float bank);
 // and never passes through the camera, so it has to be told.
 void vg_sky_set_rear(bool on);
 
+// Where the rear-view patch is, in LOGICAL coordinates, so the fill can put an
+// aft sky inside it. Zero width means there is no patch this frame.
+void vg_sky_set_patch(int x, int y, int w, int h);
+
+// Paint the patch's aft backdrop into this band. Called from the band raster
+// when it meets a PRIM_SKY, so that it lands in submission order.
+void vg_sky_fill_patch(uint16_t* band, int band_y0);
+
 // Fill one band from the texture. Replaces the memset entirely.
 void vg_sky_fill_band(uint16_t* band, int band_y0);

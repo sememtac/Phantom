@@ -12,7 +12,14 @@
 // different performance characteristics: submit runs once per frame and costs
 // frame time directly, while the band raster runs 15 times and hides under DMA.
 
-enum : uint8_t { PRIM_LINE = 0, PRIM_POINT, PRIM_FILL, PRIM_GLYPH, PRIM_TRI };
+// PRIM_SKY is the rear-view patch's backdrop. It has to be a primitive rather
+// than part of the band clear: the clear happens before anything is drawn, so a
+// sky put there would be painted over by the forward scene, which has no reason
+// to avoid the patch. As a primitive it lands in submission order -- after the
+// world, before the patch's own geometry -- and being opaque it is also what
+// hides the forward scene inside the patch.
+enum : uint8_t { PRIM_LINE = 0, PRIM_POINT, PRIM_FILL, PRIM_GLYPH, PRIM_TRI,
+                 PRIM_SKY };
 
 // ymin/ymax are precomputed at submit time so the per-band overlap test is two
 // compares with no type dispatch. x2/y2 are only used by PRIM_TRI; carrying them

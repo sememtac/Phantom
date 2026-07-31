@@ -708,6 +708,10 @@ static void draw_band(int band_index, uint16_t* band) {
         if (p->ymax < by0 || p->ymin > by1) continue;
 
         switch (p->type) {
+        case PRIM_SKY:
+            vg_sky_fill_patch(band, by0);
+            break;
+
         case PRIM_POINT:
             band[(p->y0 - by0) * SCR_W + p->x0] = p->color;
             break;

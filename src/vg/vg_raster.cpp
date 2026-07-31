@@ -180,6 +180,26 @@ static inline void rot_rect(int* x, int* y, int* w, int* h) {
 #endif
 }
 
+// Logical rectangle -> panel rectangle. Exported because the backdrop needs the
+// same mapping and duplicating a quarter turn is how two of them end up
+// disagreeing.
+void vg_rast_rot_rect(int* x, int* y, int* w, int* h) { rot_rect(x, y, w, h); }
+
+// Submit the rear-view patch's backdrop. Carries only its row span: where it is
+// and what it samples are the backdrop's business, and the band raster hands it
+// the buffer to fill.
+void vg_sky_patch_prim(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    rot_rect(&x, &y, &w, &h);
+    Prim* p = push();
+    if (!p) return;
+    p->type  = PRIM_SKY;
+    p->x0 = p->y0 = p->x1 = p->y1 = 0;
+    p->color = 1;                       // non-zero: nothing skips it as blank
+    p->ymin  = (int16_t)(y < 0 ? 0 : y);
+    p->ymax  = (int16_t)((y + h - 1) > SCR_H - 1 ? SCR_H - 1 : (y + h - 1));
+}
+
 // ---------------------------------------------------------------------------
 // Cohen-Sutherland clip against the full screen, done once here so band
 // rasterisation never walks an off-screen span.
