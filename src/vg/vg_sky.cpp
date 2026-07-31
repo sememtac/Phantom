@@ -256,6 +256,17 @@ static inline uint16_t pack565_swapped(float r, float g, float b) {
     return (uint16_t)((v >> 8) | (v << 8));
 }
 
+// ...and back. Needed because a backdrop can now be built in LAYERS: a cloud
+// laid down first, then a landmark composited over what is already in the
+// texture. Reading a texel back is cheaper than carrying a second full-size
+// buffer to accumulate in, and this runs once per level, not per frame.
+static inline void unpack565_swapped(uint16_t c, float* r, float* g, float* b) {
+    const uint16_t v = (uint16_t)((c >> 8) | (c << 8));
+    *r = (float)((v >> 11) & 0x1F) * (1.0f / 31.0f);
+    *g = (float)((v >>  5) & 0x3F) * (1.0f / 63.0f);
+    *b = (float)( v        & 0x1F) * (1.0f / 31.0f);
+}
+
 // Shortest distance across the wrap. Everything positional in here uses it, so
 // a feature placed anywhere still tiles seamlessly instead of being clipped at
 // the texture edge.
@@ -386,7 +397,12 @@ static void gen_cluster(uint32_t seed) {
 // course the tile spans the whole 360 degrees and the menu's 0.115 would put an
 // 83 degree object in a 61 degree view -- an object that cannot be seen whole
 // is not a landmark, it is a dark region.
-static void gen_blackhole(uint32_t seed, float r_frac, float level) {
+// `over` composites onto whatever is already in the texture instead of
+// replacing it. That is what makes the hole a LANDMARK IN A SKY rather than a
+// sky of its own: the course had the second kind, and away from the hole its
+// own faint dust came out at 0.10 of an already restrained ceiling, which on
+// the panel is black. Turn away from it and the backdrop simply stopped.
+static void gen_blackhole(uint32_t seed, float r_frac, float level, bool over) {
     const int   cx = SKY_TEX_SIZE / 2;
     const int   cy = SKY_TEX_SIZE / 2;
 
@@ -416,11 +432,16 @@ static void gen_blackhole(uint32_t seed, float r_frac, float level) {
             const float dy = wrap_delta(ty, cy);
             const float r  = sqrtf(dx * dx + dy * dy);
 
-            // Faint dust so the surrounding sky is not dead black.
-            float haze = fbm_tex(tx, ty, seed + 313u, 4, 3);
-            haze = (haze - 0.54f) * 1.3f;
-            if (haze < 0.0f) haze = 0.0f;
-            float lum = haze * 0.10f;
+            // Faint dust so the surrounding sky is not dead black. Skipped
+            // when compositing: whatever is underneath is the sky, and this
+            // would only wash it.
+            float lum = 0.0f;
+            if (!over) {
+                float haze = fbm_tex(tx, ty, seed + 313u, 4, 3);
+                haze = (haze - 0.54f) * 1.3f;
+                if (haze < 0.0f) haze = 0.0f;
+                lum = haze * 0.10f;
+            }
 
             // The disc, edge-on: a thin band running out to both sides, thrown
             // brighter on one side than the other. Real relativistic beaming is
@@ -444,9 +465,15 @@ static void gen_blackhole(uint32_t seed, float r_frac, float level) {
             // The shadow. Nothing comes out, and the edge is softened over a
             // texel and a half so a ~300px black disc does not upscale into a
             // visible polygon.
+            // How much of what is behind the hole survives it. Nothing does,
+            // inside the shadow -- which is the entire point of a shadow, and
+            // is also why the layer underneath has to be attenuated by the same
+            // factor rather than simply added to.
+            float occ = 1.0f;
             if (r < R_SHADOW) {
                 const float e = R_SHADOW - r;
-                lum *= (e > 1.5f) ? 0.0f : (1.0f - e / 1.5f);
+                occ = (e > 1.5f) ? 0.0f : (1.0f - e / 1.5f);
+                lum *= occ;
             }
 
             if (lum > 1.0f) lum = 1.0f;
@@ -458,6 +485,14 @@ static void gen_blackhole(uint32_t seed, float r_frac, float level) {
             float R = lum * level;
             float G = (lum * 0.60f + w * 0.38f) * level;
             float B = (lum * 0.13f + w * w * 0.72f) * level;
+
+            if (over) {
+                float br, bg, bb;
+                unpack565_swapped(s_tex[i], &br, &bg, &bb);
+                R += br * occ;
+                G += bg * occ;
+                B += bb * occ;
+            }
 
             if (R > level) R = level;
             if (G > level) G = level;
@@ -561,12 +596,22 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     case SKY_GALAXY:  s_kind = SKY_GALAXY;  gen_galaxy(seed);  break;
     case SKY_CLUSTER: s_kind = SKY_CLUSTER; gen_cluster(seed); break;
     case SKY_MENU:    s_kind = SKY_MENU;
-                      gen_blackhole(seed, 0.115f, SKY_MENU_LEVEL); break;
+                      gen_blackhole(seed, 0.115f, SKY_MENU_LEVEL, false); break;
     // The combat ceiling, not the menu's. The course has a HUD over it and a
     // ring to find, and SKY_MENU_LEVEL exists precisely because the menu has
     // neither.
+    // A SKY FIRST, THEN THE LANDMARK IN IT. The venue is drawn from the same
+    // three backdrops a match uses and by the same rule, so the course is a
+    // place in the tournament's universe rather than a void with one object in
+    // it -- and turning away from the hole now leaves something to look at.
     case SKY_COURSE:  s_kind = SKY_COURSE;
-                      gen_blackhole(seed, SKY_COURSE_RFRAC, SKY_MAX_LEVEL); break;
+                      switch (seed % 3u) {
+                      case 0:  gen_galaxy(seed);  break;
+                      case 1:  gen_cluster(seed); break;
+                      default: gen_nebula(seed);  break;
+                      }
+                      gen_blackhole(seed, SKY_COURSE_RFRAC, SKY_MAX_LEVEL, true);
+                      break;
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
