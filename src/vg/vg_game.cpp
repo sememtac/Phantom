@@ -1366,6 +1366,12 @@ void vg_game_update(float dt, const VgInput* in) {
     // thing about that moment.
     const bool flying = (vg.tv_phase == TV_NONE) && (sf & VGS_ENGINE);
 
+    // Looking aft is a look and nothing else -- it takes no input away from the
+    // ship and changes no state the simulation reads. Only while there is a
+    // cockpit to look out of, and never during a transition, or the last frame
+    // before the wipe would be shot from the wrong way round.
+    vg.rear_view = alive && in->rear_held;
+
     update_alerts(alive ? dt : 0.0f, alive);
     vg_sfx_engine(flying, vg.throttle_vis);
 

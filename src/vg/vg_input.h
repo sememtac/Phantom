@@ -33,6 +33,10 @@ struct VgInput {
     bool  roll_btn;
     float roll;         // -1..1, left/right. Zero unless roll_btn is held.
 
+    // Held on the rear-view patch. A look, not a control: it changes nothing
+    // about the ship, only which way the camera points.
+    bool  rear_held;
+
     bool  tap_edge;     // first frame of any new steering-side contact
     bool  any_touch;
 

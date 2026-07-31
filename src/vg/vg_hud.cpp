@@ -381,7 +381,7 @@ void vg_draw_lock_box(const VgCam& cam) {
     if (!s->alive) return;
 
     float cx, cy;
-    if (!vg_project(cam, s->pos, &cx, &cy)) return;
+    if (!vg_project(cam, vg_view(cam, s->pos), &cx, &cy)) return;
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
@@ -454,6 +454,11 @@ static void draw_ring_arrow(float ang, float radius, float size, uint16_t col, i
 // front of the camera (in which case sx/sy hold its projected position); `ang` is
 // filled either way, so callers can point at things that are behind the player.
 static bool screen_dir(const VgCam& cam, Vec3 p, float* sx, float* sy, float* ang) {
+    // Aft first. "In front of the camera" means in front of where it is
+    // POINTING, and the whole job of this function is to tell on-screen from
+    // off-screen -- reading the unturned z would put every contact behind the
+    // player on the wrong side of that test the moment they looked back.
+    p = vg_view(cam, p);
     if (p.z >= NEAR_Z && vg_project(cam, p, sx, sy)) {
         *ang = atan2f(*sy - SCR_CY, *sx - SCR_CX);
         return true;

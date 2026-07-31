@@ -16,6 +16,17 @@ struct VgCam {
     // growing. Flight always runs at 1.0 -- changing the field of view mid-fight
     // would break every judgement the player makes about closure and lead.
     float focal;
+    // Looking aft. The simulation is already in view space -- the player sits at
+    // the origin and the world counter-rotates around them -- so looking behind
+    // is not a second scene or a second camera position. It is half a turn about
+    // the vertical, which is two sign flips.
+    //
+    // A turn of the head, NOT a mirror. A mirror would flip z alone and leave
+    // left and right swapped, which is what a real rear-view mirror does and
+    // exactly the wrong thing here: the same view fills the screen when the
+    // player holds the patch, and a full-screen mirrored world would make every
+    // lead and every break turn the wrong way round.
+    bool  rear;
 };
 
 static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y,
@@ -26,7 +37,21 @@ static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y,
     c.sx = shake_x;
     c.sy = shake_y;
     c.focal = FOCAL * ((zoom > 0.05f) ? zoom : 1.0f);
+    c.rear  = false;
     return c;
+}
+
+// A view-space point as this camera sees it.
+//
+// MUST BE APPLIED BEFORE CULLING, not inside vg_project. The trivial reject and
+// the near clip in vg_draw.h both read p.z directly and run before any
+// projection, so a flip hidden inside the projection would leave everything
+// behind the player rejected for being behind the player.
+static inline Vec3 vg_view(const VgCam& c, Vec3 p) {
+    if (!c.rear) return p;
+    p.x = -p.x;
+    p.z = -p.z;
+    return p;
 }
 
 // View space is +x right, +y up, +z forward. Returns false for anything at or

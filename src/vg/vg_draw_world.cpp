@@ -11,7 +11,7 @@ void vg_draw_starfield(const VgCam& cam) {
         Vec3 s = vg.star[i];
         if (s.z < NEAR_Z) continue;
         float x, y;
-        if (!vg_project(cam, s, &x, &y)) continue;
+        if (!vg_project(cam, vg_view(cam, s), &x, &y)) continue;
         vg_point((int)x, (int)y, shades[vg.star_b[i]]);
     }
 }
@@ -94,13 +94,13 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     float cx, cy;
 
     if (rpx < 2.5f) {
-        if (vg_project(cam, a->pos, &cx, &cy)) vg_point((int)cx, (int)cy, col);
+        if (vg_project(cam, vg_view(cam, a->pos), &cx, &cy)) vg_point((int)cx, (int)cy, col);
         return;
     }
     if (rpx < 7.0f) {
         // Too small for the wireframe to resolve; a diamond stays readable and
         // costs 4 lines instead of 30.
-        if (!vg_project(cam, a->pos, &cx, &cy)) return;
+        if (!vg_project(cam, vg_view(cam, a->pos), &cx, &cy)) return;
         vg_line(cx - rpx, cy, cx, cy - rpx, col);
         vg_line(cx, cy - rpx, cx + rpx, cy, col);
         vg_line(cx + rpx, cy, cx, cy + rpx, col);
@@ -130,9 +130,9 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         // already a collision. The edges still clip properly.
         if (A.z < NEAR_Z || B.z < NEAR_Z || C.z < NEAR_Z) continue;
         float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, A, &ax, &ay))   continue;
-        if (!vg_project(cam, B, &bx, &by))   continue;
-        if (!vg_project(cam, C, &cx2, &cy2)) continue;
+        if (!vg_project(cam, vg_view(cam, A), &ax, &ay))   continue;
+        if (!vg_project(cam, vg_view(cam, B), &bx, &by))   continue;
+        if (!vg_project(cam, vg_view(cam, C), &cx2, &cy2)) continue;
         vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
     }
 
@@ -170,7 +170,7 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
 
     float cx, cy;
     if (rpx < 2.0f) {
-        if (vg_project(cam, s->pos, &cx, &cy)) vg_point((int)cx, (int)cy, COL_ENEMY);
+        if (vg_project(cam, vg_view(cam, s->pos), &cx, &cy)) vg_point((int)cx, (int)cy, COL_ENEMY);
         return;
     }
 
@@ -194,9 +194,9 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
         Vec3 C  = wv[vg_ship_faces[f][2]];
         if (A.z < NEAR_Z || Bv.z < NEAR_Z || C.z < NEAR_Z) continue;
         float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, A,  &ax,  &ay))  continue;
-        if (!vg_project(cam, Bv, &bx,  &by))  continue;
-        if (!vg_project(cam, C,  &cx2, &cy2)) continue;
+        if (!vg_project(cam, vg_view(cam, A),  &ax,  &ay))  continue;
+        if (!vg_project(cam, vg_view(cam, Bv), &bx,  &by))  continue;
+        if (!vg_project(cam, vg_view(cam, C),  &cx2, &cy2)) continue;
         vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
     }
 
@@ -321,7 +321,7 @@ static void draw_gate(const VgCam& cam) {
 
     float sx[4], sy[4];
     for (int i = 0; i < 4; i++)
-        if (!vg_project(cam, c[i], &sx[i], &sy[i])) return;
+        if (!vg_project(cam, vg_view(cam, c[i]), &sx[i], &sy[i])) return;
 
     const uint16_t col = vg_dim(vg_hue_col(vg.gate_hue), fade * 0.85f);
     vg_tri(sx[0], sy[0], sx[1], sy[1], sx[2], sy[2], col);

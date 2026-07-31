@@ -86,13 +86,21 @@ void vg_input_update(float dt, VgInput* out) {
     int nzone = 0;
     int other[VG_MAX_TOUCH];
     int nother = 0;
+    // Three buckets, not two. The rear-view patch is held down like a button,
+    // and a thumb resting on it must not also be flying the ship -- the whole
+    // point of looking behind is to hold heading while you do it.
+    bool rear = false;
     for (int i = 0; i < n; i++) {
         if (xs[i] <= THROTTLE_ZONE_X1) {
             if (nzone < VG_MAX_TOUCH) zone[nzone++] = i;
+        } else if (xs[i] >= REAR_ZONE_X0 && xs[i] <= REAR_ZONE_X1 &&
+                   ys[i] >= REAR_ZONE_Y0 && ys[i] <= REAR_ZONE_Y1) {
+            rear = true;
         } else if (nother < VG_MAX_TOUCH) {
             other[nother++] = i;
         }
     }
+    out->rear_held = rear;
 
     // ---- throttle ----
     // Ownership with two guards. Nearest-match alone is NOT enough: when the

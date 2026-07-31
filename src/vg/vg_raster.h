@@ -45,6 +45,20 @@ void vg_line_aa_mode(bool on);
 // Screen space, origin top-left. Off-screen geometry is clipped (and fully
 // off-screen geometry dropped) at submit time, so the per-band inner loops
 // never see wild coordinates.
+// Restrict submit-time clipping to a rectangle, in LOGICAL coordinates. Every
+// primitive submitted while a viewport is set is clipped to it, so a second
+// scene can be drawn into a corner of the screen without touching the first.
+//
+// Triangles are clipped by their bounding box rather than exactly: a fill whose
+// span crosses the edge is trimmed vertically but not horizontally. Good enough
+// for the rear-view patch, whose fills are small; worth knowing before using
+// this for anything with large faces near an edge.
+void vg_rast_viewport(int x, int y, int w, int h);
+void vg_rast_viewport_full(void);
+
+// Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.
+void vg_rast_fills(bool on);
+
 void vg_line(float x0, float y0, float x1, float y1, uint16_t color);
 
 // Thick line: `w` parallel 1px lines offset along the screen-space normal.

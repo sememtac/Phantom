@@ -185,12 +185,36 @@ static inline void rot_rect(int* x, int* y, int* w, int* h) {
 // rasterisation never walks an off-screen span.
 // ---------------------------------------------------------------------------
 
+// The clip window, in PANEL space, inclusive. The whole screen unless somebody
+// has asked for a viewport -- the rear-view patch is the only caller so far.
+//
+// Panel space and not logical, because rot_pt has already run by the time
+// anything is clipped. vg_rast_viewport takes the rectangle the way the game
+// thinks about it and turns it once, here, rather than making every caller
+// know which way the panel is scanned.
+static int s_cx0 = 0, s_cy0 = 0, s_cx1 = SCR_W - 1, s_cy1 = SCR_H - 1;
+
+void vg_rast_viewport(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    rot_rect(&x, &y, &w, &h);
+    int x1 = x + w - 1, y1 = y + h - 1;
+    if (x  < 0) x = 0;
+    if (y  < 0) y = 0;
+    if (x1 > SCR_W - 1) x1 = SCR_W - 1;
+    if (y1 > SCR_H - 1) y1 = SCR_H - 1;
+    s_cx0 = x; s_cy0 = y; s_cx1 = x1; s_cy1 = y1;
+}
+
+void vg_rast_viewport_full(void) {
+    s_cx0 = 0; s_cy0 = 0; s_cx1 = SCR_W - 1; s_cy1 = SCR_H - 1;
+}
+
 static inline int outcode(float x, float y) {
     int c = 0;
-    if      (x < 0)         c |= 1;
-    else if (x > SCR_W - 1) c |= 2;
-    if      (y < 0)         c |= 4;
-    else if (y > SCR_H - 1) c |= 8;
+    if      (x < s_cx0) c |= 1;
+    else if (x > s_cx1) c |= 2;
+    if      (y < s_cy0) c |= 4;
+    else if (y > s_cy1) c |= 8;
     return c;
 }
 
@@ -204,10 +228,10 @@ static bool clip_screen(float* px0, float* py0, float* px1, float* py1) {
 
         int   c = c0 ? c0 : c1;
         float x = 0, y = 0;
-        if (c & 8)      { y = SCR_H - 1; x = ax + (bx - ax) * (y - ay) / (by - ay); }
-        else if (c & 4) { y = 0;         x = ax + (bx - ax) * (y - ay) / (by - ay); }
-        else if (c & 2) { x = SCR_W - 1; y = ay + (by - ay) * (x - ax) / (bx - ax); }
-        else            { x = 0;         y = ay + (by - ay) * (x - ax) / (bx - ax); }
+        if (c & 8)      { y = (float)s_cy1; x = ax + (bx - ax) * (y - ay) / (by - ay); }
+        else if (c & 4) { y = (float)s_cy0; x = ax + (bx - ax) * (y - ay) / (by - ay); }
+        else if (c & 2) { x = (float)s_cx1; y = ay + (by - ay) * (x - ax) / (bx - ax); }
+        else            { x = (float)s_cx0; y = ay + (by - ay) * (x - ax) / (bx - ax); }
 
         if (!isfinite(x) || !isfinite(y)) return false;
 
@@ -287,7 +311,7 @@ void vg_point(int x, int y, uint16_t color) {
         x = (int)lrintf(fx);
         y = (int)lrintf(fy);
     }
-    if ((unsigned)x >= (unsigned)SCR_W || (unsigned)y >= (unsigned)SCR_H) return;
+    if (x < s_cx0 || x > s_cx1 || y < s_cy0 || y > s_cy1) return;
 
     Prim* p = push();
     if (!p) return;
@@ -303,10 +327,10 @@ void vg_point(int x, int y, uint16_t color) {
 static void fill_rect_raw(int x, int y, int w, int h, uint16_t color) {
     if (!color || w <= 0 || h <= 0) return;
     rot_rect(&x, &y, &w, &h);
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > SCR_W) w = SCR_W - x;
-    if (y + h > SCR_H) h = SCR_H - y;
+    if (x < s_cx0) { w += x - s_cx0; x = s_cx0; }
+    if (y < s_cy0) { h += y - s_cy0; y = s_cy0; }
+    if (x + w > s_cx1 + 1) w = s_cx1 + 1 - x;
+    if (y + h > s_cy1 + 1) h = s_cy1 + 1 - y;
     if (w <= 0 || h <= 0) return;
 
     Prim* p = push();
@@ -365,7 +389,22 @@ void vg_rect(int x, int y, int w, int h, uint16_t color) {
     vg_fill_rect(x + w - 1, y,         1, h, color);
 }
 
+// Hidden-line fills, on by default.
+//
+// Exists for the viewport. A triangle is clipped by its bounding box at submit
+// and by the FULL screen width when its spans are walked in vg_band.cpp, which
+// does not know a viewport exists -- so a face crossing the edge of a patch
+// would bleed across the screen. Widening the primitive to carry an x range
+// would cost eight bytes on every primitive in the frame to fix a case that
+// only the patch has.
+//
+// So the patch draws wireframe. It is cheaper, and at that size a solid hull is
+// a blob: the thing that reads is the outline.
+static bool s_fills = true;
+void vg_rast_fills(bool on) { s_fills = on; }
+
 void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t color) {
+    if (!s_fills) return;
     if (!isfinite(x0) || !isfinite(y0) || !isfinite(x1) ||
         !isfinite(y1) || !isfinite(x2) || !isfinite(y2)) return;
     rot_pt(&x0, &y0);
@@ -377,7 +416,7 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     float maxx = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
     float miny = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
     float maxy = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
-    if (maxx < 0 || minx > SCR_W - 1 || maxy < 0 || miny > SCR_H - 1) return;
+    if (maxx < s_cx0 || minx > s_cx1 || maxy < s_cy0 || miny > s_cy1) return;
 
     // Vertices are stored unclipped so the scanline interpolation stays exact;
     // the per-band fill clamps spans instead. Clamping to +-16000 only bites for
@@ -393,8 +432,8 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     p->x1 = TCLAMP(x1); p->y1 = TCLAMP(y1);
     p->x2 = TCLAMP(x2); p->y2 = TCLAMP(y2);
     p->color = color;
-    p->ymin = (int16_t)(miny < 0 ? 0 : (int)miny);
-    p->ymax = (int16_t)(maxy > SCR_H - 1 ? SCR_H - 1 : (int)maxy);
+    p->ymin = (int16_t)(miny < s_cy0 ? s_cy0 : (int)miny);
+    p->ymax = (int16_t)(maxy > s_cy1 ? s_cy1 : (int)maxy);
     #undef TCLAMP
 }
 

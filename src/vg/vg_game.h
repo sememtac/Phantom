@@ -475,6 +475,11 @@ struct VgGame {
     bool        ift_mark;
 
     // The set turning on and off, between the menus and the game.
+    // Looking aft. Held, never toggled: a pilot craning round is doing something
+    // continuous and effortful, and a latch would leave a player flying blind
+    // forwards without a finger on the panel to remind them why.
+    bool        rear_view;
+
     uint8_t     tv_phase;    // TvPhase
     uint8_t     tv_to;       // VgState, entered at the join
     float       tv_t;

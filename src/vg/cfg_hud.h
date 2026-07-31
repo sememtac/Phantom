@@ -87,3 +87,29 @@
 #define ALERT_FLASH_SLOW     1.00f    // seconds per flash at the far edge, 1 Hz
 #define ALERT_FLASH_FAST     0.50f    // ...and closest, 2 Hz. Never faster.
 #define ALERT_FLASH_DUTY     0.50f    // fraction of the period the block is lit
+
+// --- rear view -------------------------------------------------------------
+// A patch in the top right, which is the one part of the panel with nothing in
+// it: the throttle owns the left edge, the radar the bottom, and the comms and
+// broadcast strips run across the middle.
+//
+// It shows the same field of view as the main window, at a quarter of the size.
+// That is deliberate rather than convenient -- hold the patch and its picture
+// fills the screen, and a patch with its own wider field would appear to zoom in
+// at the moment the player is trying to judge a closing shot.
+#define REAR_W               118
+#define REAR_H               118
+#define REAR_X               (SCR_W - SCR_SAFE - REAR_W)
+#define REAR_Y               46
+#define REAR_CX              (REAR_X + REAR_W * 0.5f)
+#define REAR_CY              (REAR_Y + REAR_H * 0.5f)
+// Same field of view means the focal length scales with the window.
+#define REAR_FOCAL_K         ((float)REAR_W / (float)SCR_W)
+
+// Touch zone, generous around the drawn patch: it is a button held under a
+// thumb, not a control that needs accuracy. A contact here does NOT steer --
+// see the partition in vg_input.cpp.
+#define REAR_ZONE_X0         (REAR_X - 22)
+#define REAR_ZONE_Y0         (REAR_Y - 22)
+#define REAR_ZONE_X1         (REAR_X + REAR_W + 22)
+#define REAR_ZONE_Y1         (REAR_Y + REAR_H + 22)

@@ -45,8 +45,52 @@ static inline float smoothstep(float e0, float e1, float x) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+// The rear-view patch: the same world, half a turn about the vertical, drawn
+// small in the top right.
+//
+// A SECOND SUBMISSION OF THE SCENE, which is the expensive stage -- submit bills
+// frame time directly while the band raster hides under DMA. Three things keep
+// it affordable. The starfield is left out, because at a quarter scale a field
+// of single pixels is noise and it is the largest primitive count in the frame.
+// Fills are off, so no triangle work. And the patch is clipped at submit, so
+// everything outside it is discarded before it can reach the band lists.
+static void draw_rear_patch(const VgCam& base) {
+    // Backing, so the main scene does not show through the patch. INK_WELL and
+    // not COL_BLACK: the rasteriser drops colour 0 as "nothing to draw", so a
+    // black fill would submit nothing at all.
+    vg_fill_rect(REAR_X, REAR_Y, REAR_W, REAR_H, INK_WELL);
+
+    VgCam rc = base;
+    rc.rear  = true;
+    rc.focal = FOCAL * REAR_FOCAL_K;
+    // vg_project centres on the screen, and the shake offset is already a plain
+    // screen-space translation added after the divide -- so it is exactly the
+    // hook needed to move the whole projection into the corner. The patch does
+    // not shake with the airframe, which is right: it is a repeater, not a
+    // window in the canopy.
+    rc.sx = REAR_CX - SCR_CX;
+    rc.sy = REAR_CY - SCR_CY;
+
+    vg_rast_viewport(REAR_X, REAR_Y, REAR_W, REAR_H);
+    vg_rast_fills(false);
+    vg_draw_arena_grid(rc);
+    vg_draw_world(rc);
+    if (vg.state == VG_COURSE) vg_course_draw(rc);
+    vg_rast_fills(true);
+    vg_rast_viewport_full();
+
+    // Frame last, over the picture, in the system colour.
+    vg_rect(REAR_X - 1, REAR_Y - 1, REAR_W + 2, REAR_H + 2, COL_HUD);
+}
+
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
+
+    // Looking aft fills the main window. The patch is the button as well as the
+    // repeater, so the picture the player is already watching is the one that
+    // grows -- there is nothing to reacquire.
+    const bool rear_view = vg.rear_view;
+    cam.rear = rear_view;
 
     // How red the whole picture goes. Decided here because this is the layer that
     // knows both the wall distance and the rasteriser; the rasteriser itself has
@@ -219,6 +263,16 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg_draw_hud(cam, in, fps);
         vg_hud_warp(false, 1.0f);
         vg_hud_jitter(0.0f, 0.0f);
+
+        // OUTSIDE the warp bracket. The patch is a flat repeater set into the
+        // panel, and bending it would bend the picture inside it too -- the one
+        // thing on the panel that is a window rather than an instrument.
+        //
+        // Not while the main view is already aft: the patch would then be a
+        // small copy of the screen behind it, showing forward would contradict
+        // the frame it is drawn in, and either way it is the button the player
+        // is holding down.
+        if (!rear_view) draw_rear_patch(cam);
     }
 
     // Panel damage, at whichever severity is worse. Kept low for strain -- a

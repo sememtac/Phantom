@@ -32,6 +32,10 @@ static inline int vg_cull_code(Vec3 p) {
 // Draw a 3D segment, clipping against the near plane FIRST. Without that clip an
 // edge straddling z=0 projects to a wild coordinate and streaks across screen.
 static inline void vg_edge_w(const VgCam& cam, Vec3 a, Vec3 b, uint16_t col, int w) {
+    // Aft view first, so everything below -- the near test, the trivial reject,
+    // the clip -- is working in the space the camera is actually looking at.
+    a = vg_view(cam, a);
+    b = vg_view(cam, b);
     if (a.z < NEAR_Z && b.z < NEAR_Z) return;
 
     // Reject before paying for two divides and a screen clip. Worth it because
