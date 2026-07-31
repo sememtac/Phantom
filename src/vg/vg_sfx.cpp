@@ -138,9 +138,11 @@ void vg_sfx_play(SfxId id, float pitch) {
         break;
     }
 
-    // A click, which is noise that is over before it is a sound.
+    // A click, which is noise that is over before it is a sound. Dropped from
+    // 5 kHz to 2.4 kHz: it was a tick off a desk toy, and this is a weapon
+    // reporting. Still short enough to be punctuation rather than an event.
     case SFX_MSL_EVENT:
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.030f, 0.001f, 0.35f, 5000.0f);
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.034f, 0.001f, 0.42f, 2400.0f);
         break;
 
     // Two-tone would need two voices; one short blip at the top of the band reads
@@ -159,11 +161,33 @@ void vg_sfx_play(SfxId id, float pitch) {
         break;
     }
 
-    // The same generator as the click, an order of magnitude longer and with far
-    // more taken off the top. Almost all of the character is in the filter.
-    case SFX_EXPLODE:
-        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.70f, 0.006f, 0.55f, 900.0f);
+    // LOWER AND LOUDER. A tournament where the losing pilot is heard dying
+    // should not resolve its deaths with a polite hiss. 900 Hz down to 420 and
+    // the gain up by half -- the cue that most wants to be felt rather than
+    // noticed.
+    //
+    // A second voice under it, a tone falling to almost nothing, which is the
+    // part a small speaker turns into weight. Noise alone at this cutoff is a
+    // shhh; the falling tone is what makes it a detonation.
+    case SFX_EXPLODE: {
+        voice_set(v, W_NOISE, 0.0f, 0.0f, 0.85f, 0.004f, 0.80f, 420.0f);
+        Voice* thud = grab();
+        if (thud && thud != v)
+            voice_set(thud, W_SQUARE, 90.0f, 28.0f, 0.55f, 0.004f, 0.55f, 700.0f);
         break;
+    }
+
+    // THE HULL TAKING IT. The heaviest thing in the game, deliberately: this is
+    // the sound of the player's own ship being hurt, and in a tournament that
+    // kills people it should land like something structural giving way rather
+    // than like a scoring event.
+    case SFX_HIT: {
+        voice_set(v, W_SQUARE, 74.0f, 34.0f, 0.42f, 0.002f, 0.85f, 600.0f);
+        Voice* crack = grab();
+        if (crack && crack != v)
+            voice_set(crack, W_NOISE, 0.0f, 0.0f, 0.22f, 0.001f, 0.55f, 1600.0f);
+        break;
+    }
 
     default: v->on = false; break;
     }

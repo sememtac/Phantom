@@ -25,6 +25,7 @@ enum SfxId : unsigned char {
     SFX_MSL_EVENT,       // a round resolved: hit, miss, kill
     SFX_COMMS,           // somebody is on the radio
     SFX_LAUNCH,          // one of ours leaves the rail
+    SFX_HIT,             // the player's hull takes it
     SFX_EXPLODE,
     SFX_COUNT
 };

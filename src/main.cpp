@@ -97,10 +97,14 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the engine only, idle to full and back over four seconds. The cues
-    // are settled; this is the one still being tuned, and a ten-second demo on
-    // every boot wears out its welcome long before the sound does.
+    // TEMP: the heavy end of the mix, which is what changed -- a hull hit, then
+    // an explosion, then the engine idle to full and back.
     {
+        const SfxId demo[3] = { SFX_HIT, SFX_MSL_EVENT, SFX_EXPLODE };
+        for (int i = 0; i < 3; i++) {
+            vg_sfx_play(demo[i], 1.0f);
+            for (int k = 0; k < 90; k++) { vg_sfx_update(); delay(10); }
+        }
         for (int k = 0; k < 400; k++) {
             const float u = (float)k / 400.0f;
             vg_sfx_engine(true, (u < 0.5f) ? (u * 2.0f) : (2.0f - u * 2.0f));

@@ -268,6 +268,7 @@ void vg_damage_player(float amount) {
     if (vg.state == VG_HIT || vg.state == VG_KILL) return;
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
+    vg_sfx_play(SFX_HIT, 1.0f);
     vg.hit_flash     = 0.6f;
     vg.damage_glitch = DAMAGE_GLITCH;
     vg.shake     = 1.0f;
@@ -1149,7 +1150,12 @@ static void alert_step(float* phase, bool* lit, bool active, float k, float dt,
     *lit = now;
 }
 
-static void update_alerts(float dt) {
+static void update_alerts(float dt, bool alive) {
+    if (!alive) {
+        vg.alert_msl_ph = vg.alert_wall_ph = 0.0f;
+        vg.alert_msl_lit = vg.alert_wall_lit = false;
+        return;
+    }
     const bool msl = vg.threat && vg.threat_range <= MSL_ALERT_RANGE;
     alert_step(&vg.alert_msl_ph, &vg.alert_msl_lit, msl,
                msl ? (1.0f - vg.threat_range / MSL_ALERT_RANGE) : 0.0f,
@@ -1176,15 +1182,48 @@ void vg_game_update(float dt, const VgInput* in) {
 
     vg.state_t += dt;
 
-    update_alerts(dt);
+    // ---- ship systems, and whether there is a ship ------------------------
+    //
+    // A DEAD PILOT'S PANEL IS OFF. The alerts used to run in every state,
+    // including the wreck screen and the menus behind it, so a boundary warning
+    // the player could do nothing about followed them out of the match and kept
+    // beeping over the title card. Whatever the threat was, it stopped being
+    // theirs the moment they died.
+    const bool alive  = (vg.state == VG_PLAYING || vg.state == VG_HIT
+                      || vg.state == VG_COURSE);
+    // The engine runs a little wider: through VG_KILL the ship is still flying,
+    // and cutting the hum the instant the opponent dies would be the loudest
+    // thing about that moment.
+    const bool flying = alive || (vg.state == VG_KILL);
 
-    // The airframe, for as long as there is one being flown. Not the menus and
-    // not the attract loop: a hum under the title card is a hum with nothing to
-    // be the sound OF.
-    {
-        const bool flying = (vg.state == VG_PLAYING || vg.state == VG_HIT
-                          || vg.state == VG_KILL    || vg.state == VG_COURSE);
-        vg_sfx_engine(flying, vg.throttle_vis);
+    update_alerts(alive ? dt : 0.0f, alive);
+    vg_sfx_engine(flying, vg.throttle_vis);
+
+    // ---- PAUSE, from anywhere that flies ----------------------------------
+    //
+    // Handled HERE, ahead of the state machine, because it is one rule and not a
+    // rule per state. It used to be written out in each case that wanted it, and
+    // the copy in the match required `playing` -- so the key did nothing in
+    // VG_HIT, which is exactly where a player being shot at reaches for it.
+    // Anything that flies can be paused, and pause always returns where it came
+    // from.
+    if (in->pwr_edge) {
+        if (vg.state == VG_PAUSE) {
+            // One key, one meaning: "take me back one". From a sub-page that is
+            // the menu, not the game -- unpausing out of a page the player is
+            // still reading would skip a step they did not ask to skip.
+            if (vg.pause_page) {
+                vg.pause_page = 0;
+            } else {
+                vg.state   = (vg.pause_from == VG_COURSE) ? VG_COURSE : VG_PLAYING;
+                vg.state_t = 0;
+            }
+        } else if (flying) {
+            vg.pause_from = (vg.state == VG_COURSE) ? VG_COURSE : VG_PLAYING;
+            vg.pause_page = 0;
+            vg.state      = VG_PAUSE;
+            vg.state_t    = 0;
+        }
     }
 
     // A menu tap is a contact that lifts WITHOUT travelling. Resolved here
@@ -1350,15 +1389,7 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(TVA_BRACKET);
         }
 
-        // PWR PAUSES. It does that in a match and it does it here, and a key that
-        // means one thing everywhere is worth more than a key that means the
-        // right thing in each place. Leaving is a button on the pause screen, and
-        // that button is what waits for the briefing -- not the key.
-        else if (in->pwr_edge) {
-            vg.pause_from = VG_COURSE;
-            vg.state      = VG_PAUSE;
-            vg.state_t    = 0;
-        }
+
         break;
     }
 
@@ -1411,14 +1442,6 @@ void vg_game_update(float dt, const VgInput* in) {
         // PWR again, which is what paused it. NOT the + key -- that is the roll
         // control, and a paused player leaning on it would be thrown back into
         // the fight mid-roll.
-        // PWR backs out of the audio page first, then unpauses. One key, one
-        // meaning -- "take me back one" -- rather than a key that unpauses from a
-        // sub-page the player is still reading.
-        if (in->pwr_edge) {
-            if (vg.pause_page) { vg.pause_page = 0; }
-            else               { vg.state = back; vg.state_t = 0; }
-        }
-
         if (vg.pause_page == 1) {
             // Dragged, not tapped: held rather than on release, so the fill
             // follows the finger instead of jumping when it lifts.
@@ -1513,14 +1536,6 @@ void vg_game_update(float dt, const VgInput* in) {
         if (vg.fire_gap > 0) vg.fire_gap -= dt;
         update_reload(dt);
         if (in->fire_edge) player_fire();
-        // PWR, not the + key: that is hold-to-roll now, and pausing every time a
-        // player rolled would be unusable.
-        if (playing && in->pwr_edge) {
-            vg.pause_from = VG_PLAYING;
-            vg.state      = VG_PAUSE;
-            vg.state_t    = 0;
-            break;
-        }
 
         // Unprompted chatter, on a long timer and only when the radio is idle.
         // Taunts are flavour; letting one interrupt a hit or a kill would turn
