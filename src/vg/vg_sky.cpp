@@ -128,6 +128,46 @@ static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
 static float s_u = 0.0f, s_v = 0.0f, s_bank = 0.0f;
+
+// WHERE THE SHIP IS POINTING, as an orientation rather than as two integrated
+// angles. Accumulated from the same Mat3 the stars and the arena ride, so the
+// backdrop cannot drift against them however the ship is flown.
+//
+// s_u and s_v above are derived from this now, once a frame. They are kept
+// because the sampler wants a plane position and because a cloud still tiles;
+// what has changed is that they are read OFF an orientation instead of being
+// the only record of one.
+static Mat3 s_ori = {{ 1,0,0, 0,1,0, 0,0,1 }};
+
+void vg_sky_orient(const Mat3& R, float bank) {
+    s_ori  = mat3_mul(R, s_ori);
+    s_bank = bank;
+}
+
+// The sample point and the horizon angle for a camera looking along `sign` * the
+// nose: +1 ahead, -1 astern.
+//
+// AN INVERTED DIRECTION, NOT AN OFFSET. Adding half a tile to u was only ever
+// right for a ship flying level and turning in yaw alone; negating the view
+// vector is right at any attitude, which is what the rear view actually needs.
+static void sky_sample(float sign, float* u, float* v, float* roll) {
+    // Column 2 of the transpose: the sky direction that currently images to the
+    // view's +z, i.e. what the nose is pointing at.
+    float dx = s_ori.m[6] * sign, dy = s_ori.m[7] * sign, dz = s_ori.m[8] * sign;
+
+    // Equirectangular, which is what the pan rate already assumes: s_pan is
+    // texels per radian, so longitude and latitude scale by it directly.
+    if (dy >  1.0f) dy =  1.0f;
+    if (dy < -1.0f) dy = -1.0f;
+    *u = atan2f(dx, dz) * s_pan;
+    *v = asinf(dy)      * s_pan;
+
+    // How far the sky's north is rolled in the frame. The view-space image of
+    // sky-up is column 1; its angle in the screen plane is the roll. Astern the
+    // horizontal axis is reversed, so the angle is too.
+    const float ux = s_ori.m[1], uy = s_ori.m[4];
+    *roll = atan2f(sign < 0.0f ? -ux : ux, uy);
+}
 // Whether the next fill is for a camera looking aft. Set per frame by the
 // renderer, because the backdrop has no camera of its own to ask.
 static bool  s_rear = false;
@@ -678,29 +718,20 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
 }
 
 void vg_sky_step(float d_pitch, float d_yaw, float bank) {
-    // The backdrop must sweep exactly the way the starfield does, or it reads as
-    // attached to the ship rather than to the universe.
-    //
-    // A feature at texel U lands at screen x = cx + (U - s_u)/S, so screen
-    // position moves OPPOSITE to s_u. Turning right (d_yaw > 0) has to push the
-    // world left, i.e. shrink x, i.e. grow s_u -- hence '+='. This was '-=',
-    // which slid the sky along with the turn instead of against it.
-    // The pan is expressed in LOGICAL screen units first, then carried into
-    // texture space through the bank rotation. Accumulating straight into u/v
-    // was only correct while bank was zero -- it quietly ignored roll, and would
-    // now be 90 degrees out as well.
-    const float pan_x = d_yaw   * s_pan;   // logical +x
-    const float pan_y = d_pitch * s_pan;   // logical +y (screen down)
-
-    const float cb = cosf(bank), sb = sinf(bank);
-    s_u += pan_x * cb - pan_y * sb;
-    s_v += pan_x * sb + pan_y * cb;
-
-    s_bank = bank;
+    // Kept for the cutscene, which tumbles the backdrop by hand and has no
+    // world rotation to hand over. Same convention as vg_game builds its own R
+    // with, so the two cannot disagree about which way is which.
+    vg_sky_orient(mat3_euler(-d_pitch, -d_yaw, 0.0f), bank);
 }
 
 void vg_sky_fill_band(uint16_t* band, int band_y0) {
     if (!s_ready) return;
+
+    // Where the camera is looking, and how far the horizon is rolled in the
+    // frame. Both come off the orientation, once, before anything else.
+    float su, sv, sky_roll;
+    sky_sample(s_rear ? -1.0f : 1.0f, &su, &sv, &sky_roll);
+    s_u = su; s_v = sv;          // kept for the diagnostic line
 
     // This fill writes the band directly, so unlike every other drawing path it
     // never passes through the rasteriser's rotation. It has to account for the
@@ -710,14 +741,16 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // Feeding it PANEL offsets instead of logical ones simply composes a second
     // rotation, so the whole correction is a constant added to the bank angle --
     // no per-pixel work at all.
+// The real roll is in the orientation; s_bank is the cosmetic lean the
+// projection adds on top. Both, or the backdrop slides against the starfield.
 #if VG_ROTATE == 1
-    const float bank_eff = s_bank + 1.57079633f;
+    const float bank_eff = sky_roll + s_bank + 1.57079633f;
 #elif VG_ROTATE == 2
-    const float bank_eff = s_bank + 3.14159265f;
+    const float bank_eff = sky_roll + s_bank + 3.14159265f;
 #elif VG_ROTATE == 3
-    const float bank_eff = s_bank - 1.57079633f;
+    const float bank_eff = sky_roll + s_bank - 1.57079633f;
 #else
-    const float bank_eff = s_bank;
+    const float bank_eff = sky_roll + s_bank;
 #endif
 
     const float cb = cosf(bank_eff), sb = sinf(bank_eff);
@@ -739,13 +772,6 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // radian, so it is the pan step from vg_sky_step run once with d_yaw = pi --
     // carried through the bank the same way, because the offset has to rotate
     // with the horizon exactly as the panning does.
-    float su = s_u, sv = s_v;
-    if (s_rear) {
-        const float off = 3.14159265f * s_pan;
-        su += off * cosf(s_bank);
-        sv += off * sinf(s_bank);
-    }
-
     const int32_t u_org = (int32_t)(su * 65536.0f);
     const int32_t v_org = (int32_t)(sv * 65536.0f);
 
@@ -834,14 +860,19 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
 void vg_sky_fill_patch(uint16_t* band, int band_y0) {
     if (!s_ready || s_px1 < s_px0) return;
 
+    float su, sv, sky_roll;
+    sky_sample(-1.0f, &su, &sv, &sky_roll);
+
+// The real roll is in the orientation; s_bank is the cosmetic lean the
+// projection adds on top. Both, or the backdrop slides against the starfield.
 #if VG_ROTATE == 1
-    const float bank_eff = s_bank + 1.57079633f;
+    const float bank_eff = sky_roll + s_bank + 1.57079633f;
 #elif VG_ROTATE == 2
-    const float bank_eff = s_bank + 3.14159265f;
+    const float bank_eff = sky_roll + s_bank + 3.14159265f;
 #elif VG_ROTATE == 3
-    const float bank_eff = s_bank - 1.57079633f;
+    const float bank_eff = sky_roll + s_bank - 1.57079633f;
 #else
-    const float bank_eff = s_bank;
+    const float bank_eff = sky_roll + s_bank;
 #endif
     const float cb = cosf(bank_eff), sb = sinf(bank_eff);
 
@@ -857,9 +888,8 @@ void vg_sky_fill_patch(uint16_t* band, int band_y0) {
             const int32_t pduy = (int32_t)(-sb * ps * 65536.0f);
             const int32_t pdvy = (int32_t)( cb * ps * 65536.0f);
 
-            const float off = 3.14159265f * s_pan;
-            const int32_t pu = (int32_t)((s_u + off * cosf(s_bank)) * 65536.0f);
-            const int32_t pv = (int32_t)((s_v + off * sinf(s_bank)) * 65536.0f);
+            const int32_t pu = (int32_t)(su * 65536.0f);
+            const int32_t pv = (int32_t)(sv * 65536.0f);
 
             const int pcx = (s_px0 + s_px1) / 2;
             const int pcy = (s_py0 + s_py1) / 2;

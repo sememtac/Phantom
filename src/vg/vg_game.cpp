@@ -668,7 +668,11 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // roll now baked into world positions, plus the cosmetic bank that the
     // projection will add on top. Miss either term and the nebula slides against
     // the starfield.
-    vg_sky_step(pitch, yaw, vg.bank + vg.roll);
+    // The SAME R, which is the entire fix: the backdrop used to integrate the
+    // scalar pitch and yaw next door into a flat pan, and angles do not compose.
+    // Only the cosmetic bank goes separately, because that one is added by the
+    // projection and is not in R.
+    vg_sky_orient(R, vg.bank);
 
     // The cosmetic lean, from the yaw command as always -- plus a lead into any
     // roll. Rolling used to have NO visual signature of its own: yaw is forced to

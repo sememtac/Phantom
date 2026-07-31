@@ -34,6 +34,23 @@ static inline Vec3 mat3_apply(const Mat3& M, Vec3 v) {
               M.m[6] * v.x + M.m[7] * v.y + M.m[8] * v.z);
 }
 
+// A * B, i.e. apply B then A. Needed to accumulate an orientation frame by
+// frame instead of integrating angles, which does not compose.
+static inline Mat3 mat3_mul(const Mat3& A, const Mat3& B) {
+    Mat3 M;
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            M.m[r * 3 + c] = A.m[r * 3 + 0] * B.m[0 + c]
+                           + A.m[r * 3 + 1] * B.m[3 + c]
+                           + A.m[r * 3 + 2] * B.m[6 + c];
+    return M;
+}
+
+static inline Mat3 mat3_identity(void) {
+    Mat3 M = {{ 1,0,0, 0,1,0, 0,0,1 }};
+    return M;
+}
+
 // Composite rotation applied in the order X, then Y, then Z (M = Rz*Ry*Rx).
 static inline Mat3 mat3_euler(float rx, float ry, float rz) {
     float sx = sinf(rx), cx = cosf(rx);

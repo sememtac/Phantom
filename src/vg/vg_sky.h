@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "vg_vec.h"
 
 // Procedural cosmic backdrop.
 //
@@ -66,6 +67,20 @@ bool vg_sky_init(void);
 bool vg_sky_ready(void);
 
 void vg_sky_generate(SkyKind kind, uint32_t seed);
+
+// Carry the backdrop round by this frame's world rotation -- the SAME Mat3 the
+// stars and the arena ride, which is the whole point.
+//
+// It used to take scalar pitch and yaw deltas and integrate them into a flat
+// (u,v) pan position. Angles do not compose: roll ninety degrees onto a wing,
+// pull ninety, and with no yaw input at all the nose ends up seventy-six
+// degrees of heading from where that sum says it is. A tiling cloud hid it,
+// having nothing in it to recognise. A backdrop with a landmark in it does not,
+// and neither does a rear view, which has to INVERT a heading the old form
+// never stored.
+//
+// `bank` is the cosmetic lean only. The real roll is already in R.
+void vg_sky_orient(const Mat3& R, float bank);
 
 // Advance the backdrop by this frame's rotation. Angles in radians.
 void vg_sky_step(float d_pitch, float d_yaw, float bank);
