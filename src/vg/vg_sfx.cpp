@@ -193,20 +193,32 @@ void vg_sfx_update(void) {
         // --- the airframe --------------------------------------------------
         s_eng_lvl += (s_eng_want - s_eng_lvl) * eng_k;
         if (s_eng_lvl > 0.0005f) {
-            // Frequency rides the same level, so it climbs as well as swells.
-            const float f = 46.0f + 34.0f * s_eng_lvl;
+            // A DRIVE, NOT A PROPELLER. Three things were making it an aircraft:
+            // the fundamental sat at 46-80 Hz, a second oscillator an OCTAVE
+            // above it added the brightness a prop has, and there was enough
+            // noise on top to read as air being moved. All three are the sound of
+            // something pushing against an atmosphere.
+            //
+            // Now: half the frequency, the second oscillator moved from an octave
+            // up to a hair off UNISON, and most of the noise gone.
+            const float f = 29.0f + 21.0f * s_eng_lvl;
             s_eng_p1 += f * dt;
-            s_eng_p2 += (f * 2.006f) * dt;      // an octave, detuned a hair
+            // 1.006, so the two beat against each other about every three
+            // seconds. Slow enough to read as something enormous idling rather
+            // than as two oscillators disagreeing.
+            s_eng_p2 += (f * 1.006f) * dt;
             if (s_eng_p1 >= 1.0f) s_eng_p1 -= (float)(int)s_eng_p1;
             if (s_eng_p2 >= 1.0f) s_eng_p2 -= (float)(int)s_eng_p2;
 
             const float saw1 = s_eng_p1 * 2.0f - 1.0f;
             const float saw2 = s_eng_p2 * 2.0f - 1.0f;
-            float e = saw1 * 0.6f + saw2 * 0.25f + noise() * 0.14f;
+            float e = saw1 * 0.55f + saw2 * 0.45f + noise() * 0.05f;
 
-            // One pole, low. Everything above a few hundred Hz in a saw is what
-            // makes it a buzz instead of a hum.
-            s_eng_lp += (e - s_eng_lp) * 0.06f;
+            // Deliberately NOT filtered harder to match the lower note. This
+            // speaker is a centimetre across and reproduces nothing near 30 Hz --
+            // the pitch the player hears is inferred from the harmonics, so
+            // taking those off would make it quieter without making it lower.
+            s_eng_lp += (e - s_eng_lp) * 0.055f;
             // Louder than it was. At 0.22 it was technically present and
             // practically inaudible under everything else -- an engine you have
             // to listen for is not doing the job an engine is there to do.
