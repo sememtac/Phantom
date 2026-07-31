@@ -97,18 +97,17 @@ void setup(void) {
     if (!vg_sfx_init()) Serial.println("WARN: no audio");
 
 #if VG_AUDIO_CHIRP
-    // TEMP: the hull cue twice -- listen for four beeps ABOVE the groan, which is
-    // the pairing the last few passes were after -- then the broadcast's full
-    // prompt and its short one back to back, which is what a briefing sounds like.
+    // TEMP: the hull cue twice, then what dying actually sounds like -- the
+    // explosion and the hull cue together, which is the case the beeps were
+    // added for and the only one where all ten voices are in use at once.
     {
         for (int i = 0; i < 2; i++) {
             vg_sfx_play(SFX_HIT, 1.0f);
             for (int k = 0; k < 240; k++) { vg_sfx_update(); delay(10); }
         }
-        vg_sfx_play(SFX_IFT, 1.0f);
-        for (int k = 0; k < 90; k++) { vg_sfx_update(); delay(10); }
-        vg_sfx_play(SFX_IFT, 0.5f);
-        for (int k = 0; k < 90; k++) { vg_sfx_update(); delay(10); }
+        vg_sfx_play(SFX_EXPLODE, 0.8f);
+        vg_sfx_play(SFX_HIT, 1.0f);
+        for (int k = 0; k < 260; k++) { vg_sfx_update(); delay(10); }
     }
 #endif
     vg_pmu_dump();

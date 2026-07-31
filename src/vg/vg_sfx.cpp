@@ -259,17 +259,26 @@ void vg_sfx_play(SfxId id, float pitch) {
         // small the bottom end is barely there -- so what sells the weight is
         // something bright and thin sitting above it and losing. The systems
         // reporting damage while the airframe answers underneath.
-        // 1320 Hz was too high and too close together: it did not read as four
-        // beeps over a groan, it read as the whole cue being bright. 700 Hz and
-        // nearly three times the spacing, so they are heard as separate events
-        // sitting above the airframe rather than as part of its timbre.
-        static const float beep_at[4] = { 0.06f, 0.24f, 0.42f, 0.60f };
-        static const float beep_g [4] = { 0.32f, 0.24f, 0.16f, 0.09f };
-        for (int i = 0; i < 4; i++) {
+        // THE SHIP SCREAMING. High, fast and fading -- five of them at 1760 Hz,
+        // which is where a small speaker is at its most efficient and its most
+        // unpleasant, and both of those are wanted here.
+        //
+        // It went 1320 -> 700 -> 1760 across three passes, and the middle one was
+        // a correction to the wrong thing. At 1320 the cue read as bright because
+        // the GROAN underneath it was inaudible -- filtered to 92 Hz on a driver
+        // that cannot produce it -- so the beeps were all there was. With the
+        // airframe now sitting properly under them they have something to scream
+        // over, and can be as sharp as distress actually is.
+        //
+        // Tight spacing on purpose: urgency is rate, not pitch. Spread out they
+        // were an instrument reporting, and this is not a report.
+        static const float beep_at[5] = { 0.04f, 0.13f, 0.22f, 0.32f, 0.44f };
+        static const float beep_g [5] = { 0.36f, 0.29f, 0.21f, 0.13f, 0.07f };
+        for (int i = 0; i < 5; i++) {
             Voice* b = grab();
             if (!b || b == v) break;
-            voice_set(b, W_SQUARE, 700.0f, 700.0f, 0.07f, 0.002f,
-                      beep_g[i], 3200.0f);
+            voice_set(b, W_SQUARE, 1760.0f, 1760.0f, 0.055f, 0.0015f,
+                      beep_g[i], 7000.0f);
             b->delay = beep_at[i];
         }
         break;
