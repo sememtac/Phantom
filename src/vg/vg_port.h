@@ -96,6 +96,24 @@ bool vg_store_save(const void* data, unsigned len);
 bool vg_store_diag_load(void* data, unsigned len);
 bool vg_store_diag_save(const void* data, unsigned len);
 
+// ---- Audio -----------------------------------------------------------------
+//
+// Mono 16-bit at VG_AUDIO_RATE. The game generates its own sound rather than
+// playing files -- see vg_sfx.cpp -- so this seam carries samples and nothing
+// else: no notion of a clip, a channel or a volume, all of which belong above it.
+//
+// NON-BLOCKING BY CONTRACT. vg_audio_write returns how many samples it actually
+// took and the caller is expected to shrug at a short write. A port that blocked
+// here would put the audio buffer on the critical path of the frame, which is the
+// same mistake the serial link made and cost two minutes of frozen screen.
+#define VG_AUDIO_RATE 22050
+
+bool vg_audio_init(void);
+int  vg_audio_write(const int16_t* samples, int n);
+// Room, in samples, before a write would be short. Lets the caller generate
+// exactly what will fit rather than generating and discarding.
+int  vg_audio_room(void);
+
 // ---- IMU -------------------------------------------------------------------
 
 bool vg_imu_init(void);

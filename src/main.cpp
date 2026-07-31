@@ -15,6 +15,7 @@
 #include "vg/vg_capture.h"
 #include "vg/vg_replay.h"
 #include "vg/vg_crumb.h"
+#include "vg/vg_sfx.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -91,6 +92,9 @@ void setup(void) {
     // Non-fatal like the rest: without the PMU the power key is invisible and
     // every other control still works.
     if (!vg_pmu_init()) Serial.println("WARN: no PMU - power key unavailable");
+    // Non-fatal like the rest. A silent game is a lesser game; a game that
+    // refuses to boot because a codec did not answer is a broken one.
+    if (!vg_sfx_init()) Serial.println("WARN: no audio");
     vg_pmu_dump();
 
     vg_input_init();
@@ -186,6 +190,10 @@ void loop(void) {
     uint32_t t2 = micros();
     vg_crumb(CRUMB_RENDER, (uint8_t)vg.state);
     vg_render_frame(&in, fps);
+
+    // Generated after the frame is submitted and before the blit waits on DMA,
+    // which is the one place in the loop with time to spare.
+    vg_sfx_update();
 
     uint32_t t3 = micros();
     vg_crumb(CRUMB_FLUSH, (uint8_t)vg.state);

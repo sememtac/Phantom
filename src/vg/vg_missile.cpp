@@ -1,4 +1,5 @@
 #include "vg_sim.h"
+#include "vg_sfx.h"
 #include "vg_arena.h"
 #include <math.h>
 
@@ -65,6 +66,10 @@ static bool missile_target(const Missile* m, Vec3* pos, Vec3* vel) {
 // why shots sometimes vanished without a word -- fire three, kill with the
 // second, and the third's miss was silently thrown away.
 static void report(MslEvent e) {
+    // One click per outcome, at the moment it is REPORTED rather than when it
+    // happened -- the click belongs to the banner appearing, and a queued outcome
+    // clicks when its turn comes.
+    vg_sfx_play(SFX_MSL_EVENT, (e == MSL_DESTROYED) ? 0.7f : 1.0f);
     if (vg.msl_event_t <= 0.0f) {
         vg.msl_event   = e;
         vg.msl_event_t = MSL_BANNER;
@@ -76,6 +81,7 @@ static void report(MslEvent e) {
 
 static void detonate(Missile* m, bool hit) {
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);
+    if (hit) vg_sfx_play(SFX_EXPLODE, 1.0f);
     if (m->from_player && !hit) report(MSL_MISSED);
     m->alive = false;
 }

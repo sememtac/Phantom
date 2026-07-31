@@ -30,6 +30,10 @@
 #include <SensorQMI8658.hpp>
 #include <TouchDrvCSTXXX.hpp>
 #include <Preferences.h>
+#include <ESP_I2S.h>
+extern "C" {
+#include "../third_party/es8311.h"
+}
 
 // ---- Board pin map (Waveshare ESP32-S3-Touch-AMOLED-2.16) ----
 #define LCD_CS       12
@@ -52,6 +56,18 @@
 // XPowersLib back in for.
 #define BTN_A_GPIO    0      // BOOT
 #define BTN_B_GPIO   18
+
+// ---- Audio (ES8311 mono codec + onboard speaker, I2S) ----
+// Pins from Waveshare's factory example for this board. The codec shares the I2C
+// bus above at 0x18 -- which is why it showed up in the bus scan long before
+// anything was playing.
+#define SND_I2S_MCLK   42
+#define SND_I2S_BCLK    9
+#define SND_I2S_WS     45
+#define SND_I2S_DOUT    8
+#define SND_I2S_DIN    10
+#define SND_PA_PIN     46     // power-amp enable, HIGH = on
+#define SND_ES8311_ADDR 0x18
 
 #define LCD_HOST     SPI2_HOST
 #define LCD_CLOCK_HZ 80000000
@@ -547,4 +563,89 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         out++;
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Audio
+//
+// The codec is configured at the SAMPLE RATE THE GAME GENERATES, not at 44.1k.
+// Every sample here is synthesised on the fly (vg_sfx.cpp), and generating twice
+// as many of them to feed a rate nothing needs would double the only cost that
+// is not already free.
+//
+// I2S runs STEREO with both slots because the part expects a stereo frame; the
+// mono sample is simply written to both. That doubles the bytes on the wire and
+// nothing else -- the wire is not the constraint.
+// ---------------------------------------------------------------------------
+static I2SClass s_i2s;
+static bool     s_audio_ok = false;
+
+bool vg_audio_init(void) {
+    pinMode(SND_PA_PIN, OUTPUT);
+    digitalWrite(SND_PA_PIN, LOW);          // amp off until the codec is up
+
+    s_i2s.setPins(SND_I2S_BCLK, SND_I2S_WS, SND_I2S_DOUT, SND_I2S_DIN, SND_I2S_MCLK);
+    if (!s_i2s.begin(I2S_MODE_STD, VG_AUDIO_RATE, I2S_DATA_BIT_WIDTH_16BIT,
+                     I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
+        Serial.println("vg_audio: I2S init failed");
+        return false;
+    }
+
+    // 400 kHz for the codec, exactly as for the PMU. The bus runs at 1 MHz for
+    // the touch panel and the ES8311 is a 400 kHz part -- the same out-of-spec
+    // clock that made the power key look like it did not exist.
+    Wire.setClock(400000);
+    es8311_handle_t es = es8311_create(0, SND_ES8311_ADDR);
+    bool ok = (es != nullptr);
+    if (ok) {
+        const es8311_clock_config_t clk = {
+            false, false, true, VG_AUDIO_RATE * 256, VG_AUDIO_RATE
+        };
+        ok = (es8311_init(es, &clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) == ESP_OK);
+        if (ok) {
+            es8311_sample_frequency_config(es, clk.mclk_frequency, clk.sample_frequency);
+            es8311_microphone_config(es, false);
+            // The codec's own gain stays fixed and loud-ish; the game's mix is
+            // done in the mixer, where it can be per-sound and per-setting.
+            es8311_voice_volume_set(es, 70, NULL);
+        }
+    }
+    Wire.setClock(1000000);
+
+    if (!ok) { Serial.println("vg_audio: ES8311 init failed"); return false; }
+
+    // Amp on and left on. Gating it per sound is what makes a speaker click, and
+    // these cues are short and frequent -- the click would be louder than the cue.
+    digitalWrite(SND_PA_PIN, HIGH);
+    s_audio_ok = true;
+    Serial.printf("vg_audio: ES8311 up @%d Hz\n", VG_AUDIO_RATE);
+    return true;
+}
+
+int vg_audio_room(void) {
+    if (!s_audio_ok) return 0;
+    return s_i2s.availableForWrite() / 4;    // stereo, 16-bit: 4 bytes a sample
+}
+
+int vg_audio_write(const int16_t* samples, int n) {
+    if (!s_audio_ok || n <= 0) return 0;
+
+    // Doubled into stereo in blocks rather than one sample at a time: a call per
+    // sample would spend more time in the driver than on the arithmetic that
+    // produced them.
+    static int16_t st[128 * 2];
+    int done = 0;
+    while (done < n) {
+        int take = n - done;
+        if (take > 128) take = 128;
+        for (int i = 0; i < take; i++) {
+            st[i * 2]     = samples[done + i];
+            st[i * 2 + 1] = samples[done + i];
+        }
+        const size_t want = (size_t)take * 4;
+        const size_t got  = s_i2s.write((uint8_t*)st, want);
+        done += (int)(got / 4);
+        if (got < want) break;               // short write: the caller shrugs
+    }
+    return done;
 }

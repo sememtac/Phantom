@@ -8,6 +8,7 @@
 #include "vg_cine.h"
 #include "vg_ift.h"
 #include "vg_course.h"
+#include "vg_sfx.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -109,6 +110,10 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // cannot provoke a second time, and the round is already decided -- there is
     // nothing it can be competing with.
     vg.comms_t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
+
+    // The radio opening, not the words. A last transmission gets a lower blip --
+    // the only thing distinguishing it by ear, and it should not sound routine.
+    vg_sfx_play(SFX_COMMS, (ev == VOICE_DEATH) ? 0.72f : 1.0f);
 }
 
 // The broadcast voice. White, and outside the hue system entirely.
@@ -245,6 +250,7 @@ void vg_clear_player_hit(void) { s_player_hit = false; }
 // round is decided, and a win must not be taken back after the fact.
 void vg_kill_player(void) {
     if (vg.state == VG_KILL) return;
+    vg_sfx_play(SFX_EXPLODE, 0.8f);
     vg.health        = 0.0f;
     vg.hit_flash     = 0.6f;
     vg.damage_glitch = DAMAGE_GLITCH;
@@ -370,6 +376,7 @@ static void player_fire(void) {
 
     vg.missiles--;
     vg.fire_gap = vg.spec->fire_gap;
+    vg_sfx_play(SFX_LAUNCH, 1.0f);
 
     // Emptying the rack starts the clock. Doing it here rather than in the tick
     // means the reload is timed from the shot that emptied it, not from the next
