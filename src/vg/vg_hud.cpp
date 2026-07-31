@@ -239,23 +239,6 @@ void vg_draw_ift(void) {
     }
 }
 
-// The way out of the ring course.
-//
-// Top left, which is the only corner of the panel that carries no instrument:
-// the throttle owns the left edge from 110 down, the speed and kill tallies own
-// the top centre and right, and the radar owns everything below 374.
-//
-// It exists because the course took the + key as its exit, and the + key is the
-// roll control now. A practice range you cannot leave without dying is not
-// practice.
-void vg_draw_course_exit(void) {
-    vg_button(CRS_EXIT_X, CRS_EXIT_Y, CRS_EXIT_W, CRS_EXIT_H, "MENU", false, true);
-}
-
-bool vg_course_exit_at(float x, float y) {
-    return vg_in_rect(x, y, CRS_EXIT_X, CRS_EXIT_Y, CRS_EXIT_W, CRS_EXIT_H);
-}
-
 static void draw_throttle(void) {
     const int x0 = THROTTLE_X0, w = THROTTLE_W;
     const int y0 = THROTTLE_TOP, h = THROTTLE_BOT - THROTTLE_TOP;
@@ -539,12 +522,6 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
 
     draw_health();
     draw_comms();
-
-    snprintf(buf, sizeof(buf), "%d", vg.score);
-    vg_text(SCR_W - 30 - vg_text_width(buf, 3), 20, buf, COL_HUD, 3);
-
-    snprintf(buf, sizeof(buf), "KILLS %d", vg.kills);
-    vg_text(SCR_W - 30 - vg_text_width(buf, 2), 58, buf, INK_FAINT, 2);
 
     // Missile rack: one tick per round, hollow while rearming. Vertical on the
     // right edge to mirror the throttle and leave the bottom for the radar.

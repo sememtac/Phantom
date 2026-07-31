@@ -247,10 +247,6 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_draw_target_markers(cam);
     vg_draw_threat_indicator(cam);
 
-    // Only in the course, and only with the instruments, so it arrives as part
-    // of the panel rather than ahead of it.
-    if (vg.state == VG_COURSE) vg_draw_course_exit();
-
     vg_draw_overlays();
 
     // The broadcast sits ON TOP of the instruments, not under them.

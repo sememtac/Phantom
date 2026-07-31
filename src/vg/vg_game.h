@@ -310,9 +310,6 @@ struct VgGame {
     VgState  state;
     float    state_t;
 
-    int      score;
-    int      kills;
-    float    difficulty;
 
     // The player's ship, chosen once and flown for a whole tournament.
     ShipClass       ship;

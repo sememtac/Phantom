@@ -87,12 +87,3 @@
 #define ALERT_FLASH_SLOW     1.00f    // seconds per flash at the far edge, 1 Hz
 #define ALERT_FLASH_FAST     0.50f    // ...and closest, 2 Hz. Never faster.
 #define ALERT_FLASH_DUTY     0.50f    // fraction of the period the block is lit
-
-// --- the ring course's way out ---------------------------------------------
-// Top left. The one corner with no instrument in it: the throttle strip starts
-// at y=110 on the left edge, the speed and kill readouts own the top centre and
-// right, and the radar owns everything below y=374.
-#define CRS_EXIT_X           12
-#define CRS_EXIT_Y           12
-#define CRS_EXIT_W          132
-#define CRS_EXIT_H           48

@@ -408,7 +408,6 @@ void vg_game_init(void) {
     vg.health      = vg.health_max;
     vg.throttle    = 0.45f;
     vg.speed       = vg.spec->speed_min;
-    vg.difficulty  = 1.0f;
     vg.missiles    = vg.spec->magazine;
     vg.lock_target = -1;
 
@@ -436,8 +435,6 @@ void vg_tournament_begin(ShipClass c) {
     // the round of 16 is still on the ship in the final.
     vg.health_max = vg.spec->hull;
     vg.health     = vg.health_max;
-    vg.score      = 0;
-    vg.kills      = 0;
 
     vg_tourney_begin(c);
 
@@ -472,7 +469,6 @@ void vg_match_start(void) {
     vg.trail_acc   = 0;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
-    vg.difficulty  = 1.0f;
     vg.throttle    = 0.5f;
     vg.bank        = 0;
     vg.shake       = 0;
@@ -1108,9 +1104,6 @@ void vg_game_update(float dt, const VgInput* in) {
 
     vg.state_t += dt;
 
-    vg.difficulty = 1.0f + (float)vg.kills * 0.35f;
-    if (vg.difficulty > 4.0f) vg.difficulty = 4.0f;
-
     // A menu tap is a contact that lifts WITHOUT travelling. Resolved here
     // rather than in the input layer because the bracket needs one contact to
     // serve as both a pan drag and a button press, and only the consumer can
@@ -1275,8 +1268,8 @@ void vg_game_update(float dt, const VgInput* in) {
         // Leaving early is not a moment and gets none. The way out is a button on
         // the screen: the + key is the roll control now, and a practice range with
         // no visible exit is a trap.
-        else if (in->pwr_edge || (tap_up && vg_course_exit_at(tap_x, tap_y)))
-            vg_tv_go(TVA_BRACKET);
+        // PWR is the way out, the same key that opens the menu everywhere else.
+        else if (in->pwr_edge) vg_tv_go(TVA_BRACKET);
         break;
     }
 

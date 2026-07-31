@@ -105,8 +105,6 @@ static void hit_enemy(int index, float dmg) {
     if (s->hull <= 0.0f) {
         vg_spawn_debris(s->pos, 22.0f, 14);
         s->alive = false;
-        vg.kills++;
-        vg.score += 500;
     }
 }
 

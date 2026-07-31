@@ -67,6 +67,3 @@ void vg_draw_overlays(void);
 // because the IFT speaks over the INTRO -- which has no instruments at all -- as
 // well as over a finished match.
 void vg_draw_ift(void);
-// The ring course's way back to the menus, and its hit test.
-void vg_draw_course_exit(void);
-bool vg_course_exit_at(float x, float y);
