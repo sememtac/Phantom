@@ -142,13 +142,24 @@ struct Debris {
 
 // Screen flow:
 //
-//   ATTRACT --tap--> SELECT --confirm--> BRACKET --ready--> PLAYING
-//                                           ^                  |
-//                        won a round, not the final            |
-//                                           +------ ROUND_WON -+
+//   ATTRACT --tap--> ENTRY --callsign--> COURSE --done or PWR--> SELECT
+//                                                                  |
+//                                                     ship, and the draw is made
+//                                                                  v
+//                                       PLAYING <---ready--- BRACKET
+//                                          |                    ^
+//                                          +---- ROUND_WON -----+
+//                                       won a round, not the final
 //
-// PLAYING drops to PAUSE on the alt button (quit from there returns to
-// ATTRACT), to OVER when the player dies, and to WON on taking the final.
+// The COURSE sits between the callsign and the ship ON PURPOSE. Giving a name
+// and then being checked in by the broadcast is the fiction -- the player
+// confirms they are taking part before they are shown a draw to take part in.
+// The same course is reachable later from the bracket, where it is practice
+// rather than a check-in and leads back to the map; vg.course_checkin is the
+// only thing that differs.
+//
+// PLAYING drops to PAUSE on the PWR key (quit from there returns to ATTRACT), to
+// OVER when the player dies, and to WON on taking the final.
 enum VgState : uint8_t {
     VG_ATTRACT = 0,
     VG_ENTRY,             // callsign and trail colour
@@ -190,6 +201,7 @@ enum TvAction : uint8_t {
     TVA_MATCH,     // into the launch cutscene
     TVA_COURSE,    // into the ring course
     TVA_BRACKET,   // back out to the tournament map
+    TVA_SELECT,    // on to the ship, after the check-in course
     TVA_ATTRACT    // back out to the title
 };
 
@@ -401,6 +413,12 @@ struct VgGame {
     // vg_course_update.
     bool        course_briefing;
     float       course_wait;
+
+    // True while the course is the CHECK-IN -- the one a new pilot is put through
+    // straight after giving a callsign, before there is a tournament to go back
+    // to. It decides where leaving the course leads, which is the only thing that
+    // differs between this run and one started later from the map.
+    bool        course_checkin;
 
     // Time since the course was finished. The finish gets a beat of its own
     // rather than cutting straight out; see VG_COURSE.

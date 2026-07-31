@@ -54,13 +54,6 @@ void setup(void) {
     delay(300);
     Serial.println("\n=== PHANTOM ===");
 
-    // Why the LAST run ended. A panic on this part with USB-CDC prints nothing --
-    // the USB task dies with it -- so a crash is silent and indistinguishable from
-    // a hang. This survives the reboot and is the only thing that will tell us.
-    //
-    //   1 power-on   3 software   4 PANIC   5 int watchdog   6 task watchdog
-    //   7 watchdog   9 brownout  11 USB, which is our own reset pulse
-    //
     if (!vg_panel_init()) {
         Serial.println("FATAL: no panel");
         s_halted = true;
@@ -81,10 +74,17 @@ void setup(void) {
     // which is worse than persisting and far better than refusing to boot.
     if (!vg_store_init()) Serial.println("WARN: no NVS - progress will not persist");
 
-    // AFTER storage, not before. The crash record is mirrored into flash so that
+    // Why the LAST run ended, and where it was. A panic on this part with USB-CDC
+    // prints nothing -- the USB task dies with it -- so a crash is silent and
+    // indistinguishable from a hang. This is the only thing that will tell us.
+    //
+    //   1 power-on   3 software   4 PANIC   5 int watchdog   6 task watchdog
+    //   7 watchdog   9 brownout  11 USB, which is our own reset pulse
+    //
+    // AFTER storage, not before. The record is mirrored into flash so that
     // unplugging a locked-up board does not erase the reason it locked up, and
     // reporting it before the store exists would quietly skip exactly the case it
-    // was added for. It prints the reset reason too -- see vg_crumb.h.
+    // was added for.
     vg_crumb_report();
 
     vg_buttons_init();
@@ -129,7 +129,14 @@ void loop(void) {
     // The PHASE is worked out at the end of the frame, where the timings already
     // exist -- see below. Recorded here it would always say "flush", because that
     // is simply the last crumb the previous frame happened to set.
-    const bool stalled = (frame_dt > 0.25f);
+    //
+    // NOT DURING A SESSION. A capture or a replay blocks the loop on purpose --
+    // the device waits up to thirty seconds for the host's next record -- and
+    // those waits are both longer and far more frequent than any real freeze, so
+    // left in they would own the worst-frame record permanently and the
+    // instrument would only ever report the tool measuring it.
+    const bool stalled = (frame_dt > 0.25f)
+                       && !vg_capture_active() && vg_replay_mode() == VG_RP_OFF;
     const uint32_t stall_ms = (uint32_t)(frame_dt * 1000.0f);
     // Past half a second the frame is not late, something has blocked -- a flash
     // write, a reconnect. Catching up on it is worse than dropping it.

@@ -1,6 +1,7 @@
 #include "vg_capture.h"
 #include "vg_config.h"
 #include "vg_replay.h"
+#include "vg_crumb.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
@@ -134,7 +135,13 @@ void vg_capture_poll(void) {
         // Replay commands first: they read their own payload straight off the
         // stream, so they must not be mistaken for capture bytes.
         if (vg_replay_command(c)) continue;
-        if (c == 's' && s_mode) {
+        if (c == 'z') {
+            // Forget the diagnostic record. Wanted from the host because the
+            // alternative was building and flashing a one-line firmware to clear
+            // a stale worst-case, which is how the last one got cleared.
+            vg_crumb_reset();
+            Serial.println("\nvg_crumb: cleared");
+        } else if (c == 's' && s_mode) {
             s_mode = 0;
             Serial.printf("\nvg_capture: DONE %u frames\n", (unsigned)s_index);
         } else if (c == 'b' && !s_mode) {

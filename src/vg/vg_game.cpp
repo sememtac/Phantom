@@ -1082,6 +1082,10 @@ static void tv_join(void) {
         vg.state   = VG_BRACKET;
         vg.state_t = 0;
         break;
+    case TVA_SELECT:
+        vg.state   = VG_SELECT;
+        vg.state_t = 0;
+        break;
     case TVA_ATTRACT: enter_attract();  break;
     case TVA_NONE:    break;
     }
@@ -1184,8 +1188,10 @@ void vg_game_update(float dt, const VgInput* in) {
     case VG_ENTRY: {
         menu_world(dt);
         if (vg_entry_update(in, tap_up, tap_x, tap_y)) {
-            vg.state   = VG_SELECT;
-            vg.state_t = 0;
+            // Straight to the IFT. A callsign is a registration, and what follows
+            // a registration is being checked in -- not being shown a hangar.
+            vg.course_checkin = true;
+            vg_tv_go(TVA_COURSE);
         }
         break;
     }
@@ -1284,16 +1290,28 @@ void vg_game_update(float dt, const VgInput* in) {
         // Finishing is a MOMENT, not an exit condition. The gate is already gone
         // and the player keeps flying while the broadcast marks it, exactly as a
         // kill does -- see COURSE_DONE_BEAT.
+        // Where leaving leads. A check-in has no tournament behind it yet -- the
+        // draw is made when the ship is chosen -- so it goes on to the hangar
+        // instead of back to a map that does not exist.
+        const TvAction course_out = vg.course_checkin ? TVA_SELECT : TVA_BRACKET;
+
         if (vg.course_done) {
             vg.course_end_t += dt;
-            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(TVA_BRACKET);
+            if (vg.course_end_t > COURSE_DONE_BEAT) vg_tv_go(course_out);
         }
 
-        // Leaving early is not a moment and gets none. The way out is a button on
-        // the screen: the + key is the roll control now, and a practice range with
-        // no visible exit is a trap.
-        // PWR is the way out, the same key that opens the menu everywhere else.
-        else if (in->pwr_edge) vg_tv_go(TVA_BRACKET);
+        // NOT WHILE THE BRIEFING IS RUNNING. Being checked in is not something you
+        // walk out of halfway through, and letting the player leave mid-sentence
+        // would make the one moment the broadcast addresses them directly into
+        // something skippable by accident.
+        //
+        // The test is the briefing and NOT vg_ift_busy(), which is also true for
+        // six seconds after every gate: that would have left the way out dead for
+        // most of a run, on and off, with nothing to tell the player why.
+        //
+        // PWR is the way out otherwise, the same key that opens the menu
+        // everywhere else.
+        else if (in->pwr_edge && !vg.course_briefing) vg_tv_go(course_out);
         break;
     }
 
@@ -1327,6 +1345,7 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
                 vg_tv_go(TVA_MATCH);
             } else if (vg_bracket_course_at(tap_x, tap_y)) {
+                vg.course_checkin = false;
                 vg_tv_go(TVA_COURSE);
             } else if (vg_bracket_repair_at(tap_x, tap_y)) {
                 vg_repair_reset();
