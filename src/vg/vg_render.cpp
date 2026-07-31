@@ -86,15 +86,24 @@ void vg_render_frame(const VgInput* in, float fps) {
         //
         // Phases, in the order they happen going OUT:
         //   the picture darkens                  dim  rises first
-        //   it collapses to the centre line      open falls
+        //   it collapses to the centre line      open falls, 0.05..0.62
         //   what is left whitens                 wash rises
-        //   the line shortens to a dot and goes  wide falls, wash dies
+        //   the line shortens to a dot and goes  wide falls, 0.62..1.00
+        //
+        // THE TWO SHRINKS DO NOT OVERLAP. They used to: the line began losing its
+        // width while it was still losing its height, so the dot phase was over
+        // in a couple of frames and read as a flash rather than as a motion.
+        // Handing the horizontal its own stretch of the curve -- more than a
+        // third of it -- is what makes a dot something the eye can follow out of
+        // the middle of the screen, and it costs the collapse nothing.
         const float c = (vg.tv_phase == TV_OUT) ? (vg.tv_t / TV_OUT_TIME)
                                                 : (1.0f - vg.tv_t / TV_IN_TIME);
-        vg_rast_tv(1.0f - smoothstep(0.12f, 0.78f, c),
-                   1.0f - smoothstep(0.80f, 1.00f, c),
-                   smoothstep(0.30f, 0.78f, c) * (1.0f - smoothstep(0.93f, 1.0f, c)),
-                   smoothstep(0.00f, 0.58f, c));
+        vg_rast_tv(1.0f - smoothstep(0.05f, 0.62f, c),
+                   1.0f - smoothstep(0.62f, 1.00f, c),
+                   // Lit for essentially the whole of it. The kill at the very end
+                   // is what makes the dot go OUT rather than merely get small.
+                   smoothstep(0.20f, 0.55f, c) * (1.0f - smoothstep(0.985f, 1.0f, c)),
+                   smoothstep(0.00f, 0.50f, c));
     }
 
     vg_rast_begin_frame();
