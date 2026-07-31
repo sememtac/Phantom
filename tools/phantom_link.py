@@ -611,6 +611,8 @@ class FrameWriter:
         self._pending = []          # frames held while the rate is measured
         self._t0 = None
         self._audio = bytearray()
+        self._t_src = 0.0           # true time covered by the frames given
+        self._t_out = 0.0           # time already written to the video
 
         if fps is None:
             self.path = None        # decided when the encoder is started
@@ -677,8 +679,33 @@ class FrameWriter:
             os.makedirs(self._dir, exist_ok=True)
             self.path = self._dir
 
-    def write(self, rgb):
+    def write(self, rgb, seconds=None):
+        """Write one frame. `seconds` is how long the frame really lasted.
+
+        WITHOUT `seconds` the writer puts one frame in the video for each frame
+        it is given, and the video plays at one constant rate. That is correct
+        only if the game held that one rate, and a game does not. A session runs
+        at 66 fps in the menus and slower in a fight. A video written at the
+        average of the two plays the menus slowly and the fight quickly, and the
+        sound, which follows the time of the simulation, does not agree with it.
+        One session drifted by 5.4 seconds.
+
+        WITH `seconds` the writer puts the frame on a grid of constant rate at
+        its true time. A frame that lasted longer than one step of the grid is
+        written more than one time, and a frame that lasted less than one step
+        is not written. The video then holds the true speed of the game, the
+        same drift is 17 milliseconds, and the file is still constant rate and
+        plays anywhere.
+        """
         import time
+
+        if seconds is not None and self._fps is not None:
+            self._t_src += seconds
+            step = 1.0 / self._fps
+            while self._t_out + step <= self._t_src + 1e-12:
+                self._flush_one(rgb)
+                self._t_out += step
+            return
 
         # Measurement: keep the frame. When there are enough frames, calculate
         # the rate at which they arrived and start the encoder.

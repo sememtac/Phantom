@@ -33,15 +33,16 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from phantom_link import (Desync, FrameWriter, PhantomLink, Session,
-                          list_ports, reset_board, set_gamma, subsample_ppm)
+from phantom_link import (AUDIO_RATE, Desync, FrameWriter, PhantomLink,
+                          Session, list_ports, reset_board, set_gamma,
+                          subsample_ppm)
 
 PREVIEW = 240        # pixels
 
 # The title bar shows this version. It is necessary: if a build fails, the old
 # program stays on disk and looks the same. The version in the window is the
 # only proof that the new build runs. This error already cost one cycle.
-VERSION = "2.1"
+VERSION = "2.2"
 
 AMBER  = "#ffae1e"
 GROUND = "#0d0700"
@@ -340,7 +341,11 @@ class Recorder(tk.Tk):
             link = PhantomLink(port)
             link.open()
             link.replay_start(ses.hdr)
-            writer = FrameWriter(out_dir, fps=round(fps, 3), fragmented=True)
+            # 60 fps, the rate the game aims at, and not the average rate of
+            # the session. Each frame goes on this grid at its own true time,
+            # so a session that ran fast in the menus and slow in a fight keeps
+            # both speeds. See FrameWriter.write.
+            writer = FrameWriter(out_dir, fps=60.0, fragmented=True)
 
             # The host always sends one entry more than the device asked for.
             # A strict exchange of one entry for one frame makes the device idle
@@ -375,9 +380,13 @@ class Recorder(tk.Tk):
                                     "again from tools/."))
                         break
                     continue
-                writer.write(rgb)
-                writer.add_audio(link.audio)
+                # The sound that came with the frame measures the frame. See
+                # the note in FrameWriter.write.
+                chunk = bytes(link.audio)
                 link.audio = bytearray()
+                secs = (len(chunk) // 2) / AUDIO_RATE if chunk else fr["dt"]
+                writer.write(rgb, secs)
+                writer.add_audio(chunk)
                 done += 1
                 self.q.put(("ren", done, len(ses.frames), time.time() - started,
                             subsample_ppm(rgb, w, h, PREVIEW)))
@@ -393,7 +402,10 @@ class Recorder(tk.Tk):
                     pass
                 link.close()
             path = writer.close() if writer else None
-            self.q.put(("ren_done", done, path, fps, gamma))
+            # The length of the video comes from the frames in the file, not
+            # from the frames read: a frame can go in more than one time.
+            self.q.put(("ren_done", done, path,
+                        (writer.n / 60.0) if writer else 0.0, gamma))
 
     # -- ui pump ------------------------------------------------------------
 
@@ -471,7 +483,7 @@ class Recorder(tk.Tk):
             text=f"{len(ses.frames)} frames, {ses.seconds:.1f} s at {fps:.0f} fps."
                  f"  Now press Render.")
 
-    def _render_done(self, done, path, fps, gamma):
+    def _render_done(self, done, path, secs, gamma):
         self.bar.stop()
         self.btn_rec.config(state="normal")
         self.btn_render.config(text="2. Render to Video")
@@ -484,7 +496,7 @@ class Recorder(tk.Tk):
         self.last_output = path
         self.status.config(
             text=f"{os.path.basename(path)}: {done} frames, "
-                 f"{done / max(1.0, fps):.1f} s at {fps:.0f} fps"
+                 f"{secs:.1f} s at 60 fps"
                  + (f", gamma {gamma:.2f}" if gamma != 1.0 else ""))
 
 

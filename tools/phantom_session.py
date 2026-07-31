@@ -29,8 +29,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from phantom_link import (Desync, FrameWriter, PhantomLink, Session,
-                          reset_board, set_gamma)
+from phantom_link import (AUDIO_RATE, Desync, FrameWriter, PhantomLink,
+                          Session, reset_board, set_gamma)
 
 
 def record(args):
@@ -88,9 +88,12 @@ def render(args):
     link.open()
     link.replay_start(ses.hdr)   # waits until the device reports PLAYING
 
-    # The encoder uses the rate of the session. The video therefore runs at the
-    # speed of the game, not at the speed of the link.
-    writer = FrameWriter(args.dir, fps=round(fps, 3), fragmented=True)
+    # The video is written at 60 fps, which is the rate the game aims at. It is
+    # NOT the average rate of the session. The writer puts each frame on this
+    # grid at the frame's own true time, so a session that changed speed still
+    # plays at the speed it ran at. An average rate cannot do that: it plays
+    # every part of the session at the speed of the whole.
+    writer = FrameWriter(args.dir, fps=60.0, fragmented=True)
     started = time.time()
     done = 0
 
@@ -119,9 +122,15 @@ def render(args):
             except Desync as e:
                 print(f"\n  {e}. The host synchronises again.")
                 continue
-            writer.write(rgb)
-            writer.add_audio(link.audio)
+            # Time the frame by the sound that came with it. The device makes
+            # one frame of sound for each frame of picture, so the samples are
+            # the best measure of how long the frame lasted. Without sound, use
+            # the time recorded in the session.
+            chunk = bytes(link.audio)
             link.audio = bytearray()
+            secs = (len(chunk) // 2) / AUDIO_RATE if chunk else fr["dt"]
+            writer.write(rgb, secs)
+            writer.add_audio(chunk)
             done += 1
             el = time.time() - started
             rate = done / max(0.001, el)
@@ -140,9 +149,12 @@ def render(args):
         path = writer.close()
 
     el = time.time() - started
-    print(f"\nWrote {path}  ({done} frames at {fps:.1f} fps = "
-          f"{done/max(1.0,fps):.1f} s of video in {el:.0f} s, "
-          f"{el/max(0.001, done/max(1.0,fps)):.1f} times the play time)")
+    # writer.n is the count of frames in the file, which is not the count read
+    # from the device: a frame can go in more than one time, or not at all.
+    secs = writer.n / 60.0
+    print(f"\nWrote {path}  ({done} frames read, {writer.n} written at 60 fps = "
+          f"{secs:.1f} s of video in {el:.0f} s, "
+          f"{el/max(0.001, secs):.1f} times the play time)")
 
 
 def main():
