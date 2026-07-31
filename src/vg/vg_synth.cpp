@@ -43,6 +43,23 @@ void vg_synth_engine(bool on, float throttle) {
 
 
 // ---------------------------------------------------------------------------
+// The flatline
+//
+// A monitor with nothing left to report. Steady, unwavering and slightly harsh:
+// the point of it is that it does not develop, because the thing it is reporting
+// is not going to change.
+//
+// Ramped on and off rather than switched. A tone that starts at full amplitude
+// clicks, and a click at the front of this particular sound would be the funniest
+// possible mistake.
+// ---------------------------------------------------------------------------
+static float s_flat_lvl  = 0.0f;
+static float s_flat_want = 0.0f;
+static float s_flat_ph   = 0.0f;
+
+void vg_synth_flatline(bool on) { s_flat_want = on ? 1.0f : 0.0f; }
+
+// ---------------------------------------------------------------------------
 // Voices
 // ---------------------------------------------------------------------------
 
@@ -126,6 +143,18 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
 
     for (int n = 0; n < room; n++) {
         float acc = 0.0f;
+
+        // --- somebody is dead ----------------------------------------------
+        s_flat_lvl += (s_flat_want - s_flat_lvl) * eng_k;
+        if (s_flat_lvl > 0.0005f) {
+            s_flat_ph += 988.0f * dt;
+            if (s_flat_ph >= 1.0f) s_flat_ph -= (float)(int)s_flat_ph;
+            // Mostly sine with a little square in it. A pure tone is a test
+            // signal; the edge is what makes it an instrument in a room.
+            const float sn = sinf(s_flat_ph * 6.2831853f);
+            const float sq = (s_flat_ph < 0.5f) ? 1.0f : -1.0f;
+            acc += (sn * 0.82f + sq * 0.18f) * s_flat_lvl * 0.26f;
+        }
 
         // --- the airframe --------------------------------------------------
         s_eng_lvl += (s_eng_want - s_eng_lvl) * eng_k;

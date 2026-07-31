@@ -93,13 +93,21 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
         vg.comms_line = vg_voice_champion_line(pick >> 1);
     else
         vg.comms_line = vg_voice_line(s->voice, ev, pick);
-    // Badge this line only if it OPENS a run: the channel was quiet, or somebody
-    // else had it. A pilot carrying straight on gets the space instead. Compared
-    // before the tag is overwritten, obviously.
-    vg.comms_mark = !(vg.comms_t > 0.0f
-                      && vg.comms_tag[0] == s->tag[0]
-                      && vg.comms_tag[1] == s->tag[1]
-                      && vg.comms_tag[2] == s->tag[2]);
+    // Badge this line unless it is genuinely CARRYING ON from the last one.
+    //
+    // The test used to be "is the previous line still on screen", and a pilot's
+    // line stays up for 2.4 seconds while a pilot in a fight speaks far more
+    // often than that -- so nearly every transmission counted as a continuation
+    // and the callsign effectively never appeared again after the first. The
+    // rule was right and the threshold was somebody else's.
+    //
+    // Continuing means immediately. Anything after a beat is a new statement,
+    // and a new statement says who is making it.
+    const bool same_voice = (vg.comms_tag[0] == s->tag[0]
+                          && vg.comms_tag[1] == s->tag[1]
+                          && vg.comms_tag[2] == s->tag[2]);
+    vg.comms_mark  = !(same_voice && vg.comms_since < 0.7f);
+    vg.comms_since = 0.0f;
 
     vg.comms_tag[0] = s->tag[0];
     vg.comms_tag[1] = s->tag[1];
@@ -849,6 +857,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
     if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
     if (vg.gate_t   > 0) vg.gate_t   -= dt;
+    vg.comms_since += dt;
+
     if (vg.comms_t > 0) {
         vg.comms_t -= dt;
         if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
@@ -1220,6 +1230,18 @@ void vg_game_update(float dt, const VgInput* in) {
 
     update_alerts(alive ? dt : 0.0f, alive);
     vg_sfx_engine(flying, vg.throttle_vis);
+
+    // SOMEBODY HAS DIED. One sound for it, wherever it happens: over the radio
+    // when it is the opponent, and over the wreck screen when it is the player.
+    // A tournament that kills people should use the same note for it both ways --
+    // it is the one thing in the game that means exactly the same whichever side
+    // of it you are on.
+    //
+    // Outlasts the last transmission rather than ending with it: the loser stops
+    // talking and the tone is still there, which is the silence doing the work.
+    // On the player's own death it simply does not stop until they tap away.
+    vg_sfx_flatline((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
+                 || (vg.state == VG_OVER));
 
     // ---- PAUSE, from anywhere that flies ----------------------------------
     //

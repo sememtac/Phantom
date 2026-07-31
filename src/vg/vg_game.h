@@ -384,6 +384,7 @@ struct VgGame {
     float       comms_t;
     uint8_t     comms_pri;
     bool        comms_mark;   // this line opens a run, so it is badged
+    float       comms_since;  // seconds since the last transmission began
 
     // The broadcast voice, on its OWN slot rather than sharing the pilots'.
     //

@@ -69,14 +69,18 @@ static const SynthLayer L_HIT[] = {
     // than a thump, and it needs the hold to be audible at all.
     { SW_SQUARE,   66,    28,   2.00f,  0.004f,  0.40f, 1.00f,  240,  0,      11,  0.75f },
     { SW_NOISE,     0,     0,   0.60f,  0.002f,  0.30f, 0.16f,  300,  0,      11,  0.6f  },
-    // ...and the ship screaming over it: high, fast, fading. This is the contrast
-    // doing the work. A low sound has nothing to be low AGAINST, and on this
-    // driver the bottom is barely there to begin with.
-    { SW_SQUARE, 1760,  1760,   0.055f, 0.0015f, 0,     0.36f, 7000,  0.04f,   0,  0 },
-    { SW_SQUARE, 1760,  1760,   0.055f, 0.0015f, 0,     0.29f, 7000,  0.13f,   0,  0 },
-    { SW_SQUARE, 1760,  1760,   0.055f, 0.0015f, 0,     0.21f, 7000,  0.22f,   0,  0 },
-    { SW_SQUARE, 1760,  1760,   0.055f, 0.0015f, 0,     0.13f, 7000,  0.32f,   0,  0 },
-    { SW_SQUARE, 1760,  1760,   0.055f, 0.0015f, 0,     0.07f, 7000,  0.44f,   0,  0 },
+    // ...and the ship warning over it. DRAWN OUT AND QUACKING, not pipped: at 55
+    // milliseconds these were blips, and a blip is a notification. Three times the
+    // length with a 36 Hz tremolo on each makes them the same kind of object as
+    // the missile alert -- the panel using its warning voice about the hull,
+    // rather than the panel making a noise.
+    //
+    // Fewer of them because they are longer, and still fading, so the sequence
+    // reads as something losing its urgency rather than being switched off.
+    { SW_SQUARE, 1480,  1480,   0.18f,  0.003f,  0.25f, 0.36f, 5200,  0.05f,  36,  0.8f },
+    { SW_SQUARE, 1480,  1480,   0.18f,  0.003f,  0.25f, 0.27f, 5200,  0.30f,  36,  0.8f },
+    { SW_SQUARE, 1480,  1480,   0.18f,  0.003f,  0.25f, 0.18f, 5200,  0.55f,  36,  0.8f },
+    { SW_SQUARE, 1480,  1480,   0.20f,  0.003f,  0.25f, 0.10f, 5200,  0.80f,  36,  0.8f },
 };
 
 static const SynthLayer L_EXPLODE[] = {
@@ -173,6 +177,7 @@ void vg_sfx_play(SfxId id, float pitch) {
 }
 
 void vg_sfx_engine(bool on, float throttle) { vg_synth_engine(on, throttle); }
+void vg_sfx_flatline(bool on)                { vg_synth_flatline(on); }
 
 void vg_sfx_update(void) {
     int n = vg_audio_due();

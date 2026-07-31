@@ -54,6 +54,11 @@ void vg_synth_layer(const SynthLayer* l, float pitch);
 // gap or overlap itself.
 void vg_synth_engine(bool on, float throttle);
 
+// The flatline. Held like the engine and for the same reason -- it runs for as
+// long as the game says somebody is dead, which on the wreck screen is until the
+// player decides otherwise, and no one-shot has a length that can express that.
+void vg_synth_flatline(bool on);
+
 // Fill `n` mono samples, mixing every live voice and the engine. `mix` is the
 // player's setting, already squared.
 void vg_synth_render(int16_t* out, int n, float mix);

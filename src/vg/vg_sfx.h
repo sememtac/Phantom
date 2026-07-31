@@ -49,6 +49,11 @@ void vg_sfx_play(SfxId id, float pitch);
 // clip the hum off mid-cycle.
 void vg_sfx_engine(bool on, float throttle);
 
+// The sound of somebody being dead -- the opponent over the radio, or the player
+// over their own wreck. Held, not fired: on the wreck screen it lasts until the
+// player taps away.
+void vg_sfx_flatline(bool on);
+
 // Generate and hand over whatever the output will take. Called once a frame, and
 // deliberately not from a task: the mixer is cheap, and a frame that is late has
 // bigger problems than a gap in the audio.
