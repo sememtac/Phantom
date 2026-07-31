@@ -30,7 +30,22 @@ enum SkyKind : uint8_t {
     // the player actually sits and looks at, so it is allowed to be the loudest
     // of the set -- combat backdrops are deliberately restrained so they never
     // compete with a contact at range.
-    SKY_MENU
+    SKY_MENU,
+
+    // The same hole, but as a PLACE rather than as wallpaper.
+    //
+    // The menu backdrop does not pan: it hangs off the camera and only turns
+    // with roll, which reads as a decoration orbiting the frame. That is
+    // acceptable behind a title and wrong the moment the player has a stick,
+    // because the one thing they will try is to turn and look at it, and it
+    // follows them instead.
+    //
+    // This one is anchored to the world. The tile is treated as the whole sky
+    // -- one revolution of yaw is exactly one tile -- so the hole sits at one
+    // bearing, there is only ever one of it, and it is found by looking rather
+    // than issued to the front of the view. It starts well off the nose so the
+    // course opens on empty space.
+    SKY_COURSE
 };
 
 const char* vg_sky_name(void);

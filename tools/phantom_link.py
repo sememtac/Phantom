@@ -646,7 +646,17 @@ class FrameWriter:
         out_dir, w, h, fragmented = self._out_dir, self._w, self._h, self._fragmented
 
         if shutil.which("ffmpeg"):
-            self.path = os.path.join(out_dir, f"phantom-{stamp}.mp4")
+            # One directory for each render. A render makes three files -- the
+            # picture, the sound, and the two together -- and loose in one
+            # folder they are hard to tell apart after a few sessions. Together
+            # in a directory of their own, one render is one thing to keep, to
+            # move, or to delete.
+            # Not written back to self._out_dir: _start can run a second time
+            # when the rate was measured, and that would nest one render
+            # directory inside another.
+            here = os.path.join(out_dir, f"phantom-{stamp}")
+            os.makedirs(here, exist_ok=True)
+            self.path = os.path.join(here, f"phantom-{stamp}.mp4")
             # Declare the colour. Without a declaration the file says nothing
             # about its YUV range, so each player must guess. A player that
             # guesses full range on a file with limited range makes the black

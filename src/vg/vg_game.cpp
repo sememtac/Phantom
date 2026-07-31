@@ -1094,6 +1094,12 @@ static void enter_course(void) {
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
+    // The course never asked for a sky, so it kept whatever was last built --
+    // which coming from the menu is the menu's own backdrop, and that one does
+    // not pan. The hole therefore hung off the camera and only turned with the
+    // roll, so a player who tried to look at it could never bring it round. It
+    // is a place now, at a fixed bearing, found by turning towards it.
+    vg_sky_generate(SKY_COURSE, vg_replay_rand());
     vg_course_begin();
     vg.state    = VG_COURSE;
     vg.state_t  = 0;

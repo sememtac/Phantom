@@ -91,6 +91,38 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // outside the 339 pixel half-diagonal, so no repeat can come into view.
 #define SKY_MENU_OFF    45.0f
 
+// --- the course sky ---------------------------------------------------------
+//
+// The tile IS the sky here. One revolution of yaw is exactly one tile width, so
+// the pan rate follows from the tile and not from the focal length:
+//
+//     texels per radian = SKY_TEX_SIZE / 2pi = 20.37
+//
+// That is what guarantees ONE hole. The combat skies pan at 30 texels a radian,
+// which walks through 1.5 tiles in a full turn and would show the same landmark
+// twice at two bearings -- the objection that kept it out of the game in the
+// first place.
+//
+// The scale follows from the same identity: the view is 2*atan(240/FOCAL) = 61
+// degrees wide, which is 61/360 of a tile, so 480 pixels must span 21.7 texels.
+// Pan and scale are therefore not free to be tuned separately here. Together
+// they are what makes the backdrop turn with the world instead of with the ship.
+#define SKY_COURSE_PAN   ((float)SKY_TEX_SIZE / 6.28318531f)
+#define SKY_COURSE_SCALE (21.7f / 480.0f)
+
+// Shadow radius as a fraction of the tile. At 0.055 the hole is 40 degrees
+// across, which is two thirds of the view: big, and it should be -- the shadow
+// is black on black, so what is actually seen is the ring and the disc drawing
+// its edge. The menu's 0.115 would be 83 degrees and could never be seen whole.
+#define SKY_COURSE_RFRAC 0.055f
+
+// Bearing the hole sits at, in texels from the heading the course opens on.
+// 48 texels is 135 degrees. Far enough behind that the course starts on empty
+// space -- the hole plus its halo is 24 texels wide, and the view is 21.7, so
+// anything past about 23 texels is off screen at the start -- and near enough
+// that a player who looks around at all will find it.
+#define SKY_COURSE_OFF   48.0f
+
 static uint16_t* s_tex   = nullptr;
 static bool      s_ready = false;
 
@@ -326,20 +358,33 @@ static void gen_cluster(uint32_t seed) {
 // This suits the panel better than the noise backdrops do, incidentally: it is
 // almost entirely LOW frequency -- a big dark disc and broad smooth arcs -- and
 // low frequency is exactly what survives a 10x nearest-neighbour upscale.
-static void gen_blackhole(uint32_t seed) {
+// `r_frac` is the shadow radius as a fraction of the tile, and `level` is the
+// brightness ceiling. Both are arguments because the hole is now drawn at two
+// sizes for two jobs: wallpaper behind the menu, and a landmark in a sky the
+// player can turn around in. A landmark has to be smaller, because in the
+// course the tile spans the whole 360 degrees and the menu's 0.115 would put an
+// 83 degree object in a 61 degree view -- an object that cannot be seen whole
+// is not a landmark, it is a dark region.
+static void gen_blackhole(uint32_t seed, float r_frac, float level) {
     const int   cx = SKY_TEX_SIZE / 2;
     const int   cy = SKY_TEX_SIZE / 2;
 
-    const float R_SHADOW = (float)SKY_TEX_SIZE * 0.115f;   // ~15 texels
+    const float R_SHADOW = (float)SKY_TEX_SIZE * r_frac;
     const float R_PHOTON = R_SHADOW * 1.08f;
     const float R_HALO   = R_SHADOW * 1.36f;
-    const float HALO_W   = R_SHADOW * 0.20f;
     // Must not go below about a texel and a half. At 0.055 this worked out to
     // 0.81 texels -- narrower than the grid it is drawn on, so the sampler
     // landed off the peak and the ring came out dim and broken instead of the
     // hard white rim that defines the edge of the shadow. The texture reported
     // it too: peak 61/125 where a saturated ring should read near 95.
-    const float PHOTON_W = R_SHADOW * 0.125f;
+    //
+    // Now that the radius is an argument, that is a floor and not a note: a
+    // smaller hole drawn to the same proportions walks straight back into the
+    // fault. The ring goes proportionally fatter on the small one instead,
+    // which is the right way to lose the argument -- a thick ring reads, a
+    // broken one does not.
+    const float PHOTON_W = fmaxf(R_SHADOW * 0.125f, 1.6f);
+    const float HALO_W   = fmaxf(R_SHADOW * 0.20f,  1.6f);
     const float DISC_H   = (float)SKY_TEX_SIZE * 0.017f;   // half-thickness
     const float DISC_R   = R_SHADOW * 2.3f;                // radial falloff
 
@@ -389,13 +434,13 @@ static void gen_blackhole(uint32_t seed) {
             // squared term keeps blue out of everything but the photon ring,
             // which is what stops it looking like a generic glow.
             const float w = lum * lum;
-            float R = lum * SKY_MENU_LEVEL;
-            float G = (lum * 0.60f + w * 0.38f) * SKY_MENU_LEVEL;
-            float B = (lum * 0.13f + w * w * 0.72f) * SKY_MENU_LEVEL;
+            float R = lum * level;
+            float G = (lum * 0.60f + w * 0.38f) * level;
+            float B = (lum * 0.13f + w * w * 0.72f) * level;
 
-            if (R > SKY_MENU_LEVEL) R = SKY_MENU_LEVEL;
-            if (G > SKY_MENU_LEVEL) G = SKY_MENU_LEVEL;
-            if (B > SKY_MENU_LEVEL) B = SKY_MENU_LEVEL;
+            if (R > level) R = level;
+            if (G > level) G = level;
+            if (B > level) B = level;
 
             s_tex[i] = pack565_swapped(R, G, B);
         }
@@ -463,9 +508,12 @@ static void name_place(uint32_t seed) {
     };
     const int n = (int)(sizeof(PROPER) / sizeof(PROPER[0]));
     const char* p = PROPER[(seed >> 7) % (uint32_t)n];
+    // Same object in both, so the same word. The course is where the hole is
+    // and the menu is a picture of it.
     const char* k = (s_kind == SKY_GALAXY)  ? "GALAXY"
                   : (s_kind == SKY_CLUSTER) ? "CLUSTER"
-                  : (s_kind == SKY_MENU)    ? "SINGULARITY"
+                  : (s_kind == SKY_MENU ||
+                     s_kind == SKY_COURSE) ? "SINGULARITY"
                                             : "NEBULA";
     snprintf(s_place, sizeof(s_place), "%s %s", p, k);
 }
@@ -474,7 +522,8 @@ const char* vg_sky_name(void) {
     switch (s_kind) {
     case SKY_GALAXY:  return "GALAXY";
     case SKY_CLUSTER: return "CLUSTER";
-    case SKY_MENU:    return "GARGANTUA";
+    case SKY_MENU:
+    case SKY_COURSE:  return "GARGANTUA";
     default:          return "NEBULA";
     }
 }
@@ -490,7 +539,13 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     switch (kind) {
     case SKY_GALAXY:  s_kind = SKY_GALAXY;  gen_galaxy(seed);  break;
     case SKY_CLUSTER: s_kind = SKY_CLUSTER; gen_cluster(seed); break;
-    case SKY_MENU:    s_kind = SKY_MENU;    gen_blackhole(seed); break;
+    case SKY_MENU:    s_kind = SKY_MENU;
+                      gen_blackhole(seed, 0.115f, SKY_MENU_LEVEL); break;
+    // The combat ceiling, not the menu's. The course has a HUD over it and a
+    // ring to find, and SKY_MENU_LEVEL exists precisely because the menu has
+    // neither.
+    case SKY_COURSE:  s_kind = SKY_COURSE;
+                      gen_blackhole(seed, SKY_COURSE_RFRAC, SKY_MAX_LEVEL); break;
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
@@ -506,6 +561,15 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         // with the roll.
         s_u = (float)(SKY_TEX_SIZE / 2) + SKY_MENU_OFF;
         s_v = (float)(SKY_TEX_SIZE / 2) + SKY_MENU_OFF;
+    } else if (s_kind == SKY_COURSE) {
+        s_scale = SKY_COURSE_SCALE;
+        s_pan   = SKY_COURSE_PAN;
+        // Offset in u only. The hole goes round the horizon, not over the pole:
+        // yaw is the axis a pilot sweeps to look around, and putting the
+        // landmark on it means it is found by turning rather than by pitching,
+        // which is the motion anyone makes first.
+        s_u = (float)(SKY_TEX_SIZE / 2) + SKY_COURSE_OFF;
+        s_v = (float)(SKY_TEX_SIZE / 2);
     } else {
         s_scale = SKY_SCALE;
         s_pan   = SKY_PAN_PER_RAD;
