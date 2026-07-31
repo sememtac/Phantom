@@ -62,6 +62,7 @@ static void draw_rear_patch(const VgCam& base) {
 
     VgCam rc = base;
     rc.rear  = true;
+    rc.lite  = true;    // no contrails: see VgCam::lite
     rc.focal = FOCAL * REAR_FOCAL_K;
     // vg_project centres on the screen, and the shake offset is already a plain
     // screen-space translation added after the divide -- so it is exactly the

@@ -35,9 +35,26 @@ static void draw_motes(const VgCam& cam) {
     // top end, so firewalling the throttle is a visibly different state rather
     // than just a bigger number.
     const float    boost  = 1.0f + MOTE_STREAK_BOOST * f * f;
-    const float    streak = vg.speed * MOTE_STREAK_SEC * boost;
-    const int      w      = (f > MOTE_THICK_AT) ? 2 : 1;
-    const uint16_t col    = vg_dim(COL_MOTE, 0.14f + 0.86f * f);
+    float          streak = vg.speed * MOTE_STREAK_SEC * boost;
+    int            w      = (f > MOTE_THICK_AT) ? 2 : 1;
+    float          lvl    = 0.14f + 0.86f * f;
+
+    // ASTERN THE DUST IS LEAVING, not arriving. The geometry already says so --
+    // a streak is laid along +z in the camera's own frame, so looking forward it
+    // runs toward the vanishing point ahead and looking aft it runs toward the
+    // one behind, and motes converge on the middle of the mirror instead of
+    // bursting out of it.
+    //
+    // What the geometry does not say is that this is the wake. Longer and
+    // fainter is the difference between dust coming at you and dust being left
+    // behind, and it is the whole reason to look: at full throttle the mirror
+    // fills with something streaming away from the ship.
+    if (cam.rear) {
+        streak *= 1.7f;
+        lvl    *= 0.72f;
+        w       = 1;
+    }
+    const uint16_t col = vg_dim(COL_MOTE, lvl);
 
     // Dust, and only ever drawn at speed -- which makes it part of the exact
     // condition where the frame is tightest. Every mote is a short streak, two
@@ -412,16 +429,21 @@ void vg_draw_world(const VgCam& cam) {
     // scenery in a dogfight is worse than the small inconsistency.
     // Trails go down before the hulls so a ribbon passing in front of its own
     // ship does not draw over the thing it belongs to.
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        const Ship* s = &vg.enemy[i];
-        if (s->alive)
-            draw_ship_trail(cam, s->trail, s->trail_p, s->trail_n, s->trail_head,
-                            s->pos, s->hue);
+    if (!cam.lite) {
+        for (int i = 0; i < MAX_ENEMIES; i++) {
+            const Ship* s = &vg.enemy[i];
+            if (s->alive)
+                draw_ship_trail(cam, s->trail, s->trail_p, s->trail_n,
+                                s->trail_head, s->pos, s->hue);
+        }
+        // The player's own, streaming from the origin. Invisible dead ahead, but
+        // a hard turn sweeps it into view -- so you can see the arc you just
+        // flew. In the repeater it is dead astern by definition, so it is a
+        // permanent bright smear straight down the middle of the one instrument
+        // meant to show what is behind you.
+        draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
+                        v3(0, 0, 0), vg.trail_hue);
     }
-    // The player's own, streaming from the origin. Invisible dead ahead, but a
-    // hard turn sweeps it into view -- so you can see the arc you just flew.
-    draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
-                    v3(0, 0, 0), vg.trail_hue);
 
     // Gate first: the ship comes THROUGH it, so it has to be behind.
     draw_gate(cam);

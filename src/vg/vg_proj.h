@@ -27,6 +27,12 @@ struct VgCam {
     // player holds the patch, and a full-screen mirrored world would make every
     // lead and every break turn the wrong way round.
     bool  rear;
+
+    // A small repeater rather than the window. Drops what is decoration at 150
+    // pixels wide: the contrails, which at that size are a bright smear across
+    // the one instrument whose job is to show a shape closing on you, and which
+    // are also among the heaviest things in the frame.
+    bool  lite;
 };
 
 static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y,
@@ -38,6 +44,7 @@ static inline VgCam vg_cam_make(float bank, float shake_x, float shake_y,
     c.sy = shake_y;
     c.focal = FOCAL * ((zoom > 0.05f) ? zoom : 1.0f);
     c.rear  = false;
+    c.lite  = false;
     return c;
 }
 
