@@ -41,7 +41,7 @@ PREVIEW = 240        # pixels
 # The title bar shows this version. It is necessary: if a build fails, the old
 # program stays on disk and looks the same. The version in the window is the
 # only proof that the new build runs. This error already cost one cycle.
-VERSION = "2.0"
+VERSION = "2.1"
 
 AMBER  = "#ffae1e"
 GROUND = "#0d0700"
@@ -334,6 +334,7 @@ class Recorder(tk.Tk):
         link = None
         writer = None
         done = 0
+        misses = 0
         try:
             reset_board(port)
             link = PhantomLink(port)
@@ -359,6 +360,20 @@ class Recorder(tk.Tk):
                 try:
                     rgb, w, h = link.read_frame()
                 except Desync:
+                    # A frame that the tool cannot read used to be skipped
+                    # without a message. If the device sends a block that this
+                    # build is older than, EVERY frame is skipped. The only
+                    # symptom is a progress bar that does not move, which looks
+                    # like a slow render and is not one. This has cost two
+                    # sessions. A render that reads no frames at all is not
+                    # slow. It is too old for the firmware.
+                    misses += 1
+                    if done == 0 and misses >= 30:
+                        self.q.put(("error",
+                                    "The device sends data that this build of "
+                                    "the tool cannot read. Build the tool "
+                                    "again from tools/."))
+                        break
                     continue
                 writer.write(rgb)
                 writer.add_audio(link.audio)
