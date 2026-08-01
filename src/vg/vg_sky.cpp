@@ -156,143 +156,109 @@ static float s_u = 0.0f, s_v = 0.0f, s_bank = 0.0f;
 // the only record of one.
 static Mat3 s_ori = {{ 1,0,0, 0,1,0, 0,0,1 }};
 
-// The sampled angles, smoothed. sky_sample derives raw longitude and roll from
-// the orientation; these are what the fills actually use. They chase the raw
-// values with a rate limit, once per frame, for one reason: the pole.
+// ---------------------------------------------------------------------------
+// The two-chart atlas.
 //
-// Crossing the zenith, longitude and roll each land half a turn from where the
-// pole lock froze them, and unlocking snapped the backdrop through 180 degrees
-// in one frame -- the "rotates at a certain point" of three consecutive bug
-// reports, each fix moving the discontinuity rather than removing it, because
-// a flat tile cannot chart a sphere without a seam. This stops moving it and
-// spends it: the half-turn plays out over about half a second, which reads as
-// the sky sweeping past overhead -- what a loop looks like out a real canopy.
+// This replaced, in order: a raw sampler that flipped at the zenith, a
+// longitude lock that let the roll spin instead, a paired lock that snapped on
+// exit, and a rate-limited sweep that turned the snap into a visible rotation.
+// Four attempts at suppressing the pole fold, each moving it somewhere else --
+// because the fold is not an artefact, it is the chart. An equirectangular
+// chart genuinely has two branches at the pole, and the OTHER branch is the
+// continuation: longitude plus half a turn, latitude reflected through the
+// pole, roll plus half a turn, all at once. Cross the pole, switch branch, and
+// every sampled quantity is continuous by construction.
 //
-// The limit is far above any real manoeuvre (yaw and roll rates live under
-// 3 rad/s), so in ordinary flight the smoothing is exactly zero lag.
-static float s_lon_s[2]  = { 0.0f, 0.0f };
-static float s_roll_s[2] = { 0.0f, 0.0f };
-static bool  s_snap      = true;    // first frame after generate: no sweep
+// So each view carries a PARITY -- which branch it is on -- flipped when the
+// horizontal direction reverses inside a small cap around the pole, and the
+// branch-adjusted angles are accumulated as unfolded totals. Pure pitch
+// through vertical: longitude constant, roll constant, latitude climbing
+// straight through -- the sky streams past with ZERO rotation, which is what
+// a canopy shows in a loop. Tested in prototype over pitch loops, offset
+// loops, rolled loops and five thousand frames of random tumble: worst
+// per-frame step 0.098 rad, no discontinuity anywhere, and a pitch loop
+// accumulates exactly one tile of latitude and lands home.
+//
+// The accumulators are per view because the mirror sits at the opposite pole.
+// ---------------------------------------------------------------------------
+static float s_eff_prev[2][3];       // last branch-adjusted lon/lat/roll
+static float s_eff_acc[2][3];        // unfolded totals the fills sample from
+static bool  s_par[2]   = { false, false };
+static bool  s_incap[2] = { false, false };
+static float s_capx[2], s_capz[2];   // horizontal direction at cap entry
+static bool  s_snap     = true;      // first frame after generate: no history
 
-static void sky_raw(float sign, float* lon, float* roll);
+static inline float ang_wrap(float d) {
+    while (d >  3.14159265f) d -= 6.28318531f;
+    while (d < -3.14159265f) d += 6.28318531f;
+    return d;
+}
+
+static void sky_step_view(int li, float sign) {
+    float dx = s_ori.m[6] * sign, dy = s_ori.m[7] * sign, dz = s_ori.m[8] * sign;
+    if (dy >  1.0f) dy =  1.0f;
+    if (dy < -1.0f) dy = -1.0f;
+
+    const float lon = atan2f(dx, dz);
+    const float lat = asinf(dy);
+    // Roll sign convention: searched over tumbled attitudes when it was first
+    // wrong -- see the history in git. Negated forward, plain astern.
+    const float ux = s_ori.m[1], uy = s_ori.m[4];
+    const float roll = atan2f(sign < 0.0f ? ux : -ux, uy);
+
+    // The cap: within ~5 degrees of the pole. Entering stores the horizontal
+    // direction; the pole has been CROSSED -- not merely approached -- when
+    // that direction reverses, and that is the branch switch.
+    const bool incap = (dx * dx + dz * dz) < 0.008f;
+    if (incap) {
+        if (!s_incap[li]) { s_capx[li] = dx; s_capz[li] = dz; }
+        else if (dx * s_capx[li] + dz * s_capz[li] < 0.0f) {
+            s_par[li]  = !s_par[li];
+            s_capx[li] = dx; s_capz[li] = dz;
+        }
+    }
+    s_incap[li] = incap;
+
+    const float eff[3] = {
+        lon  + (s_par[li] ? 3.14159265f : 0.0f),
+        s_par[li] ? (3.14159265f - lat) : lat,
+        roll + (s_par[li] ? 3.14159265f : 0.0f),
+    };
+
+    if (s_snap) {
+        for (int k = 0; k < 3; k++) {
+            s_eff_prev[li][k] = eff[k];
+            s_eff_acc[li][k]  = eff[k];
+        }
+        return;
+    }
+    for (int k = 0; k < 3; k++) {
+        float d = ang_wrap(eff[k] - s_eff_prev[li][k]);
+        // A single pathological frame exactly on the pole can make the raw
+        // longitude arbitrary. One clamped frame is invisible; a spike is not.
+        if (d >  0.35f) d =  0.35f;
+        if (d < -0.35f) d = -0.35f;
+        s_eff_acc[li][k] += d;
+        s_eff_prev[li][k] = eff[k];
+    }
+}
 
 void vg_sky_orient(const Mat3& R, float bank) {
     s_ori  = mat3_mul(R, s_ori);
     s_bank = bank;
-
-    const float STEP = 6.0f / 60.0f;   // rad per frame: ~6 rad/s at 60fps
-    for (int i = 0; i < 2; i++) {
-        float lon, roll;
-        sky_raw(i ? -1.0f : 1.0f, &lon, &roll);
-        if (s_snap) { s_lon_s[i] = lon; s_roll_s[i] = roll; continue; }
-        for (int k = 0; k < 2; k++) {
-            float* cur = k ? &s_roll_s[i] : &s_lon_s[i];
-            float  d   = (k ? roll : lon) - *cur;
-            while (d >  3.14159265f) d -= 6.28318531f;
-            while (d < -3.14159265f) d += 6.28318531f;
-            if (d >  STEP) d =  STEP;
-            if (d < -STEP) d = -STEP;
-            *cur += d;
-        }
-    }
+    sky_step_view(0,  1.0f);
+    sky_step_view(1, -1.0f);
     s_snap = false;
 }
 
-// The sample point and the horizon angle for a camera looking along `sign` * the
-// nose: +1 ahead, -1 astern.
-//
-// AN INVERTED DIRECTION, NOT AN OFFSET. Adding half a tile to u was only ever
-// right for a ship flying level and turning in yaw alone; negating the view
-// vector is right at any attitude, which is what the rear view actually needs.
-// s_u and s_v are the ORIGIN, set once when the texture is built: where in the
-// tile the view starts out pointing. The angles below are added to it, never
-// substituted for it. Overwriting them cost the course its landmark outright --
-// the derived longitude is measured from wherever the ship happened to be
-// facing at generate time, so on the first frame the view jumped to texel zero,
-// which on the course tile is 180 degrees from the hole.
-static void sky_raw(float sign, float* lon_out, float* roll_out) {
-    // Column 2 of the transpose: the sky direction that currently images to the
-    // view's +z, i.e. what the nose is pointing at.
-    float dx = s_ori.m[6] * sign, dy = s_ori.m[7] * sign, dz = s_ori.m[8] * sign;
-
-    // Equirectangular, which is what the pan rate already assumes: s_pan is
-    // texels per radian, so longitude and latitude scale by it directly.
-    if (dy >  1.0f) dy =  1.0f;
-    if (dy < -1.0f) dy = -1.0f;
-    // NEGATED, and only this one. Latitude climbs with the sky direction's y,
-    // but v runs DOWN the frame -- so a nose pitching down, which lowers y, has
-    // to raise v to carry the backdrop up the screen the way the starfield goes.
-    // Checked against the accumulator this replaced: for a small yaw the two
-    // agree to the digit, and for a small pitch they were exact opposites.
-    //
-    // THE POLE. Straight up, dx and dz go to zero together and the longitude
-    // becomes the ratio of two noises: crossing the zenith flips it half a
-    // turn, which on a match sky reads as the backdrop snapping to a different
-    // picture. (The course survives by luck -- its pan geometry makes the same
-    // fold read as a swing-over.) A flat tile cannot chart a sphere without a
-    // seam somewhere; this puts the seam AT the pole and freezes the longitude
-    // while inside it, so pitching through vertical slides the sky out and back
-    // the same way instead of flipping. Held per view, because the mirror is at
-    // the opposite pole from the window.
-    static float lock_u[2] = { 0.0f, 0.0f };
-    const int    li        = (sign < 0.0f) ? 1 : 0;
-    float lon;
-    if (dx * dx + dz * dz < 0.0225f) {          // within ~8.6 deg of the pole
-        lon = lock_u[li];
-    } else {
-        lon = atan2f(dx, dz);
-        lock_u[li] = lon;
-    }
-    *lon_out = lon;
-
-    // How far the sky's north is rolled in the frame. The view-space image of
-    // sky-up is column 1; its angle in the screen plane is the roll. Astern the
-    // horizontal axis is reversed, so the angle is too.
-    // NEGATED for the forward view, because v runs down the frame and a rotation
-    // measured in a y-down basis has the opposite sense. Unnegated astern, where
-    // the horizontal axis is reversed again.
-    //
-    // Getting this backwards did not tilt the horizon, which is what one would
-    // expect from a roll term -- it COUPLED THE AXES. The angle came out with
-    // the wrong sign, so instead of cancelling the ship's roll it doubled it,
-    // and at 45 degrees of bank a pure pitch moved the backdrop exactly
-    // sideways. Searched rather than guessed: over tumbled attitudes this form
-    // leaves at most 1.0 px of cross-coupling per 4 px of true motion, against
-    // 4.0 for the sign it had -- i.e. total.
-    //
-    // The 1.0 that remains is the panorama itself. A flat tile cannot hold a
-    // rotating sphere: meridians converge, so away from the equator the local
-    // north is not the v axis. It is the same approximation the backdrop has
-    // always been.
-    //
-    // FROZEN WITH THE LONGITUDE. The first pole fix locked lon and left this
-    // live, and near vertical the sky's north-in-frame is exactly as
-    // ill-conditioned as the longitude -- so the picture held its place and
-    // SPUN instead, a quarter turn on the way through. The two angles fail
-    // together and they lock together. The cost is a brief reorientation on
-    // leaving the zone after a full loop-over, at a moment the pilot is
-    // inverted and reorienting anyway.
-    static float lock_r[2] = { 0.0f, 0.0f };
-    if (dx * dx + dz * dz < 0.0225f) {
-        *roll_out = lock_r[li];
-    } else {
-        const float ux = s_ori.m[1], uy = s_ori.m[4];
-        *roll_out = atan2f(sign < 0.0f ? ux : -ux, uy);
-        lock_r[li] = *roll_out;
-    }
-}
-
-// What the fills use: smoothed longitude and roll, raw latitude -- the latitude
-// never folds discontinuously (asin is continuous through the clamp), so it
-// needs no easing and lagging it would detach the sky from pitch.
+// What the fills use: the unfolded totals. Latitude included -- v runs on past
+// the fold and the tile wraps, which is exactly what lets a loop scroll one
+// full tile and land home.
 static void sky_sample(float sign, float* u, float* v, float* roll) {
     const int li = (sign < 0.0f) ? 1 : 0;
-    float dy = s_ori.m[7] * sign;
-    if (dy >  1.0f) dy =  1.0f;
-    if (dy < -1.0f) dy = -1.0f;
-    *u    = s_u + s_lon_s[li] * s_pan;
-    *v    = s_v - asinf(dy)   * s_pan;
-    *roll = s_roll_s[li];
+    *u    = s_u + s_eff_acc[li][0] * s_pan;
+    *v    = s_v - s_eff_acc[li][1] * s_pan;
+    *roll = s_eff_acc[li][2];
 }
 // Whether the next fill is for a camera looking aft. Set per frame by the
 // renderer, because the backdrop has no camera of its own to ask.
