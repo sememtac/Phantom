@@ -922,7 +922,7 @@ void vg_sky_step(float d_pitch, float d_yaw, float bank) {
     vg_sky_orient(mat3_euler(-d_pitch, -d_yaw, 0.0f), bank);
 }
 
-void vg_sky_fill_band(uint16_t* band, int band_y0) {
+static void vg_sky_fill_band_flat(uint16_t* band, int band_y0) {
     if (!s_ready) return;
 
     // Where the camera is looking, and how far the horizon is rolled in the
@@ -1029,6 +1029,169 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
             dst += 4;
             u += du8;
             v += dv8;
+        }
+    }
+}
+
+// Fast inverse trig for the per-band chart samples. Accurate to ~0.0004 rad,
+// which is a sixth of a pixel; the libm versions cost several times more and
+// this runs 270 times a frame inside the CPU-bound flush.
+static inline float fatan2(float y, float x) {
+    const float ax = fabsf(x), ay = fabsf(y);
+    const float mx = ax > ay ? ax : ay;
+    const float mn = ax > ay ? ay : ax;
+    if (mx <= 0.0f) return 0.0f;
+    const float a = mn / mx;
+    const float ss = a * a;
+    float r = ((-0.0464964749f * ss + 0.15931422f) * ss - 0.327622764f) * ss * a + a;
+    if (ay > ax) r = 1.57079633f - r;
+    if (x < 0.0f) r = 3.14159265f - r;
+    return (y < 0.0f) ? -r : r;
+}
+static inline float fasin(float y) {
+    if (y >  1.0f) y =  1.0f;
+    if (y < -1.0f) y = -1.0f;
+    return fatan2(y, sqrtf(1.0f - y * y));
+}
+
+// One exact chart sample: LOGICAL screen point -> (u, v) texels, lifted onto
+// the atlas accumulators so it agrees with the branch the frame is on.
+static void sky_chart(float lx, float ly, int li, float sign,
+                      const float* ref_lon, const float* ref_lat,
+                      float* out_u, float* out_v) {
+    // Screen -> projection plane, undoing the cosmetic bank the projection
+    // applies, then screen-down y becomes view-up y.
+    const float sx = lx - (float)SCR_CX, sy = ly - (float)SCR_CY;
+    const float cb = cosf(s_bank), sb = sinf(s_bank);
+    const float px = sx * cb + sy * sb;
+    const float py = -sx * sb + sy * cb;
+    float vx = px / FOCAL, vy = -py / FOCAL, vz = 1.0f;
+    const float inv = 1.0f / sqrtf(vx * vx + vy * vy + vz * vz);
+    vx *= inv; vy *= inv; vz *= inv;
+
+    // View ray -> sky direction, through the accumulated orientation; the rear
+    // view looks along the negated ray.
+    float dx = (s_ori.m[0] * vx + s_ori.m[3] * vy + s_ori.m[6] * vz) * sign;
+    float dy = (s_ori.m[1] * vx + s_ori.m[4] * vy + s_ori.m[7] * vz) * sign;
+    float dz = (s_ori.m[2] * vx + s_ori.m[5] * vy + s_ori.m[8] * vz) * sign;
+
+    float lon = fatan2(dx, dz);
+    float lat = fasin(dy);
+    if (s_par[li]) { lon += 3.14159265f; lat = 3.14159265f - lat; }
+    // Lifted toward the CALLER'S reference, not the frame accumulator. Every
+    // sample lifting independently to the accumulator meant two samples
+    // straddling the pi wrap could land a full turn apart, and the derivative
+    // between them -- 0.8 texels per PIXEL of garbage -- extrapolated a whole
+    // band into dashes. The caller chains the reference sample to sample, so
+    // neighbours are always lifted onto the same turn.
+    *out_u = *ref_lon + ang_wrap(lon - *ref_lon);
+    *out_v = *ref_lat + ang_wrap(lat - *ref_lat);
+}
+
+void vg_sky_fill_band(uint16_t* band, int band_y0) {
+    if (!s_ready) return;
+
+    // The menu keeps the flat path: its pan is zero -- it is a picture hung
+    // behind the titles, not a sphere -- and the chart would collapse it to a
+    // single texel.
+    if (s_pan == 0.0f) {
+        vg_sky_fill_band_flat(band, band_y0);
+        return;
+    }
+
+    // THE SPHERE, PIECEWISE. The old fill mapped the whole frame as one rigid
+    // sheet -- centre angles plus a rotation -- which is exact at the centre
+    // and up to 115 PIXELS wrong at the edges with the nose 30 degrees up in a
+    // yaw, where the sphere's meridians shear across the view. The stars are
+    // projected point by point, so they carry the true curvature; a sheet
+    // cannot, and the mismatch read as the backdrop rotating on the view axis.
+    //
+    // So the chart is now evaluated exactly at nine points down this band's
+    // centre column and nine more a step across, and the fill interpolates
+    // between them: fifteen bands by eight segments of bilinear patch. Against
+    // per-pixel evaluation that is at most 8px wrong anywhere the texture is
+    // not the pinched pole wash -- star-grade, at eighteen cheap samples a
+    // band.
+    //
+    // Bands are PANEL rows, which under the quarter turn are logical COLUMNS:
+    // this band is 32 columns wide and the segments run down the 480-pixel
+    // logical height, walked by the inner loop along panel x.
+    const int   li   = s_rear ? 1 : 0;
+    const float sign = s_rear ? -1.0f : 1.0f;
+#if VG_ROTATE == 1
+    const float lx_c = (float)(SCR_H - 1 - (band_y0 + BAND_H / 2));
+#else
+    const float lx_c = (float)(SCR_W / 2);   // other rotations: centre column
+#endif
+
+    // Ten, not eight: the segment length must divide by the 8-pixel splash or
+    // the walk leaves a gap of unwritten pixels at every segment boundary --
+    // 480/8 segments is 60px, 60/8 rounds to 7 chunks, and the missing 4px
+    // showed the previous band's leftovers as amber dashes every 60 pixels.
+    // 480/10 is 48, which is six exact chunks.
+    enum { SEGS = 10 };
+    float Au[SEGS + 1], Av[SEGS + 1], Cu[SEGS + 1], Cv[SEGS + 1];
+    // Chained lift: the first sample references the frame accumulator, each
+    // later one references its predecessor, and each cross sample references
+    // its own column sample. In ANGLE space, then scaled to texels once.
+    float rl = s_eff_acc[li][0], rt = s_eff_acc[li][1];
+    for (int k = 0; k <= SEGS; k++) {
+        const float ly = (float)(k * (SCR_H / SEGS));
+        sky_chart(lx_c,        ly, li, sign, &rl, &rt, &Au[k], &Av[k]);
+        rl = Au[k]; rt = Av[k];
+        sky_chart(lx_c - 8.0f, ly, li, sign, &rl, &rt, &Cu[k], &Cv[k]);
+    }
+    for (int k = 0; k <= SEGS; k++) {
+        Au[k] = s_u + Au[k] * s_pan;  Av[k] = s_v - Av[k] * s_pan;
+        Cu[k] = s_u + Cu[k] * s_pan;  Cv[k] = s_v - Cv[k] * s_pan;
+    }
+
+    static const uint8_t ORDER[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
+    const int seg_px = SCR_H / SEGS;
+
+    for (int row = 0; row < BAND_H; row++) {
+        const int sy = band_y0 + row;
+        if (s_reveal < 1.0f &&
+            (float)(ORDER[sy & 7] + 1) * (1.0f / 8.0f) > s_reveal) {
+            memset(&band[row * SCR_W], 0, SCR_W * 2);
+            continue;
+        }
+
+#if VG_ROTATE == 1
+        const float dxl = (float)(SCR_H - 1 - sy) - lx_c;
+#else
+        const float dxl = 0.0f;
+#endif
+        const int32_t* dth = &s_dither[(sy & 3) * 4];
+        uint16_t* dst = &band[row * SCR_W];
+        const uint16_t* tex = s_tex;
+
+        for (int k = 0; k < SEGS; k++) {
+            // Endpoint values for THIS row: centre-column sample plus the
+            // cross-derivative carried dxl columns over. The step between the
+            // endpoints is the segment's own slope, so the walk is bilinear.
+            const float su = Au[k]     + (Au[k]     - Cu[k])     * (dxl / 8.0f);
+            const float sv = Av[k]     + (Av[k]     - Cv[k])     * (dxl / 8.0f);
+            const float eu = Au[k + 1] + (Au[k + 1] - Cu[k + 1]) * (dxl / 8.0f);
+            const float ev = Av[k + 1] + (Av[k + 1] - Cv[k + 1]) * (dxl / 8.0f);
+
+            int32_t u   = (int32_t)(su * 65536.0f);
+            int32_t v   = (int32_t)(sv * 65536.0f);
+            const int32_t du8 = (int32_t)((eu - su) * (8.0f / (float)seg_px) * 65536.0f);
+            const int32_t dv8 = (int32_t)((ev - sv) * (8.0f / (float)seg_px) * 65536.0f);
+
+            uint32_t* d32 = (uint32_t*)(dst + k * seg_px);
+            for (int i = 0; i < seg_px / 8; i++) {
+                const int32_t  o   = dth[i & 3];
+                const uint32_t idx = (uint32_t)(((((v + o) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
+                                                 (((u + o) >> 16) & SKY_TEX_MASK));
+                const uint32_t c  = tex[idx];
+                const uint32_t cc = (c << 16) | c;
+                d32[0] = cc; d32[1] = cc; d32[2] = cc; d32[3] = cc;
+                d32 += 4;
+                u += du8;
+                v += dv8;
+            }
         }
     }
 }
