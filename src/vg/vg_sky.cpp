@@ -771,6 +771,12 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     }
 
     s_snap = true;    // a new backdrop is arrived at, not swept to
+    // ...and on branch zero. Parity is flight history, and the attract loop
+    // tumbles through the poles constantly -- the course was inheriting an odd
+    // parity from the menu and sampling the far half of the tile, where there
+    // is no hole and hardly any cloud. Arriving somewhere new has no history.
+    s_par[0] = s_par[1] = false;
+    s_incap[0] = s_incap[1] = false;
     name_place(seed);
     s_reveal = 1.0f;      // callers that want a dissolve ask for it afterwards
 
@@ -802,6 +808,29 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         s_pan   = SKY_SPHERE_PAN;
         // Clouds have no centre worth finding, so any origin will do.
         s_u = s_v = 0.0f;
+    }
+
+    // THE TILE IS A DOUBLE COVER, and the texture has to say so. The unfolded
+    // atlas maps a full turn of pitch to the full tile height, so every
+    // direction owns TWO texels: (u,v) and its fold (u+64, 64-v). A real
+    // equirectangular sphere map carries that symmetry; a noise texture does
+    // not, so the same bearing showed different sky depending on how many
+    // poles the flight had crossed -- and an Immelmann made Gargantua vanish.
+    // Half the tile is canonical; the other half is overwritten with its fold,
+    // so both branches of every direction read the same texel. The dual row
+    // formula assumes s_v is 0 or 64, which both origins are.
+    if (s_kind != SKY_MENU && s_tex) {
+        const int vc = (int)s_v & SKY_TEX_MASK;
+        for (int v = 0; v < SKY_TEX_SIZE; v++) {
+            int d = (v - vc) & 127;                  // wrapped offset from s_v
+            if (d >= 64) d -= 128;                   // -> [-64, 63]
+            const bool owned = (d > -32 && d <= 32); // the canonical half
+            if (owned) continue;
+            const int vd = (64 - v) & SKY_TEX_MASK;
+            for (int u = 0; u < SKY_TEX_SIZE; u++)
+                s_tex[(v << SKY_TEX_BITS) | u] =
+                    s_tex[(vd << SKY_TEX_BITS) | ((u + 64) & SKY_TEX_MASK)];
+        }
     }
 
     // Report what actually landed in the texture. A backdrop that is silently
