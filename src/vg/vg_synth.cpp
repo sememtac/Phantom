@@ -179,6 +179,13 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
         // from under the static rather than start with it. Roughly a second to
         // settle, which is about as long as the noise in front of it lasts.
         s_flat_lvl += (s_flat_want - s_flat_lvl) * flat_k;
+        // SNAPPED TO ZERO, not allowed to decay forever. An exponential decay
+        // spends half a minute crossing the subnormal range, and this FPU
+        // handles subnormals in software -- hundreds of cycles per operation,
+        // per sample. The profiler caught the mixer at 4.7ms a frame in the
+        // seconds after leaving flight, which is exactly when these levels are
+        // decaying through the storm. Below audibility is zero.
+        if (s_flat_want == 0.0f && s_flat_lvl < 1e-5f) s_flat_lvl = 0.0f;
         if (s_flat_lvl > 0.0005f) {
             s_flat_ph += 988.0f * dt;
             if (s_flat_ph >= 1.0f) s_flat_ph -= (float)(int)s_flat_ph;
@@ -195,6 +202,7 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
 
         // --- the airframe --------------------------------------------------
         s_eng_lvl += (s_eng_want - s_eng_lvl) * eng_k;
+        if (s_eng_want == 0.0f && s_eng_lvl < 1e-5f) s_eng_lvl = 0.0f;
         if (s_eng_lvl > 0.0005f) {
             // A DRIVE, NOT A PROPELLER. Three things were making it an aircraft:
             // the fundamental sat at 46-80 Hz, a second oscillator an OCTAVE

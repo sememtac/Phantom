@@ -187,8 +187,27 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // to raise v to carry the backdrop up the screen the way the starfield goes.
     // Checked against the accumulator this replaced: for a small yaw the two
     // agree to the digit, and for a small pitch they were exact opposites.
-    *u = s_u + atan2f(dx, dz) * s_pan;
-    *v = s_v - asinf(dy)      * s_pan;
+    //
+    // THE POLE. Straight up, dx and dz go to zero together and the longitude
+    // becomes the ratio of two noises: crossing the zenith flips it half a
+    // turn, which on a match sky reads as the backdrop snapping to a different
+    // picture. (The course survives by luck -- its pan geometry makes the same
+    // fold read as a swing-over.) A flat tile cannot chart a sphere without a
+    // seam somewhere; this puts the seam AT the pole and freezes the longitude
+    // while inside it, so pitching through vertical slides the sky out and back
+    // the same way instead of flipping. Held per view, because the mirror is at
+    // the opposite pole from the window.
+    static float lock_u[2] = { 0.0f, 0.0f };
+    const int    li        = (sign < 0.0f) ? 1 : 0;
+    float lon;
+    if (dx * dx + dz * dz < 0.0225f) {          // within ~8.6 deg of the pole
+        lon = lock_u[li];
+    } else {
+        lon = atan2f(dx, dz);
+        lock_u[li] = lon;
+    }
+    *u = s_u + lon       * s_pan;
+    *v = s_v - asinf(dy) * s_pan;
 
     // How far the sky's north is rolled in the frame. The view-space image of
     // sky-up is column 1; its angle in the screen plane is the roll. Astern the
