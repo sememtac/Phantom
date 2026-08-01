@@ -164,6 +164,12 @@ void vg_course_draw(const VgCam& cam) {
     const float TAU = 6.28318531f;
     Vec3 prev = vadd(vg.ring_pos, vmul(a, COURSE_RADIUS));
 
+    // Not antialiased: the same call the arena grid made. A gate on approach is
+    // big, bright and moving, an AA span bills by the pixel, and twenty white
+    // segments across a third of the screen were a measurable slice of the
+    // frame's AA cost.
+    vg_line_aa_mode(false);
+
     for (int i = 1; i <= COURSE_SEGS; i++) {
         const float t  = TAU * (float)i / (float)COURSE_SEGS;
         const Vec3  cur = vadd(vg.ring_pos,
@@ -172,4 +178,5 @@ void vg_course_draw(const VgCam& cam) {
         vg_edge(cam, prev, cur, COL_IFT);
         prev = cur;
     }
+    vg_line_aa_mode(true);
 }

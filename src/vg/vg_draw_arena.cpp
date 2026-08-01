@@ -125,11 +125,20 @@ void vg_draw_arena_grid(const VgCam& cam) {
         // along with the player.
         int   base    = (int)floorf(u0 / du_hoop);
 
-        for (int i = -nhoop; i <= nhoop; i++) {
-            float u = (float)(base + i) * du_hoop;
+        // The mirror gets half the hoops and half the rails. It is a 145 pixel
+        // instrument: the corridor still reads -- receding rings are what sell
+        // it -- but at that size nobody counts them, and the full grid was a
+        // millisecond of submission for the second time in the same frame.
+        // Every other hoop from an EVEN base, so the set drawn is stable as the
+        // window slides rather than flickering between two interleavings.
+        const int hs = cam.lite ? 2 : 1;
+        const int b0 = cam.lite ? (base - (base & 1)) : base;
+
+        for (int i = -nhoop; i <= nhoop; i += hs) {
+            float u = (float)(b0 + i) * du_hoop;
             arena_line(cam, true, u, 0.0f, TAU, ARENA_HOOP_SEGS, col_struct);
         }
-        for (int j = 0; j < ARENA_RAILS; j++) {
+        for (int j = 0; j < ARENA_RAILS; j += hs) {
             float v = TAU * (float)j / (float)ARENA_RAILS;
             arena_line(cam, false, v, u0 - du_hoop * nhoop, u0 + du_hoop * nhoop,
                        nhoop * 2, col_struct);

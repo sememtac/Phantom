@@ -5,6 +5,7 @@
 #include "vg_capture.h"
 #include "vg_sky.h"
 #include <Arduino.h>
+#include "esp_cpu.h"
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <math.h>
@@ -682,6 +683,20 @@ static inline void band_scanlines(uint16_t* band, int by0) {
 // against a constant backdrop cost. So measure all three.
 static uint32_t s_sky_us = 0, s_prim_us = 0, s_scan_us = 0;
 
+// The prim stage broken down by TYPE, in CPU cycles read off CCOUNT -- a
+// micros() pair per primitive would cost more than some of the primitives.
+// This exists because "prim 9.3ms" names a stage, not a culprit: whether that
+// is antialiased ring segments or asteroid fills decides which knife to reach
+// for, and guessing has burned this project before. Cheap enough to leave in:
+// one pair of ~3-cycle counter reads per primitive per band it overlaps.
+static uint32_t s_cyc_aa = 0, s_cyc_ln = 0, s_cyc_tri = 0, s_cyc_oth = 0;
+static uint32_t s_tint_us = 0;
+uint32_t vg_rast_aa_us(void)   { return s_cyc_aa  / 240u; }
+uint32_t vg_rast_ln_us(void)   { return s_cyc_ln  / 240u; }
+uint32_t vg_rast_tri_us(void)  { return s_cyc_tri / 240u; }
+uint32_t vg_rast_oth_us(void)  { return s_cyc_oth / 240u; }
+uint32_t vg_rast_tint_us(void) { return s_tint_us; }
+
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
 uint32_t vg_rast_prim_us(void) { return s_prim_us; }
 uint32_t vg_rast_scan_us(void) { return s_scan_us; }
@@ -707,6 +722,7 @@ static void draw_band(int band_index, uint16_t* band) {
         const Prim* p = &prims[i];
         if (p->ymax < by0 || p->ymin > by1) continue;
 
+        const uint32_t c0 = esp_cpu_get_cycle_count();
         switch (p->type) {
         case PRIM_SKY:
             vg_sky_fill_patch(band, by0);
@@ -755,6 +771,11 @@ static void draw_band(int band_index, uint16_t* band) {
             band_glyph(band, by0, by1, p);
             break;
         }
+        const uint32_t dc = esp_cpu_get_cycle_count() - c0;
+        if      (p->type == PRIM_LINE && p->aa) s_cyc_aa  += dc;
+        else if (p->type == PRIM_LINE)          s_cyc_ln  += dc;
+        else if (p->type == PRIM_TRI)           s_cyc_tri += dc;
+        else                                    s_cyc_oth += dc;
     }
 
     s_prim_us += micros() - t_prim;
@@ -777,6 +798,8 @@ void vg_rast_flush(void) {
 
     uint32_t raster = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
+    s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = 0;
+    s_tint_us = 0;
 
     const float tint_k = s_tint_k;
 
@@ -798,7 +821,11 @@ void vg_rast_flush(void) {
         // After the scanlines, so the tint colours those too. A red warning that
         // left the scanlines amber would read as an overlay rather than as the
         // whole picture going red.
-        if (tint_k > 0.0f) band_wall_tint(buf, b * BAND_H, tint_k);
+        if (tint_k > 0.0f) {
+            const uint32_t t_tint = micros();
+            band_wall_tint(buf, b * BAND_H, tint_k);
+            s_tint_us += micros() - t_tint;
+        }
         // Last of all. The set turning off takes the whole picture with it --
         // scanlines, tint, instruments and all -- because it is the display
         // going away rather than another layer drawn on top of it.

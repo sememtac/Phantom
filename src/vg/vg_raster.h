@@ -62,6 +62,14 @@ void vg_rast_rot_rect(int* x, int* y, int* w, int* h);
 // The rear-view patch's backdrop, as a primitive so it draws in order.
 void vg_sky_patch_prim(int x, int y, int w, int h);
 
+// Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
+// which KIND of primitive the band raster is spending its time on.
+uint32_t vg_rast_aa_us(void);
+uint32_t vg_rast_ln_us(void);
+uint32_t vg_rast_tri_us(void);
+uint32_t vg_rast_oth_us(void);
+uint32_t vg_rast_tint_us(void);
+
 // Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.
 void vg_rast_fills(bool on);
 

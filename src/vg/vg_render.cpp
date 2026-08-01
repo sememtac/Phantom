@@ -1,4 +1,5 @@
 #include "vg_render.h"
+#include <Arduino.h>
 #include "vg_sky.h"
 #include "vg_draw.h"
 #include "vg_game.h"
@@ -55,7 +56,12 @@ static inline float smoothstep(float e0, float e1, float x) {
 // of single pixels is noise and it is the largest primitive count in the frame.
 // Fills are off, so no triangle work. And the patch is clipped at submit, so
 // everything outside it is discarded before it can reach the band lists.
+// How much submit time the mirror costs, measured around the whole patch draw.
+static uint32_t s_mirror_us = 0;
+uint32_t vg_render_mirror_us(void) { return s_mirror_us; }
+
 static void draw_rear_patch(const VgCam& base) {
+    const uint32_t t0 = micros();
     // The backdrop, aft, which is also what hides the forward scene inside the
     // patch. It was a flat INK_WELL fill: opaque was the requirement, and a sky
     // is opaque too.
@@ -90,6 +96,7 @@ static void draw_rear_patch(const VgCam& base) {
 
     // Frame last, over the picture, in the system colour.
     vg_rect(REAR_X - 1, REAR_Y - 1, REAR_W + 2, REAR_H + 2, COL_HUD);
+    s_mirror_us = micros() - t0;
 }
 
 void vg_render_frame(const VgInput* in, float fps) {
@@ -169,9 +176,15 @@ void vg_render_frame(const VgInput* in, float fps) {
 
     // World, back to front. The boundary goes down before anything solid so the
     // hidden-line fills occlude it.
+    // Submit, timed per layer. "sub 11ms" names a stage; this names the layer.
+    extern uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;
+    uint32_t t_sub = micros();
     vg_draw_starfield(cam);
+    g_sub_star = micros() - t_sub;  t_sub = micros();
     vg_draw_arena_grid(cam);
+    g_sub_arena = micros() - t_sub; t_sub = micros();
     vg_draw_world(cam);
+    g_sub_world = micros() - t_sub;
     // Gated on the state, not just on ring_alive. A stale gate drawn into a match
     // would be confusing at best, and its normal is only guaranteed sane while
     // the course owns it.
@@ -274,7 +287,9 @@ void vg_render_frame(const VgInput* in, float fps) {
     if (draw_instruments) {
         vg_hud_jitter(jx, jy);
         vg_hud_warp(true, warp);
+        t_sub = micros();
         vg_draw_hud(cam, in, fps);
+        g_sub_hud = micros() - t_sub;
         vg_hud_warp(false, 1.0f);
         vg_hud_jitter(0.0f, 0.0f);
 
@@ -286,7 +301,11 @@ void vg_render_frame(const VgInput* in, float fps) {
         // small copy of the screen behind it, showing forward would contradict
         // the frame it is drawn in, and either way it is the button the player
         // is holding down.
-        if (!rear_view) draw_rear_patch(cam);
+        s_mirror_us = 0;
+        // Not while paused: a repeater with the simulation stopped is a static
+        // picture being re-submitted at full price -- and the paused course was
+        // measured as the most expensive scene in the game, at 44.8 fps.
+        if (!rear_view && vg.state != VG_PAUSE) draw_rear_patch(cam);
     }
 
     // Panel damage, at whichever severity is worse. Kept low for strain -- a

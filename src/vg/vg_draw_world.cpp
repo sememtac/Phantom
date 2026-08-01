@@ -24,6 +24,9 @@ void vg_draw_starfield(const VgCam& cam) {
 // mote's tail lies further away than its head, and the streaks therefore splay
 // outward from the vanishing point exactly as they should.
 static void draw_motes(const VgCam& cam) {
+    // Not while paused. Motion is the only thing dust communicates, and a
+    // frozen field of streaks is 160-320 primitives saying nothing.
+    if (vg.state == VG_PAUSE) return;
     float sn = (vg.speed - vg.spec->speed_min)
              / (vg.spec->speed_max - vg.spec->speed_min);
     if (sn <= MOTE_FADE_IN) return;
@@ -88,7 +91,11 @@ static void draw_motes(const VgCam& cam) {
 
     VgCam fwd = cam;
     fwd.rear = false;
-    for (int i = 0; i < NUM_MOTES; i++) {
+    // Every third mote in the mirror: dust is a density, not an inventory, and
+    // 160 motes at up to two primitives each was the mirror's single biggest
+    // submission after the grid.
+    const int stride = cam.lite ? 3 : 1;
+    for (int i = 0; i < NUM_MOTES; i += stride) {
         Vec3 p = vg.mote[i];
         if (p.z < NEAR_Z) continue;
         // Toward the camera the tail can cross the near plane, where the
@@ -129,10 +136,17 @@ static void draw_debris(const VgCam& cam) {
 // ---------------------------------------------------------------------------
 
 static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
-    if (a->pos.z + a->radius < NEAR_Z) return;
+    // TURNED space, for two reasons. Raw z rejected everything behind the
+    // player, which for the mirror is everything it exists to show -- rocks
+    // astern simply never drew in it. And the size gates below must use the
+    // camera's own focal length: the mirror's is a third of the window's, so
+    // its rocks drop to the cheap forms sooner, which is exactly right for a
+    // 145 pixel instrument.
+    const Vec3 pv = vg_view(cam, a->pos);
+    if (pv.z + a->radius < NEAR_Z) return;
 
-    float z   = a->pos.z > NEAR_Z ? a->pos.z : NEAR_Z;
-    float rpx = FOCAL * a->radius / z;
+    float z   = pv.z > NEAR_Z ? pv.z : NEAR_Z;
+    float rpx = cam.focal * a->radius / z;
 
     float fade = 1.25f - z / 420.0f;
     if (fade > 1.0f)  fade = 1.0f;
@@ -143,13 +157,13 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     float cx, cy;
 
     if (rpx < 2.5f) {
-        if (vg_project(cam, vg_view(cam, a->pos), &cx, &cy)) vg_point((int)cx, (int)cy, col);
+        if (vg_project(cam, pv, &cx, &cy)) vg_point((int)cx, (int)cy, col);
         return;
     }
     if (rpx < 7.0f) {
         // Too small for the wireframe to resolve; a diamond stays readable and
         // costs 4 lines instead of 30.
-        if (!vg_project(cam, vg_view(cam, a->pos), &cx, &cy)) return;
+        if (!vg_project(cam, pv, &cx, &cy)) return;
         vg_line(cx - rpx, cy, cx, cy - rpx, col);
         vg_line(cx, cy - rpx, cx + rpx, cy, col);
         vg_line(cx + rpx, cy, cx, cy + rpx, col);
@@ -173,7 +187,14 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         front[f] = (vdot(vcross(vsub(B, A), vsub(C, A)), A) < 0.0f);
     }
 
-    for (int f = 0; f < M->face_count; f++) {
+    // The fills exist to occlude -- the rock's own back edges, and the grid
+    // behind it. Below ~16 pixels there is nothing left to occlude that the eye
+    // can resolve, and the fills are where the triangles come from: sixteen
+    // rocks were submitting up to 285 triangles a frame, 1.9ms of band time, of
+    // which the readable near ones were a handful. Measured before touched.
+    const bool fills = (rpx >= 16.0f);
+
+    for (int f = 0; fills && f < M->face_count; f++) {
         if (!front[f]) continue;
         Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
         // Faces straddling the near plane would need polygon clipping; skip their
@@ -189,6 +210,13 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
 
     // Shared edges get submitted twice (once per adjoining front face); a
     // duplicate line is invisible and costs less than building an edge-face map.
+    //
+    // Antialiased only when the rock is big enough to hold still in the eye.
+    // The same argument that stripped AA from the arena grid: below ~30px a
+    // rock is moving structure at distance, no step survives long enough to
+    // see, and an AA span costs an order of magnitude per pixel. The sixteen
+    // rocks' 480 edges were most of the frame's AA bill.
+    if (rpx < 30.0f) vg_line_aa_mode(false);
     for (int f = 0; f < M->face_count; f++) {
         if (!front[f]) continue;
         Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
@@ -196,6 +224,7 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         vg_edge(cam, B, C, col);
         vg_edge(cam, C, A, col);
     }
+    if (rpx < 30.0f) vg_line_aa_mode(true);
 }
 
 // `hero` marks the cutscene ship: drawn on the amber ramp rather than in threat
