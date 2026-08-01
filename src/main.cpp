@@ -8,6 +8,7 @@
 #include "esp_task_wdt.h"
 
 uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
+int      vg_fire_live(void);          // live fireballs, defined in vg_game.cpp
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
@@ -300,19 +301,6 @@ void loop(void) {
     acc_sxr += g_sfx_render_us;
     acc_star += g_sub_star; acc_aren += g_sub_arena;
     acc_wrld += g_sub_world; acc_hud += g_sub_hud;
-    // A second line rather than a longer one: the first is already at the edge
-    // of what a terminal shows without wrapping.
-    if (millis() - report_ms >= 1000 && frames > 0)
-        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu sfx %lu sxr %lu vc %d\n",
-                      (unsigned long)(acc_star / frames),
-                      (unsigned long)(acc_aren / frames),
-                      (unsigned long)(acc_wrld / frames),
-                      (unsigned long)(acc_hud  / frames),
-                      (unsigned long)(acc_mir  / frames),
-                      (unsigned long)(acc_sfx  / frames),
-                      (unsigned long)(acc_sxr  / frames),
-                      vg_synth_live());
-    if (millis() - report_ms >= 1000) acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
     acc_prim   += vg_rast_prim_us();
     acc_scan   += vg_rast_scan_us();
     frames++;
@@ -364,6 +352,19 @@ void loop(void) {
                       // key is in here somewhere; one press names it.
                       pmu_seen[0], pmu_seen[1], pmu_seen[2],
                       vg_rast_overflowed() ? " OVERFLOW" : "");
+        // A second line rather than a longer one: the first is already at the
+        // edge of what a terminal shows without wrapping. It shares the guard
+        // and the window of the first, so the two lines average the same frames.
+        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu sfx %lu sxr %lu vc %d fb %d\n",
+                      (unsigned long)(acc_star / frames),
+                      (unsigned long)(acc_aren / frames),
+                      (unsigned long)(acc_wrld / frames),
+                      (unsigned long)(acc_hud  / frames),
+                      (unsigned long)(acc_mir  / frames),
+                      (unsigned long)(acc_sfx  / frames),
+                      (unsigned long)(acc_sxr  / frames),
+                      vg_synth_live(),
+                      vg_fire_live());
 #if VG_DEBUG_TILT
         Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
                       (double)in.raw_ax, (double)in.raw_ay, (double)in.raw_az,
@@ -373,6 +374,7 @@ void loop(void) {
         acc_rast  = acc_wait = 0;
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
+        acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
         frames = 0;
     }
 }
