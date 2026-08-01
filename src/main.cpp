@@ -22,6 +22,7 @@ uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include "vg/vg_replay.h"
 #include "vg/vg_crumb.h"
 #include "vg/vg_sfx.h"
+#include "vg/vg_synth.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -302,14 +303,15 @@ void loop(void) {
     // A second line rather than a longer one: the first is already at the edge
     // of what a terminal shows without wrapping.
     if (millis() - report_ms >= 1000 && frames > 0)
-        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu sfx %lu sxr %lu\n",
+        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu sfx %lu sxr %lu vc %d\n",
                       (unsigned long)(acc_star / frames),
                       (unsigned long)(acc_aren / frames),
                       (unsigned long)(acc_wrld / frames),
                       (unsigned long)(acc_hud  / frames),
                       (unsigned long)(acc_mir  / frames),
                       (unsigned long)(acc_sfx  / frames),
-                      (unsigned long)(acc_sxr  / frames));
+                      (unsigned long)(acc_sxr  / frames),
+                      vg_synth_live());
     if (millis() - report_ms >= 1000) acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
     acc_prim   += vg_rast_prim_us();
     acc_scan   += vg_rast_scan_us();

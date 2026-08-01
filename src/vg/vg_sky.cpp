@@ -1056,13 +1056,15 @@ static inline float fasin(float y) {
 
 // One exact chart sample: LOGICAL screen point -> (u, v) texels, lifted onto
 // the atlas accumulators so it agrees with the branch the frame is on.
+static float s_cb = 1.0f, s_sb = 0.0f;   // bank trig, hoisted per fill call
+
 static void sky_chart(float lx, float ly, int li, float sign,
                       const float* ref_lon, const float* ref_lat,
                       float* out_u, float* out_v) {
     // Screen -> projection plane, undoing the cosmetic bank the projection
     // applies, then screen-down y becomes view-up y.
     const float sx = lx - (float)SCR_CX, sy = ly - (float)SCR_CY;
-    const float cb = cosf(s_bank), sb = sinf(s_bank);
+    const float cb = s_cb, sb = s_sb;
     const float px = sx * cb + sy * sb;
     const float py = -sx * sb + sy * cb;
     float vx = px / FOCAL, vy = -py / FOCAL, vz = 1.0f;
@@ -1134,12 +1136,38 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // Chained lift: the first sample references the frame accumulator, each
     // later one references its predecessor, and each cross sample references
     // its own column sample. In ANGLE space, then scaled to texels once.
+    // Bank trig once per band, not once per sample: cosf twice against
+    // twenty-two times, and it was two milliseconds of the flight profile.
+    s_cb = cosf(s_bank); s_sb = sinf(s_bank);
+
     float rl = s_eff_acc[li][0], rt = s_eff_acc[li][1];
     for (int k = 0; k <= SEGS; k++) {
         const float ly = (float)(k * (SCR_H / SEGS));
-        sky_chart(lx_c,        ly, li, sign, &rl, &rt, &Au[k], &Av[k]);
+        sky_chart(lx_c, ly, li, sign, &rl, &rt, &Au[k], &Av[k]);
         rl = Au[k]; rt = Av[k];
-        sky_chart(lx_c - 8.0f, ly, li, sign, &rl, &rt, &Cu[k], &Cv[k]);
+    }
+    // Cross-derivatives sampled at three stations and interpolated: the
+    // across-band slope varies slowly, and eight chart calls a band were a
+    // measurable slice of the two milliseconds this fill cost in flight.
+    {
+        float cu3[3], cv3[3];
+        for (int j = 0; j < 3; j++) {
+            const int   k  = j * (SEGS / 2);
+            const float ly = (float)(k * (SCR_H / SEGS));
+            float rl2 = Au[k], rt2 = Av[k];
+            sky_chart(lx_c - 8.0f, ly, li, sign, &rl2, &rt2, &cu3[j], &cv3[j]);
+        }
+        // The stations give the cross OFFSET (C minus A) at three latitudes;
+        // each segment endpoint gets its A plus the interpolated offset.
+        const float du[3] = { cu3[0] - Au[0], cu3[1] - Au[SEGS / 2], cu3[2] - Au[SEGS] };
+        const float dv[3] = { cv3[0] - Av[0], cv3[1] - Av[SEGS / 2], cv3[2] - Av[SEGS] };
+        for (int k = 0; k <= SEGS; k++) {
+            const float t = (float)k / (float)SEGS * 2.0f;   // 0..2 over 3 stations
+            const int   j = (t < 1.0f) ? 0 : 1;
+            const float f = t - (float)j;
+            Cu[k] = Au[k] + du[j] + (du[j + 1] - du[j]) * f;
+            Cv[k] = Av[k] + dv[j] + (dv[j + 1] - dv[j]) * f;
+        }
     }
     for (int k = 0; k <= SEGS; k++) {
         Au[k] = s_u + Au[k] * s_pan;  Av[k] = s_v - Av[k] * s_pan;
@@ -1166,6 +1194,14 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
         uint16_t* dst = &band[row * SCR_W];
         const uint16_t* tex = s_tex;
 
+        // Boundary tint, applied to the chunk colour as it is written -- one
+        // word op per chunk against the dead pass's two hundred and forty per
+        // row. Ring boundaries are half-widths from the row's own geometry;
+        // walking x, the ring index just steps at each crossing.
+        int lim[VG_TINT_RINGS + 1];
+        const bool tint = vg_tint_active();
+        if (tint) vg_tint_row_limits(sy, lim);
+
         for (int k = 0; k < SEGS; k++) {
             // Endpoint values for THIS row: centre-column sample plus the
             // cross-derivative carried dxl columns over. The step between the
@@ -1186,7 +1222,14 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
                 const uint32_t idx = (uint32_t)(((((v + o) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
                                                  (((u + o) >> 16) & SKY_TEX_MASK));
                 const uint32_t c  = tex[idx];
-                const uint32_t cc = (c << 16) | c;
+                uint32_t cc = (c << 16) | c;
+                if (tint) {
+                    const int adx  = abs(k * seg_px + i * 8 + 4 - SCR_W / 2);
+                    int ring = -1;
+                    while (ring + 1 <= VG_TINT_RINGS - 1 && adx >= lim[ring + 1]) ring++;
+                    if (adx >= lim[VG_TINT_RINGS]) ring = VG_TINT_RINGS - 1;
+                    if (ring >= 0) cc = vg_tint_word(cc, ring);
+                }
                 d32[0] = cc; d32[1] = cc; d32[2] = cc; d32[3] = cc;
                 d32 += 4;
                 u += du8;

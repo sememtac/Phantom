@@ -104,6 +104,12 @@ static Voice* grab(void) {
     return best;
 }
 
+int vg_synth_live(void) {
+    int n = 0;
+    for (int i = 0; i < VOICES; i++) if (s_v[i].on) n++;
+    return n;
+}
+
 void vg_synth_reset(void) {
     for (int i = 0; i < VOICES; i++) s_v[i].on = false;
 }

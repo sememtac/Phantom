@@ -385,6 +385,63 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
 // and the warning was filtered out of the build output.
 
 
+// Set from outside, once per frame: 0 for no tint, up to 1 at the wall. The
+// rasteriser does not include vg_game.h and must not -- it draws what it is given
+// and knows nothing about walls. The render layer owns the game state.
+static float s_tint_k = 0.0f;
+
+// --- tint, at the source ----------------------------------------------------
+//
+// The full-frame tint pass died of the lit sky. Its pixel op is three masks a
+// word, but it walked every bright pixel of every row -- and once the sphere
+// backdrop lit the whole frame, "every bright pixel" became the whole frame:
+// five milliseconds a frame parked against a wall, measured. So the tint is
+// applied where the colour is already in hand instead: the sky fill tints its
+// 8-pixel chunks as it writes them, and primitives are tinted once each at
+// submit. A 60-chunk row costs sixty ops where the pass paid two hundred and
+// forty; a primitive costs one.
+bool vg_tint_active(void) { return s_tint_k > 0.0f; }
+
+// Ring crossings for one panel row: lim[i] is the half-width where ring i
+// begins. Geometry identical to the dead pass.
+void vg_tint_row_limits(int sy, int* lim) {
+    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
+    const float rmax = sqrtf(cx * cx + cy * cy);
+    const float rin  = rmax * (1.0f - s_tint_k);
+    const float step = (rmax - rin) / (float)TINT_RINGS;
+    const float dy   = (float)sy - cy;
+    const float dy2  = dy * dy;
+    for (int i = 0; i <= TINT_RINGS; i++) {
+        const float r  = rin + step * (float)i;
+        const float d2 = r * r - dy2;
+        lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
+    }
+}
+
+uint32_t vg_tint_word(uint32_t v, int ring) {
+    const uint32_t GH = 0xE000E000u;
+    return (v & TINT_KEEP[ring]) | (((v & GH) >> TINT_GSHIFT[ring]) & GH)
+         | TINT_GLOW[ring];
+}
+
+// One primitive, tinted by the ring under its centre. A long line crosses
+// several rings and gets its centre's -- a visible simplification nobody will
+// study during a boundary alarm.
+uint16_t vg_tint_prim(uint16_t c, float x, float y) {
+    if (s_tint_k <= 0.0f || c == 0) return c;
+    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
+    const float rmax = sqrtf(cx * cx + cy * cy);
+    const float rin  = rmax * (1.0f - s_tint_k);
+    const float step = (rmax - rin) / (float)TINT_RINGS;
+    const float r    = sqrtf((x - cx) * (x - cx) + (y - cy) * (y - cy));
+    int ring = (int)((r - rin) / step);
+    if (ring < 0) return c;
+    if (ring >= TINT_RINGS) ring = TINT_RINGS - 1;
+    const uint32_t v = ((uint32_t)c << 16) | c;
+    return (uint16_t)vg_tint_word(v, ring);
+}
+
+static void band_wall_tint(uint16_t* band, int by0, float k) __attribute__((unused));
 static void band_wall_tint(uint16_t* band, int by0, float k) {
     const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
     // The corner. At k=1 the innermost boundary reaches the centre and the whole
@@ -433,10 +490,7 @@ static void band_wall_tint(uint16_t* band, int by0, float k) {
     }
 }
 
-// Set from outside, once per frame: 0 for no tint, up to 1 at the wall. The
-// rasteriser does not include vg_game.h and must not -- it draws what it is given
-// and knows nothing about walls. The render layer owns the game state.
-static float s_tint_k = 0.0f;
+
 
 void vg_rast_tint(float k) {
     // Written as "keep it only if it is in range" rather than as two rejections,
@@ -891,11 +945,11 @@ void vg_rast_flush(void) {
         // After the scanlines, so the tint colours those too. A red warning that
         // left the scanlines amber would read as an overlay rather than as the
         // whole picture going red.
-        if (tint_k > 0.0f) {
-            const uint32_t t_tint = micros();
-            band_wall_tint(buf, b * BAND_H, tint_k);
-            s_tint_us += micros() - t_tint;
-        }
+        // Tint happens at the source now -- in the sky fill and at submit --
+        // so there is nothing to do here. tint_k keeps the variable alive for
+        // the band_tv gate below. (void)band_wall_tint quiets the compiler; the
+        // function stays as the reference for the ring geometry.
+        (void)tint_k;
         // Last of all. The set turning off takes the whole picture with it --
         // scanlines, tint, instruments and all -- because it is the display
         // going away rather than another layer drawn on top of it.

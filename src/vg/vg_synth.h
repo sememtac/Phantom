@@ -44,6 +44,9 @@ struct SynthLayer {
     float mod_hz, mod_depth;
 };
 
+// Voices currently sounding, for the profiler.
+int vg_synth_live(void);
+
 void vg_synth_reset(void);
 
 // Stop everything now, held sounds included, with no ramp and no tail.

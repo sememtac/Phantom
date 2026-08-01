@@ -70,6 +70,15 @@ uint32_t vg_rast_tri_us(void);
 uint32_t vg_rast_oth_us(void);
 uint32_t vg_rast_tint_us(void);
 
+// Tint at the source: ring geometry and colour ops for the boundary tint,
+// applied by the sky fill per chunk and by submit per primitive. The
+// full-frame pass they replace died of the lit sky -- see vg_band.cpp.
+#define VG_TINT_RINGS 12
+bool     vg_tint_active(void);
+void     vg_tint_row_limits(int sy, int* lim);   // lim[VG_TINT_RINGS + 1]
+uint32_t vg_tint_word(uint32_t v, int ring);
+uint16_t vg_tint_prim(uint16_t c, float x, float y);
+
 // Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.
 void vg_rast_fills(bool on);
 
