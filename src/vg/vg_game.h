@@ -434,6 +434,10 @@ struct VgGame {
     // The course holds its first gate back until the briefing is over. See
     // vg_course_update.
     bool        course_briefing;
+    // The pilot has been identified: the WELCOME line is up. Skip unlocks here
+    // rather than at the end of the briefing -- once the broadcast has said the
+    // player's name, the check-in has happened and the rest is ceremony.
+    bool        course_named;
     float       course_wait;
     float       course_greet;   // until the briefing starts
 

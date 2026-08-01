@@ -102,11 +102,14 @@
 // Clear of the missile rack, which hud_panel puts at x=440, y=140. The square
 // patch this replaced ran to x=442 and y=164 and sat on the corner of it.
 #define REAR_X               (SCR_W - SCR_SAFE - REAR_W)
-// Flush with the hull bar: both instruments hang from the same top line, the
-// hull reading on the left and the mirror on the right, which reads as one
-// instrument row instead of two heights. The speed readout sits between them
-// and clears the mirror by thirty pixels.
-#define REAR_Y               16
+// Flush with the hull bar ON SCREEN, which is not the same as sharing its
+// logical y. The hull bar is an instrument: it goes through the spherical warp,
+// and with HUD_WARP_K at -0.22 its top edge lands between y=34 (idle) and y=45
+// (full throttle). The mirror cannot warp -- it is a viewport, and bending a
+// viewport would bend the picture inside it -- so it sits at the warped
+// position for cruise. The residual few pixels of throttle-dependent slide are
+// the price of one instrument in the row being a window.
+#define REAR_Y               40
 #define REAR_CX              (REAR_X + REAR_W * 0.5f)
 #define REAR_CY              (REAR_Y + REAR_H * 0.5f)
 // Same ANGULAR scale as the main window, set by the width. So the picture does

@@ -60,6 +60,9 @@ void vg_ift_queue(const char* line, float hold);
 // True while the broadcast is still saying something, including the silences
 // inside a multi-line announcement.
 bool vg_ift_busy(void);
+
+// Lines of the current queue already begun, for pacing decisions.
+int  vg_ift_progress(void);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

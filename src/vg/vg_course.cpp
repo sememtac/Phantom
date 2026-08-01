@@ -57,6 +57,7 @@ void vg_course_begin(void) {
     // It also read as being tested before being told what the test was.
     vg.ring_alive      = false;
     vg.course_briefing = true;
+    vg.course_named    = false;
     vg.course_wait     = COURSE_SETTLE;
 
     // NOT YET. The set is still striking, the panel is still coming up and the
@@ -92,6 +93,10 @@ void vg_course_update(float dt) {
         // immediately -- a pass or a miss also posts a line, and holding the next
         // gate for that would put six seconds of nothing between every attempt.
         if (vg.course_briefing) {
+            // Identified: the WELCOME line is the second of the queue, so two
+            // lines begun means the name is on screen and skip may unlock.
+            if (!vg.course_named && vg_ift_progress() >= 2)
+                vg.course_named = true;
             // The greeting has not started yet counts as still talking. Without
             // this the settle timer runs during the pause BEFORE the briefing,
             // expires, and puts a gate up exactly as the broadcast begins --
@@ -104,6 +109,7 @@ void vg_course_update(float dt) {
             vg.course_wait -= dt;
             if (vg.course_wait > 0.0f) return;
             vg.course_briefing = false;
+            vg.course_named    = true;   // however the briefing ended
         }
         place_ring();
         return;
