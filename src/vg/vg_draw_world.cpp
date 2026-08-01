@@ -196,7 +196,9 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     // the validation flight showed it excluded almost nothing: rocks in this
     // game live close, and nearly all of them sat above 16px. T and the fill
     // time did not move. At 28 the far half of the field goes wireframe.
-    const bool fills = (rpx >= 28.0f);
+    // 40: the second revision. 28 still left T near 240, because the course's
+    // rocks genuinely live close -- the spawner aims them at the player.
+    const bool fills = (rpx >= 40.0f);
 
     for (int f = 0; fills && f < M->face_count; f++) {
         if (!front[f]) continue;
@@ -220,8 +222,14 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     // rock is moving structure at distance, no step survives long enough to
     // see, and an AA span costs an order of magnitude per pixel. The sixteen
     // rocks' 480 edges were most of the frame's AA bill.
-    // 48 for the same reason 16 became 28: measured, not felt.
-    if (rpx < 48.0f) vg_line_aa_mode(false);
+    // No antialiasing at ANY size, and this is the third revision of this
+    // line: 30px excluded nothing, 48px still left the frame's aa cost at
+    // 1.2ms, because the rocks that survive a gate are exactly the close ones
+    // whose edges are long -- and an AA span bills by the pixel, so the gate
+    // keeps the expensive members and discards the cheap ones. The arena
+    // grid's argument applies at every size here: a rock tumbles continuously,
+    // no stair-step survives long enough to see.
+    vg_line_aa_mode(false);
     for (int f = 0; f < M->face_count; f++) {
         if (!front[f]) continue;
         Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
@@ -229,7 +237,7 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         vg_edge(cam, B, C, col);
         vg_edge(cam, C, A, col);
     }
-    if (rpx < 48.0f) vg_line_aa_mode(true);
+    vg_line_aa_mode(true);
 }
 
 // `hero` marks the cutscene ship: drawn on the amber ramp rather than in threat

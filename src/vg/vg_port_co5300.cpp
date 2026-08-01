@@ -585,6 +585,15 @@ bool vg_audio_init(void) {
     digitalWrite(SND_PA_PIN, LOW);          // amp off until the codec is up
 
     s_i2s.setPins(SND_I2S_BCLK, SND_I2S_WS, SND_I2S_DOUT, SND_I2S_DIN, SND_I2S_MCLK);
+    // THE FRAME NEVER WAITS FOR THE SPEAKER. I2SClass::write inherits
+    // Stream's timeout, which defaults to ONE SECOND per chunk when the DMA
+    // ring is full -- and the ring fills, because the sample clock and the
+    // codec's real rate drift by a few samples a second, so after some minutes
+    // of play every write blocked at the speaker's pace. Profiling showed the
+    // synth stage at five milliseconds; the mixing was under one, and the rest
+    // was this wait. Zero means write what fits and return, which is what the
+    // short-write branch below the write call was always written to handle.
+    s_i2s.setTimeout(0);
     if (!s_i2s.begin(I2S_MODE_STD, VG_AUDIO_RATE, I2S_DATA_BIT_WIDTH_16BIT,
                      I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
         Serial.println("vg_audio: I2S init failed");
