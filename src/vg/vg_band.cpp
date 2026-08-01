@@ -1,4 +1,5 @@
 #include "vg_raster.h"
+#include "vg_crumb.h"
 #include "vg_raster_int.h"
 #include "vg_font.h"
 #include "vg_port.h"
@@ -793,6 +794,7 @@ void vg_rast_flush(void) {
     // transfer overlaps this frame's input and simulation, which are already
     // done by the time we get here.
     const uint32_t w0 = micros();
+    vg_crumb(CRUMB_FWAIT, 0);
     vg_panel_wait();
     s_wait_us = micros() - w0;
 
@@ -812,11 +814,13 @@ void vg_rast_flush(void) {
         // has to fit inside the transfer window, which is the number that
         // actually decides the frame rate.
         const uint32_t r0 = micros();
+        vg_crumb(CRUMB_FDRAW, (uint8_t)b);
         draw_band(b, buf);
         // Over the finished band, so the backdrop and the instruments drawn on
         // top of it are striped alike. Baking it into the backdrop texture
         // instead silently skipped every vector element.
         const uint32_t t_scan = micros();
+        vg_crumb(CRUMB_FSCAN, (uint8_t)b);
         band_scanlines(buf, b * BAND_H);
         // After the scanlines, so the tint colours those too. A red warning that
         // left the scanlines amber would read as an overlay rather than as the
@@ -842,6 +846,7 @@ void vg_rast_flush(void) {
 
         // Queues and returns: the next iteration rasterises into the other
         // buffer while this one is on the wire.
+        vg_crumb(CRUMB_FPUSH, (uint8_t)b);
         vg_panel_push_band(b * BAND_H, BAND_H, buf);
     }
 

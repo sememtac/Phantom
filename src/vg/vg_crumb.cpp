@@ -49,7 +49,8 @@ struct CrashRec {
 };
 
 static const char* const CRUMB_NAME[CRUMB_SLOTS] = {
-    "boot", "poll", "input", "update", "render", "flush"
+    "boot", "poll", "input", "update", "render", "flush",
+    "flush-wait", "flush-draw", "flush-scan", "flush-push"
 };
 
 // Kept next to the enum in vg_game.h. Duplicated on purpose: this file must not
@@ -153,10 +154,10 @@ void vg_crumb_report(void) {
 
     if (s_crash_valid) {
         // The line that matters. Everything else in this file exists to print it.
-        Serial.printf("CRUMB: LAST CRASH reason %lu, died in %s, state %s, frame %lu\n",
+        Serial.printf("CRUMB: LAST CRASH reason %lu, died in %s, state %s(%u), frame %lu\n",
                       (unsigned long)s_crash_reason,
                       where_name(s_crash_where),
-                      state_name(s_crash_state),
+                      state_name(s_crash_state), (unsigned)s_crash_state,
                       (unsigned long)s_crash_frame);
     } else if (!cold) {
         Serial.printf("crumb: no crash on record (last run reached frame %lu)\n",

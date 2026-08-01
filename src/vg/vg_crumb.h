@@ -25,6 +25,13 @@ enum VgCrumb : uint8_t {
     CRUMB_UPDATE,    // vg_game_update -- the simulation
     CRUMB_RENDER,    // vg_render_frame -- building the primitive list
     CRUMB_FLUSH,     // vg_rast_flush -- rasterising and the panel DMA
+    // Sub-phases of the flush, added when a watchdog reset said "died in
+    // flush" and flush turned out to contain four different things that can
+    // die. The state byte carries the band index for these, not the state.
+    CRUMB_FWAIT,     // waiting on the previous DMA transfer
+    CRUMB_FDRAW,     // drawing a band's primitives
+    CRUMB_FSCAN,     // scanlines, tint, tv over a finished band
+    CRUMB_FPUSH,     // queueing the band to the panel
     CRUMB_SLOTS
 };
 

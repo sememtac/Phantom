@@ -151,7 +151,17 @@ static bool s_tx_pending = false;
 void vg_panel_wait(void) {
     if (!s_tx_pending) return;
     spi_transaction_t* done = nullptr;
-    spi_device_get_trans_result(s_spi, &done, portMAX_DELAY);
+    // BOUNDED. This waited forever, and a transfer that never completes --
+    // whatever wedged it -- then took the whole game with it: watchdog reset,
+    // "died in flush". Two seconds is a thousand times the longest legitimate
+    // transfer; past that the transfer is abandoned and the frame degrades
+    // instead of the game dying. The counter is printed by the caller's
+    // telemetry, so a wedge is visible the second it starts.
+    if (spi_device_get_trans_result(s_spi, &done, pdMS_TO_TICKS(2000)) != ESP_OK) {
+        static uint32_t s_wedges = 0;
+        Serial.printf("vg_panel: DMA wait timed out (%lu)\n",
+                      (unsigned long)++s_wedges);
+    }
     s_tx_pending = false;
 }
 
