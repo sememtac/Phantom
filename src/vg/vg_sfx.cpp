@@ -1,4 +1,5 @@
 #include "vg_sfx.h"
+#include <Arduino.h>
 #include "vg_synth.h"
 #include "vg_port.h"
 #include "vg_game.h"
@@ -227,7 +228,12 @@ void vg_sfx_update(float dt) {
     // Recorded at FULL level, not at the player's setting. A capture is the game
     // as it sounds, and baking somebody's volume slider into a recording is the
     // kind of thing nobody notices until the file is the only copy left.
-    vg_synth_render(buf, n, 1.0f);
+    {
+        extern uint32_t g_sfx_render_us;
+        const uint32_t t0 = micros();
+        vg_synth_render(buf, n, 1.0f);
+        g_sfx_render_us = micros() - t0;
+    }
     vg_capture_audio(buf, n);
 
     if (vg.vol_sfx < 0.999f) {

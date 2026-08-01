@@ -84,7 +84,11 @@
 // and the safe direction: pincushion pushes the left-edge throttle off-screen.
 // Touch handling stays perfectly linear; only the drawing bends.
 #define HUD_WARP_K           (-0.22f)
-#define HUD_WARP_SEG         44.0f      // px per subdivision of a warped edge
+// px per subdivision of a warped edge. 44 -> 64 in the performance pass: the
+// HUD was 1.5ms of submit, most of it subdivision, and at 64 the longest lines
+// keep their bend with a third fewer segments. The curve is quantised anyway
+// (HUD_WARP_STEPS), so the coarser polyline hides under the same quantisation.
+#define HUD_WARP_SEG         64.0f
 
 // The bend tracks SPEED, turning a static stylistic effect into continuous
 // feedback on how fast you are going.
