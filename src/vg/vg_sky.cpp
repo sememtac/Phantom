@@ -228,8 +228,22 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // rotating sphere: meridians converge, so away from the equator the local
     // north is not the v axis. It is the same approximation the backdrop has
     // always been.
-    const float ux = s_ori.m[1], uy = s_ori.m[4];
-    *roll = atan2f(sign < 0.0f ? ux : -ux, uy);
+    //
+    // FROZEN WITH THE LONGITUDE. The first pole fix locked lon and left this
+    // live, and near vertical the sky's north-in-frame is exactly as
+    // ill-conditioned as the longitude -- so the picture held its place and
+    // SPUN instead, a quarter turn on the way through. The two angles fail
+    // together and they lock together. The cost is a brief reorientation on
+    // leaving the zone after a full loop-over, at a moment the pilot is
+    // inverted and reorienting anyway.
+    static float lock_r[2] = { 0.0f, 0.0f };
+    if (dx * dx + dz * dz < 0.0225f) {
+        *roll = lock_r[li];
+    } else {
+        const float ux = s_ori.m[1], uy = s_ori.m[4];
+        *roll = atan2f(sign < 0.0f ? ux : -ux, uy);
+        lock_r[li] = *roll;
+    }
 }
 // Whether the next fill is for a camera looking aft. Set per frame by the
 // renderer, because the backdrop has no camera of its own to ask.
