@@ -7,6 +7,7 @@
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_sim.h"
+#include "vg_shake.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -320,6 +321,16 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg_glitch_offset(vg.state_t, 31.0f, HUD_SHAKE_MAX * 3.4f * hurt, &hx, &hy);
         jx += hx;
         jy += hy;
+    }
+    // The knock bus: warheads going off nearby, fighters crossing close, fire the
+    // ship is inside. Its own clock again -- see vg_shake_hud. This is the
+    // instruments feeling what the airframe felt, and it is deliberately the last
+    // term, so the panel is never still while the view is being thrown about.
+    if (live) {
+        float kx, ky;
+        vg_shake_hud(&kx, &ky);
+        jx += kx;
+        jy += ky;
     }
 
     if (draw_instruments) {

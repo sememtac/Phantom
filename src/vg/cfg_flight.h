@@ -121,6 +121,61 @@
 // would just look like one bigger shake.
 #define HUD_SHAKE_MAX        1.7f     // px at full throttle
 
+// --- the knock bus ---------------------------------------------------------
+// See vg_shake.h. 1.0 on the hit channel is a missile striking the player, and
+// every other source is scaled against it, so these numbers are the whole feel
+// of being knocked about in one place.
+//
+// The first two are deliberately unchanged from the single-source version this
+// replaced: a missile hit has to land exactly as hard as it always did, or the
+// refactor is a retune wearing a refactor's clothes.
+#define SHAKE_HIT_PX         13.0f    // view px at 1.0
+#define SHAKE_HIT_DECAY      2.6f     // per second
+// Two at once is worse than one; six is not six times worse. Without a ceiling a
+// busy moment throws the view clean off the panel.
+#define SHAKE_HIT_MAX        1.8f
+// A rattle is not a blow, so half the amplitude of one.
+#define SHAKE_RUMBLE_PX      6.5f
+#define SHAKE_RUMBLE_RATE    9.0f     // how fast it follows the requested level
+// The panel moves less than the view -- see HUD_SHAKE_MAX for why it moves at all.
+#define SHAKE_HUD_RATIO      0.22f
+
+// --- passing close aboard --------------------------------------------------
+// A fighter crossing near enough to be felt.
+//
+// 140 UNITS WAS WRONG, and wrong twice over. It is about ten ship lengths, which
+// sounded close until it was measured against how a dogfight actually runs: two
+// airframes converging at a combined 800 units a second cross well outside it
+// most of the time, so the effect simply never fired. And with the falloff
+// squared on top, a pass at 100 units came out at 0.85 PIXELS of movement --
+// present in the arithmetic, invisible on the panel, which is exactly how it
+// looked in the game.
+//
+// 340 is about the range at which another fighter stops being a contact and
+// starts being a thing going past you.
+#define PASS_RANGE           340.0f
+// The knock lands at CLOSEST APPROACH, which is where the range stops shrinking
+// -- the same test the missile fuse uses, for the same reason. You cannot know
+// you are at the minimum until you are past it.
+//
+// LINEAR in closeness, not squared, so a moderate pass still registers. Above 1
+// on purpose: a hard crossing pass inside fifty units should hit harder than a
+// missile, because it nearly was one.
+#define PASS_SHAKE           1.60f
+// ...and the buffeting, for as long as they are close. The impulse alone was one
+// frame of movement and read as a tick; what a pass FEELS like is the airframe
+// being worked over the whole time the other ship is on top of you. Squared here,
+// unlike the impulse, so the sustained part stays a near-field thing and the
+// arena is not permanently trembling.
+#define PASS_RUMBLE          1.50f
+
+// --- inside the fire -------------------------------------------------------
+// Flying through what is left of something that just died. A rumble while inside
+// the radius, and the panel takes it badly -- this is the one condition that
+// glitches the display without the hull having been touched.
+#define FIRE_RUMBLE          1.15f
+#define FIRE_GLITCH_K        0.55f    // of DAMAGE_GLITCH
+
 // --- trails ----------------------------------------------------------------
 // Every fighter drags a coloured ribbon of where it has been. This is what makes
 // trail colour a mechanic rather than decoration: at range a contact is four

@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_shake.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
@@ -147,6 +148,24 @@ void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k) 
     float lit = radius * 6.0f / (rng + 60.0f);
     if (lit > 0.85f) lit = 0.85f;
     if (lit > vg.blast_flash) vg.blast_flash = lit;
+
+    // AND SO DOES THE PRESSURE. Its own curve rather than reusing the light's:
+    // a flash carries much further than a knock does, so this falls off harder
+    // and is felt across a smaller part of the arena. Unlike the flash it
+    // ACCUMULATES -- see vg_shake.h -- because two warheads either side of the
+    // canopy really should be worse than one.
+    float knock = radius * 5.0f / (rng + 90.0f);
+    if (knock > 1.20f) knock = 1.20f;
+    vg_shake_hit(knock);
+
+    // Close enough to hurt the display. Well short of the fireball's own radius,
+    // so this is "it went off next to you" rather than "you are inside it" --
+    // that case is handled in the world step, where the fireball is still around
+    // to be inside OF.
+    if (knock > 0.75f) {
+        const float g = DAMAGE_GLITCH * (knock - 0.75f) * 2.2f;
+        if (g > vg.damage_glitch) vg.damage_glitch = g;
+    }
 }
 
 // --- the VFX bench ---------------------------------------------------------
@@ -167,6 +186,7 @@ static float s_vfx_t    = 0.0f;
 
 static const char* const VFX_NAME[VFX_PRESETS] = {
     "missile fuse expires", "missile hit", "ship destroyed", "player wreck",
+    "point blank -- inside the fire",
 };
 
 void vg_vfx_fire(int which) {
@@ -175,13 +195,21 @@ void vg_vfx_fire(int which) {
     // can be judged against something other than the centre of the screen.
     const Vec3 at = v3(vg_frand(-46.0f, 46.0f), vg_frand(-34.0f, 34.0f),
                        vg_frand(210.0f, 300.0f));
+    // Right on the canopy, so the knock bus is exercised where it actually bites:
+    // inside the fireball's own radius, which is the only place the rumble and the
+    // panel glitch come from. Everything else fires far enough out that those two
+    // paths never run, and they were the hardest part to judge from a distance.
+    const Vec3 near_at = v3(vg_frand(-14.0f, 14.0f), vg_frand(-10.0f, 10.0f),
+                            vg_frand(18.0f, 30.0f));
     switch (which) {
     case 0:  vg_spawn_blast(at,  7.0f,  1, 3,  1.0f); break;
     case 1:  vg_spawn_blast(at, 16.0f,  3, 8,  1.0f); break;
     case 2:  vg_spawn_blast(at, 46.0f,  9, 0,  1.9f);
              vg_spawn_shrapnel(at, 30.0f, 54.0f, 34, 4.4f, 1.8f); break;
-    default: vg_spawn_blast(at, 62.0f, 11, 0,  2.2f);
+    case 3:  vg_spawn_blast(at, 62.0f, 11, 0,  2.2f);
              vg_spawn_shrapnel(at, 40.0f, 72.0f, 44, 4.8f, 2.0f); break;
+    default: vg_spawn_blast(near_at, 46.0f, 9, 0, 1.9f);
+             vg_spawn_shrapnel(near_at, 30.0f, 54.0f, 34, 4.4f, 1.8f); break;
     }
 }
 
@@ -205,10 +233,68 @@ float vg_vfx_auto_period(void) { return s_vfx_auto; }
 
 static void vfx_tick(float dt) {
     if (s_vfx_auto <= 0.0f) return;
+    // NOT DURING A RECORD OR A RENDER. The one-shot command is already barred in
+    // vg_capture.cpp, but the repeat is a timer and would have kept firing right
+    // through a session.
+    //
+    // It would not have looked like a determinism bug either. The simulation is a
+    // pure function of seed, dt and input only while every draw from the xorshift
+    // happens in both passes -- and a shot fired during the record has no reason
+    // to fire during the render, because the flag is off after a reset. From that
+    // frame on the two runs are drawing different numbers and the replay quietly
+    // stops matching the game it recorded.
+    if (vg_replay_mode() != VG_RP_OFF) return;
     s_vfx_t -= dt;
     if (s_vfx_t > 0.0f) return;
     s_vfx_t = s_vfx_auto;
     vg_vfx_fire(vg_vfx_step_preset());
+}
+
+// A fighter crossing close aboard. Two airframes going opposite ways at a
+// combined 800 units a second, passing inside ten ship lengths, and until now the
+// cockpit reported nothing whatsoever -- which made the most exciting thing that
+// happens in a dogfight the least physical.
+//
+// The knock lands at CLOSEST APPROACH, found the way the missile fuse finds it:
+// the frame the range stops shrinking. You cannot know you were at the minimum
+// until you are past it, and firing on the way in would put the thump before the
+// event.
+static void update_passes(void) {
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        Ship* s = &vg.enemy[i];
+        if (!s->alive) { s->pass_range = 0.0f; s->pass_done = false; continue; }
+
+        const float r = vlen(s->pos);
+
+        // How fast they are going by. Radial closure is zero at the minimum by
+        // definition, so the speed has to come from the airframes themselves -- a
+        // hard crossing pass and a slow drift-by are the same geometry, and only
+        // one of them should be felt.
+        float sp = 0.0f;
+        if (vg.spec) {
+            const float ref = vg.spec->speed_max * 2.0f;
+            if (ref > 1.0f) sp = (vg.speed + s->speed) / ref;
+        }
+        if (sp > 1.0f) sp = 1.0f;
+
+        // The buffeting, renewed every frame they are inside the envelope. This is
+        // the part that reads as violent: a single impulse is one frame of
+        // movement no matter how large it is.
+        if (r < PASS_RANGE) {
+            const float near = 1.0f - r / PASS_RANGE;
+            vg_shake_rumble(near * near * (0.30f + 0.70f * sp) * PASS_RUMBLE);
+        }
+
+        if (r < s->pass_range) s->pass_done = false;      // closing again: re-arm
+        else if (!s->pass_done && s->pass_range > 0.0f
+                 && s->pass_range < PASS_RANGE) {
+            // ...and the thump, once, at the moment of closest approach.
+            const float close = 1.0f - s->pass_range / PASS_RANGE;
+            vg_shake_hit(close * (0.30f + 0.70f * sp) * PASS_SHAKE);
+            s->pass_done = true;
+        }
+        s->pass_range = r;
+    }
 }
 
 int vg_fire_live(void) {
@@ -454,7 +540,7 @@ void vg_kill_player(void) {
     vg.health        = 0.0f;
     vg.hit_flash     = 0.6f;
     vg.damage_glitch = DAMAGE_GLITCH;
-    vg.shake         = 1.0f;
+    vg_shake_hit(1.35f);   // a kill lands harder than a wound
     s_player_hit     = true;
 }
 
@@ -471,7 +557,7 @@ void vg_damage_player(float amount) {
     vg_sfx_play(SFX_HIT, 1.0f);
     vg.hit_flash     = 0.6f;
     vg.damage_glitch = DAMAGE_GLITCH;
-    vg.shake     = 1.0f;
+    vg_shake_hit(1.0f);    // THE reference knock: everything else is scaled to it
     s_player_hit = true;
 }
 
@@ -690,7 +776,7 @@ void vg_match_start(void) {
     vg.health_max  = vg.spec->hull;
     vg.throttle    = 0.5f;
     vg.bank        = 0;
-    vg.shake       = 0;
+    vg_shake_clear();
     vg.hit_flash   = 0;
     vg.missiles    = vg.spec->magazine;
     vg.reload_t    = 0.0f;          // a full rack is not reloading
@@ -1020,6 +1106,20 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         f->pos.z -= dz;
         f->life -= dt;
         if (f->life <= 0) f->alive = false;
+        // INSIDE THE FIRE. Positions are player-relative, so vlen is the range to
+        // the cockpit and this is simply "is the canopy in it". The nominal radius
+        // rather than the drawn one: the drawn size is a curve the renderer owns,
+        // and the simulation has no business reading it.
+        const float rng = vlen(f->pos);
+        if (rng < f->r) {
+            const float deep = 1.0f - rng / f->r;
+            vg_shake_rumble(FIRE_RUMBLE * deep);
+            // The one thing that glitches the panel without the hull being
+            // touched. Flying through a fireball should look like it costs you
+            // something even when it does not.
+            const float g = DAMAGE_GLITCH * FIRE_GLITCH_K * deep;
+            if (g > vg.damage_glitch) vg.damage_glitch = g;
+        }
     }
 
     vfx_tick(dt);
@@ -1031,17 +1131,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         if (vg.blast_flash < 0) vg.blast_flash = 0;
     }
 
-    // Shake decays fast, and the offset is re-rolled each frame so it reads as
-    // impact rather than as a smooth wobble.
-    if (vg.shake > 0) {
-        vg.shake -= dt * 2.6f;
-        if (vg.shake < 0) vg.shake = 0;
-        float amp = vg.shake * 13.0f;
-        vg.shake_x = vg_frand(-amp, amp);
-        vg.shake_y = vg_frand(-amp, amp);
-    } else {
-        vg.shake_x = vg.shake_y = 0;
-    }
+    // Every knock the airframe has taken, decayed and rolled into this frame's
+    // offset. See vg_shake.h -- the level itself lives in that module now, not on
+    // vg, because a dozen things contribute to it and none of them owns it.
+    vg_shake_update(dt);
 
     // Buzz, on top of whatever the impact shake is doing. Quadratic in speed, so
     // it is present the whole way up rather than switching on near the stop, and
@@ -1268,7 +1361,7 @@ static void enter_attract(void) {
     vg.lock_target = -1;
     vg.locked      = false;
     vg.hit_flash   = 0;
-    vg.shake       = 0;
+    vg_shake_clear();
 }
 
 // Every menu state flies the same idle scene underneath, so the tournament map
@@ -1924,6 +2017,9 @@ void vg_game_update(float dt, const VgInput* in) {
         vg_world_step(dt, in->pitch, in->yaw, roll_angle(in, dt), in->throttle);
 
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+        // After they have moved, or the range being tested is a frame stale --
+        // which at a combined 800 units a second is sixteen units of error.
+        update_passes();
 
         vg_update_missiles(dt);
         update_lock(dt);

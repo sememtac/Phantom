@@ -57,7 +57,7 @@ int vg_fire_live(void);
 // Fire an explosion on demand so it can be looked at without playing to the
 // moment that produces it. Driven from the host over the link, never from the
 // game's own input. Runs wherever vg_world_step runs, the attract loop included.
-#define VFX_PRESETS 4
+#define VFX_PRESETS 5
 void        vg_vfx_fire(int which);       // 0..VFX_PRESETS-1
 const char* vg_vfx_name(int which);
 int         vg_vfx_step_preset(void);     // next preset in the cycle, and advance

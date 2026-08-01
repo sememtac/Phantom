@@ -228,6 +228,11 @@ There are four presets and each shot steps to the next one:
 | 1 | missile hit |
 | 2 | ship destroyed |
 | 3 | player wreck |
+| 4 | point blank, inside the fire |
+
+Preset 4 goes off on the canopy. Use it to judge the airframe rattle, the
+instrument jitter and the panel glitch. The other four are too far away to start
+those, because they only run while the cockpit is inside the fireball.
 
 The device prints the name of each shot.
 

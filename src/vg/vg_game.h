@@ -61,6 +61,12 @@ struct Ship {
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
+    // Closest-approach tracking for the pass knock -- see PASS_RANGE. `pass_done`
+    // stops one pass being felt on every frame of the separation: it arms while
+    // the range is shrinking and fires once, on the frame it starts opening.
+    float pass_range;
+    bool  pass_done;
+
     // True once the player and this ship have actually been in the same fight:
     // close enough to see, or hit. A match must not be decided by an opponent
     // who dies before this is set, because the player was never given a chance
@@ -401,7 +407,8 @@ struct VgGame {
     // yaw instead of merely rotating the finished image. Accumulated because the
     // backdrop is not carried by that transform and has to be told the total.
     float    roll;
-    float    shake;
+    // This frame's view offset in pixels. The LEVEL behind it lives in
+    // vg_shake.cpp, because many things contribute and none of them owns it.
     float    shake_x, shake_y;
     float    hit_flash;
     // Light from an explosion nearby, 0..1, raised by vg_spawn_blast and decayed
