@@ -503,6 +503,60 @@ void vg_draw_target_markers(const VgCam& cam) {
     }
 }
 
+// A diamond riding every missile in the air, so a round in flight is something
+// you can watch rather than something you infer from a ring arrow.
+//
+// HUE IS IDENTITY, which is the same rule the trails already follow: a hostile
+// round wears the radar's incoming-missile yellow and one of yours wears your
+// own trail colour. So the diamond, the blip and the streak all say the same
+// thing about whose missile it is, and none of them is using hue to rank
+// anything -- the palette reserves that for brightness.
+//
+// A missile whose seeker has broken gets no diamond. It is coasting ballistic
+// at that point and no longer tracking anybody, and a marker that keeps riding
+// it would claim a threat that has already stopped being one.
+//
+// ON SCREEN ONLY. Which way to haul for the one you cannot see is already
+// answered by the threat arrow on its own ring, and saying it twice at two
+// radii would just be two things to read.
+// The bounds and the size clamps are the caller's, because this runs twice with
+// very different room: the main window, and the rear-view patch at 145x44. The
+// main view's 22px half-size would be half the height of the mirror.
+void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
+                             float x1, float y1, float hmin, float hmax) {
+    const uint16_t mine = vg_hue_col(vg.trail_hue);
+
+    for (int i = 0; i < MAX_MISSILES; i++) {
+        const Missile* m = &vg.msl[i];
+        if (!m->alive || !m->locked) continue;
+
+        const bool     hostile = !m->from_player;
+        const uint16_t col     = hostile ? COL_RADAR_MSL : vg_dim(mine, 0.85f);
+
+        float sx = 0, sy = 0, ang = 0;
+        const bool infront  = screen_dir(cam, m->pos, &sx, &sy, &ang);
+        const bool onscreen = infront && sx > x0 && sx < x1 && sy > y0 && sy < y1;
+        if (!onscreen) continue;
+
+        // Sized off true range rather than the forward component, so it does not
+        // swell when you turn away from a missile that has not moved.
+        // cam.focal, not FOCAL: the camera carries the zoom, and a marker that
+        // ignores it drifts off the thing it is marking the moment the view
+        // changes scale.
+        const float rng = vlen(m->pos);
+        float h = cam.focal * 1.9f / (rng > NEAR_Z ? rng : NEAR_Z);
+        if (h < hmin) h = hmin;
+        if (h > hmax) h = hmax;
+
+        // Four strokes, corners on the axes: the shape reads as a diamond and
+        // not as a box, which the lock brackets already own.
+        vg_line_w(sx,     sy - h, sx + h, sy,     col, 2);
+        vg_line_w(sx + h, sy,     sx,     sy + h, col, 2);
+        vg_line_w(sx,     sy + h, sx - h, sy,     col, 2);
+        vg_line_w(sx - h, sy,     sx,     sy - h, col, 2);
+    }
+}
+
 // Arrow pointing at the nearest incoming missile, including when it is behind you
 // -- exactly when you most need to know. Sits on a wider ring than the bogey
 // markers so the two never read as the same thing.

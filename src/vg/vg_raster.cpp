@@ -138,6 +138,21 @@ static inline void warp_pt(float* x, float* y) {
     *y = SCR_CY + dy * k + s_hud_jy;
 }
 
+// The bend of ONE point at an arbitrary warp scale, with no jitter and without
+// consulting whether the bracket is open.
+//
+// For the rear-view patch, which cannot be warped -- it is a viewport, and
+// bending it would bend the picture inside it -- but which has to ride the panel
+// that is. The caller asks where the panel put this spot and moves the whole
+// window there rigidly. Same formula as warp_pt so the two cannot drift apart.
+void vg_hud_warp_at(float scale, float x, float y, float* ox, float* oy) {
+    const float dx = x - SCR_CX, dy = y - SCR_CY;
+    const float r2 = (dx * dx + dy * dy) * (1.0f / (SCR_CX * SCR_CX + SCR_CY * SCR_CY));
+    const float k  = 1.0f + HUD_WARP_K * scale * r2;
+    *ox = SCR_CX + dx * k;
+    *oy = SCR_CY + dy * k;
+}
+
 // ---------------------------------------------------------------------------
 // Orientation
 //

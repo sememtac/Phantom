@@ -14,11 +14,13 @@
 // or vg_hud/vg_overlay module; what remains here is the part that is genuinely
 // global -- the draw ORDER, and which layers get the spherical warp.
 
-// Declared here rather than in vg_draw.h because these three are HUD pieces that
-// must NOT be warped, so they are called from outside the warp bracket.
+// Declared here rather than in vg_draw.h because these are HUD pieces that must
+// NOT be warped, so they are called from outside the warp bracket.
 void vg_draw_lock_box(const VgCam& cam);
 void vg_draw_steer_indicator(const VgInput* in);
 void vg_draw_target_markers(const VgCam& cam);
+void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
+                             float x1, float y1, float hmin, float hmax);
 void vg_draw_threat_indicator(const VgCam& cam);
 
 // Frame rate, bottom left, during flight only. The menus sit comfortably above
@@ -60,8 +62,29 @@ static inline float smoothstep(float e0, float e1, float x) {
 static uint32_t s_mirror_us = 0;
 uint32_t vg_render_mirror_us(void) { return s_mirror_us; }
 
-static void draw_rear_patch(const VgCam& base) {
+static void draw_rear_patch(const VgCam& base, float warp) {
     const uint32_t t0 = micros();
+
+    // RIDES THE PANEL, RIGIDLY. The patch is still not warped -- bending a
+    // viewport would bend the picture inside it -- but it no longer sits still
+    // while the instruments around it flex, which made it read as pasted on
+    // rather than set in.
+    //
+    // The whole window moves as one: backdrop, clip rect, projection offset and
+    // frame all take the same offset, so the picture and its bezel stay
+    // congruent and the reflection CANNOT land outside the frame. That matters
+    // more than it sounds -- HUD_WARP_K is negative, so the bend pulls this
+    // corner of the panel inward by tens of pixels at full throttle. Warping
+    // only the frame would have left the picture hanging outboard of it.
+    //
+    // Whole pixels. The warp is quantised upstream for the same reason: a patch
+    // sliding by fractions of a pixel reads as shimmer, not as motion.
+    float wx, wy, rx, ry;
+    vg_hud_warp_at(warp,          REAR_CX, REAR_CY, &wx, &wy);
+    vg_hud_warp_at(REAR_WARP_REF, REAR_CX, REAR_CY, &rx, &ry);
+    const int ox = (int)lroundf(wx - rx);
+    const int oy = (int)lroundf(wy - ry);
+    const int px = REAR_X + ox, py = REAR_Y + oy;
     // The backdrop, aft, which is also what hides the forward scene inside the
     // patch. It was a flat INK_WELL fill: opaque was the requirement, and a sky
     // is opaque too.
@@ -71,8 +94,8 @@ static void draw_rear_patch(const VgCam& base) {
     // world -- which has no reason to avoid the patch -- was painted straight
     // over it. As a primitive it lands here in submission order instead: after
     // the world, before the patch's own geometry.
-    vg_sky_set_patch(REAR_X, REAR_Y, REAR_W, REAR_H);
-    vg_sky_patch_prim(REAR_X, REAR_Y, REAR_W, REAR_H);
+    vg_sky_set_patch(px, py, REAR_W, REAR_H);
+    vg_sky_patch_prim(px, py, REAR_W, REAR_H);
 
     VgCam rc = base;
     rc.rear  = true;
@@ -83,19 +106,30 @@ static void draw_rear_patch(const VgCam& base) {
     // hook needed to move the whole projection into the corner. The patch does
     // not shake with the airframe, which is right: it is a repeater, not a
     // window in the canopy.
-    rc.sx = REAR_CX - SCR_CX;
-    rc.sy = REAR_CY - SCR_CY;
+    rc.sx = REAR_CX + (float)ox - SCR_CX;
+    rc.sy = REAR_CY + (float)oy - SCR_CY;
 
-    vg_rast_viewport(REAR_X, REAR_Y, REAR_W, REAR_H);
+    vg_rast_viewport(px, py, REAR_W, REAR_H);
     vg_rast_fills(false);
     vg_draw_arena_grid(rc);
     vg_draw_world(rc);
     if (vg.state == VG_COURSE) vg_course_draw(rc);
+    // Threat diamonds in the mirror, INSIDE the viewport bracket so they are
+    // clipped to the patch like everything else in it. Bounds are the patch,
+    // inset a little, and the half-size is clamped to 2..6px -- the main view's
+    // 22 would be half the height of the window. A round closing from behind is
+    // the single most useful thing this instrument shows, so it earns the four
+    // strokes even here.
+    vg_draw_missile_markers(rc, (float)(px + 3), (float)(py + 3),
+                            (float)(px + REAR_W - 3), (float)(py + REAR_H - 3),
+                            2.0f, 6.0f);
     vg_rast_fills(true);
     vg_rast_viewport_full();
 
-    // Frame last, over the picture, in the system colour.
-    vg_rect(REAR_X - 1, REAR_Y - 1, REAR_W + 2, REAR_H + 2, COL_HUD);
+    // Frame last, over the picture, in the system colour. One pixel outside the
+    // clip rect on every side, so the picture is bounded by the bezel and the
+    // bezel is never overdrawn by it.
+    vg_rect(px - 1, py - 1, REAR_W + 2, REAR_H + 2, COL_HUD);
     s_mirror_us = micros() - t0;
 }
 
@@ -311,7 +345,7 @@ void vg_render_frame(const VgInput* in, float fps) {
         // fault, and a pause menu is exactly when a player looks the cockpit
         // over. The motes stay out of pause; stillness is only wrong on things
         // whose meaning is motion.
-        if (!rear_view) draw_rear_patch(cam);
+        if (!rear_view) draw_rear_patch(cam, warp);
     }
 
     // Panel damage, at whichever severity is worse. Kept low for strain -- a
@@ -348,6 +382,8 @@ void vg_render_frame(const VgInput* in, float fps) {
     // rather than physical.
     vg_draw_steer_indicator(in);
     vg_draw_target_markers(cam);
+    vg_draw_missile_markers(cam, 26.0f, 26.0f, SCR_W - 26.0f, SCR_H - 26.0f,
+                            7.0f, 22.0f);
     vg_draw_threat_indicator(cam);
 
     vg_draw_overlays();

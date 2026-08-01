@@ -28,6 +28,11 @@ void vg_rast_begin_frame(void);
 // from game state (speed) rather than it being a fixed stylistic constant.
 void vg_hud_warp(bool on, float scale);
 
+// Where the bend puts one point at a given scale, jitter excluded and
+// independent of the bracket. For a thing that must not be warped itself but has
+// to sit where the warped panel would have put it -- the rear-view patch.
+void vg_hud_warp_at(float scale, float x, float y, float* ox, float* oy);
+
 // Translate the whole instrument panel by a few pixels. Only affects primitives
 // submitted inside the warp bracket, so the world never moves with it. Reset to
 // zero when the bracket closes.

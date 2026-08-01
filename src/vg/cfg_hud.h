@@ -112,6 +112,12 @@
 #define REAR_Y               40
 #define REAR_CX              (REAR_X + REAR_W * 0.5f)
 #define REAR_CY              (REAR_Y + REAR_H * 0.5f)
+// The warp scale REAR_X and REAR_Y are already tuned for. The patch now rides
+// the panel's flex, but only the flex: it is offset by the bend at the current
+// scale MINUS the bend at this reference, so at cruise it sits exactly where it
+// has always sat and the position above stays the thing that was tuned. Set to
+// mid-range so the slide is symmetric about it instead of pulling one way.
+#define REAR_WARP_REF        ((HUD_WARP_SPEED_MIN + 1.0f) * 0.5f)
 // Same ANGULAR scale as the main window, set by the width. So the picture does
 // not change size when the patch is held and fills the screen -- it is the same
 // view, uncropped. Vertically that makes the patch a letterbox on it, roughly 20
