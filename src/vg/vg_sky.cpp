@@ -182,8 +182,13 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // texels per radian, so longitude and latitude scale by it directly.
     if (dy >  1.0f) dy =  1.0f;
     if (dy < -1.0f) dy = -1.0f;
+    // NEGATED, and only this one. Latitude climbs with the sky direction's y,
+    // but v runs DOWN the frame -- so a nose pitching down, which lowers y, has
+    // to raise v to carry the backdrop up the screen the way the starfield goes.
+    // Checked against the accumulator this replaced: for a small yaw the two
+    // agree to the digit, and for a small pitch they were exact opposites.
     *u = s_u + atan2f(dx, dz) * s_pan;
-    *v = s_v + asinf(dy)      * s_pan;
+    *v = s_v - asinf(dy)      * s_pan;
 
     // How far the sky's north is rolled in the frame. The view-space image of
     // sky-up is column 1; its angle in the screen plane is the roll. Astern the
