@@ -1,4 +1,5 @@
 #include "vg_capture.h"
+#include "esp_task_wdt.h"
 #include "vg_config.h"
 #include "vg_replay.h"
 #include "vg_crumb.h"
@@ -78,6 +79,10 @@ void vg_link_write(const void* p, int n) {
         if (k == 0) {
             s_wr_stall++;
             if (++spins > 3000) { s_wr_giveups++; return; }  // ~3s, then drop it
+            // Waiting on a host is not a hang. Bounded at three seconds, well
+            // inside the dog's ten, but fed anyway so the bound is the only
+            // thing that ends it.
+            esp_task_wdt_reset();
             delay(1);
             continue;
         }

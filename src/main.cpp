@@ -5,6 +5,7 @@
 //   vg_input_update() -> vg_game_update() -> vg_render_frame() -> vg_rast_flush()
 
 #include <Arduino.h>
+#include "esp_task_wdt.h"
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "vg/vg_port.h"
@@ -32,6 +33,25 @@ void setup(void) {
     // 16K is the knee. Measured: 4K ring 5.1 fps, 16K 21.98 fps, 32K 22.22 fps,
     // at which point 0.74 MB/s is the USB-Serial-JTAG peripheral's own ceiling
     // and more buffer buys nothing but RAM.
+    // A HANG THAT DOES NOT RESET LEAVES NO EVIDENCE. The crumb records the
+    // frame and the phase into RTC memory every frame, but it is only promoted
+    // to a crash record on an abnormal reset -- so a freeze that merely stops
+    // drawing, which is what has been reported twice, throws that away.
+    //
+    // The watchdog turns one into the other. Ten seconds is far above anything
+    // legitimate: a frame is 16ms and the longest single call in the game is
+    // vg_sky_generate at 146ms. The two places that legitimately wait longer
+    // are both link waits, and both feed the dog themselves.
+    {
+        esp_task_wdt_config_t wdt = { };
+        wdt.timeout_ms     = 10000;
+        wdt.idle_core_mask = 0;
+        wdt.trigger_panic  = true;
+        if (esp_task_wdt_init(&wdt) == ESP_ERR_INVALID_STATE)
+            esp_task_wdt_reconfigure(&wdt);   // the core got there first
+        esp_task_wdt_add(NULL);               // watch the loop task
+    }
+
     Serial.setTxBufferSize(16384);
     Serial.begin(115200);
 
@@ -105,6 +125,7 @@ void setup(void) {
 }
 
 void loop(void) {
+    esp_task_wdt_reset();
     if (s_halted) { delay(1000); return; }
 
     static uint32_t last_us   = 0;

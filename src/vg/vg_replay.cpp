@@ -1,4 +1,5 @@
 #include "vg_replay.h"
+#include "esp_task_wdt.h"
 #include "vg_game.h"
 #include "vg_ship.h"
 #include "vg_capture.h"
@@ -57,7 +58,14 @@ static bool rd(void* p, int n, uint32_t to_ms) {
         // Yield rather than spin. This loop is the whole frame budget while
         // replaying, and starving the USB driver task would stop the very
         // bytes we are waiting to be answered.
-        else delay(0);
+        else {
+            // A render waits on the host for as long as the host needs, and the
+            // crumb has recorded thirty seconds of it. That is the harness
+            // working, not the game hanging, so the dog is fed here -- the
+            // timeout above is what ends this wait.
+            esp_task_wdt_reset();
+            delay(0);
+        }
     }
     return true;
 }
