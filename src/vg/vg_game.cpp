@@ -195,6 +195,8 @@ void vg_ift_say(const char* line, float hold, bool badge) {
 // or lines still waiting to be read. Callers use it to keep out of the way --
 // anything that would post its own line has to wait, or it silently deletes the
 // rest of what was being said.
+int vg_ift_progress(void) { return s_ift_i; }
+
 bool vg_ift_busy(void) {
     return (vg.ift_line && vg.ift_t > 0.0f) || s_ift_gap > 0.0f || s_ift_i < s_ift_n;
 }
@@ -1675,7 +1677,7 @@ void vg_game_update(float dt, const VgInput* in) {
             case PAUSE_SKIP:
                 // Refused while the briefing runs: the player may pause over it,
                 // read it and think about it, but not walk out of it.
-                if (!vg.course_briefing) vg_state_cut(VG_BRACKET);
+                if (vg.course_named) vg_state_cut(VG_BRACKET);
                 break;
             case PAUSE_QUIT:
                 vg_state_cut(VG_ATTRACT);

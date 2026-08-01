@@ -665,13 +665,18 @@ static inline void band_scanlines(uint16_t* band, int by0) {
         // budget -- for 38,400 words of work that is five operations each, so
         // most of it was loop overhead rather than the arithmetic. SCR_W/2 is
         // 240, divisible by 4, so no remainder handling is needed.
+        // BRANCHLESS now. The zero test paid while the screen was mostly
+        // black; the sphere backdrop lights most of the frame, so nearly every
+        // word took the branch AND did the work. scanline_pair(0) is 0, so the
+        // unconditional store is safe, and four straight-line RMWs pipeline
+        // where four tests stalled.
         uint32_t* p = (uint32_t*)&band[y * SCR_W];
         for (int i = 0; i < SCR_W / 2; i += 4) {
-            uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
-            if (a) p[i]     = scanline_pair(a);
-            if (b) p[i + 1] = scanline_pair(b);
-            if (c) p[i + 2] = scanline_pair(c);
-            if (d) p[i + 3] = scanline_pair(d);
+            const uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
+            p[i]     = scanline_pair(a);
+            p[i + 1] = scanline_pair(b);
+            p[i + 2] = scanline_pair(c);
+            p[i + 3] = scanline_pair(d);
         }
     }
 }
@@ -719,8 +724,69 @@ static void draw_band(int band_index, uint16_t* band) {
     const Prim* prims = vg_prim_list();
     const int   n     = vg_prim_live();
 
-    for (int i = 0; i < n; i++) {
-        const Prim* p = &prims[i];
+    // THE ACTIVE LIST, built once per frame. Every band used to test every
+    // primitive against its row range: fifteen bands times seven hundred
+    // primitives is ten thousand rejections a frame, nearly a millisecond of
+    // pure bookkeeping in the heaviest scenes. Classic scanline instead: each
+    // primitive is bucketed by its first band, bands are drawn in order, and a
+    // compacting active array carries primitives forward until their last row
+    // passes. Each primitive is now touched once to insert and once per band it
+    // actually spans.
+    // Two active buffers, because the update is a MERGE. Survivors and the
+    // band's new admissions are each sorted by primitive index -- submission
+    // order, which is draw order, which is the painter's algorithm -- and
+    // simply appending the new ones after the old would draw a late-submitted
+    // primitive under an early one wherever their first bands differ. A trail
+    // would poke through the comms badge. Merging keeps the order exact.
+    static uint16_t s_active[2][MAX_PRIMS];
+    static int      s_active_n = 0;
+    static int      s_flip     = 0;
+    static uint16_t s_bucket[MAX_PRIMS];
+    static uint16_t s_bhead[NUM_BANDS + 1];
+
+    if (band_index == 0) {
+        // Counting sort of primitive indices by first band: counts, prefix,
+        // scatter. Stable and O(n).
+        uint16_t cnt[NUM_BANDS + 1] = { 0 };
+        for (int i = 0; i < n; i++) {
+            int fb = prims[i].ymin / BAND_H;
+            if (fb < 0) fb = 0;
+            if (fb >= NUM_BANDS) fb = NUM_BANDS - 1;
+            cnt[fb]++;
+        }
+        int acc = 0;
+        for (int k2 = 0; k2 < NUM_BANDS; k2++) { s_bhead[k2] = (uint16_t)acc; acc += cnt[k2]; cnt[k2] = s_bhead[k2]; }
+        s_bhead[NUM_BANDS] = (uint16_t)acc;
+        for (int i = 0; i < n; i++) {
+            int fb = prims[i].ymin / BAND_H;
+            if (fb < 0) fb = 0;
+            if (fb >= NUM_BANDS) fb = NUM_BANDS - 1;
+            s_bucket[cnt[fb]++] = (uint16_t)i;
+        }
+        s_active_n = 0;
+    }
+
+    // Retire what ended above this band and merge in what starts here, both
+    // streams ascending by index.
+    {
+        const uint16_t* src = s_active[s_flip];
+        uint16_t*       dst = s_active[s_flip ^ 1];
+        int r = 0, q = (int)s_bhead[band_index], dn = 0;
+        const int qe = (int)s_bhead[band_index + 1];
+        while (r < s_active_n || q < qe) {
+            if (r < s_active_n && prims[src[r]].ymax < by0) { r++; continue; }
+            if (q >= qe)                     dst[dn++] = src[r++];
+            else if (r >= s_active_n)        dst[dn++] = s_bucket[q++];
+            else if (src[r] < s_bucket[q])   dst[dn++] = src[r++];
+            else                             dst[dn++] = s_bucket[q++];
+        }
+        s_flip ^= 1;
+        s_active_n = dn;
+    }
+
+    const uint16_t* act = s_active[s_flip];
+    for (int ai = 0; ai < s_active_n; ai++) {
+        const Prim* p = &prims[act[ai]];
         if (p->ymax < by0 || p->ymin > by1) continue;
 
         const uint32_t c0 = esp_cpu_get_cycle_count();
