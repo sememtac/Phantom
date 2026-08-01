@@ -35,8 +35,7 @@
 // pan rate of a genuinely infinite backdrop. We deliberately run a little under
 // it: a touch of lag reads as enormous distance, and costs nothing since a
 // tiling cloud has no "correct" absolute position to betray the cheat.
-#define SKY_PAN_FACTOR  0.75f
-#define SKY_PAN_PER_RAD (SKY_SCALE * FOCAL * SKY_PAN_FACTOR)
+
 
 // Ceiling on backdrop brightness. It must sit well below the vector art or it
 // competes with the thing the player is actually looking at.
@@ -67,8 +66,8 @@
 // past. So it does not pan at all: an object at that distance would not shift
 // no matter how far you flew, and holding the sample centred on it means the
 // repeats can never be reached.
-static float s_scale = SKY_SCALE;
-static float s_pan   = SKY_PAN_PER_RAD;
+static float s_scale = 0.05f;   // set per backdrop at generate
+static float s_pan   = 20.4f;
 
 // Bigger than the combat skies, and this is close to the ceiling. The lensed
 // arcs sit at ~20 texels; much past this and they cross the top and bottom
@@ -119,8 +118,25 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // for a projection, which is linear in the tangent and not in the angle. The
 // two agree only at the centre of the frame, and disagreeing by 13% everywhere
 // else is exactly the error.
-#define SKY_COURSE_PAN   ((float)SKY_TEX_SIZE / 6.28318531f)
-#define SKY_COURSE_SCALE (SKY_COURSE_PAN / FOCAL)
+// THE SPHERE IDENTITY, and every in-flight backdrop uses it now -- this began
+// as the course sky's private constants and graduated when the match skies
+// failed at the pole without it. Two constraints, neither negotiable:
+//
+//   pan   = TILE / 2pi        one revolution is exactly one tile, so the
+//                             pole's branch switch (+pi of longitude) is
+//                             exactly half a tile -- the SAME PICTURE, which
+//                             is what makes crossing the zenith seamless
+//   scale = pan / FOCAL       locked to the starfield, so translation and
+//                             rotation compose rigidly at any attitude
+//
+// The old match constants satisfied neither, then only the second, and each
+// gap was a sky bug the course did not have. The tile is the whole sky: no
+// repeat is ever visible, and each venue's backdrop is a PLACE with its
+// features at fixed bearings, exactly like the hole on the course.
+#define SKY_SPHERE_PAN   ((float)SKY_TEX_SIZE / 6.28318531f)
+#define SKY_SPHERE_SCALE (SKY_SPHERE_PAN / FOCAL)
+#define SKY_COURSE_PAN   SKY_SPHERE_PAN
+#define SKY_COURSE_SCALE SKY_SPHERE_SCALE
 
 // Shadow radius as a fraction of the tile.
 //
@@ -777,23 +793,13 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         s_u = (float)(SKY_TEX_SIZE / 2) + SKY_COURSE_OFF;
         s_v = (float)(SKY_TEX_SIZE / 2);
     } else {
-        // scale = pan / FOCAL, the same identity the course sky uses, and NOT
-        // free to differ from it. These skies used to sample at SKY_SCALE with
-        // the pan built from SKY_PAN_FACTOR = 0.75 -- a deliberate lag, "reads
-        // as enormous distance", justified on the grounds that a tiling cloud
-        // has no correct absolute position to betray the cheat. That was true
-        // for as long as the sky only ever TRANSLATED. Roll is an angle: it
-        // cannot be lagged by three quarters, so the moment the ship yawed at
-        // high pitch -- where the true view rotates about the zenith and
-        // longitude and roll must cancel exactly -- the full-rate rotation
-        // fought the three-quarter-rate translation and the backdrop visibly
-        // twisted against the world. The course sky never had the cheat, which
-        // is why it never had the bug.
-        //
-        // Features render a third larger than before; the tile now spans ~3.6
-        // screens and a repeat comes round every 244 degrees of yaw.
-        s_scale = SKY_PAN_PER_RAD / FOCAL;
-        s_pan   = SKY_PAN_PER_RAD;
+        // The sphere identity, same as the course -- see SKY_SPHERE_PAN. The
+        // clouds ran their own pan and scale for as long as they only ever
+        // translated; the rear view, the poles and the roll each exposed a
+        // fresh inconsistency, in that order, and this is the last of the
+        // private constants gone.
+        s_scale = SKY_SPHERE_SCALE;
+        s_pan   = SKY_SPHERE_PAN;
         // Clouds have no centre worth finding, so any origin will do.
         s_u = s_v = 0.0f;
     }
