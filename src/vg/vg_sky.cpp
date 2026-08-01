@@ -265,6 +265,17 @@ void vg_sky_orient(const Mat3& R, float bank) {
     sky_step_view(0,  1.0f);
     sky_step_view(1, -1.0f);
     s_snap = false;
+
+    // WRAPPED, or the session gets slower by the lap. The accumulators are
+    // unfolded totals and every circuit of the course adds a full turn; the
+    // chart samples lift toward them through a while-loop that spins once per
+    // turn of difference, so after half an hour of flying every one of two
+    // hundred chart samples was paying dozens of iterations. A full turn of
+    // longitude is exactly one tile under the sphere identity -- the same
+    // sample -- so wrapping changes nothing but the arithmetic's size.
+    for (int i = 0; i < 2; i++)
+        for (int k = 0; k < 3; k++)
+            s_eff_acc[i][k] = ang_wrap(s_eff_acc[i][k]);
 }
 
 // What the fills use: the unfolded totals. Latitude included -- v runs on past
@@ -1200,6 +1211,7 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
         // walking x, the ring index just steps at each crossing.
         int lim[VG_TINT_RINGS + 1];
         const bool tint = vg_tint_active();
+        int ring = -1;                    // carried across the row's chunks
         if (tint) vg_tint_row_limits(sy, lim);
 
         for (int k = 0; k < SEGS; k++) {
@@ -1224,11 +1236,16 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
                 const uint32_t c  = tex[idx];
                 uint32_t cc = (c << 16) | c;
                 if (tint) {
-                    const int adx  = abs(k * seg_px + i * 8 + 4 - SCR_W / 2);
-                    int ring = -1;
-                    while (ring + 1 <= VG_TINT_RINGS - 1 && adx >= lim[ring + 1]) ring++;
-                    if (adx >= lim[VG_TINT_RINGS]) ring = VG_TINT_RINGS - 1;
-                    if (ring >= 0) cc = vg_tint_word(cc, ring);
+                    // The ring index walks WITH x instead of restarting at
+                    // every chunk -- restarting was thirteen compares a chunk,
+                    // three milliseconds a frame parked against a wall.
+                    // |dx| falls to the screen centre then rises, so the index
+                    // steps at ring crossings and is amortised constant.
+                    const int adx = abs(k * seg_px + i * 8 + 4 - SCR_W / 2);
+                    while (ring >= 0 && adx < lim[ring]) ring--;
+                    while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
+                    if (ring >= 0)
+                        cc = vg_tint_word(cc, ring >= VG_TINT_RINGS ? VG_TINT_RINGS - 1 : ring);
                 }
                 d32[0] = cc; d32[1] = cc; d32[2] = cc; d32[3] = cc;
                 d32 += 4;
