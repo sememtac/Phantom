@@ -777,7 +777,22 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         s_u = (float)(SKY_TEX_SIZE / 2) + SKY_COURSE_OFF;
         s_v = (float)(SKY_TEX_SIZE / 2);
     } else {
-        s_scale = SKY_SCALE;
+        // scale = pan / FOCAL, the same identity the course sky uses, and NOT
+        // free to differ from it. These skies used to sample at SKY_SCALE with
+        // the pan built from SKY_PAN_FACTOR = 0.75 -- a deliberate lag, "reads
+        // as enormous distance", justified on the grounds that a tiling cloud
+        // has no correct absolute position to betray the cheat. That was true
+        // for as long as the sky only ever TRANSLATED. Roll is an angle: it
+        // cannot be lagged by three quarters, so the moment the ship yawed at
+        // high pitch -- where the true view rotates about the zenith and
+        // longitude and roll must cancel exactly -- the full-rate rotation
+        // fought the three-quarter-rate translation and the backdrop visibly
+        // twisted against the world. The course sky never had the cheat, which
+        // is why it never had the bug.
+        //
+        // Features render a third larger than before; the tile now spans ~3.6
+        // screens and a repeat comes round every 244 degrees of yaw.
+        s_scale = SKY_PAN_PER_RAD / FOCAL;
         s_pan   = SKY_PAN_PER_RAD;
         // Clouds have no centre worth finding, so any origin will do.
         s_u = s_v = 0.0f;
