@@ -150,6 +150,12 @@ void vg_sky_orient(const Mat3& R, float bank) {
 // AN INVERTED DIRECTION, NOT AN OFFSET. Adding half a tile to u was only ever
 // right for a ship flying level and turning in yaw alone; negating the view
 // vector is right at any attitude, which is what the rear view actually needs.
+// s_u and s_v are the ORIGIN, set once when the texture is built: where in the
+// tile the view starts out pointing. The angles below are added to it, never
+// substituted for it. Overwriting them cost the course its landmark outright --
+// the derived longitude is measured from wherever the ship happened to be
+// facing at generate time, so on the first frame the view jumped to texel zero,
+// which on the course tile is 180 degrees from the hole.
 static void sky_sample(float sign, float* u, float* v, float* roll) {
     // Column 2 of the transpose: the sky direction that currently images to the
     // view's +z, i.e. what the nose is pointing at.
@@ -159,8 +165,8 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // texels per radian, so longitude and latitude scale by it directly.
     if (dy >  1.0f) dy =  1.0f;
     if (dy < -1.0f) dy = -1.0f;
-    *u = atan2f(dx, dz) * s_pan;
-    *v = asinf(dy)      * s_pan;
+    *u = s_u + atan2f(dx, dz) * s_pan;
+    *v = s_v + asinf(dy)      * s_pan;
 
     // How far the sky's north is rolled in the frame. The view-space image of
     // sky-up is column 1; its angle in the screen plane is the roll. Astern the
@@ -731,7 +737,6 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // frame. Both come off the orientation, once, before anything else.
     float su, sv, sky_roll;
     sky_sample(s_rear ? -1.0f : 1.0f, &su, &sv, &sky_roll);
-    s_u = su; s_v = sv;          // kept for the diagnostic line
 
     // This fill writes the band directly, so unlike every other drawing path it
     // never passes through the rasteriser's rotation. It has to account for the
