@@ -156,9 +156,46 @@ static float s_u = 0.0f, s_v = 0.0f, s_bank = 0.0f;
 // the only record of one.
 static Mat3 s_ori = {{ 1,0,0, 0,1,0, 0,0,1 }};
 
+// The sampled angles, smoothed. sky_sample derives raw longitude and roll from
+// the orientation; these are what the fills actually use. They chase the raw
+// values with a rate limit, once per frame, for one reason: the pole.
+//
+// Crossing the zenith, longitude and roll each land half a turn from where the
+// pole lock froze them, and unlocking snapped the backdrop through 180 degrees
+// in one frame -- the "rotates at a certain point" of three consecutive bug
+// reports, each fix moving the discontinuity rather than removing it, because
+// a flat tile cannot chart a sphere without a seam. This stops moving it and
+// spends it: the half-turn plays out over about half a second, which reads as
+// the sky sweeping past overhead -- what a loop looks like out a real canopy.
+//
+// The limit is far above any real manoeuvre (yaw and roll rates live under
+// 3 rad/s), so in ordinary flight the smoothing is exactly zero lag.
+static float s_lon_s[2]  = { 0.0f, 0.0f };
+static float s_roll_s[2] = { 0.0f, 0.0f };
+static bool  s_snap      = true;    // first frame after generate: no sweep
+
+static void sky_raw(float sign, float* lon, float* roll);
+
 void vg_sky_orient(const Mat3& R, float bank) {
     s_ori  = mat3_mul(R, s_ori);
     s_bank = bank;
+
+    const float STEP = 6.0f / 60.0f;   // rad per frame: ~6 rad/s at 60fps
+    for (int i = 0; i < 2; i++) {
+        float lon, roll;
+        sky_raw(i ? -1.0f : 1.0f, &lon, &roll);
+        if (s_snap) { s_lon_s[i] = lon; s_roll_s[i] = roll; continue; }
+        for (int k = 0; k < 2; k++) {
+            float* cur = k ? &s_roll_s[i] : &s_lon_s[i];
+            float  d   = (k ? roll : lon) - *cur;
+            while (d >  3.14159265f) d -= 6.28318531f;
+            while (d < -3.14159265f) d += 6.28318531f;
+            if (d >  STEP) d =  STEP;
+            if (d < -STEP) d = -STEP;
+            *cur += d;
+        }
+    }
+    s_snap = false;
 }
 
 // The sample point and the horizon angle for a camera looking along `sign` * the
@@ -173,7 +210,7 @@ void vg_sky_orient(const Mat3& R, float bank) {
 // the derived longitude is measured from wherever the ship happened to be
 // facing at generate time, so on the first frame the view jumped to texel zero,
 // which on the course tile is 180 degrees from the hole.
-static void sky_sample(float sign, float* u, float* v, float* roll) {
+static void sky_raw(float sign, float* lon_out, float* roll_out) {
     // Column 2 of the transpose: the sky direction that currently images to the
     // view's +z, i.e. what the nose is pointing at.
     float dx = s_ori.m[6] * sign, dy = s_ori.m[7] * sign, dz = s_ori.m[8] * sign;
@@ -206,8 +243,7 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
         lon = atan2f(dx, dz);
         lock_u[li] = lon;
     }
-    *u = s_u + lon       * s_pan;
-    *v = s_v - asinf(dy) * s_pan;
+    *lon_out = lon;
 
     // How far the sky's north is rolled in the frame. The view-space image of
     // sky-up is column 1; its angle in the screen plane is the roll. Astern the
@@ -238,12 +274,25 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // inverted and reorienting anyway.
     static float lock_r[2] = { 0.0f, 0.0f };
     if (dx * dx + dz * dz < 0.0225f) {
-        *roll = lock_r[li];
+        *roll_out = lock_r[li];
     } else {
         const float ux = s_ori.m[1], uy = s_ori.m[4];
-        *roll = atan2f(sign < 0.0f ? ux : -ux, uy);
-        lock_r[li] = *roll;
+        *roll_out = atan2f(sign < 0.0f ? ux : -ux, uy);
+        lock_r[li] = *roll_out;
     }
+}
+
+// What the fills use: smoothed longitude and roll, raw latitude -- the latitude
+// never folds discontinuously (asin is continuous through the clamp), so it
+// needs no easing and lagging it would detach the sky from pitch.
+static void sky_sample(float sign, float* u, float* v, float* roll) {
+    const int li = (sign < 0.0f) ? 1 : 0;
+    float dy = s_ori.m[7] * sign;
+    if (dy >  1.0f) dy =  1.0f;
+    if (dy < -1.0f) dy = -1.0f;
+    *u    = s_u + s_lon_s[li] * s_pan;
+    *v    = s_v - asinf(dy)   * s_pan;
+    *roll = s_roll_s[li];
 }
 // Whether the next fill is for a camera looking aft. Set per frame by the
 // renderer, because the backdrop has no camera of its own to ask.
@@ -739,6 +788,7 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
     }
 
+    s_snap = true;    // a new backdrop is arrived at, not swept to
     name_place(seed);
     s_reveal = 1.0f;      // callers that want a dissolve ask for it afterwards
 
