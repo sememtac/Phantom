@@ -104,18 +104,35 @@ static float s_pan   = SKY_PAN_PER_RAD;
 // twice at two bearings -- the objection that kept it out of the game in the
 // first place.
 //
-// The scale follows from the same identity: the view is 2*atan(240/FOCAL) = 61
-// degrees wide, which is 61/360 of a tile, so 480 pixels must span 21.7 texels.
-// Pan and scale are therefore not free to be tuned separately here. Together
-// they are what makes the backdrop turn with the world instead of with the ship.
+// The scale follows from the pan, and ONLY from the pan:
+//
+//     texels per pixel = pan / FOCAL
+//
+// because a yaw of theta must move the backdrop theta*FOCAL pixels -- exactly
+// what it moves the starfield. Anything else and the two slide against each
+// other, which is the one cue that says an object is nearby: at 21.7/480 the
+// sky ran 13% fast and Gargantua read as painted on the canopy rather than
+// sitting at infinity.
+//
+// 21.7 texels was the width of the view measured ACROSS THE SPHERE, 61/360 of a
+// tile. That is the right number for an equirectangular strip and the wrong one
+// for a projection, which is linear in the tangent and not in the angle. The
+// two agree only at the centre of the frame, and disagreeing by 13% everywhere
+// else is exactly the error.
 #define SKY_COURSE_PAN   ((float)SKY_TEX_SIZE / 6.28318531f)
-#define SKY_COURSE_SCALE (21.7f / 480.0f)
+#define SKY_COURSE_SCALE (SKY_COURSE_PAN / FOCAL)
 
-// Shadow radius as a fraction of the tile. At 0.055 the hole is 40 degrees
-// across, which is two thirds of the view: big, and it should be -- the shadow
-// is black on black, so what is actually seen is the ring and the disc drawing
-// its edge. The menu's 0.115 would be 83 degrees and could never be seen whole.
-#define SKY_COURSE_RFRAC 0.055f
+// Shadow radius as a fraction of the tile.
+//
+// 0.055 put it 40 degrees across, 54 with the halo, against a 62 degree view
+// and a mirror only 21 degrees tall. Nothing that size can be seen whole in the
+// mirror, and in the main window it stops being a landmark and becomes the
+// scenery.
+//
+// 0.022 is 16 degrees of shadow and 22 with the halo: it fits the mirror, it is
+// about a third of the main window, and it still carries its ring -- which is
+// the feature that says black hole and the reason PHOTON_W has a floor.
+#define SKY_COURSE_RFRAC 0.022f
 
 // Bearing the hole sits at, in texels from the heading the course opens on.
 // 48 texels is 135 degrees. Far enough behind that the course starts on empty
@@ -533,11 +550,18 @@ static void gen_blackhole(uint32_t seed, float r_frac, float level, bool over) {
             float B = (lum * 0.13f + w * w * 0.72f) * level;
 
             if (over) {
+                // Held down, because it is the thing BEHIND the landmark. The
+                // clouds are generated at the full combat ceiling, which is
+                // right when one of them is the whole backdrop and too loud
+                // when it is the setting for something else -- turn away from
+                // the hole and a galaxy core at full level is brighter than the
+                // hole was.
+                const float BEHIND = 0.55f;
                 float br, bg, bb;
                 unpack565_swapped(s_tex[i], &br, &bg, &bb);
-                R += br * occ;
-                G += bg * occ;
-                B += bb * occ;
+                R += br * occ * BEHIND;
+                G += bg * occ * BEHIND;
+                B += bb * occ * BEHIND;
             }
 
             if (R > level) R = level;
