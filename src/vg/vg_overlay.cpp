@@ -16,6 +16,30 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
     vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
 }
 
+// Light off an explosion nearby. Same border as the damage vignette because it
+// is the same physical claim -- something outside the canopy is illuminating the
+// inside of it -- but warm rather than red, and thinner, because being near a
+// blast is not the same as being hit by one. Drawn UNDER the damage vignette, so
+// a hit that also went off beside you still reads red.
+//
+// Deliberately not a full-screen wash: filling 480x480 would flatten the picture
+// to a rectangle of colour, and the one thing worth seeing at that moment is the
+// fireball itself.
+static void draw_blast_flash(void) {
+    if (vg.blast_flash <= 0) return;
+    float f = vg.blast_flash;
+    if (f > 1.0f) f = 1.0f;
+    // Squared: the falloff already gives distant blasts a low value, and a
+    // linear ramp let those sit as a permanent faint glow at the edges.
+    const uint16_t c = vg_dim(INK_MAX, f * f);
+    if (!c) return;
+    const int t = 6;
+    vg_fill_rect(0, 0, SCR_W, t, c);
+    vg_fill_rect(0, SCR_H - t, SCR_W, t, c);
+    vg_fill_rect(0, 0, t, SCR_H, c);
+    vg_fill_rect(SCR_W - t, 0, t, SCR_H, c);
+}
+
 static void draw_damage_vignette(void) {
     if (vg.hit_flash <= 0) return;
     float f = vg.hit_flash / 0.6f;
@@ -292,6 +316,7 @@ static void draw_death_glitch(void) {
 void vg_draw_overlays(void) {
     char buf[40];
 
+    draw_blast_flash();
     draw_damage_vignette();
     // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
     if (vg_state_flags(vg.state) & VGS_COMBAT) draw_missile_banner();

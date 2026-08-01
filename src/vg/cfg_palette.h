@@ -70,6 +70,12 @@
 #define COL_DEBRIS           VGC(0xFD20)       // orange
 #define COL_EXHAUST          VGC(0xFF60)       // amber
 #define COL_MOTE             VGC(0xBDF7)
+// Ignition. Held for a few hundredths of a second at the front of an explosion,
+// on the fireballs and the ejecta alike, before either settles to its own
+// colour. Its own name rather than borrowing COL_ENEMY_HIT or COL_STAR_BRIGHT:
+// those are white for unrelated reasons and one of them would eventually be
+// retuned for its own sake.
+#define COL_FLASH            VGC(0xFFFF)
 
 #define COL_ENEMY            VGC(0xFC10)       // hot red
 #define COL_ENEMY_HIT        VGC(0xFFFF)

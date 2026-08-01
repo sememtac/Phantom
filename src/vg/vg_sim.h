@@ -32,6 +32,38 @@ Vec3  vg_mote_spawn(float zmin, float zmax);
 
 void vg_spawn_debris(Vec3 at, float radius, int count);
 
+// Debris with the speed and the lifetime turned up: a hull letting go rather
+// than a scrape. `speed_k` and `life_k` multiply the defaults. `radius` scales
+// how long each shard is; `out` is how far from the centre they launch, and
+// wants to be OUTSIDE the fireball or they are never seen leaving it.
+void vg_spawn_shrapnel(Vec3 at, float radius, float out, int count,
+                       float speed_k, float life_k);
+
+// One fireball, opening to `radius` world units and drifting at `vel`. See
+// struct Fireball. `life_k` multiplies FIRE_LIFE_MIN/MAX -- above 1 for a ship,
+// 1 for a warhead.
+void vg_spawn_fireball(Vec3 at, Vec3 vel, float radius, float life_k);
+
+// A cluster: `balls` fireballs scattered inside `radius`, plus `shards` of
+// debris at the same place, all scaled by `life_k`. Also raises the cockpit
+// flash by how near and how big it was. Pass 0 shards when the caller has
+// already spawned its own.
+void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k);
+
+// Live fireballs, for the profiler.
+int vg_fire_live(void);
+
+// --- the VFX bench ---------------------------------------------------------
+// Fire an explosion on demand so it can be looked at without playing to the
+// moment that produces it. Driven from the host over the link, never from the
+// game's own input. Runs wherever vg_world_step runs, the attract loop included.
+#define VFX_PRESETS 4
+void        vg_vfx_fire(int which);       // 0..VFX_PRESETS-1
+const char* vg_vfx_name(int which);
+int         vg_vfx_step_preset(void);     // next preset in the cycle, and advance
+void        vg_vfx_auto(float seconds);   // repeat every N seconds, 0 to stop
+float       vg_vfx_auto_period(void);
+
 // The per-frame transform of everything: one counter-rotation and one forward
 // translation applied to the arena, the backdrop and every object in the world.
 // `roll_in` is radians about the view axis for this frame and goes INTO the

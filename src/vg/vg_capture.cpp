@@ -3,6 +3,7 @@
 #include "vg_config.h"
 #include "vg_replay.h"
 #include "vg_crumb.h"
+#include "vg_sim.h"     // the VFX bench commands
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
@@ -176,6 +177,20 @@ void vg_capture_poll(void) {
             // a stale worst-case, which is how the last one got cleared.
             vg_crumb_reset();
             Serial.println("\nvg_crumb: cleared");
+        } else if ((c == 'x' || c == 'X') && !s_mode
+                   && vg_replay_mode() == VG_RP_OFF) {
+            // The VFX bench. Barred during a capture or a replay: it draws from
+            // the seeded RNG, so firing one mid-replay would put the simulation
+            // off the sequence the recording was made from.
+            if (c == 'x') {
+                const int w = vg_vfx_step_preset();
+                vg_vfx_fire(w);
+                Serial.printf("\nvg_vfx: %s\n", vg_vfx_name(w));
+            } else {
+                const bool on = (vg_vfx_auto_period() <= 0.0f);
+                vg_vfx_auto(on ? 1.6f : 0.0f);
+                Serial.printf("\nvg_vfx: auto %s\n", on ? "ON, every 1.6s" : "OFF");
+            }
         } else if (c == 's' && s_mode) {
             s_mode = 0;
             s_audio_on = 0;

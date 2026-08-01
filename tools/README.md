@@ -196,6 +196,48 @@ To make the stripes horizontal, the function must darken every second panel
 about 3.3 ms for each frame now, so expect about 6.6 ms. The frame budget is
 16.6 ms, and the game already falls to 52 fps. This change is not done.
 
+## phantom_vfx.py (look at the explosions)
+
+The explosions last about half a second and they happen when a missile goes off
+or a ship dies. To judge one, you had to play a match to that moment, and then
+play another match after each change. This program fires them on the device
+instead.
+
+Leave the game on the title screen. The effects run there.
+
+```
+python tools/phantom_vfx.py --port COM6            # one shot, next preset
+python tools/phantom_vfx.py --port COM6 --auto     # the device repeats, every 1.6 s
+python tools/phantom_vfx.py --port COM6 --loop 1.2 # the host repeats, your interval
+```
+
+`--auto` turns the repeat on, and a second `--auto` turns it off. The device
+needs no host after that, so you can unplug the cable and watch.
+
+This program opens the port WITHOUT resetting the device. A normal open asserts
+DTR and RTS, and on this board those lines are the reset. Any other terminal you
+use must do the same, or each command restarts the game and loses the repeat
+setting. The first version of this program had that fault, and the effects
+appeared to do nothing.
+
+There are four presets and each shot steps to the next one:
+
+| preset | effect |
+|---|---|
+| 0 | missile fuse expires |
+| 1 | missile hit |
+| 2 | ship destroyed |
+| 3 | player wreck |
+
+The device prints the name of each shot.
+
+The commands are `x` for one shot and `X` for the repeat. Any terminal on the
+port can send them; this program is only a convenience.
+
+The device refuses both during a record and during a render. The effects draw
+from the seeded random number generator, so a shot in the middle of a render
+would move the simulation off the sequence the recording was made from.
+
 ## Files
 
 | file | contents |
@@ -203,6 +245,7 @@ about 3.3 ms for each frame now, so expect about 6.6 ms. The frame budget is
 | `phantom_link.py` | the wire protocol, the session format, and the pixel conversion |
 | `phantom_recorder.py` | the window |
 | `phantom_session.py` | the command line |
+| `phantom_vfx.py` | fires the explosions, to look at them |
 
 Both front ends use `phantom_link`, so there is one copy of the protocol code.
 The first version had two bugs of the type that one copy prevents. It looked for

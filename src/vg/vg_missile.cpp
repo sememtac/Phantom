@@ -81,6 +81,11 @@ static void report(MslEvent e) {
 
 static void detonate(Missile* m, bool hit) {
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);
+    // A round that runs out of fuel still goes off. It used to leave nothing but
+    // three shards, so a missile you had watched all the way in simply stopped
+    // existing -- and a fuse that expires is exactly the moment a player is
+    // still looking at it.
+    vg_spawn_blast(m->pos, hit ? 16.0f : 7.0f, hit ? 3 : 1, 0, 1.0f);
     if (hit) vg_sfx_play(SFX_EXPLODE, 1.0f);
     if (m->from_player && !hit) report(MSL_MISSED);
     m->alive = false;
@@ -109,7 +114,13 @@ static void hit_enemy(int index, float dmg) {
     // transmit under.
     vg_comms_say(s, (s->hull <= 0.0f) ? VOICE_DEATH : VOICE_HURT);
     if (s->hull <= 0.0f) {
-        vg_spawn_debris(s->pos, 22.0f, 14);
+        // THE ERUPTION LIVES HERE, not at the call site, because this is where
+        // the ship actually dies. It was hung off the caller's kill test first
+        // and that only covered the missile path, so a ship that went down any
+        // other way still just stopped -- and the caller is not the authority on
+        // a hull reaching zero anyway.
+        vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
+        vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
         s->alive = false;
     }
 }
@@ -192,9 +203,9 @@ void vg_update_missiles(float dt) {
                     } else {
                         bool was_alive = vg.enemy[m->target].alive;
                         hit_enemy(m->target, dmg);
+                        const bool killed = was_alive && !vg.enemy[m->target].alive;
                         if (m->from_player)
-                            report((was_alive && !vg.enemy[m->target].alive)
-                                   ? MSL_DESTROYED : MSL_HIT);
+                            report(killed ? MSL_DESTROYED : MSL_HIT);
                     }
                 }
                 detonate(m, hit);

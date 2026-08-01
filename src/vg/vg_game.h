@@ -140,6 +140,28 @@ struct Debris {
     float life, life0;
 };
 
+// A fireball. Debris is the shrapnel; this is the light.
+//
+// `r` is the radius it opens to, in world units, not the radius right now --
+// the drawn size is a curve over its own life, so one number plus an age is the
+// whole shape of it. Same life0/life pair the shards use, for the same reason:
+// the effect has to know how far through itself it is, not just how long it has
+// left.
+struct Fireball {
+    bool  alive;
+    Vec3  pos;
+    Vec3  vel;
+    float r;
+    // How this one goes out, as the exponent on its own brightness decay. Below
+    // 1 it collapses early and is gone well before its life is up; above 1 it
+    // holds and then drops. Per ball rather than one shared curve, because with a
+    // single falloff shape the cluster dimmed as a unit and read as one object
+    // fading -- the whole point of spawning several is that they should not agree
+    // about when they are finished.
+    float fall;
+    float life, life0;
+};
+
 // Screen flow:
 //
 //   ATTRACT --tap--> ENTRY --callsign--> SELECT --ship, and the draw is made-->
@@ -382,6 +404,10 @@ struct VgGame {
     float    shake;
     float    shake_x, shake_y;
     float    hit_flash;
+    // Light from an explosion nearby, 0..1, raised by vg_spawn_blast and decayed
+    // in vg_world_step. Distinct from hit_flash: that one means YOU were hit and
+    // is red, this one means something went off next to you and is not.
+    float    blast_flash;
 
     // Weapons
     int      missiles;         // rounds remaining
@@ -550,6 +576,7 @@ struct VgGame {
     Missile  msl[MAX_MISSILES];
     Asteroid ast[MAX_ASTEROIDS];
     Debris   deb[MAX_DEBRIS];
+    Fireball fire[MAX_FIREBALLS];
     Vec3     star[NUM_STARS];
     uint8_t  star_b[NUM_STARS];
     Vec3     mote[NUM_MOTES];      // near-field dust, for a sense of speed

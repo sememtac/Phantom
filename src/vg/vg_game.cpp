@@ -44,19 +44,177 @@ static void spawn_asteroid(void) {
     }
 }
 
-void vg_spawn_debris(Vec3 at, float radius, int count) {
+// `out` is how far from the centre the shards START. It is separate from
+// `radius`, which only scales how LONG each shard is, because the two want
+// opposite things in an explosion: short bright streaks, launched from outside
+// the fireball. At 0.35 * radius they were spawning deep inside the burning
+// part, so by the time they were bright enough to see, a sphere had opened over
+// the top of them and they were never visible leaving.
+static void spawn_shards(Vec3 at, float radius, float out, int count,
+                         float speed_k, float life_k) {
     for (int k = 0; k < count; k++) {
         Debris* d = nullptr;
         for (int i = 0; i < MAX_DEBRIS; i++) if (!vg.deb[i].alive) { d = &vg.deb[i]; break; }
         if (!d) return;
         Vec3 dir = vg_rand_unit();
         d->alive = true;
-        d->pos   = vadd(at, vmul(dir, radius * 0.35f));
-        d->seg   = vmul(vg_rand_unit(), radius * vg_frand(0.3f, 0.7f));
-        d->vel   = vmul(dir, vg_frand(11.0f, 34.0f));
-        d->life0 = vg_frand(0.40f, 1.00f);
+        // Jittered, so the launch is a rough shell and not a geometric ring
+        // popping into existence at one distance.
+        d->pos   = vadd(at, vmul(dir, out * vg_frand(0.80f, 1.25f)));
+        // POINTING THE WAY IT IS GOING, and going that way. seg used to be
+        // oriented at random, which reads as a cloud of tumbling litter: a
+        // streak lying across its direction of travel says spinning, a streak
+        // lying along it says thrown. Both the shard's axis and its velocity now
+        // come off the same outward bearing, so the whole field is radial lines
+        // leaving a centre.
+        //
+        // A little jitter into the axis on purpose. Exactly radial is a starburst,
+        // which is a diagram; a few degrees of slop is wreckage.
+        const Vec3 axis = vnorm(vadd(dir, vmul(vg_rand_unit(), 0.16f)));
+        d->seg   = vmul(axis, radius * vg_frand(0.5f, 1.0f));
+        d->vel   = vmul(axis, vg_frand(11.0f, 34.0f) * speed_k);
+        d->life0 = vg_frand(0.40f, 1.00f) * life_k;
         d->life  = d->life0;
     }
+}
+
+void vg_spawn_debris(Vec3 at, float radius, int count) {
+    // The old launch distance, so a scrape looks exactly as it did.
+    spawn_shards(at, radius, radius * 0.35f, count, 1.0f, 1.0f);
+}
+
+// NOTHING SLOWS IT DOWN OUT HERE. A collision throws shards at walking pace and
+// they are gone in half a second, which is right for a scrape. A hull letting go
+// is the other thing entirely: the pieces leave fast, they leave in every
+// direction because there is no ground to fall towards, and they keep going
+// until they are out of sight. That is a speed and a lifetime, not a bigger
+// radius, which is why this takes both.
+void vg_spawn_shrapnel(Vec3 at, float radius, float out, int count,
+                       float speed_k, float life_k) {
+    spawn_shards(at, radius, out, count, speed_k, life_k);
+}
+
+void vg_spawn_fireball(Vec3 at, Vec3 vel, float radius, float life_k) {
+    Fireball* f = nullptr;
+    for (int i = 0; i < MAX_FIREBALLS; i++) if (!vg.fire[i].alive) { f = &vg.fire[i]; break; }
+    if (!f) return;
+    f->alive = true;
+    f->pos   = at;
+    f->vel   = vel;
+    f->r     = radius;
+    // Two independent rolls, deliberately: how long it lasts and how it goes out
+    // are different questions. A short-lived ball that holds its brightness and a
+    // long-lived one that collapses early both want to exist in the same cluster.
+    f->fall  = vg_frand(0.50f, 2.60f);
+    f->life0 = vg_frand(FIRE_LIFE_MIN, FIRE_LIFE_MAX) * life_k;
+    f->life  = f->life0;
+}
+
+// SEVERAL BALLS, NOT ONE BIGGER ONE. A single sphere reads as a bubble however
+// large it is drawn. Three or six of them at scattered offsets and staggered
+// sizes overlap into a shape with lumps in it, and because each one runs its own
+// life the cluster brightens and cools unevenly -- which is the thing that makes
+// it read as burning rather than as an expanding circle.
+void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k) {
+    // SCATTERED WIDE AND DRIFTING OUTWARD. Clustered at the centre with a random
+    // drift, the balls overlapped into one blob that sat still -- which is a
+    // flare, not an area coming apart. Each one now starts somewhere out along
+    // its own bearing and keeps going that way, so the group opens up over its
+    // life and the gaps between the balls are part of the shape.
+    for (int k = 0; k < balls; k++) {
+        const Vec3 dir = vg_rand_unit();
+        const Vec3 off = vmul(dir, radius * vg_frand(0.15f, 0.85f));
+        vg_spawn_fireball(vadd(at, off),
+                          vmul(dir, vg_frand(7.0f, 24.0f) * life_k),
+                          radius * vg_frand(0.45f, 1.0f), life_k);
+    }
+    // Shards leave faster and last longer the bigger the event was, for the
+    // reason in vg_spawn_shrapnel.
+    // Launched from the fireball's own rim, not its middle, and thrown hard --
+    // nothing decelerates it, so the distance it covers is the whole read on how
+    // much energy came out. The old multiplier had shards travelling about as far
+    // as the fireball itself expanded, which is why they never appeared to leave.
+    if (shards > 0)
+        spawn_shards(at, radius, radius * 1.15f, shards,
+                     2.2f + 1.4f * life_k, life_k);
+
+    // LIGHT ARRIVES. Positions in this game are player-relative, so vlen(at) IS
+    // the range to the cockpit -- an explosion beside you throws light on the
+    // panel and one across the arena does not. Held as a maximum rather than
+    // summed: two blasts in the same frame are one flash, because the eye is
+    // being told "something went off near you" and not asked to count.
+    const float rng = vlen(at);
+    float lit = radius * 6.0f / (rng + 60.0f);
+    if (lit > 0.85f) lit = 0.85f;
+    if (lit > vg.blast_flash) vg.blast_flash = lit;
+}
+
+// --- the VFX bench ---------------------------------------------------------
+//
+// Fire any explosion in the game on demand, from the host, without playing to
+// the moment that produces it. Same reasoning as the 'z' command in
+// vg_capture.cpp: the alternative was flying a whole match to look at one
+// third of a second of effect, and then doing it again after every tuning
+// change.
+//
+// It runs wherever vg_world_step runs, which includes the attract loop -- so the
+// intended use is to sit on the title screen and watch, with no match involved.
+// Nothing here is reachable from the game's own input; a host has to ask.
+
+static int   s_vfx_next = 0;
+static float s_vfx_auto = 0.0f;   // seconds between shots, 0 = off
+static float s_vfx_t    = 0.0f;
+
+static const char* const VFX_NAME[VFX_PRESETS] = {
+    "missile fuse expires", "missile hit", "ship destroyed", "player wreck",
+};
+
+void vg_vfx_fire(int which) {
+    if (which < 0 || which >= VFX_PRESETS) which = 0;
+    // Scattered, so repeated shots are not the same picture twice and the size
+    // can be judged against something other than the centre of the screen.
+    const Vec3 at = v3(vg_frand(-46.0f, 46.0f), vg_frand(-34.0f, 34.0f),
+                       vg_frand(210.0f, 300.0f));
+    switch (which) {
+    case 0:  vg_spawn_blast(at,  7.0f,  1, 3,  1.0f); break;
+    case 1:  vg_spawn_blast(at, 16.0f,  3, 8,  1.0f); break;
+    case 2:  vg_spawn_blast(at, 46.0f,  9, 0,  1.9f);
+             vg_spawn_shrapnel(at, 30.0f, 54.0f, 34, 4.4f, 1.8f); break;
+    default: vg_spawn_blast(at, 62.0f, 11, 0,  2.2f);
+             vg_spawn_shrapnel(at, 40.0f, 72.0f, 44, 4.8f, 2.0f); break;
+    }
+}
+
+const char* vg_vfx_name(int which) {
+    if (which < 0 || which >= VFX_PRESETS) which = 0;
+    return VFX_NAME[which];
+}
+
+int vg_vfx_step_preset(void) {
+    const int w = s_vfx_next;
+    s_vfx_next = (s_vfx_next + 1) % VFX_PRESETS;
+    return w;
+}
+
+void vg_vfx_auto(float seconds) {
+    s_vfx_auto = seconds;
+    s_vfx_t    = 0.0f;
+}
+
+float vg_vfx_auto_period(void) { return s_vfx_auto; }
+
+static void vfx_tick(float dt) {
+    if (s_vfx_auto <= 0.0f) return;
+    s_vfx_t -= dt;
+    if (s_vfx_t > 0.0f) return;
+    s_vfx_t = s_vfx_auto;
+    vg_vfx_fire(vg_vfx_step_preset());
+}
+
+int vg_fire_live(void) {
+    int n = 0;
+    for (int i = 0; i < MAX_FIREBALLS; i++) if (vg.fire[i].alive) n++;
+    return n;
 }
 
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue);
@@ -508,6 +666,7 @@ void vg_match_start(void) {
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
     for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
+    for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive  = false;
 
     vg.ring_alive  = false;      // no gate follows the player into a round
     // Every round is its own broadcast, so the announcer's one-shot flags clear
@@ -848,6 +1007,30 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         if (d->life <= 0) d->alive = false;
     }
 
+    // Fireballs ride the world exactly as the shards do. Here rather than in a
+    // pass of their own because this is the one function every flying state goes
+    // through -- a separate update called from the state cases would quietly
+    // freeze mid-explosion the moment the player died.
+    for (int i = 0; i < MAX_FIREBALLS; i++) {
+        Fireball* f = &vg.fire[i];
+        if (!f->alive) continue;
+        f->pos = mat3_apply(R, f->pos);
+        f->vel = mat3_apply(R, f->vel);
+        f->pos = vadd(f->pos, vmul(f->vel, dt));
+        f->pos.z -= dz;
+        f->life -= dt;
+        if (f->life <= 0) f->alive = false;
+    }
+
+    vfx_tick(dt);
+
+    // Faster than the damage vignette. A flash is the arrival of light, not a
+    // state the cockpit sits in.
+    if (vg.blast_flash > 0) {
+        vg.blast_flash -= dt * 4.2f;
+        if (vg.blast_flash < 0) vg.blast_flash = 0;
+    }
+
     // Shake decays fast, and the offset is re-rolled each frame so it reads as
     // impact rather than as a smooth wobble.
     if (vg.shake > 0) {
@@ -934,7 +1117,11 @@ static void collide_player(void) {
     // Boundary contact is fatal, so there is no bouncing the player back inside
     // any more -- the run is simply over.
     if (vg.wall_clear < SHIP_RADIUS) {
-        vg_spawn_debris(v3(0, 0, 14), 26.0f, 16);
+        // The player's own airframe against the boundary. Right on top of the
+        // cockpit, so the flash vg_spawn_blast raises off the range is the
+        // brightest one in the game -- which is correct for hitting a wall.
+        vg_spawn_blast(v3(0, 0, 14), 34.0f, 7, 0, 1.7f);
+        vg_spawn_shrapnel(v3(0, 0, 14), 26.0f, 40.0f, 30, 4.0f, 1.7f);
         vg_kill_player();
     }
 
@@ -960,7 +1147,11 @@ static void collide_player(void) {
             // the same last line as one who dies to a missile; only the missile
             // path used to speak, so half the deaths in the game were silent.
             vg_comms_say(s, VOICE_DEATH);
-            vg_spawn_debris(s->pos, 20.0f, 12);
+            // A ram kills them too, and it used to be twelve shards and a radio
+            // line. Same eruption a missile kill gets: the hull does not care
+            // what opened it.
+            vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
+            vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
             s->alive = false;
             vg_kill_player();
         }
@@ -1066,6 +1257,7 @@ static void enter_attract(void) {
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive   = false;
+    for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
 
     vg.trail_n     = 0;
     vg.trail_head  = 0;
@@ -1114,6 +1306,7 @@ static void enter_course(void) {
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
+    for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
     // The course must ask for its own sky: coming from the menu there is no
     // backdrop at all, and the course is a place in the tournament's universe
     // rather than a void. Same three backdrops a match uses, drawn by the same
@@ -1558,6 +1751,7 @@ void vg_game_update(float dt, const VgInput* in) {
             vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
             for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive = false;
             for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive = false;
+            for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
             vg_spawn_opponent();
 
             vg_state_go(VG_PLAYING);
@@ -1794,7 +1988,13 @@ void vg_game_update(float dt, const VgInput* in) {
                     c->trail_n  = 0;
                     c->hit_flash = 0.0f;
                     vg.cine_on  = true;
-                    vg_spawn_debris(c->pos, 30.0f, 18);
+                    // The player's own wreck, and the biggest eruption in the
+                    // game. Scaled off c->scale (84) rather than a ship's own
+                    // size: this one is deliberately staged large and close, and
+                    // an explosion tuned for a distant fighter looked like a
+                    // spark next to it.
+                    vg_spawn_blast(c->pos, 62.0f, 11, 0, 2.2f);
+                    vg_spawn_shrapnel(c->pos, 40.0f, 72.0f, 44, 4.8f, 2.0f);
                 }
                 break;
             }

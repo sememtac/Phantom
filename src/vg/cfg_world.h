@@ -26,7 +26,31 @@
 #define AST_FACES            20
 #define NUM_MODELS           5
 
-#define MAX_DEBRIS           64
+// RAISED FROM 64. A ship coming apart now throws 36 shards on its own, and at
+// 64 a single death plus the missile that caused it very nearly emptied the pool
+// -- which meant the next explosion silently got almost nothing. Nothing about
+// space slows shrapnel down, so what sells a kill is the count and the spread,
+// and both were being clipped by the ceiling rather than by the design.
+// 160 shards is one primitive each, non-antialiased. See MAX_PRIMS.
+#define MAX_DEBRIS           160
+
+// --- fireballs -------------------------------------------------------------
+// A ship death spends nine or ten of these and a plain detonation one to three,
+// so thirty-two carries two overlapping kills before the pool starts dropping
+// them. It drops silently, the same way debris does: a missing ball in the third
+// simultaneous explosion is not worth a branch anywhere else.
+#define MAX_FIREBALLS        32
+// An explosion is an event: one that hangs around stops reading as a detonation
+// and starts reading as a light source somebody left on. But the first pass was
+// too brief to read at all -- at 0.32s the whole black-orange-white ramp went by
+// in seven frames. A ship death scales this up (see the life multiplier on
+// vg_spawn_blast); a missile fuse keeps it short.
+// WIDE, on purpose. A narrow spread let the balls in one cluster expire close
+// enough together to read as a single object switching off. Nearly a three-fold
+// range means the group thins out raggedly instead, and Fireball::fall varies the
+// SHAPE of each one's decay on top of this.
+#define FIRE_LIFE_MIN        0.30f
+#define FIRE_LIFE_MAX        0.85f
 
 // --- starfield -------------------------------------------------------------
 // Rotated but never translated, so they behave as if at infinity -- which is

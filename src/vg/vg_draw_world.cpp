@@ -110,14 +110,131 @@ static void draw_motes(const VgCam& cam) {
 
 static void draw_debris(const VgCam& cam) {
     // Fragments live under a second and tumble the whole time.
+    //
+    // HOT, THEN COOLING. They were one-pixel COL_DEBRIS dimmed by life, which is
+    // right for a scrape and disappears entirely inside an explosion -- thirty
+    // shards of dim orange hairline against a frame that already has fireballs
+    // in it read as nothing at all. A piece coming off a hull that just let go is
+    // incandescent for the first moment: white-hot, down through orange, out. The
+    // early frames also get a second pixel of width, which is what separates
+    // ejecta from the trail hairlines around it.
     vg_line_aa_mode(false);
     for (int i = 0; i < MAX_DEBRIS; i++) {
         const Debris* d = &vg.deb[i];
         if (!d->alive) continue;
-        float f = d->life / d->life0;
-        vg_edge(cam, d->pos, vadd(d->pos, d->seg), vg_dim(COL_DEBRIS, f));
+        const float f = d->life / d->life0;          // 1 at birth, 0 at death
+        // Same ignition as the fireballs, so the flash is one event across the
+        // whole explosion rather than the spheres flashing and the ejecta not.
+        uint16_t col;
+        if      (f > 0.95f) col = COL_FLASH;
+        else if (f > 0.78f) col = vg_mix(COL_DEBRIS, COL_FLASH,
+                                         (f - 0.78f) * (1.0f / 0.17f));
+        else                col = vg_dim(COL_DEBRIS, f * (1.0f / 0.78f));
+        const Vec3 tip = vadd(d->pos, d->seg);
+        // Thicker, and it stays thick most of the way. One pixel was a hairline
+        // lost against the trails; the taper to a single pixel only at the end
+        // is what makes a shard read as cooling rather than as retreating.
+        if      (f > 0.80f) vg_edge_w(cam, d->pos, tip, col, 3);
+        else if (f > 0.40f) vg_edge_w(cam, d->pos, tip, col, 2);
+        else                vg_edge  (cam, d->pos, tip, col);
     }
     vg_line_aa_mode(true);
+}
+
+// --- fireballs -------------------------------------------------------------
+//
+// THE COLOUR IS THE EFFECT. A vector renderer cannot draw a ball of burning gas,
+// so what sells it is the sequence: dark at ignition, up through orange, a
+// moment of yellow-white at the top of the heat, then away. Drawn as concentric
+// rings whose inner shells are held EARLIER in that same sequence, so the middle
+// is always hotter than the rim -- which is what a fireball looks like and what
+// a single flat circle cannot say.
+//
+// Hue here is world, not interface, so the orange and red world constants are
+// the sanctioned set. vg_hue_col is not: hue means identity and a fireball
+// belongs to nobody.
+// `fall` is the ball's own decay exponent -- see Fireball::fall. Below 1 the
+// brightness collapses early, which means vg_dim returns 0 and draw_fireballs
+// skips it: the ball is visibly gone while its slot is still alive. That is the
+// mechanism by which some of a cluster die before the others.
+static uint16_t fire_col(float t, float fall) {
+    // IGNITION IS WHITE, and only for a moment. Coming up out of black through
+    // orange had no event in it -- the thing faded in. Starting at flat white and
+    // falling out of it inside a twentieth of a second gives the frame an edge:
+    // the eye catches the flash first and then reads the fireball it left behind.
+    if (t < 0.05f) return COL_FLASH;
+    if (t < 0.20f) return vg_mix(COL_FLASH, COL_DEBRIS,            // white -> orange
+                                 (t - 0.05f) * (1.0f / 0.15f));
+    // Cooling: down through the reds while going out. Squared so it holds its
+    // brightness a moment and then leaves quickly, rather than sagging.
+    const float d = (t - 0.20f) * (1.0f / 0.80f);
+    return vg_dim(vg_mix(COL_DEBRIS, COL_MSL_HOSTILE, d), 1.0f - powf(d, fall));
+}
+
+// Opens fast, then keeps creeping outward while it cools. The first pass stopped
+// at its nominal radius and then shrank slightly, which made even a ship death
+// read as a fixed-size flare. A big blast does not stop growing the moment it
+// stops being bright -- it goes on opening out as it goes out, and that continued
+// expansion is most of what says the area involved was large.
+static float fire_scale(float t) {
+    if (t < 0.30f) return 0.30f + 0.85f * (t * (1.0f / 0.30f));   // 0.30 -> 1.15
+    return 1.15f + 0.32f * ((t - 0.30f) * (1.0f / 0.70f));        // 1.15 -> 1.47
+}
+
+// Screen-space ring by incremental rotation: two trig calls for the whole
+// circle instead of two per segment. The sky fill pays for its trig the same
+// way and for the same reason.
+static void fire_ring(float cx, float cy, float r, int segs, uint16_t col) {
+    const float dth = 6.28318531f / (float)segs;
+    const float c = cosf(dth), s = sinf(dth);
+    float vx = r, vy = 0.0f;
+    for (int k = 0; k < segs; k++) {
+        const float nx = vx * c - vy * s;
+        const float ny = vx * s + vy * c;
+        vg_line(cx + vx, cy + vy, cx + nx, cy + ny, col);
+        vx = nx; vy = ny;
+    }
+}
+
+static void draw_fireballs(const VgCam& cam) {
+    for (int i = 0; i < MAX_FIREBALLS; i++) {
+        const Fireball* f = &vg.fire[i];
+        if (!f->alive) continue;
+
+        const float t  = 1.0f - f->life / f->life0;
+        const Vec3  pv = vg_view(cam, f->pos);
+        const float rw = f->r * fire_scale(t);
+        if (pv.z + rw < NEAR_Z) continue;
+
+        float cx, cy;
+        if (!vg_project(cam, pv, &cx, &cy)) continue;
+
+        const float z   = pv.z > NEAR_Z ? pv.z : NEAR_Z;
+        const float rpx = cam.focal * rw / z;
+        if (cx < -rpx || cx > SCR_W + rpx || cy < -rpx || cy > SCR_H + rpx) continue;
+
+        const uint16_t col = fire_col(t, f->fall);
+        if (!col) continue;               // collapsed early, or fully out
+
+        // Same ladder the rocks use: a ring nobody can resolve is a pixel, and
+        // paying sixteen primitives to draw a pixel is how a prim budget goes.
+        if (rpx < 2.5f) { vg_point((int)cx, (int)cy, col); continue; }
+        if (rpx < 7.0f) {
+            vg_line(cx,       cy - rpx, cx + rpx, cy,       col);
+            vg_line(cx + rpx, cy,       cx,       cy + rpx, col);
+            vg_line(cx,       cy + rpx, cx - rpx, cy,       col);
+            vg_line(cx - rpx, cy,       cx,       cy - rpx, col);
+            continue;
+        }
+
+        const int segs = rpx > 40.0f ? 16 : (rpx > 16.0f ? 12 : 8);
+        fire_ring(cx, cy, rpx, segs, col);
+        // The core, held earlier in the ramp so it is always the hotter part.
+        if (rpx > 10.0f) fire_ring(cx, cy, rpx * 0.55f, segs > 12 ? 12 : 8,
+                                   fire_col(t * 0.55f, f->fall));
+        if (rpx > 26.0f) fire_ring(cx, cy, rpx * 0.28f, 8,
+                                   fire_col(t * 0.30f, f->fall));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -536,4 +653,9 @@ void vg_draw_world(const VgCam& cam) {
 
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);
+
+    // Last, over everything. A fireball is light, and light is in front of the
+    // wreckage it came from -- drawn under the ships, the brightest thing in the
+    // frame would be the one thing getting occluded by black hull fills.
+    draw_fireballs(cam);
 }
