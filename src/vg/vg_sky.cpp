@@ -810,6 +810,45 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         s_u = s_v = 0.0f;
     }
 
+    // THE POLE ROWS ARE ONE POINT EACH, and the texture has to converge to
+    // say so. On the sphere every longitude meets at the zenith; on the tile
+    // the zenith is a full row. Raw noise varies along that row, so pointing
+    // at the pole showed structure sliding where there should be a single
+    // colour -- the "rotation" seen at the zenith in matches. The course only
+    // looked immune because its base cloud is dimmed and its pole is nearly
+    // black. Standard equirect pinch: the last eight rows of latitude blend
+    // toward their own row average, fully constant at the pole itself. Runs on
+    // the canonical band before the fold copies it, so both covers inherit it.
+    if (s_kind != SKY_MENU && s_tex) {
+        const int vc = (int)s_v & SKY_TEX_MASK;
+        for (int v = 0; v < SKY_TEX_SIZE; v++) {
+            int d = (v - vc) & 127;
+            if (d >= 64) d -= 128;
+            const int ad = (d < 0) ? -d : d;
+            if (ad < 24 || ad > 32) continue;         // canonical high latitudes
+            const float t = (float)(ad - 24) / 8.0f;  // 0 at 67 deg, 1 at pole
+            // Row average, in linear channel space.
+            uint32_t sr = 0, sg = 0, sb = 0;
+            for (int u = 0; u < SKY_TEX_SIZE; u++) {
+                const uint16_t c = s_tex[(v << SKY_TEX_BITS) | u];
+                const uint16_t n = (uint16_t)((c >> 8) | (c << 8));
+                sr += (n >> 11) & 0x1F; sg += (n >> 5) & 0x3F; sb += n & 0x1F;
+            }
+            const float ar = sr / 128.0f, ag = sg / 128.0f, ab = sb / 128.0f;
+            for (int u = 0; u < SKY_TEX_SIZE; u++) {
+                const uint16_t c = s_tex[(v << SKY_TEX_BITS) | u];
+                const uint16_t n = (uint16_t)((c >> 8) | (c << 8));
+                float r = (n >> 11) & 0x1F, g = (n >> 5) & 0x3F, b2 = n & 0x1F;
+                r += (ar - r) * t; g += (ag - g) * t; b2 += (ab - b2) * t;
+                const uint16_t o = (uint16_t)(((uint16_t)(r + 0.5f) << 11) |
+                                              ((uint16_t)(g + 0.5f) << 5)  |
+                                               (uint16_t)(b2 + 0.5f));
+                s_tex[(v << SKY_TEX_BITS) | u] = (uint16_t)((o >> 8) | (o << 8));
+            }
+        }
+    }
+
+
     // THE TILE IS A DOUBLE COVER, and the texture has to say so. The unfolded
     // atlas maps a full turn of pitch to the full tile height, so every
     // direction owns TWO texels: (u,v) and its fold (u+64, 64-v). A real
