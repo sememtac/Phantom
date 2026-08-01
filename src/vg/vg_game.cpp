@@ -444,7 +444,7 @@ void vg_game_init(void) {
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
     vg_sky_init();
-    vg_sky_generate(SKY_MENU, vg_replay_rand());   // we boot straight into the menu
+    vg_sky_none();   // we boot straight into the menu, and the menu has no sky
 
     // Set directly, and the only place left that does. This is not an arrival:
     // the sky was built four lines up, and vg_state_go would run enter_attract
@@ -1054,11 +1054,11 @@ int vg_last_purse(void) { return s_last_purse; }
 // leaving the loser's missiles and wreckage flying through the attract loop --
 // and a missile whose seeker had broken draws in the dead-seeker grey, which is
 // exactly the stray grey lines that were turning up on the menu.
-// Out of combat the backdrop is always the menu one. Regenerating costs ~60ms,
-// which is invisible at a screen change and is the price of not carrying a
-// second full texture just to avoid it.
+// Out of combat there is no backdrop at all: the band fill drops back to its
+// memset and the menus are the starfield over black. Nothing to generate, so
+// the ~60ms the old menu sky cost at every screen change is gone with it.
 static void use_menu_sky(void) {
-    vg_sky_generate(SKY_MENU, vg_replay_rand());
+    vg_sky_none();
 }
 
 static void enter_attract(void) {
@@ -1114,12 +1114,12 @@ static void enter_course(void) {
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
-    // The course never asked for a sky, so it kept whatever was last built --
-    // which coming from the menu is the menu's own backdrop, and that one does
-    // not pan. The hole therefore hung off the camera and only turned with the
-    // roll, so a player who tried to look at it could never bring it round. It
-    // is a place now, at a fixed bearing, found by turning towards it.
-    vg_sky_generate(SKY_COURSE, vg_replay_rand());
+    // The course must ask for its own sky: coming from the menu there is no
+    // backdrop at all, and the course is a place in the tournament's universe
+    // rather than a void. Same three backdrops a match uses, drawn by the same
+    // rule -- one rand, so the replay sequence keeps its length.
+    const uint32_t sky_seed = vg_replay_rand();
+    vg_sky_generate((SkyKind)(sky_seed % (uint32_t)SKY_KINDS), sky_seed);
     // Trim the field to the number a match flies with. The menu spawner has no
     // cap -- it tops up every second or so until all sixteen slots are full,
     // because nothing in a menu cares -- and the course inherited that field

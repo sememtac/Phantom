@@ -23,31 +23,16 @@ enum SkyKind : uint8_t {
     SKY_GALAXY,       // barred spiral, warm core and cooler arms
     SKY_CLUSTER,      // knots of unresolved starlight in faint haze
 
-    // Count of the IN-GAME backdrops, and the modulus a match rolls against.
-    // Anything at or past this is never picked for combat.
-    SKY_KINDS,
-
-    // Menu only: a supermassive black hole, lensed disc and all. The backdrop
-    // the player actually sits and looks at, so it is allowed to be the loudest
-    // of the set -- combat backdrops are deliberately restrained so they never
-    // compete with a contact at range.
-    SKY_MENU,
-
-    // The same hole, but as a PLACE rather than as wallpaper.
-    //
-    // The menu backdrop does not pan: it hangs off the camera and only turns
-    // with roll, which reads as a decoration orbiting the frame. That is
-    // acceptable behind a title and wrong the moment the player has a stick,
-    // because the one thing they will try is to turn and look at it, and it
-    // follows them instead.
-    //
-    // This one is anchored to the world. The tile is treated as the whole sky
-    // -- one revolution of yaw is exactly one tile -- so the hole sits at one
-    // bearing, there is only ever one of it, and it is found by looking rather
-    // than issued to the front of the view. It starts well off the nose so the
-    // course opens on empty space.
-    SKY_COURSE
+    // Count of the backdrops, and the modulus a match rolls against. Every kind
+    // is a combat kind now: the menus draw no backdrop at all, so there is no
+    // longer a set of skies that are never picked for a fight.
+    SKY_KINDS
 };
+
+// No backdrop. The band fill falls back to its memset and the menus show the
+// starfield over black. Kept as its own call rather than a kind, because the
+// absence of a sky is a state of the module and not one more thing to generate.
+void vg_sky_none(void);
 
 const char* vg_sky_name(void);
 
