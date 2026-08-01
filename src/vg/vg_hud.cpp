@@ -578,11 +578,9 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
         vg_text((SCR_W - lw) / 2, 46, "SPD", INK_ONFILL, 1);
     }
 
-    // The frame counter lives in vg_render's draw_fps -- the one with the
-    // primitive count beside it, which is the number that says WHY a dip
-    // happened. This was a second, smaller counter saying less in the same
-    // corner.
-    vg_text(16, 464, vg_arena_name(), INK_TRACE, 1);
+    // Nothing else in this corner. The frame counter lives in vg_render's
+    // draw_fps; the arena name used to sit under it in trace ink and read as
+    // ghost text behind the number.
 
     draw_reticle();
     draw_throttle();

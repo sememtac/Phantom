@@ -102,10 +102,11 @@
 // Clear of the missile rack, which hud_panel puts at x=440, y=140. The square
 // patch this replaced ran to x=442 and y=164 and sat on the corner of it.
 #define REAR_X               (SCR_W - SCR_SAFE - REAR_W)
-// Below the speed readout rather than beside it. SPD is centred and its label
-// block ends at y=55, so at y=48 the mirror sat level with it and the two read
-// as one crowded row even though they never touched.
-#define REAR_Y               60
+// Flush with the hull bar: both instruments hang from the same top line, the
+// hull reading on the left and the mirror on the right, which reads as one
+// instrument row instead of two heights. The speed readout sits between them
+// and clears the mirror by thirty pixels.
+#define REAR_Y               16
 #define REAR_CX              (REAR_X + REAR_W * 0.5f)
 #define REAR_CY              (REAR_Y + REAR_H * 0.5f)
 // Same ANGULAR scale as the main window, set by the width. So the picture does

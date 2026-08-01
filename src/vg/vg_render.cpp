@@ -306,10 +306,12 @@ void vg_render_frame(const VgInput* in, float fps) {
         // the frame it is drawn in, and either way it is the button the player
         // is holding down.
         s_mirror_us = 0;
-        // Not while paused: a repeater with the simulation stopped is a static
-        // picture being re-submitted at full price -- and the paused course was
-        // measured as the most expensive scene in the game, at 44.8 fps.
-        if (!rear_view && vg.state != VG_PAUSE) draw_rear_patch(cam);
+        // Drawn while paused too -- it went missing there as a performance cut
+        // and the author sent it back: a dark hole in the panel reads as a
+        // fault, and a pause menu is exactly when a player looks the cockpit
+        // over. The motes stay out of pause; stillness is only wrong on things
+        // whose meaning is motion.
+        if (!rear_view) draw_rear_patch(cam);
     }
 
     // Panel damage, at whichever severity is worse. Kept low for strain -- a
