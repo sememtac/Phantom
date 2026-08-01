@@ -178,6 +178,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // hidden-line fills occlude it.
     // Submit, timed per layer. "sub 11ms" names a stage; this names the layer.
     extern uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;
+    // Zeroed every frame. A frame that skips a layer must report zero for it,
+    // not last flight's number -- the stale HUD value made menu frames claim
+    // more submit time than the whole stage took.
+    g_sub_star = g_sub_arena = g_sub_world = g_sub_hud = 0;
     uint32_t t_sub = micros();
     vg_draw_starfield(cam);
     g_sub_star = micros() - t_sub;  t_sub = micros();

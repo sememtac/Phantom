@@ -146,6 +146,21 @@ void vg_synth_layer(const SynthLayer* l, float pitch) {
     v->lp_k = (x > 1.0f) ? 1.0f : x;
 }
 
+// Sine by smoothed parabola, phase in [0,1). Accurate to about a tenth of a
+// percent, which on a one-centimetre speaker playing alarm beeps is exact.
+// It exists because the mixer pays for sine PER SAMPLE PER VOICE: profiling
+// found the whole synth billed to the submit stage at up to several
+// milliseconds a frame, sustained, whenever alarms stacked -- and the library
+// sinf was most of it.
+static inline float fsin01(float x) {
+    x -= (float)(int)x;
+    const bool  neg = (x >= 0.5f);
+    const float t   = neg ? (x - 0.5f) : x;
+    const float par = 16.0f * t * (0.5f - t);          // parabola, peak 1
+    const float y   = 0.775f * par + 0.225f * par * par;
+    return neg ? -y : y;
+}
+
 void vg_synth_render(int16_t* out, int n_out, float mix) {
     const int   room = n_out;
     int16_t*    buf  = out;
@@ -169,7 +184,7 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
             if (s_flat_ph >= 1.0f) s_flat_ph -= (float)(int)s_flat_ph;
             // Mostly sine with a little square in it. A pure tone is a test
             // signal; the edge is what makes it an instrument in a room.
-            const float sn = sinf(s_flat_ph * 6.2831853f);
+            const float sn = fsin01(s_flat_ph);
             const float sq = (s_flat_ph < 0.5f) ? 1.0f : -1.0f;
             // QUIET. 0.26 down to 0.115 -- this is not an alarm demanding
             // anything, it is a reading nobody is going to act on, and a faint
@@ -245,7 +260,7 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
                 v->phase += v->freq * dt;
                 if (v->phase >= 1.0f) v->phase -= (float)(int)v->phase;
                 sample = (v->wave == SW_SQUARE) ? ((v->phase < 0.5f) ? 1.0f : -1.0f)
-                                               : sinf(v->phase * 6.2831853f);
+                                               : fsin01(v->phase);
             }
 
             // Tremolo, if this cue has one. Chopping the amplitude fast is what

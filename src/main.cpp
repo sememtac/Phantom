@@ -9,6 +9,7 @@
 
 uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
+static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "vg/vg_port.h"
@@ -243,7 +244,15 @@ void loop(void) {
 
     // Generated after the frame is submitted and before the blit waits on DMA,
     // which is the one place in the loop with time to spare.
-    vg_sfx_update(sim_dt);
+    {
+        // The synth bills to the submit phase and is invisible in the layer
+        // timers -- it was the unaccounted milliseconds. Worse, it renders
+        // wall-clock samples: a slow frame owes MORE audio, so the cost rises
+        // exactly when the budget is shortest.
+        const uint32_t t_sfx = micros();
+        vg_sfx_update(sim_dt);
+        g_sfx_us = micros() - t_sfx;
+    }
 
     uint32_t t3 = micros();
     vg_crumb(CRUMB_FLUSH, (uint8_t)vg.state);
@@ -284,18 +293,21 @@ void loop(void) {
     acc_tint   += vg_rast_tint_us();
     acc_mir    += vg_render_mirror_us();
     static uint32_t acc_star = 0, acc_aren = 0, acc_wrld = 0, acc_hud = 0;
+    static uint32_t acc_sfx = 0;
+    acc_sfx += g_sfx_us;
     acc_star += g_sub_star; acc_aren += g_sub_arena;
     acc_wrld += g_sub_world; acc_hud += g_sub_hud;
     // A second line rather than a longer one: the first is already at the edge
     // of what a terminal shows without wrapping.
     if (millis() - report_ms >= 1000 && frames > 0)
-        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu\n",
+        Serial.printf("        sub = star %lu arena %lu world %lu hud %lu mir %lu sfx %lu\n",
                       (unsigned long)(acc_star / frames),
                       (unsigned long)(acc_aren / frames),
                       (unsigned long)(acc_wrld / frames),
                       (unsigned long)(acc_hud  / frames),
-                      (unsigned long)(acc_mir  / frames));
-    if (millis() - report_ms >= 1000) acc_star = acc_aren = acc_wrld = acc_hud = 0;
+                      (unsigned long)(acc_mir  / frames),
+                      (unsigned long)(acc_sfx  / frames));
+    if (millis() - report_ms >= 1000) acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = 0;
     acc_prim   += vg_rast_prim_us();
     acc_scan   += vg_rast_scan_us();
     frames++;
