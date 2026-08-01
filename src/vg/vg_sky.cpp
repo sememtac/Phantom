@@ -806,8 +806,17 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         // private constants gone.
         s_scale = SKY_SPHERE_SCALE;
         s_pan   = SKY_SPHERE_PAN;
-        // Clouds have no centre worth finding, so any origin will do.
-        s_u = s_v = 0.0f;
+        // THE ORIGIN MUST PUT THE EQUATOR THROUGH THE TILE CENTRE. "Any origin
+        // will do" was true while clouds panned freely; the sphere ended it.
+        // The generators author their features around (64,64) -- the galaxy's
+        // bar, the nebula's mass -- and the fold pass builds the far cover by
+        // overwriting everything outside the origin's own band. At (0,0) the
+        // authored half WAS the far cover: the galaxy's centre was erased and
+        // replaced with mirrored edge noise, the equator ran along the tile
+        // seam, and pitching crawled the view across mirror copies -- the
+        // backdrop that "would not orient". Same origin as the course, whose
+        // sky was authored and sampled in agreement from the start.
+        s_u = s_v = (float)(SKY_TEX_SIZE / 2);
     }
 
     // THE POLE ROWS ARE ONE POINT EACH, and the texture has to converge to
