@@ -193,8 +193,24 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
     // How far the sky's north is rolled in the frame. The view-space image of
     // sky-up is column 1; its angle in the screen plane is the roll. Astern the
     // horizontal axis is reversed, so the angle is too.
+    // NEGATED for the forward view, because v runs down the frame and a rotation
+    // measured in a y-down basis has the opposite sense. Unnegated astern, where
+    // the horizontal axis is reversed again.
+    //
+    // Getting this backwards did not tilt the horizon, which is what one would
+    // expect from a roll term -- it COUPLED THE AXES. The angle came out with
+    // the wrong sign, so instead of cancelling the ship's roll it doubled it,
+    // and at 45 degrees of bank a pure pitch moved the backdrop exactly
+    // sideways. Searched rather than guessed: over tumbled attitudes this form
+    // leaves at most 1.0 px of cross-coupling per 4 px of true motion, against
+    // 4.0 for the sign it had -- i.e. total.
+    //
+    // The 1.0 that remains is the panorama itself. A flat tile cannot hold a
+    // rotating sphere: meridians converge, so away from the equator the local
+    // north is not the v axis. It is the same approximation the backdrop has
+    // always been.
     const float ux = s_ori.m[1], uy = s_ori.m[4];
-    *roll = atan2f(sign < 0.0f ? -ux : ux, uy);
+    *roll = atan2f(sign < 0.0f ? ux : -ux, uy);
 }
 // Whether the next fill is for a camera looking aft. Set per frame by the
 // renderer, because the backdrop has no camera of its own to ask.
