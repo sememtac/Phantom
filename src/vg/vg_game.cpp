@@ -1118,6 +1118,27 @@ static void enter_course(void) {
     // roll, so a player who tried to look at it could never bring it round. It
     // is a place now, at a fixed bearing, found by turning towards it.
     vg_sky_generate(SKY_COURSE, vg_replay_rand());
+    // Trim the field to the number a match flies with. The menu spawner has no
+    // cap -- it tops up every second or so until all sixteen slots are full,
+    // because nothing in a menu cares -- and the course inherited that field
+    // wholesale. Sixteen close rocks was never a design decision; it was the
+    // attract loop's housekeeping leaking into the one place that pays frame
+    // time for it. The farthest go first, so what the player sees stays.
+    {
+        int alive = 0;
+        for (int i = 0; i < MAX_ASTEROIDS; i++) if (vg.ast[i].alive) alive++;
+        while (alive > AST_TARGET_COUNT) {
+            int   far = -1;
+            float d2  = -1.0f;
+            for (int i = 0; i < MAX_ASTEROIDS; i++) {
+                if (!vg.ast[i].alive) continue;
+                const float d = vlen2(vg.ast[i].pos);
+                if (d > d2) { d2 = d; far = i; }
+            }
+            vg.ast[far].alive = false;
+            alive--;
+        }
+    }
     vg_course_begin();
     vg.roll      = 0;
     vg.roll_rate = 0;
