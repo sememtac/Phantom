@@ -139,9 +139,10 @@ a corrupt stream. The host read a band length of 1,667,340,360 bytes. Memory
 barriers on the ring did not fix it, and neither did moving the one printf that
 also wrote to the port. The cause is not established.
 
-The code stays in `vg_capture.cpp` with `tx_start()` returning at its first
-line. To try again, remove that return and find the fault first. A capture that
-is wrong now and then is worse than a capture that is slow.
+The code is gone. `vg_capture.cpp` now writes through `vg_link_write()`, which
+sends from the game core and gives up after a set number of tries. To try the
+second core again, write it again, and find the fault first. A capture that is
+wrong now and then is worse than a capture that is slow.
 
 ## Why the video is darker than the panel
 

@@ -144,8 +144,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     cam.rear = rear_view;
 
     // The backdrop is filled during the band flush, long after this, and has no
-    // camera to consult -- so it is told. Only the main window: the patch is
-    // backed with INK_WELL and never shows sky.
+    // camera to consult -- so it is told. This is the MAIN WINDOW's direction
+    // only. The patch shows sky too, but it is permanently aft whatever the main
+    // window is doing, so vg_sky_fill_patch forces the rear branch itself rather
+    // than reading this.
     vg_sky_set_rear(rear_view);
 
     // How red the whole picture goes. Decided here because this is the layer that

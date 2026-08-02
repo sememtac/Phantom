@@ -618,11 +618,6 @@ void vg_tournament_begin(ShipClass c);
 // here -- damage carries between rounds, and only credits will ever undo it.
 void vg_match_start(void);
 
-// Go to a state: reset its clock and run its set-up, both of which belong to
-// the state rather than to whoever sent us there. See the table in vg_game.cpp.
-void vg_state_go(VgState to);
-// Begin a broadcast transition. The action is performed at the join, while the
-// screen is black; see the TvPhase note above.
 // --- changing state ---------------------------------------------------------
 //
 // Three verbs, because there are three different things being done and they

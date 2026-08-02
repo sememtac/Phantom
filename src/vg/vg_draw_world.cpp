@@ -366,10 +366,24 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
     // under the two-pixel threshold at around z=1400 and switched it to the
     // single-point path -- so it appeared, flew a little way, and became one
     // invisible dot while its trail carried on streaking across the screen.
-    if (s->pos.z + s->scale * 3.0f < NEAR_Z) return;
+    // TURNED SPACE, for the same two reasons draw_asteroid states above it, and
+    // this function was missed when that one was fixed.
+    //
+    // Raw pos.z rejects everything behind the player -- and behind the player is
+    // the entire job of the rear-view patch, so ENEMIES NEVER APPEARED IN THE
+    // MIRROR AT ALL. The one contact worth craning round for was the one thing
+    // the instrument could not show.
+    //
+    // And the size gates must use the camera's own focal length, not the fixed
+    // constant: the patch runs at REAR_FOCAL_K, about a third of the window's, so
+    // its ships should drop to the cheap forms sooner. With FOCAL hard-coded they
+    // were measured as if they were in the main view, and the zoom was ignored
+    // as well.
+    const Vec3 pv = vg_view(cam, s->pos);
+    if (pv.z + s->scale * 3.0f < NEAR_Z) return;
 
-    float z    = s->pos.z > NEAR_Z ? s->pos.z : NEAR_Z;
-    float rpx  = FOCAL * s->scale / z;
+    float z    = pv.z > NEAR_Z ? pv.z : NEAR_Z;
+    float rpx  = cam.focal * s->scale / z;
     float fade = hero ? (1.30f - z / 3400.0f) : (1.3f - z / 700.0f);
     if (fade > 1.0f)  fade = 1.0f;
     if (fade < 0.35f) fade = 0.35f;
@@ -380,7 +394,7 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
 
     float cx, cy;
     if (rpx < 2.0f) {
-        if (vg_project(cam, vg_view(cam, s->pos), &cx, &cy)) vg_point((int)cx, (int)cy, COL_ENEMY);
+        if (vg_project(cam, pv, &cx, &cy)) vg_point((int)cx, (int)cy, COL_ENEMY);
         return;
     }
 

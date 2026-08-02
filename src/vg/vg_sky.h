@@ -24,15 +24,11 @@ enum SkyKind : uint8_t {
     SKY_CLUSTER,      // knots of unresolved starlight in faint haze
 
     // Count of the backdrops, and the modulus a match rolls against. Every kind
-    // is a combat kind now: the menus draw no backdrop at all, so there is no
-    // longer a set of skies that are never picked for a fight.
+    // is a combat kind: there is no longer a sky that combat never picks, which
+    // is what SKY_MENU and SKY_COURSE used to be. The menus draw one of these
+    // three like everywhere else -- see vg_sky_menu.
     SKY_KINDS
 };
-
-// No backdrop. The band fill falls back to its memset and the menus show the
-// starfield over black. Kept as its own call rather than a kind, because the
-// absence of a sky is a state of the module and not one more thing to generate.
-void vg_sky_none(void);
 
 // The menus' own backdrop: one FIXED venue, not a random one. The title screen
 // is somewhere the player keeps coming back to, and a different sky each time

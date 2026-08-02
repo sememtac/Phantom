@@ -354,7 +354,6 @@ bool vg_sky_ready(void) { return s_ready; }
 // The texture is kept, not freed. A menu is a place the player passes through
 // on the way back to a fight, and reallocating 32KB of internal SRAM on every
 // transit is a way to eventually not get it.
-void vg_sky_none(void) { s_ready = false; }
 
 // The menu backdrop. A nebula rather than nothing, and always THIS one.
 //
