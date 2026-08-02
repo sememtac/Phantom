@@ -16,11 +16,9 @@
 
 struct AstModel {
     Vec3    v[AST_VERTS];
-    uint8_t e[AST_EDGES][2];
     // Triangles, wound so the cross product of the first two edges points
     // outward. That lets the renderer decide facing with one dot product.
     uint8_t f[AST_FACES][3];
-    uint8_t edge_count;
     uint8_t face_count;
 };
 

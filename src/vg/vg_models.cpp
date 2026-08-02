@@ -132,24 +132,17 @@ void vg_build_models(void) {
     };
     for (int i = 0; i < AST_VERTS; i++) base[i] = vnorm(base[i]);
 
-    // On the unit sphere an icosahedron's adjacent vertices sit 1.0515 apart and
-    // the next-nearest 1.7013, so any threshold between them recovers exactly the
-    // 30 edges without hardcoding a table.
+    // ADJACENCY, which is all the face builder below needs. On the unit sphere an
+    // icosahedron's adjacent vertices sit 1.0515 apart and the next-nearest
+    // 1.7013, so any threshold between them recovers the 30 edges without a
+    // table. An explicit edge LIST was built here and stored on every model too;
+    // nothing has read it since the renderer moved to hidden-line faces.
     bool    adj[AST_VERTS][AST_VERTS] = {};
-    uint8_t ea[64][2];
-    int ecount = 0;
     for (int i = 0; i < AST_VERTS; i++)
         for (int j = i + 1; j < AST_VERTS; j++)
             if (vlen(vsub(base[i], base[j])) < 1.3f) {
                 adj[i][j] = adj[j][i] = true;
-                if (ecount < 64) {
-                    ea[ecount][0] = (uint8_t)i;
-                    ea[ecount][1] = (uint8_t)j;
-                    ecount++;
-                }
             }
-    if (ecount > AST_EDGES) ecount = AST_EDGES;
-
     // Any three mutually adjacent vertices form a face -- that recovers all 20
     // without a table too. Wind each so the normal points away from the origin,
     // so the renderer can cull with a single dot product.
@@ -176,16 +169,14 @@ void vg_build_models(void) {
         // back-face culling alone gets hidden-line right without sorting faces
         // within the model.
         for (int i = 0; i < AST_VERTS; i++) M->v[i] = vmul(base[i], vg_frand(0.80f, 1.22f));
-        for (int e = 0; e < ecount; e++) { M->e[e][0] = ea[e][0]; M->e[e][1] = ea[e][1]; }
         for (int f = 0; f < fcount; f++) {
             M->f[f][0] = fa[f][0]; M->f[f][1] = fa[f][1]; M->f[f][2] = fa[f][2];
         }
-        M->edge_count = (uint8_t)ecount;
         M->face_count = (uint8_t)fcount;
     }
 
     build_ship_model();
-    Serial.printf("vg_models: %d models, %d edges, %d faces\n", NUM_MODELS, ecount, fcount);
+    Serial.printf("vg_models: %d models, %d faces\n", NUM_MODELS, fcount);
 }
 
 // ---------------------------------------------------------------------------
