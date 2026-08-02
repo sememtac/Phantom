@@ -81,25 +81,50 @@ AUDIO_RATE = 22050
 
 
 def reset_board(port, settle=3.0):
-    """Pulse the reset line of the device and wait for the device to start.
+    """Restart the device, and wait until it is ready for a command.
 
-    A render is an exchange of one entry for one frame. If the host stops during
-    a render, the device waits for the next entry and reads every byte as one.
-    The device recovers after 30 seconds, and during that time it looks broken.
+    A render must start from a known state. If it does not, the simulation it
+    replays is not the one that was recorded: the game carries on from wherever
+    it was, and the same session renders to a different picture every time.
 
-    A start from a known state is simpler than a test for each way the last run
-    could end. The record step and the render step both start the game again, so
-    the reset costs nothing.
+    THE RESET LINE DOES NOT WORK ON THIS BOARD. It is an ESP32-S3 on native USB
+    CDC, so DTR and RTS are virtual and drive nothing. This function used to
+    pulse RTS, which every other ESP32 tool can rely on, and on this hardware it
+    only ever slept. The device therefore never restarted, and nobody noticed
+    because a render usually happened to begin at the title screen anyway.
+
+    So the device restarts itself: '!' over the link, then esp_restart(). The
+    wait is for the boot banner rather than a fixed sleep, because a fixed sleep
+    is the same guess that hid the problem.
     """
-    s = serial.Serial(port, 115200)
+    s = serial.Serial()
+    s.port = port
+    s.baudrate = 115200
+    s.timeout = 0.3
+    s.dtr = False          # before open(): on boards where these DO drive the
+    s.rts = False          # reset line, opening must not fire it
+    s.open()
     try:
-        s.dtr = False
-        s.rts = True
-        time.sleep(0.15)
-        s.rts = False
+        time.sleep(0.2)
+        s.reset_input_buffer()
+        s.write(b"!")
+        s.flush()
+        # vg_rast_init is early in setup() and prints unconditionally, so it is
+        # the first thing a restarted device says.
+        deadline = time.time() + max(settle, 8.0)
+        seen = b""
+        while time.time() < deadline:
+            line = s.readline()
+            if not line:
+                continue
+            seen += line
+            if b"vg_rast_init" in seen or b"vg_panel_init" in seen:
+                time.sleep(1.2)      # let the rest of setup() finish
+                return
+        raise TimeoutError("the device did not restart: no boot banner after "
+                           "'!'. Old firmware, or it is wedged.")
     finally:
         s.close()
-    time.sleep(settle)
 
 
 class PhantomLink:
@@ -355,48 +380,71 @@ class PhantomLink:
         return to_rgb(pixels, w, h, rot), w, h
 
 
+# A BAND THAT DOES NOT DECODE IS A BROKEN BAND, and both of these used to hide
+# that. They padded a short result with zeros and cut a long one, so a corrupt
+# stream produced a picture instead of an error -- black bars, or a band of the
+# wrong thing, with nothing said.
+#
+# That is the worst possible behaviour for a capture tool. It cost a whole
+# evening: three renders of one session gave three different frame hashes, which
+# reads as a simulation that is not reproducible, when the actual fault was the
+# link corrupting and the decoder quietly inventing pixels to cover it.
+#
+# They raise now. A caller that wants to carry on past a bad band can catch
+# Desync and skip the frame -- what it must not do is treat the result as the
+# picture the device drew.
+
+
 def _decode_pal(payload, pal, npix):
     """u8 run, u8 index, against a table of u16 colours."""
+    ncol = len(pal) // 2
+    if len(payload) % 2:
+        raise Desync(f"paletted band has {len(payload)} bytes, not a whole "
+                     f"number of run/index pairs")
     if _np is not None:
         table = _np.frombuffer(pal, dtype="<u2")
-        a = _np.frombuffer(payload, dtype=_np.uint8)
-        a = a[:(len(a) // 2) * 2].reshape(-1, 2)
+        a = _np.frombuffer(payload, dtype=_np.uint8).reshape(-1, 2)
+        if a.size and int(a[:, 1].max()) >= ncol:
+            raise Desync(f"paletted band uses colour {int(a[:, 1].max())} "
+                         f"of a {ncol} colour table")
         out = _np.repeat(table[a[:, 1]], a[:, 0].astype(_np.int32))
         if out.size != npix:
-            fixed = _np.zeros(npix, dtype=_np.uint16)
-            fixed[:min(npix, out.size)] = out[:npix]
-            out = fixed
+            raise Desync(f"paletted band decoded to {out.size} pixels, "
+                         f"expected {npix}")
         return out
 
     table = [pal[i] | (pal[i + 1] << 8) for i in range(0, len(pal), 2)]
     out = []
     for i in range(0, len(payload) - 1, 2):
+        if payload[i + 1] >= ncol:
+            raise Desync(f"paletted band uses colour {payload[i + 1]} "
+                         f"of a {ncol} colour table")
         out.extend([table[payload[i + 1]]] * payload[i])
     if len(out) != npix:
-        out = (out + [0] * npix)[:npix]
+        raise Desync(f"paletted band decoded to {len(out)} pixels, "
+                     f"expected {npix}")
     return out
 
 
 def _decode_rle(payload, npix):
-    """u8 run, u16 pixel, little-endian."""
+    """u8 run, u16 pixel, little-endian. Raises: see _decode_pal."""
+    if len(payload) % 3:
+        raise Desync(f"raw band has {len(payload)} bytes, not a whole number "
+                     f"of run/colour triples")
     if _np is not None:
-        a = _np.frombuffer(payload, dtype=_np.uint8)
-        a = a[:(len(a) // 3) * 3].reshape(-1, 3)
+        a = _np.frombuffer(payload, dtype=_np.uint8).reshape(-1, 3)
         vals = a[:, 1].astype(_np.uint16) | (a[:, 2].astype(_np.uint16) << 8)
         out = _np.repeat(vals, a[:, 0].astype(_np.int32))
         if out.size != npix:
-            fixed = _np.zeros(npix, dtype=_np.uint16)
-            fixed[:min(npix, out.size)] = out[:npix]
-            out = fixed
+            raise Desync(f"raw band decoded to {out.size} pixels, "
+                         f"expected {npix}")
         return out
 
     out = []
-    i, n = 0, len(payload)
-    while i + 2 < n:
+    for i in range(0, len(payload), 3):
         out.extend([payload[i + 1] | (payload[i + 2] << 8)] * payload[i])
-        i += 3
     if len(out) != npix:
-        out = (out + [0] * npix)[:npix]
+        raise Desync(f"raw band decoded to {len(out)} pixels, expected {npix}")
     return out
 
 

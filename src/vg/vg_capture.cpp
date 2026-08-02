@@ -171,6 +171,23 @@ void vg_capture_poll(void) {
             // time and was three days older than the change. Sending only when
             // asked means an old host is simply an old host.
             s_audio_on = 1;
+        } else if (c == '!') {
+            // REBOOT, because the host cannot.
+            //
+            // This board is an ESP32-S3 on native USB CDC: DTR and RTS are
+            // virtual and drive nothing, so the auto-reset circuit every other
+            // ESP32 tool relies on does not exist here. reset_board() in
+            // phantom_link.py pulsed RTS for months and only ever slept.
+            //
+            // That is not cosmetic. A render has to start from a known state or
+            // the simulation it replays is not the one that was recorded, and
+            // without a reset it started from wherever the game happened to be
+            // -- which is why the same session rendered to three different
+            // pictures on three runs and looked like a determinism bug.
+            Serial.println("\nvg: rebooting");
+            Serial.flush();
+            delay(30);          // let the line drain before the world stops
+            esp_restart();
         } else if (c == 'z') {
             // Forget the diagnostic record. Wanted from the host because the
             // alternative was building and flashing a one-line firmware to clear

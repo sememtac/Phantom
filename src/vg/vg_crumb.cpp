@@ -1,5 +1,6 @@
 #include "vg_crumb.h"
 #include "vg_port.h"
+#include "vg_capture.h"   // vg_link_busy: no flash writes into a live stream
 #include <Arduino.h>
 #include <esp_attr.h>
 #include <esp_system.h>
@@ -87,6 +88,21 @@ static bool crash_recall(void) {
 }
 
 void vg_crumb_stall(uint32_t ms, uint8_t state, uint8_t where) {
+    // NOT WHILE THE LINK IS CARRYING FRAMES, for two separate reasons.
+    //
+    // The write below is an NVS commit. A flash write disables the instruction
+    // cache while it runs, which is long enough to corrupt a pixel stream the
+    // host is reading -- it comes back as a palette index past the end of the
+    // table, several hundred frames into a render, with nothing to point at.
+    // tools/README.md claims every write to flash is blocked during a render;
+    // vg_save_store honours that, and this path never did.
+    //
+    // And a stall during a render is not a stall worth recording. The host paces
+    // the device, a venue sky costs 200ms to generate, and the reading that
+    // results describes the capture rather than the game. The worst-frame record
+    // was once left holding thirty seconds from a render that was waiting on the
+    // host, which suppressed every real stall until somebody cleared it.
+    if (vg_link_busy()) return;
     if (ms <= s_stall_ms) return;
     s_stall_ms    = ms;
     s_stall_state = state;

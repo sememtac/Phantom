@@ -90,6 +90,12 @@ values at the start of a render. It also blocks every write to flash during a
 render. A render therefore cannot change the progress of the player who made
 the session.
 
+A flash write during a render does more than change data. The write disables the
+instruction cache while it runs, and that is long enough to break the pixel
+stream. The host then reads a colour index that is not in the table and stops.
+Two paths write to flash, and both are now blocked while the link is busy: the
+player's progress, and the diagnostic record of the worst frame.
+
 ## Methods that were tried and removed
 
 **Live capture** sent frames while you played. The video was real time, but the
