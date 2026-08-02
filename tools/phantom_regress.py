@@ -94,6 +94,7 @@ def render(port, path, wanted, out_dir):
                 continue
             link.audio = bytearray()
             if i in wanted:
+                print(f"      host {i} = device frame {getattr(link, 'last_idx', -1)}")
                 data = bytes(rgb)
                 got[i] = hashlib.sha256(data).hexdigest()
                 if out_dir:

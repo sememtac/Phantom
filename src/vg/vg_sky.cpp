@@ -369,7 +369,19 @@ static bool s_is_menu = false;
 
 void vg_sky_menu(void) {
     // Already up. Menu to menu is free; only a venue displaces it.
-    if (s_is_menu && s_ready) return;
+    //
+    // But the VIEW still has to be put back, because skipping the generate skips
+    // the reset inside it -- and vg_game_init calls through here at the start of
+    // every replay. Without this the backdrop carries the idle tumble into the
+    // run, which is exactly the drift the reset in vg_sky_generate exists to
+    // stop.
+    if (s_is_menu && s_ready) {
+        s_ori  = Mat3{{ 1,0,0, 0,1,0, 0,0,1 }};
+        s_snap = true;
+        s_par[0]   = s_par[1]   = false;
+        s_incap[0] = s_incap[1] = false;
+        return;
+    }
     vg_sky_generate(SKY_NEBULA, SKY_MENU_SEED);
     s_is_menu = true;
 }
@@ -617,6 +629,19 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
         }
     }
 
+    // AND THE VIEW ITSELF, not just the parity that rides on it.
+    //
+    // s_ori accumulates every world rotation and was only ever set at boot. A
+    // render therefore began with whatever orientation the attract loop had
+    // tumbled to while the host was getting organised -- so the backdrop started
+    // the replay pointing somewhere that depended on how long the device had been
+    // idling, and the same recording rendered a slightly different sky each time.
+    //
+    // It showed up as sixty to ninety pixels of a 230,400 pixel frame differing
+    // by exactly one step of a 5-bit channel: one texel of sampling drift, in a
+    // different place each run. Enough to change every frame hash, and enough to
+    // look like a simulation that was not reproducible.
+    s_ori = Mat3{{ 1,0,0, 0,1,0, 0,0,1 }};
     s_snap = true;    // a new backdrop is arrived at, not swept to
     // ...and on branch zero. Parity is flight history, and the attract loop
     // tumbles through the poles constantly -- the course was inheriting an odd

@@ -388,6 +388,12 @@ class PhantomLink:
                 self._scan_to(b"PHFR")
 
         _idx, w, h, rot, fmt = struct.unpack("<IHHBB", self._read_exact(10))
+        # The DEVICE's own frame number. Kept because the host counting its
+        # own loop iterations is not the same thing: if a render starts
+        # streaming at a different game frame, every comparison is off by a
+        # constant and nothing matches, which looks exactly like a
+        # simulation that is not reproducible.
+        self.last_idx = _idx
         if fmt != 1:
             raise Desync(f"unknown pixel format {fmt}")
 

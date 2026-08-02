@@ -195,7 +195,29 @@ void loop(void) {
     // hardware is never asked. Feeding the recorded VgInput straight in is what
     // makes touch and IMU irrelevant to reproducing a session -- whatever they
     // produced is already in the struct.
-    if (vg_replay_mode() == VG_RP_PLAY) {
+    // THE FPS READOUT MUST NOT CARRY HISTORY INTO A REPLAY.
+    //
+    // `fps` is a smoothed average, and it is DRAWN. Before a render starts the
+    // device has been sitting at the menu for however long the host took to get
+    // organised, so the average has converged on the menu's rate -- and that
+    // rate differs a little from boot to boot. The replay then continues
+    // smoothing from that value, so the number on screen depends on what
+    // happened BEFORE the recording began.
+    //
+    // Rendered twice, one frame differed by 94 pixels out of 230,400, all of
+    // them inside the one 32-row band that holds this counter. That was enough
+    // to make every frame hash differ, which reads as a simulation that is not
+    // reproducible -- when the simulation was fine and a debug overlay was not.
+    //
+    // Reset on the edge into PLAY, so the number becomes a pure function of the
+    // recorded frame times. It still shows what the rate was, which is the point
+    // of it; it just no longer remembers anything from before.
+    static int prev_rp = VG_RP_OFF;
+    const int rp_now = vg_replay_mode();
+    if (rp_now == VG_RP_PLAY && prev_rp != VG_RP_PLAY) fps = 30.0f;
+    prev_rp = rp_now;
+
+    if (rp_now == VG_RP_PLAY) {
         if (!vg_replay_next(&sim_dt, &in)) return;
     } else {
         vg_input_update(sim_dt, &in);
