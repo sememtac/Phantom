@@ -455,12 +455,6 @@ struct VgGame {
     // frame its cue is true.
     uint8_t     ift_fired;
 
-    // Whether this line is the one that OPENS a run of speech, and so carries
-    // the speaker's badge. A continuation does not: see the note on
-    // draw_comms() in vg_hud.cpp.
-    // How hard the airframe is working, 0 at rest and 1 at the reference speed --
-    // and past 1 for a light ship at full. Computed once in the world step and
-    // read by both the camera and the panel, so the two cannot drift apart.
     // The course holds its first gate back until the briefing is over. See
     // vg_course_update.
     bool        course_briefing;
@@ -504,11 +498,16 @@ struct VgGame {
     float       alert_msl_ph,  alert_wall_ph;
     bool        alert_msl_lit, alert_wall_lit;
 
+    // How hard the airframe is working, 0 at rest and 1 at the reference speed
+    // -- and past 1 for a light ship at full. Computed once in the world step
+    // and read by both the camera and the panel, so the two cannot drift apart.
     float       buzz;
 
+    // Whether this line is the one that OPENS a run of speech, and so carries
+    // the speaker's badge. A continuation does not: see the note on draw_comms()
+    // in vg_hud.cpp.
     bool        ift_mark;
 
-    // The set turning on and off, between the menus and the game.
     // Looking aft. Held, never toggled: a pilot craning round is doing something
     // continuous and effortful, and a latch would leave a player flying blind
     // forwards without a finger on the panel to remind them why.

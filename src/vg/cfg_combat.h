@@ -13,20 +13,21 @@
 #define MISSILE_TRAIL        30       // trail sample points per missile
 #define TRAIL_SAMPLE_DT      0.028f   // seconds between trail samples
 
-// cos(60 deg), the reference cone. Once the bearing to the target leaves the
-// seeker's cone the lock breaks and the missile coasts ballistic -- this is what
-// produces the "whizzes past" miss instead of an infinite chase.
+// THE SEEKER CONE lives in ShipSpec::msl_seeker_cos, per class. The constant that
+// used to sit here was cos(60 deg) and had not been read by anything for some
+// time, but the reasoning attached to it is still the reason the classes barely
+// differ on the value, so it stays with the rule rather than with the number.
 //
-// It is ShipSpec::msl_seeker_cos now, per class, but the old note's warning still
-// holds and is the reason the classes barely differ on it: a seeker cone wide
-// enough to be unshakeable makes evasion stop being a skill, and evasion has to
-// stay something the player can rely on against every opponent in the bracket.
+// Once the bearing to the target leaves the cone the lock breaks and the missile
+// coasts ballistic. That is what produces the "whizzes past" miss instead of an
+// infinite chase -- and a cone wide enough to be unshakeable makes evasion stop
+// being a skill. Evasion has to stay something the player can rely on against
+// every opponent in the bracket.
 //
 // BALLISTA gets its tenacity from RE-ACQUISITION instead, which costs the player
 // nothing they had already earned: the lock still breaks, the round still sails
 // past, the dodge still works. It simply comes back for another pass. Beating it
 // once and forgetting about it is the only thing that stops working.
-#define MISSILE_SEEKER_COS   0.50f
 
 // How long a broken seeker coasts before it may try again. Long enough that the
 // player gets the moment of having beaten it -- without that beat, re-acquisition

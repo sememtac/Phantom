@@ -118,15 +118,6 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
     vg_rect(bx - 5, y - 5, bw + 10, bh + 10, ink);
 }
 
-// Is an alert lit this instant?
-//
-// `k` is 0 at the far edge of the alert's range and 1 at the thing itself. The
-// rate is the range: a player who cannot spare attention for a number can still
-// feel a rhythm getting faster. Both alerts share this because they now behave
-// identically -- the missile alert had its own double-beat shape and it read as a
-// flicker.
-
-
 // Incoming missile. Flashing accelerates as the seeker closes, and that is all
 // it does. There used to be a final stage that held the block solid inside
 // MSL_ALERT_SOLID, on the theory that evasion was no longer the question -- but

@@ -1606,6 +1606,12 @@ static void tv_update(float dt) {
 // the draw does not have one; and a sound triggered from drawing code is a sound
 // that does not happen when the panel is not drawn, which is a very strange rule
 // for a warning.
+//
+// `k` is 0 at the far edge of the alert's range and 1 at the thing itself, so
+// THE RATE IS THE RANGE: a player who cannot spare attention for a number can
+// still feel a rhythm getting faster. Both alerts share this because they now
+// behave identically -- the missile alert had its own double-beat shape and it
+// read as a flicker.
 static void alert_step(float* phase, bool* lit, bool active, float k, float dt,
                        SfxId cue) {
     if (!active) { *phase = 0.0f; *lit = false; return; }

@@ -20,21 +20,16 @@
 #define SKY_TEX_SIZE (1 << SKY_TEX_BITS)
 #define SKY_TEX_MASK (SKY_TEX_SIZE - 1)
 
-// Texels per screen pixel. This governs how BIG the cloud reads, and getting it
-// wrong is what made the first version feel like close-up noise: at 0.30 the
-// screen showed 144 texels of a 128-texel texture, i.e. the whole texture was
-// smaller than the screen, so several copies were visible at once and every
-// feature was tiny. At 0.10 the texture spans ~2.7 screens, features fill a good
-// fraction of the view, and a repeat only comes round every ~165 degrees of yaw.
+// Texels per screen pixel is NOT a free choice and no longer has a constant of
+// its own: it is SKY_SPHERE_SCALE, derived below, and the derivation is the
+// whole point. The tunable that used to live here was the flat-tiling era's, and
+// it had stopped being read.
 //
-// The cost is a ~10x nearest-neighbour upscale, which would band badly on smooth
-// gradients -- hence the dither in the fill.
-#define SKY_SCALE    0.10f
-
-// On screen a radian subtends roughly FOCAL pixels, so SKY_SCALE * FOCAL is the
-// pan rate of a genuinely infinite backdrop. We deliberately run a little under
-// it: a touch of lag reads as enormous distance, and costs nothing since a
-// tiling cloud has no "correct" absolute position to betray the cheat.
+// What survives from it is the consequence. The texture is small and the view is
+// large, so the fill is roughly a 10x nearest-neighbour upscale, and a 10x
+// upscale bands badly across a smooth gradient. THE DITHER IN THE FILL IS NOT
+// DECORATION -- it is the only thing standing between a nebula and a set of
+// visible steps, which is why its phase indexing is worth being careful with.
 
 
 // Ceiling on backdrop brightness. It must sit well below the vector art or it

@@ -139,11 +139,11 @@ void vg_update_missiles(float dt) {
 
         // A seeker that can come back for another pass.
         //
-        // The alternative was a wider cone, and the comment on MISSILE_SEEKER_COS
-        // is right to warn against it: a round that cannot be shaken is a round
-        // that is not a decision. This keeps the dodge intact -- the lock still
-        // breaks hard, the missile still sails past, the player still gets the
-        // moment of having beaten it -- and only then does it turn around.
+        // The alternative was a wider cone, and the seeker-cone note in
+        // cfg_combat.h is right to warn against it: a round that cannot be shaken
+        // is a round that is not a decision. This keeps the dodge intact -- the
+        // lock still breaks hard, the missile still sails past, the player still
+        // gets the moment of having beaten it -- and only then does it turn round.
         //
         // Which is a different threat from an unbreakable one. You can beat it
         // twice, or three times; you just cannot beat it once and forget it.
