@@ -44,6 +44,16 @@
 // foreground is just noise.
 #define SKY_MAX_LEVEL   0.52f
 
+// ...and nothing may be perfectly black. See the lift in vg_sky_generate.
+//
+// These are the values an empty texel lifts TO, and they are cool rather than
+// grey because empty space is not neutral. Chosen to survive the 5/6/5
+// quantisation: below about 0.033 the red channel rounds back to zero and the
+// floor does nothing at all.
+#define SKY_FLOOR_R     0.040f
+#define SKY_FLOOR_G     0.045f
+#define SKY_FLOOR_B     0.075f
+
 // Sampling scale and pan rate. One backdrop kind is left -- a cloud on a
 // sphere -- so both are set to the identity below at every generate, and these
 // initialisers only cover the window before the first sky exists.
@@ -226,6 +236,7 @@ static void sky_sample(float sign, float* u, float* v, float* roll) {
 // renderer, because the backdrop has no camera of its own to ask.
 static bool  s_rear = false;
 void vg_sky_set_rear(bool on) { s_rear = on; }
+
 
 // The rear-view patch, as a PANEL rectangle. Zero width means no patch this
 // frame, which is the case in every menu and whenever the main window is
@@ -557,6 +568,32 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     case SKY_GALAXY:  s_kind = SKY_GALAXY;  gen_galaxy(seed);  break;
     case SKY_CLUSTER: s_kind = SKY_CLUSTER; gen_cluster(seed); break;
     default:          s_kind = SKY_NEBULA;  gen_nebula(seed);  break;
+    }
+
+    // THE FLOOR. No direction may come out perfectly black.
+    //
+    // The view is 21.7 texels wide under the sphere identity and the generators
+    // mask out large empty regions on purpose, so an empty patch wider than the
+    // view means the WHOLE SCREEN is black whichever way the ship points.
+    // Measured on a nebula: a band about 14 texels across read 0 lit out of 144
+    // sampled, and looking into it gave a dead panel. The rear-view patch shows
+    // aft permanently, so it sat in one of these far more often than the main
+    // window did -- which is what made a texture problem look like a broken
+    // instrument.
+    //
+    // A LIFT, NOT A CLAMP. max(v, floor) leaves a hard edge exactly where the
+    // mask cut off, which reads as a shape with a border; scaling the range up
+    // from the floor keeps every gradient the generator drew and simply stops it
+    // reaching zero. Before the pole and fold passes below, so both covers
+    // inherit it and the two branches of a direction still agree.
+    if (s_tex) {
+        for (int i = 0; i < SKY_TEX_SIZE * SKY_TEX_SIZE; i++) {
+            float r, g, b;
+            unpack565_swapped(s_tex[i], &r, &g, &b);
+            s_tex[i] = pack565_swapped(SKY_FLOOR_R + r * (1.0f - SKY_FLOOR_R),
+                                       SKY_FLOOR_G + g * (1.0f - SKY_FLOOR_G),
+                                       SKY_FLOOR_B + b * (1.0f - SKY_FLOOR_B));
+        }
     }
 
     s_snap = true;    // a new backdrop is arrived at, not swept to
