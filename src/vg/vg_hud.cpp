@@ -560,12 +560,7 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
         if (h < hmin) h = hmin;
         if (h > hmax) h = hmax;
 
-        // Four strokes, corners on the axes: the shape reads as a diamond and
-        // not as a box, which the lock brackets already own.
-        vg_line_w(sx,     sy - h, sx + h, sy,     col, 2);
-        vg_line_w(sx + h, sy,     sx,     sy + h, col, 2);
-        vg_line_w(sx,     sy + h, sx - h, sy,     col, 2);
-        vg_line_w(sx - h, sy,     sx,     sy - h, col, 2);
+        vg_diamond(sx, sy, h, col, 2);
     }
 }
 

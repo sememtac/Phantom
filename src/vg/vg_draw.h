@@ -59,6 +59,38 @@ static inline void vg_edge(const VgCam& cam, Vec3 a, Vec3 b, uint16_t col) {
     vg_edge_w(cam, a, b, col, 1);
 }
 
+// Four strokes with their corners on the axes. A diamond and not a box, which is
+// a distinction the HUD relies on: the lock brackets own the square, so anything
+// that is a marker rather than a target wears this instead.
+//
+// Written out three times before it lived here, at two stroke widths, and in two
+// different rotations of the same cycle -- which is harmless while the primitive
+// list has room and not otherwise, since the strokes that land before the ceiling
+// are the ones that survive. One order for all three now.
+//
+// vg_line_w falls through to vg_line at w <= 1, so the thin sites pay nothing.
+static inline void vg_diamond(float cx, float cy, float r, uint16_t col, int w) {
+    vg_line_w(cx,     cy - r, cx + r, cy,     col, w);
+    vg_line_w(cx + r, cy,     cx,     cy + r, col, w);
+    vg_line_w(cx,     cy + r, cx - r, cy,     col, w);
+    vg_line_w(cx - r, cy,     cx,     cy - r, col, w);
+}
+
+// Distance haze, as a brightness multiplier. Near things are full strength, far
+// things bottom out at `floor` rather than going to black, because a contact that
+// fades to nothing is indistinguishable from one that is not there -- and the
+// difference between those two matters more than the depth cue does.
+//
+// `over` is the depth at which brightness would reach zero if it were not
+// clamped, and the curve deliberately starts above 1.0 so that everything inside
+// a working distance is equally bright and the ramp only bites further out.
+static inline float vg_fade(float z, float bias, float over, float floor_) {
+    float f = bias - z / over;
+    if (f > 1.0f)   f = 1.0f;
+    if (f < floor_) f = floor_;
+    return f;
+}
+
 // Draw order matters and is set by vg_render_frame: starfield, then the arena
 // grid over it, then everything solid, whose hidden-line fills occlude both.
 void vg_draw_starfield(const VgCam& cam);

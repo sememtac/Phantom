@@ -217,13 +217,7 @@ static void draw_fireballs(const VgCam& cam) {
         // Same ladder the rocks use: a ring nobody can resolve is a pixel, and
         // paying sixteen primitives to draw a pixel is how a prim budget goes.
         if (rpx < 2.5f) { vg_point((int)cx, (int)cy, col); continue; }
-        if (rpx < 7.0f) {
-            vg_line(cx,       cy - rpx, cx + rpx, cy,       col);
-            vg_line(cx + rpx, cy,       cx,       cy + rpx, col);
-            vg_line(cx,       cy + rpx, cx - rpx, cy,       col);
-            vg_line(cx - rpx, cy,       cx,       cy - rpx, col);
-            continue;
-        }
+        if (rpx < 7.0f) { vg_diamond(cx, cy, rpx, col, 1); continue; }
 
         const int segs = rpx > 40.0f ? 16 : (rpx > 16.0f ? 12 : 8);
         fire_ring(cx, cy, rpx, segs, col);
@@ -263,9 +257,7 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     const float z   = sp.z;
     const float rpx = sp.rpx;
 
-    float fade = 1.25f - z / 420.0f;
-    if (fade > 1.0f)  fade = 1.0f;
-    if (fade < 0.22f) fade = 0.22f;
+    const float fade = vg_fade(z, 1.25f, 420.0f, 0.22f);
 
     // Within ~200 units: close enough to be an immediate hazard at any throttle.
     uint16_t col = (vlen2(a->pos) < 40000.0f) ? COL_WARN : vg_dim(COL_AST, fade);
@@ -279,10 +271,7 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         // Too small for the wireframe to resolve; a diamond stays readable and
         // costs 4 lines instead of 30.
         if (!sp.vis) return;
-        vg_line(cx - rpx, cy, cx, cy - rpx, col);
-        vg_line(cx, cy - rpx, cx + rpx, cy, col);
-        vg_line(cx + rpx, cy, cx, cy + rpx, col);
-        vg_line(cx, cy + rpx, cx - rpx, cy, col);
+        vg_diamond(cx, cy, rpx, col, 1);
         return;
     }
 
@@ -379,9 +368,8 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
 
     const float z    = sp.z;
     const float rpx  = sp.rpx;
-    float fade = hero ? (1.30f - z / 3400.0f) : (1.3f - z / 700.0f);
-    if (fade > 1.0f)  fade = 1.0f;
-    if (fade < 0.35f) fade = 0.35f;
+    const float fade = hero ? vg_fade(z, 1.30f, 3400.0f, 0.35f)
+                            : vg_fade(z, 1.3f,   700.0f, 0.35f);
 
     uint16_t col = hero ? vg_dim(INK_BRIGHT, fade)
                         : ((s->hit_flash > 0) ? COL_ENEMY_HIT
