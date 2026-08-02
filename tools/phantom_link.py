@@ -12,6 +12,7 @@ the other copy.
 import os
 import struct
 import wave
+import zlib
 import threading
 import time
 
@@ -136,6 +137,7 @@ class PhantomLink:
         self._synced = False
         self._blob = 0          # size of the input structure, from the header
         self.audio = bytearray()    # 16-bit mono samples, from the frames
+        self.bad_bands = 0      # bands the wire corrupted, counted for the caller
 
     # -- connection ---------------------------------------------------------
 
@@ -312,6 +314,28 @@ class PhantomLink:
 
     # -- stream -------------------------------------------------------------
 
+    def _check_band(self, y, data):
+        """Read the band's checksum and compare it with the band.
+
+        The device sends an Adler-32 of everything the host needs to rebuild the
+        band -- the colour table and the runs. Any difference means the wire
+        changed the bytes, and that is a fault of the LINK, not of the game.
+
+        This exists because without it there is no way to tell the two apart. A
+        byte flipped inside a colour, or a run length that still adds up, decodes
+        cleanly to the wrong picture. Two renders of one recording then disagree
+        in a scattered pattern and it reads as a simulation that is not
+        reproducible -- which sent a whole evening after the wrong bug.
+        """
+        (want,) = struct.unpack("<I", self._read_exact(4))
+        got = zlib.adler32(data) & 0xFFFFFFFF
+        if got != want:
+            self._synced = False
+            self.bad_bands += 1
+            raise Desync(f"band at y={y} failed its checksum "
+                         f"(device {want:08x}, host {got:08x}, {len(data)} "
+                         f"bytes): the LINK corrupted it, not the game")
+
     def _read_exact(self, n):
         """Read exactly n bytes.
 
@@ -384,10 +408,14 @@ class PhantomLink:
                 # which is 2 bytes instead of 3.
                 y, bh, ncol, nbytes = struct.unpack("<HHHI", self._read_exact(10))
                 pal = self._read_exact(ncol * 2)
-                seg = _decode_pal(self._read_exact(nbytes), pal, w * bh)
+                payload = self._read_exact(nbytes)
+                self._check_band(y, pal + payload)
+                seg = _decode_pal(payload, pal, w * bh)
             elif tag == b"PHBD":
                 y, bh, nbytes = struct.unpack("<HHI", self._read_exact(8))
-                seg = _decode_rle(self._read_exact(nbytes), w * bh)
+                payload = self._read_exact(nbytes)
+                self._check_band(y, payload)
+                seg = _decode_rle(payload, w * bh)
             else:
                 self._synced = False
                 raise Desync("lost the stream mid-frame")

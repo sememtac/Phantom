@@ -138,6 +138,43 @@ static inline void flush(void) {
     if (s_len) { vg_link_write(s_buf, s_len); s_len = 0; }
 }
 
+// --- the band checksum -----------------------------------------------------
+//
+// A LENGTH CHECK IS NOT ENOUGH, and believing it was cost an entire evening.
+//
+// The host already refuses a band whose runs do not add up to the right number
+// of pixels, or that names a colour outside its own table. What neither test can
+// see is a byte flipped INSIDE a colour value, or a run length that happens to
+// still sum correctly. Those decode cleanly to the wrong picture.
+//
+// The symptom is brutal to diagnose: two renders of one recording come back with
+// different frames, in a scattered pattern, and it reads as a simulation that is
+// not reproducible. It is not -- and the giveaway was that some frames MATCHED
+// again afterwards, which a diverged simulation can never do. Without a checksum
+// there was no way to tell a wire fault from a game fault, so the whole replay
+// harness rested on nothing.
+//
+// Adler-32, because it is two adds and two compares a byte, and because the host
+// gets it from zlib for free and so cannot disagree about the algorithm.
+static uint32_t s_ck_a, s_ck_b;
+
+static inline void ck_reset(void) { s_ck_a = 1; s_ck_b = 0; }
+
+static inline void ck_add(const void* p, int n) {
+    const uint8_t* b = (const uint8_t*)p;
+    uint32_t a = s_ck_a, c = s_ck_b;
+    while (n-- > 0) {
+        a += *b++;      if (a >= 65521u) a -= 65521u;
+        c += a;         if (c >= 65521u) c -= 65521u;
+    }
+    s_ck_a = a; s_ck_b = c;
+}
+
+static inline uint32_t ck_value(void) { return (s_ck_b << 16) | s_ck_a; }
+
+// Everything the host has to reconstruct the band from goes through here.
+static inline void putck(const void* p, int n) { ck_add(p, n); put(p, n); }
+
 void vg_capture_poll(void) {
     // THE GAME MUST NEVER BE LEFT BLOCKING ON A LINK NOBODY IS READING.
     //
@@ -351,16 +388,19 @@ void vg_capture_band(int y, int h, const uint16_t* px) {
         put(&sh, 2);
         put(&ncol, 2);
         put(&bytes, 4);
-        put(s_pal_list, s_pal_n * 2);
+        ck_reset();
+        putck(s_pal_list, s_pal_n * 2);
 
         for (int i = 0; i < n; ) {
             const uint16_t v = px[i];
             int run = 1;
             while (i + run < n && px[i + run] == v && run < 255) run++;
             const uint8_t pair[2] = { (uint8_t)run, (uint8_t)s_pal_val[pal_slot(v)] };
-            put(pair, 2);
+            putck(pair, 2);
             i += run;
         }
+        const uint32_t ck = ck_value();   // over the palette AND the runs
+        put(&ck, 4);
         flush();
         return;
     }
@@ -399,6 +439,7 @@ void vg_capture_band(int y, int h, const uint16_t* px) {
     put(&sy, 2);
     put(&sh, 2);
     put(&bytes, 4);
+    ck_reset();
 
     int emitted = 0;
     for (int i = 0; i < n; ) {
@@ -406,10 +447,12 @@ void vg_capture_band(int y, int h, const uint16_t* px) {
         int run = 1;
         while (i + run < n && px[i + run] == v && run < 255) run++;
         const uint8_t trio[3] = { (uint8_t)run, (uint8_t)(v & 0xFF), (uint8_t)(v >> 8) };
-        put(trio, 3);
+        putck(trio, 3);
         i += run;
         emitted++;
     }
+    const uint32_t ck = ck_value();
+    put(&ck, 4);
 
     // Out at the end of every band, so the staging buffer never carries one
     // band's payload into the next. It is the same bytes either way, and it
