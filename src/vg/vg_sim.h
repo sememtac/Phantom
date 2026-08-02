@@ -99,6 +99,10 @@ bool vg_ift_busy(void);
 
 // Lines of the current queue already begun, for pacing decisions.
 int  vg_ift_progress(void);
+
+// One frame of both radio channels and the missile banner queue. Called from the
+// tail of vg_world_step because that is where the dt is.
+void vg_comms_step(float dt);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

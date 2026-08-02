@@ -263,6 +263,57 @@ void vg_ift_queue(const char* line, float hold) {
     if (vg.ift_t <= 0.0f && s_ift_gap <= 0.0f) ift_pop(true);
 }
 
+// Everything the radio is doing this frame: the pilot channel timing out, the
+// broadcast channel timing out and pulling the next queued line, and the missile
+// banner working through its own backlog.
+//
+// Called from the tail of vg_world_step, which is where the dt is. It sits HERE,
+// next to the queue it drives and the statics it reads, so that when vg_comms.cpp
+// happens this leaves with them rather than having to be found first.
+//
+// The banner is here rather than with the HUD timers because it is not a decay.
+// It is a queue being served: when one banner's time runs out the next is
+// promoted, and a salvo therefore reports itself out promptly instead of
+// trailing the fight.
+void vg_comms_step(float dt) {
+    if (vg.msl_event_t > 0) {
+        vg.msl_event_t -= dt;
+        if (vg.msl_event_t <= 0) {
+            if (vg.msl_qn > 0) {
+                vg.msl_event = vg.msl_queue[0];
+                for (int i = 1; i < vg.msl_qn; i++) vg.msl_queue[i - 1] = vg.msl_queue[i];
+                vg.msl_qn--;
+                // Held briefly when more are stacked up, so a salvo reports
+                // itself out promptly instead of trailing the fight.
+                vg.msl_event_t = vg.msl_qn ? MSL_BANNER_FAST : MSL_BANNER;
+            } else {
+                vg.msl_event = MSL_NONE;
+            }
+        }
+    }
+
+    vg.comms_since += dt;
+
+    if (vg.comms_t > 0) {
+        vg.comms_t -= dt;
+        if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
+    }
+    if (vg.ift_t > 0) {
+        vg.ift_t -= dt;
+        // Down, then a beat of silence before whatever is next -- so a queued
+        // announcement reads as consecutive beats rather than one paragraph.
+        if (vg.ift_t <= 0) {
+            vg.ift_line = nullptr;
+            s_ift_gap   = (s_ift_i < s_ift_n) ? IFT_GAP : 0.0f;
+        }
+    } else if (s_ift_gap > 0.0f) {
+        s_ift_gap -= dt;
+        // A continuation, so no badge: the channel is mid-announcement and nobody
+        // else can have taken it.
+        if (s_ift_gap <= 0.0f) ift_pop(false);
+    }
+}
+
 static void spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     Ship* s = &vg.enemy[i];
 
@@ -645,6 +696,21 @@ static inline float roll_angle(const VgInput* in, float dt) {
     return vg.roll_rate * dt;
 }
 
+// The cockpit's own timers: what the panel is doing about things that already
+// happened. None of it is simulation -- the hull is not healing here, a light is
+// going out.
+static void hud_decay(float dt) {
+    // Faster than the damage vignette. A flash is the arrival of light, not a
+    // state the cockpit sits in.
+    if (vg.blast_flash > 0) {
+        vg.blast_flash -= dt * 4.2f;
+        if (vg.blast_flash < 0) vg.blast_flash = 0;
+    }
+    if (vg.hit_flash     > 0) vg.hit_flash     -= dt;
+    if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
+    if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
+}
+
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
                        float throttle_in) {
     float k = dt * THROTTLE_LERP;
@@ -912,13 +978,6 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
 
     vg_vfx_tick(dt);
 
-    // Faster than the damage vignette. A flash is the arrival of light, not a
-    // state the cockpit sits in.
-    if (vg.blast_flash > 0) {
-        vg.blast_flash -= dt * 4.2f;
-        if (vg.blast_flash < 0) vg.blast_flash = 0;
-    }
-
     // Every knock the airframe has taken, decayed and rolled into this frame's
     // offset. See vg_shake.h -- the level itself lives in that module now, not on
     // vg, because a dozen things contribute to it and none of them owns it.
@@ -933,45 +992,23 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.shake_y += vg_frand(-a, a);
     }
 
-    if (vg.hit_flash > 0) vg.hit_flash -= dt;
-    if (vg.msl_event_t > 0) {
-        vg.msl_event_t -= dt;
-        if (vg.msl_event_t <= 0) {
-            if (vg.msl_qn > 0) {
-                vg.msl_event = vg.msl_queue[0];
-                for (int i = 1; i < vg.msl_qn; i++) vg.msl_queue[i - 1] = vg.msl_queue[i];
-                vg.msl_qn--;
-                // Held briefly when more are stacked up, so a salvo reports
-                // itself out promptly instead of trailing the fight.
-                vg.msl_event_t = vg.msl_qn ? MSL_BANNER_FAST : MSL_BANNER;
-            } else {
-                vg.msl_event = MSL_NONE;
-            }
-        }
-    }
-    if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
-    if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
-    if (vg.gate_t   > 0) vg.gate_t   -= dt;
-    vg.comms_since += dt;
-
-    if (vg.comms_t > 0) {
-        vg.comms_t -= dt;
-        if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
-    }
-    if (vg.ift_t > 0) {
-        vg.ift_t -= dt;
-        // Down, then a beat of silence before whatever is next -- so a queued
-        // announcement reads as consecutive beats rather than one paragraph.
-        if (vg.ift_t <= 0) {
-            vg.ift_line = nullptr;
-            s_ift_gap   = (s_ift_i < s_ift_n) ? IFT_GAP : 0.0f;
-        }
-    } else if (s_ift_gap > 0.0f) {
-        s_ift_gap -= dt;
-        // A continuation, so no badge: the channel is mid-announcement and nobody
-        // else can have taken it.
-        if (s_ift_gap <= 0.0f) ift_pop(false);
-    }
+    // THE TAIL IS NOT THE WORLD STEP. What follows are four different modules'
+    // timers that ended up in one run because they all need a dt and this is
+    // where the dt was. Each is named for what owns it, so they can leave for
+    // those modules one at a time.
+    //
+    // They are all independent scalar decays, which is what makes the grouping
+    // safe: nothing in the tail reads a value another part of it writes, so the
+    // order within it never mattered. Only their position AFTER vg_vfx_tick does
+    // -- a bench shot raises the flash and the knock, and both have to be laid
+    // down before they are decayed and before the shake is assembled.
+    hud_decay(dt);
+    vg_comms_step(dt);
+    // The course's, and the only one left inline. It decays here rather than in
+    // vg_course_update because that runs from the state dispatch, a different
+    // point in the frame, and moving a countdown between two points in a frame
+    // is a behaviour change wearing a refactor's clothes.
+    if (vg.gate_t > 0) vg.gate_t -= dt;
 }
 
 // ---------------------------------------------------------------------------
