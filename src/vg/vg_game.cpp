@@ -4,7 +4,6 @@
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
-#include "vg_draw.h"
 #include "vg_save.h"
 #include "vg_cine.h"
 #include "vg_ift.h"

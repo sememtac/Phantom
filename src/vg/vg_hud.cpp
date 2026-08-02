@@ -1,10 +1,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_voice.h"
-#include "vg_arena.h"
 #include "vg_course.h"
-#include "vg_sfx.h"
-#include "vg_screens.h"
 #include <stdio.h>
 #include <math.h>
 

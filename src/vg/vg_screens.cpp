@@ -1,7 +1,6 @@
 #include "vg_screens.h"
 #include "vg_draw.h"
 #include "vg_game.h"
-#include <math.h>
 #include <stdio.h>
 
 // Ship select and pause. The tournament map is big enough to want its own file.

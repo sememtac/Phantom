@@ -6,7 +6,6 @@
 #include "vg_screens.h"
 #include "vg_glitch.h"
 #include "vg_course.h"
-#include "vg_sim.h"
 #include "vg_shake.h"
 #include <stdio.h>
 #include <math.h>
@@ -282,12 +281,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // is the two disagreeing. Shaking in lockstep would read as one bigger
     // shake; out of step, it reads as a rack that is not quite bolted down.
     const bool  live = (vg.state != VG_PAUSE);
-    const float thr  = vg.throttle_vis;
 
     // Strain, from what the airframe is actually doing. The same number the camera
     // shake uses, so the panel and the world agree about how hard the ship is
     // working even though they jitter on separate clocks.
-    (void)thr;
     const float strain = live ? vg.buzz : 0.0f;
 
     // Damage, and it escalates. A hit on a fresh hull is a flicker; the same hit

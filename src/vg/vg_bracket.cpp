@@ -4,7 +4,6 @@
 #include "vg_tourney.h"
 #include "vg_voice.h"
 #include <stdio.h>
-#include <math.h>
 
 // ===========================================================================
 // The tournament map.

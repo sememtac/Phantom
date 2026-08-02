@@ -6,7 +6,6 @@
 #include "vg_capture.h"
 #include "vg_sky.h"
 #include <Arduino.h>
-#include "esp_cpu.h"
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <math.h>
