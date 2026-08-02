@@ -72,3 +72,49 @@ static inline bool vg_project(const VgCam& c, Vec3 p, float* out_x, float* out_y
     *out_y = SCR_CY - (x * c.bank_s + y * c.bank_c) + c.sy;
     return true;
 }
+
+// A world-space sphere as a screen-space circle: where its centre falls, and how
+// wide it is there.
+//
+// Five drawing sites need exactly this and every one of them had written it out
+// by hand, which is how three of them came to be wrong in two separate ways.
+// Two measured with the fixed FOCAL, so they ignored the zoom and ignored the
+// rear-view patch, whose focal length is a third of the window's. One divided by
+// raw world z, which is NEGATIVE for anything behind the player: looking aft at
+// a contact astern, the lock bracket was sized off a clamped near-plane depth
+// and blew up to a radius well outside the screen, so the reticle simply was not
+// there. Both faults are invisible in the one case anybody tests -- forward, no
+// zoom, main window -- which is why they survived so long.
+//
+// So the arithmetic lives here once. It is four steps that must happen in this
+// order, and the order is the part that is easy to get wrong: turn the point
+// into THIS camera's space, reject it against the near plane, clamp the depth,
+// and only then divide.
+struct VgSpan {
+    Vec3  v;        // the centre in this camera's view space
+    float z;        // v.z clamped to the near plane, so it is safe to divide by
+    float cx, cy;   // where the centre lands on screen; only if `vis`
+    bool  vis;      // the centre itself projected. False does NOT mean nothing
+                    // is worth drawing: it means the camera is close enough to
+                    // be inside the object's reach, and a hull whose middle is
+                    // behind the near plane can still have visible faces.
+    float rpx;      // screen radius of `radius` at depth z
+};
+
+// `reach` is how far the body extends from its centre, and is used only to
+// decide whether it is worth considering at all. `radius` is the length the
+// caller wants measured on screen. They are the same number for a rock or a
+// fireball and they are not for a ship, whose hull reaches three scale units
+// while every size gate is written against one.
+//
+// Returns false when the whole body is behind the near plane. Anything else is
+// the caller's decision, because the cheap-form ladders differ per site.
+static inline bool vg_screen_size(const VgCam& c, Vec3 world, float radius,
+                                  float reach, VgSpan* out) {
+    out->v = vg_view(c, world);
+    if (out->v.z + reach < NEAR_Z) return false;
+    out->z   = out->v.z > NEAR_Z ? out->v.z : NEAR_Z;
+    out->rpx = c.focal * radius / out->z;
+    out->vis = vg_project(c, out->v, &out->cx, &out->cy);
+    return true;
+}

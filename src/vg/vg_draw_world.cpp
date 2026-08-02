@@ -202,15 +202,13 @@ static void draw_fireballs(const VgCam& cam) {
         if (!f->alive) continue;
 
         const float t  = 1.0f - f->life / f->life0;
-        const Vec3  pv = vg_view(cam, f->pos);
         const float rw = f->r * fire_scale(t);
-        if (pv.z + rw < NEAR_Z) continue;
 
-        float cx, cy;
-        if (!vg_project(cam, pv, &cx, &cy)) continue;
+        VgSpan sp;
+        if (!vg_screen_size(cam, f->pos, rw, rw, &sp)) continue;
+        if (!sp.vis) continue;      // a ball whose middle is behind you is gone
 
-        const float z   = pv.z > NEAR_Z ? pv.z : NEAR_Z;
-        const float rpx = cam.focal * rw / z;
+        const float cx = sp.cx, cy = sp.cy, rpx = sp.rpx;
         if (cx < -rpx || cx > SCR_W + rpx || cy < -rpx || cy > SCR_H + rpx) continue;
 
         const uint16_t col = fire_col(t, f->fall);
@@ -253,17 +251,17 @@ static void draw_fireballs(const VgCam& cam) {
 // ---------------------------------------------------------------------------
 
 static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
-    // TURNED space, for two reasons. Raw z rejected everything behind the
-    // player, which for the mirror is everything it exists to show -- rocks
-    // astern simply never drew in it. And the size gates below must use the
-    // camera's own focal length: the mirror's is a third of the window's, so
-    // its rocks drop to the cheap forms sooner, which is exactly right for a
-    // 145 pixel instrument.
-    const Vec3 pv = vg_view(cam, a->pos);
-    if (pv.z + a->radius < NEAR_Z) return;
+    // vg_screen_size does the turn, the reject, the clamp and the divide, in
+    // that order and in this camera's terms. It matters here for both of the
+    // reasons that function states: rocks astern are the whole job of the
+    // mirror, and the mirror's focal length is a third of the window's, so its
+    // rocks should drop to the cheap forms sooner -- which is exactly right for
+    // a 145 pixel instrument.
+    VgSpan sp;
+    if (!vg_screen_size(cam, a->pos, a->radius, a->radius, &sp)) return;
 
-    float z   = pv.z > NEAR_Z ? pv.z : NEAR_Z;
-    float rpx = cam.focal * a->radius / z;
+    const float z   = sp.z;
+    const float rpx = sp.rpx;
 
     float fade = 1.25f - z / 420.0f;
     if (fade > 1.0f)  fade = 1.0f;
@@ -271,16 +269,16 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
 
     // Within ~200 units: close enough to be an immediate hazard at any throttle.
     uint16_t col = (vlen2(a->pos) < 40000.0f) ? COL_WARN : vg_dim(COL_AST, fade);
-    float cx, cy;
+    const float cx = sp.cx, cy = sp.cy;
 
     if (rpx < 2.5f) {
-        if (vg_project(cam, pv, &cx, &cy)) vg_point((int)cx, (int)cy, col);
+        if (sp.vis) vg_point((int)cx, (int)cy, col);
         return;
     }
     if (rpx < 7.0f) {
         // Too small for the wireframe to resolve; a diamond stays readable and
         // costs 4 lines instead of 30.
-        if (!vg_project(cam, pv, &cx, &cy)) return;
+        if (!sp.vis) return;
         vg_line(cx - rpx, cy, cx, cy - rpx, col);
         vg_line(cx, cy - rpx, cx + rpx, cy, col);
         vg_line(cx + rpx, cy, cx, cy + rpx, col);
@@ -366,24 +364,21 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
     // under the two-pixel threshold at around z=1400 and switched it to the
     // single-point path -- so it appeared, flew a little way, and became one
     // invisible dot while its trail carried on streaking across the screen.
-    // TURNED SPACE, for the same two reasons draw_asteroid states above it, and
-    // this function was missed when that one was fixed.
+    // This function was missed when draw_asteroid was fixed, and the cost was
+    // total: raw pos.z rejects everything behind the player, and behind the
+    // player is the entire job of the rear-view patch, so ENEMIES NEVER
+    // APPEARED IN THE MIRROR AT ALL. The one contact worth craning round for
+    // was the one thing the instrument could not show. Going through
+    // vg_screen_size is what stops a third site drifting the same way.
     //
-    // Raw pos.z rejects everything behind the player -- and behind the player is
-    // the entire job of the rear-view patch, so ENEMIES NEVER APPEARED IN THE
-    // MIRROR AT ALL. The one contact worth craning round for was the one thing
-    // the instrument could not show.
-    //
-    // And the size gates must use the camera's own focal length, not the fixed
-    // constant: the patch runs at REAR_FOCAL_K, about a third of the window's, so
-    // its ships should drop to the cheap forms sooner. With FOCAL hard-coded they
-    // were measured as if they were in the main view, and the zoom was ignored
-    // as well.
-    const Vec3 pv = vg_view(cam, s->pos);
-    if (pv.z + s->scale * 3.0f < NEAR_Z) return;
+    // The reach is three scale units because that is how far the hull actually
+    // extends; the measure is one, because every gate below is written against
+    // the ship's scale rather than its bounding radius.
+    VgSpan sp;
+    if (!vg_screen_size(cam, s->pos, s->scale, s->scale * 3.0f, &sp)) return;
 
-    float z    = pv.z > NEAR_Z ? pv.z : NEAR_Z;
-    float rpx  = cam.focal * s->scale / z;
+    const float z    = sp.z;
+    const float rpx  = sp.rpx;
     float fade = hero ? (1.30f - z / 3400.0f) : (1.3f - z / 700.0f);
     if (fade > 1.0f)  fade = 1.0f;
     if (fade < 0.35f) fade = 0.35f;
@@ -392,9 +387,8 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
                         : ((s->hit_flash > 0) ? COL_ENEMY_HIT
                                               : vg_dim(COL_ENEMY, fade));
 
-    float cx, cy;
     if (rpx < 2.0f) {
-        if (vg_project(cam, pv, &cx, &cy)) vg_point((int)cx, (int)cy, COL_ENEMY);
+        if (sp.vis) vg_point((int)sp.cx, (int)sp.cy, COL_ENEMY);
         return;
     }
 

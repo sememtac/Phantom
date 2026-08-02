@@ -377,8 +377,12 @@ void vg_draw_lock_box(const VgCam& cam) {
     const Ship* s = &vg.enemy[vg.lock_target];
     if (!s->alive) return;
 
-    float cx, cy;
-    if (!vg_project(cam, vg_view(cam, s->pos), &cx, &cy)) return;
+    // No reach: the bracket is drawn around a point, so there is nothing to
+    // draw once the centre is behind the near plane.
+    VgSpan sp;
+    if (!vg_screen_size(cam, s->pos, ENEMY_SCALE * 2.6f, 0.0f, &sp)) return;
+    if (!sp.vis) return;
+    const float cx = sp.cx, cy = sp.cy;
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
@@ -386,13 +390,7 @@ void vg_draw_lock_box(const VgCam& cam) {
     float prog = vg.lock_t / need;
     if (prog > 1.0f) prog = 1.0f;
 
-    // cam.focal and the TURNED z, not the constants. Both matter: the camera
-    // carries the zoom, and s->pos.z is raw world depth, which is negative for
-    // anything behind the player -- so while looking aft the bracket was sized
-    // off a number with the wrong sign. draw_asteroid states the same two
-    // reasons; this was one of three sites that had not caught up.
-    const float lz = vg_view(cam, s->pos).z;
-    float base = cam.focal * (ENEMY_SCALE * 2.6f) / (lz > NEAR_Z ? lz : NEAR_Z);
+    float base = sp.rpx;
     if (base < 16.0f) base = 16.0f;
     float r = base + (1.0f - prog) * 42.0f;
     float L = r * 0.42f;
@@ -492,9 +490,14 @@ void vg_draw_target_markers(const VgCam& cam) {
                                 && sy > 26 && sy < SCR_H - 26;
 
         if (onscreen) {
-            const float lz = vg_view(cam, s->pos).z;   // see vg_draw_lock_box
-            float r = cam.focal * (ENEMY_SCALE * 2.6f) /
-                      (lz > NEAR_Z ? lz : NEAR_Z);
+            // The caret sits above the bogey by the bogey's own on-screen size,
+            // so it needs the same measurement the lock bracket takes. screen_dir
+            // has already established the contact is in front of this camera, so
+            // the reject cannot fire here.
+            VgSpan sp;
+            if (!vg_screen_size(cam, s->pos, ENEMY_SCALE * 2.6f, 0.0f, &sp))
+                continue;
+            float r = sp.rpx;
             if (r < 14.0f) r = 14.0f;
             if (r > 90.0f) r = 90.0f;
             float ty = sy - r - 14.0f;      // hovers above, pointing down at it
@@ -544,9 +547,14 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
 
         // Sized off true range rather than the forward component, so it does not
         // swell when you turn away from a missile that has not moved.
-        // cam.focal, not FOCAL: the camera carries the zoom, and a marker that
-        // ignores it drifts off the thing it is marking the moment the view
-        // changes scale.
+        //
+        // WHICH IS WHY THIS ONE DOES NOT GO THROUGH vg_screen_size. That helper
+        // divides by view depth, and depth is exactly the quantity this marker
+        // is written to avoid: a missile a fixed distance away must hold a fixed
+        // size while you manoeuvre around it, or the diamond breathes every time
+        // you turn. The shared part is only `cam.focal, not FOCAL` -- the camera
+        // carries the zoom, and a marker that ignores it drifts off the thing it
+        // is marking the moment the view changes scale.
         const float rng = vlen(m->pos);
         float h = cam.focal * 1.9f / (rng > NEAR_Z ? rng : NEAR_Z);
         if (h < hmin) h = hmin;
