@@ -34,6 +34,15 @@ enum SkyKind : uint8_t {
 // absence of a sky is a state of the module and not one more thing to generate.
 void vg_sky_none(void);
 
+// The menus' own backdrop: one FIXED venue, not a random one. The title screen
+// is somewhere the player keeps coming back to, and a different sky each time
+// would make it read as a different place rather than as home.
+//
+// Cheap to call repeatedly. It remembers whether the menu sky is the one
+// currently in the texture, so moving between the title, the bracket and the
+// repair screen costs nothing; only coming back from a venue rebuilds it.
+void vg_sky_menu(void);
+
 const char* vg_sky_name(void);
 
 // Where the match is being held, e.g. "VELA NEBULA". Composed from the same

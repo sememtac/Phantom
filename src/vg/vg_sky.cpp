@@ -356,6 +356,25 @@ bool vg_sky_ready(void) { return s_ready; }
 // transit is a way to eventually not get it.
 void vg_sky_none(void) { s_ready = false; }
 
+// The menu backdrop. A nebula rather than nothing, and always THIS one.
+//
+// Seed 256 is not arbitrary: name_place picks the proper noun with
+// (seed >> 7) % 24, and 2 is ORION -- so the title screen is ORION NEBULA every
+// time, and it is a place with a name rather than a random wash.
+//
+// Fixed rather than drawn from vg_replay_rand, which matters beyond taste: a
+// menu that consumed a random number would put every recording's simulation on a
+// different footing depending on how many menus were passed through.
+#define SKY_MENU_SEED 256u
+static bool s_is_menu = false;
+
+void vg_sky_menu(void) {
+    // Already up. Menu to menu is free; only a venue displaces it.
+    if (s_is_menu && s_ready) return;
+    vg_sky_generate(SKY_NEBULA, SKY_MENU_SEED);
+    s_is_menu = true;
+}
+
 static inline uint16_t pack565_swapped(float r, float g, float b) {
     if (r < 0) r = 0; if (r > 1) r = 1;
     if (g < 0) g = 0; if (g > 1) g = 1;
@@ -558,6 +577,9 @@ const char* vg_sky_name(void) {
 
 void vg_sky_generate(SkyKind kind, uint32_t seed) {
     if (!s_tex) return;
+    // Whatever this builds, it is not the menu's any more -- vg_sky_menu sets
+    // the flag back after it calls through here.
+    s_is_menu = false;
 
     uint32_t t0 = millis();
 
@@ -908,7 +930,12 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
 #else
         const float dxl = 0.0f;
 #endif
-        const int32_t* dth = &s_dither[(sy & 3) * 4];
+        // THE DITHER ROW, and it must advance per DRAWN row, not per screen row.
+        // With rows paired, sy steps by two, so (sy & 3) only ever produced two
+        // of the four Bayer phases and the pattern lost half its vertical
+        // resolution -- which is half of why the backdrop started banding.
+        const int32_t* dth =
+            &s_dither[(((row_step == 2) ? (sy >> 1) : sy) & 3) * 4];
         uint16_t* dst = &band[row * SCR_W];
         const uint16_t* tex = s_tex;
 
@@ -944,8 +971,16 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
             const int32_t dv8 = (int32_t)((ev - sv) * step_k);
 
             uint32_t* d32 = (uint32_t*)(dst + k * seg_px);
+            // The dither column counts chunks ALONG THE WHOLE ROW, not within the
+            // segment. At a splash of 8 there were six chunks a segment and
+            // (i & 3) happened to walk the pattern; at 16 there are three, so it
+            // used phases 0,1,2 and never 3, and reset every 48 pixels. A
+            // three-phase pattern repeating on a 48-pixel pitch is not a dither,
+            // it is a stripe -- the other half of why the backdrop started
+            // banding after the fill was widened.
+            const int chunk0 = k * (seg_px / SPLASH);
             for (int i = 0; i < seg_px / SPLASH; i++) {
-                const int32_t  o   = dth[i & 3];
+                const int32_t  o   = dth[(chunk0 + i) & 3];
                 const uint32_t idx = (uint32_t)(((((v + o) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
                                                  (((u + o) >> 16) & SKY_TEX_MASK));
                 const uint32_t c  = tex[idx];

@@ -688,7 +688,7 @@ void vg_game_init(void) {
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
     vg_sky_init();
-    vg_sky_none();   // we boot straight into the menu, and the menu has no sky
+    vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
     // Set directly, and the only place left that does. This is not an arrival:
     // the sky was built four lines up, and vg_state_go would run enter_attract
@@ -1338,11 +1338,12 @@ int vg_last_purse(void) { return s_last_purse; }
 // leaving the loser's missiles and wreckage flying through the attract loop --
 // and a missile whose seeker had broken draws in the dead-seeker grey, which is
 // exactly the stray grey lines that were turning up on the menu.
-// Out of combat there is no backdrop at all: the band fill drops back to its
-// memset and the menus are the starfield over black. Nothing to generate, so
-// the ~60ms the old menu sky cost at every screen change is gone with it.
+// Out of combat the backdrop is the menu's own: one fixed nebula, the same one
+// every time, so the title screen is a place rather than a random wash. See
+// vg_sky_menu -- it is free unless a venue has displaced it, so moving between
+// the title, the bracket and the repair screen costs nothing.
 static void use_menu_sky(void) {
-    vg_sky_none();
+    vg_sky_menu();
 }
 
 static void enter_attract(void) {
