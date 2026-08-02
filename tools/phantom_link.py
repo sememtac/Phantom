@@ -248,7 +248,23 @@ class PhantomLink:
         return {"i": idx, "dt": dt, "seeds": seeds, "input": blob}
 
     def session_end(self):
-        self.ser.write(b"E")
+        """Stop a record or a render.
+
+        FOUR BYTES, not one. While a render is running the device is inside
+        vg_replay_next waiting for a four byte entry tag, and the command poller
+        does not run at all -- so a lone 'E' is not a command, it is the first
+        quarter of a tag the device then waits up to THIRTY SECONDS to complete.
+
+        For that half minute the device is still in replay mode and deaf to
+        everything, which is why a reset straight after a render appeared to be
+        ignored and the next render started against a device that had never
+        restarted.
+
+        Any four bytes that are not "PHRP" end it at once (see vg_replay.cpp).
+        When the device is idle instead, these arrive at the poller as four
+        unknown bytes and are discarded.
+        """
+        self.ser.write(b"EEEE")
         self.ser.flush()
 
     def replay_start(self, hdr, audio=True):
