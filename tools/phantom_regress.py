@@ -93,6 +93,15 @@ def render(port, path, wanted, out_dir):
                     print(f"  frame {i}: {e}")
                 continue
             link.audio = bytearray()
+            # FROM HERE ON, i IS THE DEVICE'S FRAME NUMBER, not this loop's count.
+            #
+            # A frame skipped for a bad band still advances the counter, so a
+            # single transient corruption shifted host and device apart by one and
+            # every later comparison was then against the wrong frame. It reported
+            # six of eight frames changed for a commit that only deleted code that
+            # never ran, which is precisely the false alarm this harness exists to
+            # not raise.
+            i = getattr(link, "last_idx", i)
             if i in wanted:
                 print(f"      host {i} = device frame {getattr(link, 'last_idx', -1)}")
                 data = bytes(rgb)

@@ -41,7 +41,6 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels);
 // Block until any queued band transfer has completed.
 void vg_panel_wait(void);
 
-void vg_panel_brightness(uint8_t level);
 
 // ---- Touch -----------------------------------------------------------------
 

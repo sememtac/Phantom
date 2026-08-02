@@ -23,7 +23,6 @@ static float s_steer_ox = 0, s_steer_oy = 0;   // virtual-joystick origin
 static float s_steer_x  = 0, s_steer_y  = 0;   // current position
 static float s_steer_px = 0, s_steer_py = 0;   // previous position (trackball)
 static float s_steer_age = 0;                  // seconds held
-static float s_steer_moved = 0;                // max distance from origin, px
 static float s_yaw = 0, s_pitch = 0;           // smoothed deflection
 static bool  s_prev_steer_contact = false;
 static bool  s_prev_fire_btn      = false;
@@ -224,7 +223,6 @@ void vg_input_update(float dt, VgInput* out) {
             s_steer_ox = s_steer_x = s_steer_px = (float)xs[steer_i];
             s_steer_oy = s_steer_y = s_steer_py = (float)ys[steer_i];
             s_steer_age = 0;
-            s_steer_moved = 0;
         }
     }
 

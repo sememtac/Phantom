@@ -376,7 +376,7 @@ void vg_sky_menu(void) {
     // run, which is exactly the drift the reset in vg_sky_generate exists to
     // stop.
     if (s_is_menu && s_ready) {
-        s_ori  = Mat3{{ 1,0,0, 0,1,0, 0,0,1 }};
+        s_ori  = mat3_identity();
         s_snap = true;
         s_par[0]   = s_par[1]   = false;
         s_incap[0] = s_incap[1] = false;
@@ -641,7 +641,7 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
     // by exactly one step of a 5-bit channel: one texel of sampling drift, in a
     // different place each run. Enough to change every frame hash, and enough to
     // look like a simulation that was not reproducible.
-    s_ori = Mat3{{ 1,0,0, 0,1,0, 0,0,1 }};
+    s_ori = mat3_identity();
     s_snap = true;    // a new backdrop is arrived at, not swept to
     // ...and on branch zero. Parity is flight history, and the attract loop
     // tumbles through the poles constantly -- the course was inheriting an odd

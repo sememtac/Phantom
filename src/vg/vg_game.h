@@ -361,7 +361,6 @@ enum TvPhase : uint8_t {
 #define VGS_COMBAT  0x08u   // a fight is actually in progress
 
 uint8_t     vg_state_flags(VgState s);
-const char* vg_state_name(VgState s);
 
 static inline bool vg_state_is_menu(VgState s) {
     return (vg_state_flags(s) & VGS_MENU) != 0u;

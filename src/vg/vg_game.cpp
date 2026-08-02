@@ -1513,10 +1513,6 @@ uint8_t vg_state_flags(VgState s) {
     return ((int)s < VG_STATE_COUNT) ? STATES[s].flags : 0u;
 }
 
-const char* vg_state_name(VgState s) {
-    return ((int)s < VG_STATE_COUNT) ? STATES[s].name : "?";
-}
-
 void vg_state_go(VgState to) {
     if ((int)to >= VG_STATE_COUNT) return;
     const VgStateDef* d = &STATES[to];

@@ -35,7 +35,6 @@ extern Arena vg_arena;
 
 void        vg_arena_init(ArenaKind kind);
 void        vg_arena_step(const Mat3& R, float dz);   // ride the world transform
-const char* vg_arena_name(void);
 
 // --- frame conversions ---
 Vec3 vg_arena_to_view(Vec3 local);        // arena-local point  -> view space

@@ -201,12 +201,6 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     if (spi_device_queue_trans(s_spi, t, portMAX_DELAY) == ESP_OK) s_tx_pending = true;
 }
 
-void vg_panel_brightness(uint8_t level) {
-    if (!s_spi) return;
-    vg_panel_wait();               // polled command; nothing may be queued
-    co_cmd1(CO_BRIGHT, level);
-}
-
 static void panel_clear(void) {
     const int CH = 16;   // divides 480 exactly, and well under the 32 KB limit
     uint16_t* buf = (uint16_t*)heap_caps_calloc(SCR_W * CH, 2, MALLOC_CAP_DMA);

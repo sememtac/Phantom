@@ -23,13 +23,6 @@ void vg_arena_init(ArenaKind kind) {
     }
 }
 
-const char* vg_arena_name(void) {
-    switch (vg_arena.kind) {
-    case ARENA_TORUS: return "TORUS";
-    default:          return "SPHERE";
-    }
-}
-
 void vg_arena_step(const Mat3& R, float dz) {
     vg_arena.center = mat3_apply(R, vg_arena.center);
     vg_arena.center.z -= dz;
