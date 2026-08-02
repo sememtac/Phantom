@@ -47,20 +47,37 @@ void vg_input_init(void) {
 
 void vg_input_calibrate(void) {
 #if STEER_MODE == 2
-    float sx = 0, sy = 0, sz = 0;
-    int   n  = 0;
-    for (int i = 0; i < 12; i++) {
-        float ax, ay, az;
-        if (vg_imu_read(&ax, &ay, &az)) { sx += ax; sy += ay; sz += az; n++; }
-        delay(6);
+    // NOT WHILE THE LINK IS CARRYING FRAMES, for two reasons, and the second one
+    // cost a fifteen-minute render.
+    //
+    // The IMU decides nothing during a replay: the recorded VgInput already holds
+    // whatever attitude produced it. So twelve reads and 72ms of delay() were
+    // being spent computing a neutral that nothing would ever read -- and
+    // tools/README.md already claimed the device does not touch the IMU during a
+    // render, which was simply not true here.
+    //
+    // The printf is the real damage. It lands BETWEEN TWO BANDS of a frame the
+    // host is reading as pixels, and vg_capture.h states the rule plainly: one
+    // stray print ends the recording. This is called from enter_course -- the
+    // transition immediately after the ship is chosen -- so every render of a
+    // session that passed through the course desynced at exactly that moment and
+    // silently stopped writing video from there on.
+    if (!vg_link_busy()) {
+        float sx = 0, sy = 0, sz = 0;
+        int   n  = 0;
+        for (int i = 0; i < 12; i++) {
+            float ax, ay, az;
+            if (vg_imu_read(&ax, &ay, &az)) { sx += ax; sy += ay; sz += az; n++; }
+            delay(6);
+        }
+        if (n > 0) {
+            s_nx = sx / n; s_ny = sy / n; s_nz = sz / n;
+            s_ax = s_nx;   s_ay = s_ny;   s_az = s_nz;
+            s_have_sample = true;
+        }
+        Serial.printf("vg_input: neutral = %.3f %.3f %.3f (%d samples)\n",
+                      s_nx, s_ny, s_nz, n);
     }
-    if (n > 0) {
-        s_nx = sx / n; s_ny = sy / n; s_nz = sz / n;
-        s_ax = s_nx;   s_ay = s_ny;   s_az = s_nz;
-        s_have_sample = true;
-    }
-    Serial.printf("vg_input: neutral = %.3f %.3f %.3f (%d samples)\n",
-                  s_nx, s_ny, s_nz, n);
 #endif
     s_yaw = s_pitch = 0;
     s_steer_active = false;
