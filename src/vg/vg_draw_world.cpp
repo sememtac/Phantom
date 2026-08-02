@@ -216,8 +216,8 @@ static void draw_fireballs(const VgCam& cam) {
 
         // Same ladder the rocks use: a ring nobody can resolve is a pixel, and
         // paying sixteen primitives to draw a pixel is how a prim budget goes.
-        if (rpx < 2.5f) { vg_point((int)cx, (int)cy, col); continue; }
-        if (rpx < 7.0f) { vg_diamond(cx, cy, rpx, col, 1); continue; }
+        if (rpx < VG_LOD_DOT)  { vg_point((int)cx, (int)cy, col); continue; }
+        if (rpx < VG_LOD_BLOB) { vg_diamond(cx, cy, rpx, col, 1); continue; }
 
         const int segs = rpx > 40.0f ? 16 : (rpx > 16.0f ? 12 : 8);
         fire_ring(cx, cy, rpx, segs, col);
@@ -263,11 +263,11 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     uint16_t col = (vlen2(a->pos) < 40000.0f) ? COL_WARN : vg_dim(COL_AST, fade);
     const float cx = sp.cx, cy = sp.cy;
 
-    if (rpx < 2.5f) {
+    if (rpx < VG_LOD_DOT) {
         if (sp.vis) vg_point((int)cx, (int)cy, col);
         return;
     }
-    if (rpx < 7.0f) {
+    if (rpx < VG_LOD_BLOB) {
         // Too small for the wireframe to resolve; a diamond stays readable and
         // costs 4 lines instead of 30.
         if (!sp.vis) return;
@@ -375,6 +375,9 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
                         : ((s->hit_flash > 0) ? COL_ENEMY_HIT
                                               : vg_dim(COL_ENEMY, fade));
 
+    // 2.0 and not VG_LOD_DOT, and no diamond tier. See that constant: a hull is
+    // worth reading at any size, and this threshold has already cost one model
+    // its existence once.
     if (rpx < 2.0f) {
         if (sp.vis) vg_point((int)sp.cx, (int)sp.cy, COL_ENEMY);
         return;

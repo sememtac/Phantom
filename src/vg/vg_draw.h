@@ -59,6 +59,23 @@ static inline void vg_edge(const VgCam& cam, Vec3 a, Vec3 b, uint16_t col) {
     vg_edge_w(cam, a, b, col, 1);
 }
 
+// Where a round body stops being worth its geometry. Below DOT it is one pixel;
+// below BLOB a diamond says "something is there" for four lines instead of the
+// thirty a hull costs. Both are SCREEN radii, so they follow the camera by
+// themselves -- the rear-view patch runs at a third of the window's focal length
+// and its objects drop to the cheap forms sooner, which is right for a 145 pixel
+// instrument.
+//
+// The asteroids and the fireballs share these. SHIPS DELIBERATELY DO NOT: they
+// go to a dot at 2.0 and have no diamond tier at all, because a hull is the one
+// thing in the frame whose shape is worth reading at any size, and because the
+// cutscene model is 128 units where a fighter is 7 -- it was measured against
+// the combat constant once and vanished into a single pixel at z=1400 while its
+// trail carried on across the screen. Named here so the two that DO agree cannot
+// drift apart, not to pull the third into line.
+#define VG_LOD_DOT   2.5f
+#define VG_LOD_BLOB  7.0f
+
 // Four strokes with their corners on the axes. A diamond and not a box, which is
 // a distinction the HUD relies on: the lock brackets own the square, so anything
 // that is a marker rather than a target wears this instead.
