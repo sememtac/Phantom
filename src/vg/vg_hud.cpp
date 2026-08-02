@@ -386,7 +386,13 @@ void vg_draw_lock_box(const VgCam& cam) {
     float prog = vg.lock_t / need;
     if (prog > 1.0f) prog = 1.0f;
 
-    float base = FOCAL * (ENEMY_SCALE * 2.6f) / (s->pos.z > NEAR_Z ? s->pos.z : NEAR_Z);
+    // cam.focal and the TURNED z, not the constants. Both matter: the camera
+    // carries the zoom, and s->pos.z is raw world depth, which is negative for
+    // anything behind the player -- so while looking aft the bracket was sized
+    // off a number with the wrong sign. draw_asteroid states the same two
+    // reasons; this was one of three sites that had not caught up.
+    const float lz = vg_view(cam, s->pos).z;
+    float base = cam.focal * (ENEMY_SCALE * 2.6f) / (lz > NEAR_Z ? lz : NEAR_Z);
     if (base < 16.0f) base = 16.0f;
     float r = base + (1.0f - prog) * 42.0f;
     float L = r * 0.42f;
@@ -486,8 +492,9 @@ void vg_draw_target_markers(const VgCam& cam) {
                                 && sy > 26 && sy < SCR_H - 26;
 
         if (onscreen) {
-            float r = FOCAL * (ENEMY_SCALE * 2.6f) /
-                      (s->pos.z > NEAR_Z ? s->pos.z : NEAR_Z);
+            const float lz = vg_view(cam, s->pos).z;   // see vg_draw_lock_box
+            float r = cam.focal * (ENEMY_SCALE * 2.6f) /
+                      (lz > NEAR_Z ? lz : NEAR_Z);
             if (r < 14.0f) r = 14.0f;
             if (r > 90.0f) r = 90.0f;
             float ty = sy - r - 14.0f;      // hovers above, pointing down at it
