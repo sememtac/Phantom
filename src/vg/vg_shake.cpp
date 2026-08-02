@@ -25,8 +25,6 @@ void vg_shake_clear(void) {
     vg.shake_x = vg.shake_y = 0.0f;
 }
 
-float vg_shake_level(void)        { return s_hit; }
-float vg_shake_rumble_level(void) { return s_rum; }
 
 // The amplitude both outputs are built from, so the view and the panel can never
 // disagree about how hard the airframe is being hit -- only about which way it is

@@ -46,8 +46,6 @@ void vg_shake_update(float dt);
 // Everything to zero. For a state change, where a knock must not survive.
 void vg_shake_clear(void);
 
-float vg_shake_level(void);          // hit channel
-float vg_shake_rumble_level(void);   // rumble channel, smoothed
 
 // This frame's PANEL offset, in pixels, on its own clock and smaller than the
 // view's. A HUD shaking in lockstep with the world just reads as one bigger
