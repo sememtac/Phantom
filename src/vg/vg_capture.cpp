@@ -159,7 +159,28 @@ void vg_capture_poll(void) {
         const int c = Serial.read();
         // Replay commands first: they read their own payload straight off the
         // stream, so they must not be mistaken for capture bytes.
-        if (vg_replay_command(c)) continue;
+        if (vg_replay_command(c)) {
+            // AND STOP DRAINING THE MOMENT A REPLAY BEGINS.
+            //
+            // begin_play() runs inside this loop and announces PLAYING from
+            // inside it. The host is waiting for exactly that line and starts
+            // sending frame entries the instant it arrives -- while this loop is
+            // still going. Those entries then get read HERE, one byte at a time,
+            // as commands: 'P' is refused because the mode is no longer OFF, and
+            // 'H', 'R', the length and the whole input structure fall through as
+            // unknown bytes and are silently dropped.
+            //
+            // The device then sits in vg_replay_next waiting for an entry the
+            // host believes it already sent, the host sits in read_frame waiting
+            // for a frame, and the render dies with "link went quiet" having
+            // never produced a single frame. From outside it looks exactly like
+            // the device ignoring 'P'.
+            //
+            // Entries belong to vg_replay_next. Once it owns the stream, this
+            // loop must not touch another byte.
+            if (vg_replay_mode() != VG_RP_OFF) break;
+            continue;
+        }
         if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an
