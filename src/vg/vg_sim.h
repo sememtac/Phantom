@@ -9,6 +9,8 @@
 //   vg_missile.cpp  seeker guidance, proximity fuse, detonation
 //   vg_ai.cpp       enemy fighter behaviour
 //   vg_vfx.cpp      the host-driven explosion bench
+//   vg_particles.cpp fireballs and debris
+//   vg_comms.cpp    the pilot channel, the broadcast, the missile banner
 //   vg_game.cpp     state machine, world step, player weapons, collisions
 
 // --- vg_models.cpp ---------------------------------------------------------
@@ -103,6 +105,11 @@ int  vg_ift_progress(void);
 // One frame of both radio channels and the missile banner queue. Called from the
 // tail of vg_world_step because that is where the dt is.
 void vg_comms_step(float dt);
+
+// Silence the broadcast and drop anything queued behind it. For a transition
+// that makes the queue meaningless -- nobody wants the last match's announcement
+// finishing itself over the next one's opening.
+void vg_ift_clear(void);
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);
