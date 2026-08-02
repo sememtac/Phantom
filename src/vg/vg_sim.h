@@ -8,6 +8,7 @@
 //   vg_models.cpp   RNG, geometry primitives, procedural models, field building
 //   vg_missile.cpp  seeker guidance, proximity fuse, detonation
 //   vg_ai.cpp       enemy fighter behaviour
+//   vg_vfx.cpp      the host-driven explosion bench
 //   vg_game.cpp     state machine, world step, player weapons, collisions
 
 // --- vg_models.cpp ---------------------------------------------------------
@@ -53,7 +54,7 @@ void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k);
 // Live fireballs, for the profiler.
 int vg_fire_live(void);
 
-// --- the VFX bench ---------------------------------------------------------
+// --- vg_vfx.cpp ------------------------------------------------------------
 // Fire an explosion on demand so it can be looked at without playing to the
 // moment that produces it. Driven from the host over the link, never from the
 // game's own input. Runs wherever vg_world_step runs, the attract loop included.
@@ -63,6 +64,9 @@ const char* vg_vfx_name(int which);
 int         vg_vfx_step_preset(void);     // next preset in the cycle, and advance
 void        vg_vfx_auto(float seconds);   // repeat every N seconds, 0 to stop
 float       vg_vfx_auto_period(void);
+// Advances the repeat timer. Called from vg_world_step, and does nothing at all
+// unless a host has asked for the repeat.
+void        vg_vfx_tick(float dt);
 
 // The per-frame transform of everything: one counter-rotation and one forward
 // translation applied to the arena, the backdrop and every object in the world.
