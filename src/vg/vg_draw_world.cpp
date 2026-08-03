@@ -16,6 +16,17 @@ void vg_draw_starfield(const VgCam& cam) {
     }
 }
 
+// The streak, which is drawing policy and lives here rather than in cfg_world.h:
+// nothing else reads any of it. Where the field IS stays central -- the world
+// step, the cutscene and the model builder all place motes and have to agree
+// about the volume.
+#define MOTE_STREAK_SEC      0.085f   // streak length, in seconds of travel
+// Streaks grow SUPER-linearly with speed. Linear growth read as slightly longer
+// dashes; squaring smears them into warp lines at full throttle.
+#define MOTE_STREAK_BOOST    1.35f
+#define MOTE_THICK_AT        0.55f    // speed fraction above which streaks thicken
+#define MOTE_FADE_IN         0.18f    // speed fraction below which they hide
+
 // Near-field dust streaking past. Stars sit at infinity and only rotate, so they
 // convey no sense of speed whatsoever, and the asteroid field is far too sparse
 // to. These are what make the throttle *feel* like a throttle.

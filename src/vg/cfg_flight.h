@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ===========================================================================
 // Flight model, controls and hull integrity.
@@ -122,23 +122,14 @@
 #define HUD_SHAKE_MAX        1.7f     // px at full throttle
 
 // --- the knock bus ---------------------------------------------------------
-// See vg_shake.h. 1.0 on the hit channel is a missile striking the player, and
-// every other source is scaled against it, so these numbers are the whole feel
-// of being knocked about in one place.
+// ITS NUMBERS LIVE IN vg_shake.h, with the module that is their only reader.
+// They are rendering policy rather than balance -- how hard the view is thrown
+// about, not how hard anything hits -- and this file is for the numbers a reader
+// comes here to compare against each other.
 //
-// The first two are deliberately unchanged from the single-source version this
-// replaced: a missile hit has to land exactly as hard as it always did, or the
-// refactor is a retune wearing a refactor's clothes.
-#define SHAKE_HIT_PX         13.0f    // view px at 1.0
-#define SHAKE_HIT_DECAY      2.6f     // per second
-// Two at once is worse than one; six is not six times worse. Without a ceiling a
-// busy moment throws the view clean off the panel.
-#define SHAKE_HIT_MAX        1.8f
-// A rattle is not a blow, so half the amplitude of one.
-#define SHAKE_RUMBLE_PX      6.5f
-#define SHAKE_RUMBLE_RATE    9.0f     // how fast it follows the requested level
-// The panel moves less than the view -- see HUD_SHAKE_MAX for why it moves at all.
-#define SHAKE_HUD_RATIO      0.22f
+// SPEED_SHAKE_* and HUD_SHAKE_MAX above STAY, and the split is deliberate: the
+// speed buzz is airframe feel and is read by the flight model and the renderer,
+// not by the bus. vg_shake.h says the same thing from its side.
 
 // --- passing close aboard --------------------------------------------------
 // A fighter crossing near enough to be felt.

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ===========================================================================
 // The world: arena boundary, asteroids, stars, speed motes, spawning.
@@ -65,12 +65,10 @@
 #define MOTE_Z_MAX           950.0f
 #define MOTE_CONE            0.62f    // lateral spread as a fraction of z
 #define MOTE_CULL_Z          (-50.0f)
-#define MOTE_STREAK_SEC      0.085f   // streak length, in seconds of travel
-// Streaks grow SUPER-linearly with speed. Linear growth read as slightly longer
-// dashes; squaring smears them into warp lines at full throttle.
-#define MOTE_STREAK_BOOST    1.35f
-#define MOTE_THICK_AT        0.55f    // speed fraction above which streaks thicken
-#define MOTE_FADE_IN         0.18f    // speed fraction below which they hide
+// HOW THEY ARE DRAWN is in vg_draw_world.cpp, with draw_motes, which is the only
+// thing that reads it. What stays here is where the field IS -- the extent, the
+// cone and the cull plane -- because the world step, the cutscene and the model
+// builder all place motes and all need to agree about the volume.
 
 // --- arena -----------------------------------------------------------------
 // Scaled up with the speed rebalance: at 250 units/sec the old 420-radius tube
