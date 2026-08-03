@@ -2,8 +2,12 @@
 #include "vg_game.h"
 #include "vg_voice.h"
 #include "vg_course.h"
+#include "vg_prof.h"
+#include <Arduino.h>
 #include <stdio.h>
 #include <math.h>
+
+uint32_t g_hud_radar = 0, g_hud_throttle = 0;
 
 // The instrument panel. Everything here is drawn through the spherical warp
 // (vg_render.cpp brackets the call), EXCEPT the pieces that have to line up with
@@ -635,8 +639,17 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // ghost text behind the number.
 
     draw_reticle();
-    draw_throttle();
-    draw_radar();
+    // Split out because `hud` is one number covering half a dozen unrelated
+    // instruments, and the plan for it named the radar on the strength of its trig
+    // without ever measuring which part actually costs.
+    {
+        const uint32_t t0 = micros();
+        draw_throttle();
+        const uint32_t t1 = micros();
+        draw_radar();
+        g_hud_throttle += t1 - t0;
+        g_hud_radar    += micros() - t1;
+    }
 
     // The streak, on the course only. It has to be persistent rather than a
     // line on the broadcast channel: the count IS the game here, and an IFT line

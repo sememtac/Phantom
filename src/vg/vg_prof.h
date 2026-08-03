@@ -47,3 +47,23 @@ extern uint32_t g_sfx_render_us;
 // thing the move to core 0 was for.
 extern uint32_t g_audio_blocked_us;  // time spent waiting on the ring
 extern uint32_t g_audio_short;       // samples refused even after the wait
+
+// THE MIX'S HEADROOM, which is a different question from delivery and has to be
+// asked separately -- the crackle on acceleration was delivery and the one on a
+// collision is not.
+//
+// `peak` is the largest absolute sum the mixer produced BEFORE the soft rail, in
+// units where 1.0 is full scale. It is the honest number: what the voices actually
+// came to, not what came out. A collision was measured at 1.94.
+//
+// `knee` counts samples the soft rail acted on at all -- so it says how much of a
+// window was loud enough to be shaped, which is the difference between a peak that
+// brushed the curve once and one that sat on it.
+extern float    g_synth_peak;        // largest |sum| before the rail, 1.0 = rail
+extern uint32_t g_synth_knee;        // samples the soft rail shaped
+
+// The HUD's own split. `hud` is the largest single item left in submit and it is
+// half a dozen unrelated instruments, so one number for it cannot say which. What
+// is left over after these two is everything else in vg_draw_hud, and the
+// telemetry works it out by subtraction rather than timing it a third time.
+extern uint32_t g_hud_radar, g_hud_throttle;

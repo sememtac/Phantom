@@ -394,6 +394,9 @@ void loop(void) {
     acc_sxr += g_sfx_render_us;
     acc_star += g_sub_star; acc_aren += g_sub_arena;
     acc_wrld += g_sub_world; acc_hud += g_sub_hud;
+    static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
+    acc_hud_radar += g_hud_radar;  g_hud_radar    = 0;
+    acc_hud_thr   += g_hud_throttle; g_hud_throttle = 0;
     acc_prim   += vg_rast_prim_us();
     acc_scan   += vg_rast_scan_us();
     frames++;
@@ -504,11 +507,24 @@ void loop(void) {
         // so `blocked` reads straight off as a percentage: 1700 of 2000 ms waiting
         // for ring space means the queue is full 85% of the time, which is health
         // and not a problem. Near zero is the fault. See vg_prof.h.
-        Serial.printf("        aud = blocked %lu ms/2s short %lu\n",
+        Serial.printf("        aud = blocked %lu ms/2s short %lu | peak %.2f clip %lu"
+                      " | hud = radar %lu thr %lu rest %lu\n",
                       (unsigned long)(g_audio_blocked_us / 1000u),
-                      (unsigned long)g_audio_short);
+                      (unsigned long)g_audio_short,
+                      (double)g_synth_peak,
+                      (unsigned long)g_synth_knee,
+                      (unsigned long)(acc_hud_radar / frames),
+                      (unsigned long)(acc_hud_thr   / frames),
+                      // By subtraction, and floored: the two timed pieces are
+                      // inside the same bracket that produces acc_hud, so a torn
+                      // read cannot make this negative and wrap.
+                      (unsigned long)(acc_hud > acc_hud_radar + acc_hud_thr
+                                      ? (acc_hud - acc_hud_radar - acc_hud_thr) / frames
+                                      : 0));
         g_audio_blocked_us = 0;
         g_audio_short      = 0;
+        g_synth_peak       = 0.0f;
+        g_synth_knee       = 0;
         for (int i = 0; i < FT_BUCKETS; i++) ft_hist[i] = 0;
         ft_worst = 0;
         ft_late  = 0;
@@ -519,6 +535,7 @@ void loop(void) {
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
+        acc_hud_radar = acc_hud_thr = 0;
         frames = 0;
     }
 }

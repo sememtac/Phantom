@@ -1,6 +1,10 @@
 #include "vg_synth.h"
 #include "vg_port.h"
+#include "vg_prof.h"
 #include <math.h>
+
+float    g_synth_peak    = 0.0f;
+uint32_t g_synth_knee    = 0;
 
 // NOT the game's random stream. Drawing from that would make the audio a term in
 // the simulation and take replay determinism with it.
@@ -167,6 +171,40 @@ static inline float fsin01(float x) {
     return neg ? -y : y;
 }
 
+// THE RAIL, SOFTENED.
+//
+// It was a hard clamp, and the comment on it said "clip rather than wrap" -- which
+// was the right call against wrapping and stopped one step short. A collision on
+// the course stacks a hull hit (seven layers, one of them at gain 1.00) on an
+// explosion (noise at 0.80), and the sum was measured at 1.94: two hundred
+// milliseconds of flat-topped waveform inside a two-second window. On a mix made
+// mostly of squares, flattening the tops is not a limit, it is a crunch, and that
+// crunch is what a collision sounded like.
+//
+// Linear below the knee, then asymptotic to 1.0. Two properties earn their keep:
+//
+//   The knee sits at 0.8, ABOVE EVERYTHING NORMAL PLAY DOES. Measured: quiet
+//   windows peak at 0.61 to 0.75. So the ordinary sound of the game passes through
+//   this untouched, bit for bit -- which matters more than the curve's shape does,
+//   because every number in the cue catalogue was tuned by ear against the old
+//   behaviour and a knee that moved the quiet levels would retune all of them at
+//   once without saying so.
+//
+//   The slope is continuous at the knee: the derivative of e/(1+e) at e=0 is 1,
+//   which is exactly the slope of the line below it. No corner, so nothing new to
+//   hear at the crossing.
+//
+// The asymptote also means the output cannot reach 1.0, so there is no clamp after
+// this and no way to wrap.
+#define SYNTH_KNEE 0.8f
+static inline float soft_rail(float x) {
+    const float m = x < 0.0f ? -x : x;
+    if (m <= SYNTH_KNEE) return x;
+    const float e = (m - SYNTH_KNEE) / (1.0f - SYNTH_KNEE);
+    const float y = SYNTH_KNEE + (1.0f - SYNTH_KNEE) * (e / (1.0f + e));
+    return x < 0.0f ? -y : y;
+}
+
 void vg_synth_render(int16_t* out, int n_out, float mix) {
     const int   room = n_out;
     int16_t*    buf  = out;
@@ -296,8 +334,14 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
         }
 
         acc *= mix;
-        if (acc >  1.0f) acc =  1.0f;       // clip rather than wrap
-        if (acc < -1.0f) acc = -1.0f;
+        // Headroom, measured before the knee gets a chance to hide it. See
+        // vg_prof.h. This is the honest peak: what the voices actually summed to.
+        {
+            const float mag = acc < 0.0f ? -acc : acc;
+            if (mag > g_synth_peak)   g_synth_peak = mag;
+            if (mag > SYNTH_KNEE)     g_synth_knee++;
+        }
+        acc = soft_rail(acc);
         buf[n] = (int16_t)(acc * 30000.0f);
     }
 
