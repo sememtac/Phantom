@@ -181,6 +181,26 @@ void vg_update_alerts(float dt, bool alive);
 // The panel's own timers: hit flash, boot sweep, damage glitch, blast flash.
 void vg_hud_decay(float dt);
 
+// One frame of each state, one function per STATES row. VG_PLAYING and VG_HIT
+// share vg_upd_playing: taking a hit does not change what flying is, only what
+// the panel is doing about it.
+void vg_upd_attract(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_entry(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_select(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_repair(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_bracket(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_intro(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_playing(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_kill(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_pause(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_course(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_round_won(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_over(float dt, const VgInput* in, const Tap* tap);
+void vg_upd_won(float dt, const VgInput* in, const Tap* tap);
+
+// The lookup: run whatever the current state's row says to run.
+void vg_state_update(float dt, const VgInput* in, const Tap* tap);
+
 // --- vg_missile.cpp --------------------------------------------------------
 
 // `spec` is the LAUNCHING ship's class: the round carries its warhead, seeker

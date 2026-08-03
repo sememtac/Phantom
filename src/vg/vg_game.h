@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <stdint.h>
 #include "vg_vec.h"
 #include "vg_config.h"
@@ -353,6 +353,18 @@ enum TvPhase : uint8_t {
 //
 // The lists are one table now, in vg_game.cpp. Ask what a state IS and the
 // answer is the same wherever it is asked from.
+// A menu tap: a contact that lifted WITHOUT travelling.
+//
+// Resolved once by the dispatch rather than in the input layer, because the
+// bracket needs one contact to serve as both a pan drag and a button press, and
+// only the consumer can know which it turned out to be. Passed to every state's
+// update so no state has to work it out again, and so none of them can disagree
+// about what a tap is.
+struct Tap {
+    bool  up;       // it lifted this frame
+    float x, y;     // where it went DOWN, not where it came up
+};
+
 #define VGS_MENU    0x01u   // a screen, not a cockpit: no HUD, no ship systems
 #define VGS_LIVE    0x02u   // the panel answers -- alerts, threat, instruments
 #define VGS_ENGINE  0x04u   // the airframe is still under power

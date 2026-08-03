@@ -207,29 +207,32 @@ struct VgStateDef {
     // the match set-up is vg_begin_flight, called by name, and PLAYING's enter
     // column stays null on purpose.
     void      (*leave)(void);
+    // One frame of being in this state. Thirteen functions in vg_game.cpp, one
+    // per row, replacing a 390-line switch on exactly this value.
+    void      (*update)(float dt, const VgInput* in, const Tap* tap);
 };
 
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
 static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract, nullptr },
-    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
-    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
-    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
-    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr },
-    { "INTRO",     VGS_MENU,                           vg_match_start,   leave_intro },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr },
-    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr },
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract, nullptr, vg_upd_attract },
+    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_entry },
+    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_select },
+    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_repair },
+    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr, vg_upd_bracket },
+    { "INTRO",     VGS_MENU,                           vg_match_start,   leave_intro, vg_upd_intro },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
     // would be the loudest thing about it.
-    { "KILL",      VGS_ENGINE,                         nullptr,          nullptr },
+    { "KILL",      VGS_ENGINE,                         nullptr,          nullptr, vg_upd_kill },
     // Nothing. A pause is not a place -- it suspends one.
-    { "PAUSE",     0,                                  nullptr,          nullptr },
-    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course,     nullptr },
-    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
-    { "OVER",      VGS_MENU,                           nullptr,          nullptr },
-    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
+    { "PAUSE",     0,                                  nullptr,          nullptr, vg_upd_pause },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course,     nullptr, vg_upd_course },
+    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_round_won },
+    { "OVER",      VGS_MENU,                           nullptr,          nullptr, vg_upd_over },
+    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_won },
 };
 
 static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
@@ -300,6 +303,14 @@ void vg_state_cut(VgState to) {
 // It used to be a switch with a case for each destination, each calling that
 // destination's set-up. There is nothing left to switch on: the far side of a
 // cut is a state, and entering a state is one thing.
+// The dispatch. Here rather than in vg_game.cpp because the table is here, and
+// because "what does this state do this frame" is a table lookup now.
+void vg_state_update(float dt, const VgInput* in, const Tap* tap) {
+    if ((int)vg.state >= VG_STATE_COUNT) return;
+    const VgStateDef* d = &STATES[vg.state];
+    if (d->update) d->update(dt, in, tap);
+}
+
 static void tv_join(void) {
     vg_state_go((VgState)vg.tv_to);
 }
