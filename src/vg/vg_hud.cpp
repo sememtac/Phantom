@@ -258,12 +258,63 @@ static void radar_pt(float a, float rn, float* px, float* py) {
     *py = RADAR_CY - RADAR_RY * rn * sinf(a);
 }
 
-static void radar_arc(float rn, uint16_t col, int segs, int w) {
+// THE DOME'S GEOMETRY IS CONSTANT, and it was being recomputed every frame.
+//
+// Three arcs at fixed normalised radii with fixed segment counts, angles at
+// i*pi/segs, plus three spokes at i*pi/4. Fifty-three cosf and fifty-three sinf
+// calls a frame, all of them producing the same numbers as the frame before.
+//
+// It is worth removing now for a reason that did not hold a week ago: submit runs on
+// both cores, the INSTRUMENT half is the longer one, and so `sub` is gated on this
+// side of the frame. The radar is 529 us of it in combat.
+//
+// A TABLE, not the incremental rotation fire_ring and arena_line use. Those rotate by
+// a phase that changes, so they have to step; these angles never change at all, so
+// there is nothing to step and a step would only accumulate error.
+//
+// Filled with the same cosf/sinf calls on the same angle expressions, so every float
+// is bit-identical to what the per-frame version produced -- which makes this
+// verifiable as IDENTICAL rather than merely as close enough. That is why it is not
+// the Phase 6 the plan described, and why it does not need a new baseline.
+static float s_arc22[(22 + 1) * 2];     // interleaved cos, sin
+static float s_arc16[(16 + 1) * 2];
+static float s_arc12[(12 + 1) * 2];
+static float s_spoke[3 * 2];
+static bool  s_radar_ready = false;
+
+static void radar_tables(void) {
+    if (s_radar_ready) return;
+    struct { float* t; int n; } arcs[3] = {
+        { s_arc22, 22 }, { s_arc16, 16 }, { s_arc12, 12 }
+    };
+    for (int a = 0; a < 3; a++) {
+        for (int i = 0; i <= arcs[a].n; i++) {
+            // The same expression the per-frame code used, so the same float.
+            const float ang = 3.14159265f * (float)i / (float)arcs[a].n;
+            arcs[a].t[i * 2]     = cosf(ang);
+            arcs[a].t[i * 2 + 1] = sinf(ang);
+        }
+    }
+    for (int i = 1; i <= 3; i++) {
+        const float ang = 3.14159265f * (float)i / 4.0f;
+        s_spoke[(i - 1) * 2]     = cosf(ang);
+        s_spoke[(i - 1) * 2 + 1] = sinf(ang);
+    }
+    s_radar_ready = true;
+}
+
+// Same arithmetic as radar_pt, with the trig already done.
+static inline void radar_pt_cs(float c, float sn, float rn, float* px, float* py) {
+    *px = RADAR_CX + RADAR_RX * rn * c;
+    *py = RADAR_CY - RADAR_RY * rn * sn;
+}
+
+static void radar_arc(float rn, uint16_t col, const float* cs, int segs, int w) {
     float px, py;
-    radar_pt(0.0f, rn, &px, &py);
+    radar_pt_cs(cs[0], cs[1], rn, &px, &py);
     for (int i = 1; i <= segs; i++) {
         float nx, ny;
-        radar_pt(3.14159265f * (float)i / (float)segs, rn, &nx, &ny);
+        radar_pt_cs(cs[i * 2], cs[i * 2 + 1], rn, &nx, &ny);
         vg_line_w(px, py, nx, ny, col, w);
         px = nx; py = ny;
     }
@@ -307,16 +358,17 @@ static void draw_radar(void) {
     // The rim and the chord are the instrument's border, so they carry a heavier
     // stroke; the inner range rings stay hairlines so they read as graduations
     // rather than as structure.
-    radar_arc(1.00f, COL_RADAR_RIM, 22, 2);
-    radar_arc(0.66f, COL_RADAR, 16, 1);
-    radar_arc(0.33f, COL_RADAR, 12, 1);
+    radar_tables();
+    radar_arc(1.00f, COL_RADAR_RIM, s_arc22, 22, 2);
+    radar_arc(0.66f, COL_RADAR,     s_arc16, 16, 1);
+    radar_arc(0.33f, COL_RADAR,     s_arc12, 12, 1);
 
     vg_line_w(RADAR_CX - RADAR_RX, RADAR_CY, RADAR_CX + RADAR_RX, RADAR_CY,
               COL_RADAR_RIM, 2);
 
     for (int i = 1; i <= 3; i++) {
         float ex, ey;
-        radar_pt(3.14159265f * (float)i / 4.0f, 1.0f, &ex, &ey);
+        radar_pt_cs(s_spoke[(i - 1) * 2], s_spoke[(i - 1) * 2 + 1], 1.0f, &ex, &ey);
         vg_line(RADAR_CX, RADAR_CY, ex, ey, COL_RADAR);
     }
 
