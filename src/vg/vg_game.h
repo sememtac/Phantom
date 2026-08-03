@@ -480,16 +480,6 @@ struct VgGame {
     // frame its cue is true.
     uint8_t     ift_fired;
 
-    // The course holds its first gate back until the briefing is over. See
-    // vg_course_update.
-    bool        course_briefing;
-    // The pilot has been identified: the WELCOME line is up. Skip unlocks here
-    // rather than at the end of the briefing -- once the broadcast has said the
-    // player's name, the check-in has happened and the rest is ceremony.
-    bool        course_named;
-    float       course_wait;
-    float       course_greet;   // until the briefing starts
-
     // What PAUSE suspended. Pause is reachable from more than one state now, so
     // resuming has to put the player back where they were rather than assuming a
     // match -- and the second button on that screen means different things
@@ -503,10 +493,6 @@ struct VgGame {
     // feature that then needs a menu built around it.
     float       vol_music;
     float       vol_sfx;
-
-    // Time since the course was finished. The finish gets a beat of its own
-    // rather than cutting straight out; see VG_COURSE.
-    float       course_end_t;
 
     // Current roll rate, rad/sec. Carried rather than recomputed, so the airframe
     // has to be spun up and has to be allowed to stop.
@@ -554,13 +540,28 @@ struct VgGame {
     // PREVIOUS frame. A sign change is the crossing, which is what makes the gate
     // passable from either side -- there is no front and no back, only the moment
     // the plane goes by and whether you were inside the circle when it did.
-    bool        ring_alive;
-    Vec3        ring_pos;
-    Vec3        ring_norm;
-    float       ring_prev_d;
-    uint8_t     course_hits;      // consecutive, 0..COURSE_TARGET
-    uint8_t     course_index;     // rings placed this run, for the wall-hugger
-    bool        course_done;
+    struct {
+        bool    ring_alive;
+        Vec3    ring_pos;
+        Vec3    ring_norm;
+        float   ring_prev_d;
+        uint8_t hits;        // consecutive, 0..COURSE_TARGET
+        uint8_t index;       // rings placed this run, for the wall-hugger
+        bool    done;
+        // The course holds its first gate back until the briefing is over. See
+        // vg_course_update.
+        bool    briefing;
+        // The pilot has been identified: the WELCOME line is up. Skip unlocks
+        // here rather than at the end of the briefing -- once the broadcast has
+        // said the player's name, the check-in has happened and the rest is
+        // ceremony.
+        bool    named;
+        float   wait;
+        float   greet;   // until the briefing starts
+        // Time since the course was finished. The finish gets a beat of its own
+        // rather than cutting straight out; see VG_COURSE.
+        float   end_t;
+    } course;
     float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around
@@ -576,17 +577,22 @@ struct VgGame {
     // launch cutscene, and the wreck the camera tumbles around after a death.
     // Kept apart from the enemy array so neither the AI nor the collision pass
     // can ever see it.
-    Ship     cine;
-    bool     cine_on;
+    // Grouped, and the ship inside it is `ship`. It was a bare `cine` next to
+    // cine_on, cine_hold and five gate_ fields that all belonged to it, so the
+    // group had to take the noun and the Ship had to be named.
+    struct {
+        Ship  ship;
+        bool  on;
 
     // Entry gate: a lit plane in the pilot's own colour that the cutscene ship
     // emerges through. Held as a centre and two in-plane axes rather than as a
     // normal, so it rides the world rotation the same way everything else does
     // and never has to be rebuilt from a basis.
-    Vec3     gate_pos, gate_r, gate_u;
-    float    gate_t;       // counts down; the plane is drawn while positive
-    float    gate_hue;
-    float    cine_hold;    // >0 while the ship is still waiting behind the gate
+        Vec3  gate_pos, gate_r, gate_u;
+        float gate_t;    // counts down; the plane is drawn while positive
+        float gate_hue;
+        float hold;      // >0 while the ship is still waiting behind the gate
+    } cine;
 
     float    hud_boot;     // >0 while the instruments are coming up
     // >0 while the systems are visibly hurt. Same failure language as the death

@@ -1,4 +1,4 @@
-#include "vg_ift.h"
+﻿#include "vg_ift.h"
 #include "vg_sim.h"
 #include "vg_tourney.h"
 #include "vg_course.h"
@@ -88,7 +88,7 @@ void vg_ift_line(IftSlot slot) {
     }
 
     case IFT_COURSE_PASS:
-        snprintf(s_buf, sizeof(s_buf), fmt, (int)vg.course_hits, COURSE_TARGET);
+        snprintf(s_buf, sizeof(s_buf), fmt, (int)vg.course.hits, COURSE_TARGET);
         break;
 
     // The course opening: three beats, not one line. The IFT reads the player in

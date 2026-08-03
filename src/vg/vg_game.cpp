@@ -181,7 +181,7 @@ void vg_match_start(void) {
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive  = false;
 
-    vg.ring_alive  = false;      // no gate follows the player into a round
+    vg.course.ring_alive  = false;      // no gate follows the player into a round
     // Every round is its own broadcast, so the announcer's one-shot flags clear
     // here rather than at boot. Clearing them at boot only would have introduced
     // the fighters once and then gone quiet for the rest of the tournament.
@@ -192,7 +192,7 @@ void vg_match_start(void) {
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
     vg.roll_rate   = 0;
     vg.bank        = 0;
-    vg.cine_on     = false;
+    vg.cine.on     = false;
     vg.hud_boot    = 0;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
@@ -491,7 +491,7 @@ void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
         // tournament that has not started would be absurd.
         vg_clear_player_hit();
         vg.health      = vg.health_max;
-        vg.course_hits = 0;
+        vg.course.hits = 0;
         vg_arena_init(ARENA_TORUS);
         vg.wall_clear  = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
         vg_ift_line(IFT_COURSE_MISS);
@@ -501,9 +501,9 @@ void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
     // Finishing is a MOMENT, not an exit condition. The gate is already gone
     // and the player keeps flying while the broadcast marks it, exactly as a
     // kill does -- see COURSE_DONE_BEAT.
-    if (vg.course_done) {
-        vg.course_end_t += dt;
-        if (vg.course_end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
+    if (vg.course.done) {
+        vg.course.end_t += dt;
+        if (vg.course.end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
     }
 
 
@@ -580,7 +580,7 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
         case PAUSE_SKIP:
             // Refused while the briefing runs: the player may pause over it,
             // read it and think about it, but not walk out of it.
-            if (vg.course_named) vg_state_cut(VG_BRACKET);
+            if (vg.course.named) vg_state_cut(VG_BRACKET);
             break;
         case PAUSE_QUIT:
             vg_state_cut(VG_ATTRACT);
@@ -680,7 +680,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
                 // player IS the origin, so the wreck is placed in front and
                 // the camera set tumbling around it -- which reads as being
                 // thrown clear, and gives the scene something to be about.
-                Ship* c = &vg.cine;
+                Ship* c = &vg.cine.ship;
                 c->alive    = true;
                 c->spec     = vg.spec;
                 c->hue      = vg.trail_hue;
@@ -693,7 +693,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
                 c->roll_vis = 0.4f;
                 c->trail_n  = 0;
                 c->hit_flash = 0.0f;
-                vg.cine_on  = true;
+                vg.cine.on  = true;
                 // The player's own wreck, and the biggest eruption in the
                 // game. Scaled off c->scale (84) rather than a ship's own
                 // size: this one is deliberately staged large and close, and

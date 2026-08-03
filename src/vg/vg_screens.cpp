@@ -1,4 +1,4 @@
-#include "vg_screens.h"
+﻿#include "vg_screens.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include <stdio.h>
@@ -206,7 +206,7 @@ void vg_draw_pause(void) {
         case PAUSE_AUDIO:
             vg_button(x, y, w, h, "AUDIO",  false, true); break;
         case PAUSE_SKIP:
-            vg_button(x, y, w, h, "SKIP",   false, vg.course_named); break;
+            vg_button(x, y, w, h, "SKIP",   false, vg.course.named); break;
         case PAUSE_QUIT:
             vg_button(x, y, w, h, "QUIT",   false, true); break;
         default: break;

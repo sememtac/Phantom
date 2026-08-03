@@ -1,4 +1,4 @@
-#include "vg_draw.h"
+﻿#include "vg_draw.h"
 #include "vg_game.h"
 #include <math.h>
 
@@ -495,9 +495,9 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
 // all edges and hidden-line fills, and it earns it: hue is identity here, so
 // the plane announces WHO is arriving before the ship is resolvable at all.
 static void draw_gate(const VgCam& cam) {
-    if (vg.gate_t <= 0.0f) return;
+    if (vg.cine.gate_t <= 0.0f) return;
 
-    const float e = GATE_TIME - vg.gate_t;             // seconds since it opened
+    const float e = GATE_TIME - vg.cine.gate_t;             // seconds since it opened
 
     // Wipes UP from its own bottom edge, holds, then wipes back down the same
     // way. The bottom edge never moves, so it reads as a surface being drawn
@@ -515,24 +515,24 @@ static void draw_gate(const VgCam& cam) {
 
     const float hw = GATE_SIZE;                        // half width, fixed
     const float hh = GATE_SIZE * 0.72f;                // half height, full open
-    const Vec3  rr = vmul(vg.gate_r, hw);
+    const Vec3  rr = vmul(vg.cine.gate_r, hw);
 
     // Bottom edge pinned; top edge climbs from it.
-    const Vec3 lo = vmul(vg.gate_u, -hh);
-    const Vec3 hi = vmul(vg.gate_u, -hh + 2.0f * hh * open);
+    const Vec3 lo = vmul(vg.cine.gate_u, -hh);
+    const Vec3 hi = vmul(vg.cine.gate_u, -hh + 2.0f * hh * open);
 
     const Vec3 c[4] = {
-        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), lo)),
-        vadd(vg.gate_pos, vadd(rr,              lo)),
-        vadd(vg.gate_pos, vadd(rr,              hi)),
-        vadd(vg.gate_pos, vadd(vmul(rr, -1.0f), hi)),
+        vadd(vg.cine.gate_pos, vadd(vmul(rr, -1.0f), lo)),
+        vadd(vg.cine.gate_pos, vadd(rr,              lo)),
+        vadd(vg.cine.gate_pos, vadd(rr,              hi)),
+        vadd(vg.cine.gate_pos, vadd(vmul(rr, -1.0f), hi)),
     };
 
     float sx[4], sy[4];
     for (int i = 0; i < 4; i++)
         if (!vg_project(cam, vg_view(cam, c[i]), &sx[i], &sy[i])) return;
 
-    const uint16_t col = vg_dim(vg_hue_col(vg.gate_hue), fade * 0.85f);
+    const uint16_t col = vg_dim(vg_hue_col(vg.cine.gate_hue), fade * 0.85f);
     vg_tri(sx[0], sy[0], sx[1], sy[1], sx[2], sy[2], col);
     vg_tri(sx[0], sy[0], sx[2], sy[2], sx[3], sy[3], col);
 
@@ -636,10 +636,10 @@ void vg_draw_world(const VgCam& cam) {
 
     // Nobody is flying this one: the fighter crossing the view during the launch
     // cutscene, or the player's own wreck after a death.
-    if (vg.cine_on) {
-        draw_ship_trail(cam, vg.cine.trail, vg.cine.trail_p,
-                        vg.cine.trail_n, vg.cine.trail_head,
-                        vg.cine.pos, vg.cine.hue);
+    if (vg.cine.on) {
+        draw_ship_trail(cam, vg.cine.ship.trail, vg.cine.ship.trail_p,
+                        vg.cine.ship.trail_n, vg.cine.ship.trail_head,
+                        vg.cine.ship.pos, vg.cine.ship.hue);
     }
 
     for (int i = 0; i < MAX_ENEMIES; i++)
@@ -648,7 +648,7 @@ void vg_draw_world(const VgCam& cam) {
     // Amber, not threat red. In a cutscene the pair are being introduced, not
     // engaged, and one of them is the player's own ship -- painting it in the
     // colour reserved for hostiles said the wrong thing about both.
-    if (vg.cine_on) draw_enemy(cam, &vg.cine, true);
+    if (vg.cine.on) draw_enemy(cam, &vg.cine.ship, true);
 
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);

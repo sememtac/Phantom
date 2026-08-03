@@ -643,7 +643,7 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // clears itself after a few seconds.
     if (vg.state == VG_COURSE) {
         char cbuf[16];
-        snprintf(cbuf, sizeof(cbuf), "%d/%d", (int)vg.course_hits, COURSE_TARGET);
+        snprintf(cbuf, sizeof(cbuf), "%d/%d", (int)vg.course.hits, COURSE_TARGET);
         const int cw = vg_text_width(cbuf, 3);
         vg_fill_rect((SCR_W - cw - 16) / 2, 60, cw + 16, 7 * 3 + 10, INK);
         vg_text((SCR_W - cw) / 2, 65, cbuf, INK_ONFILL, 3);

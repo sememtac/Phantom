@@ -125,7 +125,7 @@ static void enter_bracket(void) {
     // The table is a menu, so it gets the menu's backdrop -- it used to keep
     // whatever the last venue built.
     vg_use_menu_sky();
-    vg.ring_alive = false;
+    vg.course.ring_alive = false;
     vg_bracket_focus_player();
 }
 

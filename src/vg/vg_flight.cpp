@@ -1,4 +1,4 @@
-#include "vg_sim.h"
+﻿#include "vg_sim.h"
 #include "vg_shake.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
@@ -172,8 +172,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // death sequence that holds the wreck at a fixed distance while the camera
     // turns around it, which is the whole shot -- applying dz as well would
     // simply leave it behind at the player's last cruising speed.
-    if (vg.cine_on) {
-        Ship* c = &vg.cine;
+    if (vg.cine.on) {
+        Ship* c = &vg.cine.ship;
         c->pos = mat3_apply(R, c->pos);
         c->fwd = vnorm(mat3_apply(R, c->fwd));
         c->up  = vnorm(mat3_apply(R, c->up));
@@ -184,10 +184,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
             Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
             if (vlen2(u) > 1e-6f) c->up = vnorm(u);
         }
-        if (vg.gate_t > 0.0f) {
-            vg.gate_pos = mat3_apply(R, vg.gate_pos);
-            vg.gate_r   = vnorm(mat3_apply(R, vg.gate_r));
-            vg.gate_u   = vnorm(mat3_apply(R, vg.gate_u));
+        if (vg.cine.gate_t > 0.0f) {
+            vg.cine.gate_pos = mat3_apply(R, vg.cine.gate_pos);
+            vg.cine.gate_r   = vnorm(mat3_apply(R, vg.cine.gate_r));
+            vg.cine.gate_u   = vnorm(mat3_apply(R, vg.cine.gate_u));
         }
         // The ribbon has to ride the same rotation as the ship that laid it.
         // Missing this is why the cutscene ships appeared to emit nothing: the
@@ -247,10 +247,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
 
     // The gate is world geometry like anything else: it counter-rotates and
     // recedes, so the course needs no idea how flight works.
-    if (vg.ring_alive) {
-        vg.ring_pos  = mat3_apply(R, vg.ring_pos);
-        vg.ring_norm = vnorm(mat3_apply(R, vg.ring_norm));
-        vg.ring_pos.z -= dz;
+    if (vg.course.ring_alive) {
+        vg.course.ring_pos  = mat3_apply(R, vg.course.ring_pos);
+        vg.course.ring_norm = vnorm(mat3_apply(R, vg.course.ring_norm));
+        vg.course.ring_pos.z -= dz;
     }
 
     for (int i = 0; i < MAX_MISSILES; i++) {
@@ -341,7 +341,7 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // vg_course_update because that runs from the state dispatch, a different
     // point in the frame, and moving a countdown between two points in a frame
     // is a behaviour change wearing a refactor's clothes.
-    if (vg.gate_t > 0) vg.gate_t -= dt;
+    if (vg.cine.gate_t > 0) vg.cine.gate_t -= dt;
 }
 
 // A fighter crossing close aboard. Two airframes going opposite ways at a
