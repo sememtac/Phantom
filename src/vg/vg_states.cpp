@@ -129,6 +129,18 @@ static void enter_bracket(void) {
     vg_bracket_focus_player();
 }
 
+// Arriving at the cutscene, which is where a match is actually built.
+//
+// This exists so the table does not point at vg_match_start directly. Every other
+// row names an enter_* or a null, and the one cell that broke the convention was
+// the cell doing the most work in the game -- the bracket draw, the venue, the
+// sky, the opponent, the whole match. A reader scanning the column for what
+// happens on entry saw twelve familiar names and one that looked like it had been
+// wired up from somewhere else.
+static void enter_intro(void) {
+    vg_match_start();
+}
+
 // Leaving the cutscene. Its own state, and nothing about the match: the shot is
 // finished with and the cockpit is never zoomed.
 static void leave_intro(void) {
@@ -220,7 +232,7 @@ static const VgStateDef STATES[VG_STATE_COUNT] = {
     { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_select },
     { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_repair },
     { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr, vg_upd_bracket },
-    { "INTRO",     VGS_MENU,                           vg_match_start,   leave_intro, vg_upd_intro },
+    { "INTRO",     VGS_MENU,                           enter_intro,      leave_intro, vg_upd_intro },
     { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
     { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
     // Still flying, and that is the whole of it: the opponent is down and
