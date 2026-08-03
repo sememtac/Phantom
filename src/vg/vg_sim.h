@@ -110,6 +110,16 @@ void vg_comms_step(float dt);
 // that makes the queue meaningless -- nobody wants the last match's announcement
 // finishing itself over the next one's opening.
 void vg_ift_clear(void);
+// --- vg_weapons.cpp --------------------------------------------------------
+
+// One frame of the player's weapons. Called from the state dispatch, which is
+// what decides whether a state is allowed to shoot at all -- these do not check.
+void vg_update_lock(float dt);
+void vg_update_reload(float dt);
+void vg_player_fire(void);
+// Nearest live enemy missile tracking the player, for the threat warning.
+void vg_update_threat(void);
+
 void vg_damage_player(float amount);
 // Any collision. Always fatal, and not subject to the post-hit grace period.
 void vg_kill_player(void);

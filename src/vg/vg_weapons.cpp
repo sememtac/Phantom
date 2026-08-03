@@ -1,0 +1,188 @@
+#include "vg_sim.h"
+#include "vg_shake.h"
+#include "vg_sfx.h"
+
+// The player's side of a fight: acquiring a lock, spending a round, noticing one
+// coming the other way, and taking a hit.
+//
+// Damage is HERE rather than with the collisions that cause it, because what a
+// hit does to the player is a weapons-system question -- the grace period, the
+// flash, the reference knock -- while what touched what is geometry. The
+// collisions stayed in vg_game.cpp and call in through vg_damage_player and
+// vg_kill_player, which were already the public entry points.
+
+// ---------------------------------------------------------------------------
+// Player weapons
+// ---------------------------------------------------------------------------
+
+// Acquire and hold a lock on whichever live enemy is nearest the nose, provided
+// it stays inside the cone long enough.
+void vg_update_lock(float dt) {
+    int   best   = -1;
+    float best_c = PLAYER_LOCK_COS;
+
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        const Ship* s = &vg.enemy[i];
+        if (!s->alive) continue;
+        float range = vlen(s->pos);
+        if (range > vg.spec->lock_range || range < 1.0f) continue;
+        float c = vdot(vnorm(s->pos), v3(0, 0, 1));   // player looks down +z
+        if (c > best_c) { best_c = c; best = i; }
+    }
+
+    // Lock time scales with speed: acquiring is harder the faster you are going,
+    // which is the trade the throttle is supposed to be. ACQUIRING -- not holding.
+    // See the latch below.
+    float sn = (vg.speed - vg.spec->speed_min)
+             / (vg.spec->speed_max - vg.spec->speed_min);
+    if (sn < 0.0f) sn = 0.0f;
+    if (sn > 1.0f) sn = 1.0f;
+    vg.lock_need = vg.spec->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
+
+    if (best < 0) {
+        vg.lock_target = -1;
+        vg.lock_t      = 0;
+        vg.locked      = false;
+        return;
+    }
+
+    if (best != vg.lock_target) {
+        vg.lock_target = best;
+        vg.lock_t      = 0;
+        vg.locked      = false;
+    }
+    vg.lock_t += dt;
+
+    // ONCE EARNED, A LOCK IS HELD. It used to be re-evaluated from scratch every
+    // frame against a threshold that rises with speed, so opening the throttle
+    // after locking instantly revoked it -- the player was forbidden from using
+    // the one control the fight is supposed to be about, at the exact moment they
+    // had committed to an attack.
+    //
+    // That was the sharpest tooth in a set of three, all pushing the same way:
+    // turn rate is 2.5x better at idle, acquisition is far slower at speed, and
+    // this. Any one of them is a trade. Together they made "stop and shoot" not a
+    // style but the only style, which is what the playtest found.
+    //
+    // The lock still drops the moment the target leaves the cone or the range, so
+    // it is held by keeping the nose on them -- not by having once been fast
+    // enough. Acquiring at speed is still hard; that trade is the point and it
+    // stays.
+    if (vg.lock_t >= vg.lock_need) vg.locked = true;
+}
+
+// The magazine refills ALL AT ONCE, and only from empty.
+//
+// It used to trickle a round back every `reload` seconds whenever the rack was
+// below full, which quietly meant a class could never actually run dry: shoot
+// four of six, wait, and you were topped up without ever having made a decision.
+// A clip that refills while you are still shooting out of it cannot cost
+// anything, so it cannot define a playstyle either.
+//
+// Now emptying the rack is the commitment. CHARIOT dumps twelve rounds in under
+// two seconds and then has nine seconds of nothing; BALLISTA has three and has to
+// mean all of them.
+void vg_update_reload(float dt) {
+    if (vg.missiles > 0 || vg.reload_t <= 0.0f) return;
+    vg.reload_t -= dt;
+    if (vg.reload_t <= 0.0f) {
+        vg.reload_t = 0.0f;
+        vg.missiles = vg.spec->magazine;
+    }
+}
+
+void vg_player_fire(void) {
+    if (vg.missiles <= 0 || vg.fire_gap > 0) return;
+    if (!vg.locked || vg.lock_target < 0) return;
+
+    const Ship* s = &vg.enemy[vg.lock_target];
+    if (!s->alive) return;
+
+    // Alternate wing hardpoints so successive launches read as a pair.
+    static int rail = 0;
+    rail ^= 1;
+    Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
+
+    // Only spend the round if a missile actually left the rail. With every slot
+    // in the air this silently charged the player for nothing at all, and since
+    // no missile existed there was no outcome to report either -- a shot that
+    // vanished in both directions.
+    if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
+                           vg.lock_target, vg.spec))
+        return;
+
+    vg.missiles--;
+    vg.fire_gap = vg.spec->fire_gap;
+    vg_sfx_play(SFX_LAUNCH, 1.0f);
+
+    // Emptying the rack starts the clock. Doing it here rather than in the tick
+    // means the reload is timed from the shot that emptied it, not from the next
+    // frame that happened to notice.
+    if (vg.missiles <= 0) vg.reload_t = vg.spec->reload;
+}
+
+// Nearest live enemy missile tracking the player, for the threat warning.
+void vg_update_threat(void) {
+    vg.threat       = false;
+    vg.threat_range = 1e9f;
+    for (int i = 0; i < MAX_MISSILES; i++) {
+        const Missile* m = &vg.msl[i];
+        if (!m->alive || m->from_player || !m->locked) continue;
+        float r = vlen(m->pos);
+        if (r < vg.threat_range) {
+            vg.threat_range = r;
+            vg.threat_pos   = m->pos;
+            vg.threat       = true;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Damage
+// ---------------------------------------------------------------------------
+
+static bool s_player_hit = false;
+
+bool vg_player_was_hit(void)  { return s_player_hit; }
+void vg_clear_player_hit(void) { s_player_hit = false; }
+
+// Any contact kills, whatever the hull is and whatever happened a moment ago.
+//
+// This deliberately ignores the VG_HIT grace period that vg_damage_player
+// honours. That grace exists so one missile cannot cascade into three, which is
+// a fairness rule about being SHOT. Flying into a wall while still flinching
+// from a hit is not unfair, it is flying into a wall.
+//
+// VG_KILL still protects: at that point the opponent is already dead and the
+// round is decided, and a win must not be taken back after the fact.
+void vg_kill_player(void) {
+    if (vg.state == VG_KILL) return;
+    // BOTH. The hull cue carries the panel's damage beeps, and dying is the one
+    // moment they most belong -- a collision comes straight through here without
+    // ever touching vg_damage_player, so the loudest thing that can happen to the
+    // player was also the quietest thing on the panel.
+    vg_sfx_play(SFX_EXPLODE, 0.8f);
+    vg_sfx_play(SFX_HIT, 1.0f);
+    vg.health        = 0.0f;
+    vg.hit_flash     = 0.6f;
+    vg.damage_glitch = DAMAGE_GLITCH;
+    vg_shake_hit(1.35f);   // a kill lands harder than a wound
+    s_player_hit     = true;
+}
+
+void vg_damage_player(float amount) {
+    // Brief post-hit invulnerability, so one bad moment cannot cascade into three
+    // hits before you have had a chance to react.
+    //
+    // VG_KILL is the same idea stretched: the round is decided and the loser is
+    // mid-sentence, so a stray round still in the air must not be able to take
+    // the win back after the fact.
+    if (vg.state == VG_HIT || vg.state == VG_KILL) return;
+    vg.health -= amount;
+    if (vg.health < 0.0f) vg.health = 0.0f;
+    vg_sfx_play(SFX_HIT, 1.0f);
+    vg.hit_flash     = 0.6f;
+    vg.damage_glitch = DAMAGE_GLITCH;
+    vg_shake_hit(1.0f);    // THE reference knock: everything else is scaled to it
+    s_player_hit = true;
+}
