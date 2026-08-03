@@ -249,13 +249,47 @@ void vg_sky_set_patch(int x, int y, int w, int h) {
     if (s_py1 > SCR_H - 1) s_py1 = SCR_H - 1;
 }
 
-// 4x4 Bayer, recentred and scaled to +-0.5 texel in 16.16 fixed point.
-static const int32_t s_dither[16] = {
-    ( 0 - 8) * 4096, ( 8 - 8) * 4096, ( 2 - 8) * 4096, (10 - 8) * 4096,
-    (12 - 8) * 4096, ( 4 - 8) * 4096, (14 - 8) * 4096, ( 6 - 8) * 4096,
-    ( 3 - 8) * 4096, (11 - 8) * 4096, ( 1 - 8) * 4096, ( 9 - 8) * 4096,
-    (15 - 8) * 4096, ( 7 - 8) * 4096, (13 - 8) * 4096, ( 5 - 8) * 4096,
+// THE MAGNIFICATION DITHER, and it is load-bearing rather than decorative.
+//
+// The panorama is 128 texels for a whole revolution of yaw -- SKY_TEX_BITS is 7
+// and one tile IS the sky -- so a texel covers about 2.8 degrees, which lands on
+// the screen as roughly TWENTY-THREE PIXELS. The fill samples it nearest, so
+// without a dither every texel boundary is a hard step, 23 pixels from the next
+// one, and in a smooth region the step is the whole difference between two
+// adjacent texels. The nebula hides this because it is low-contrast noise. A
+// galaxy core or a cluster knot does not: the gradient there is steep, the steps
+// are several 565 levels each, and the result is hard banding across the sky that
+// competes with the ships for attention.
+//
+// So the dither's job is to turn each boundary into a graded transition, and how
+// well it does that is set by how many distinct phases it has across the boundary.
+//
+// 8x8 rather than 4x4. Sixty-four phases instead of sixteen, which matters most in
+// the direction the cells are SMALL: a cell is one drawn row across -- two logical
+// pixels -- and one chunk along, which is sixteen. Across the rows the pattern now
+// resolves a boundary in eight steps over sixteen pixels where it managed four.
+//
+// AND THE TWO AXES GET DIFFERENT OFFSETS, which is the other half of it. One
+// scalar added to both u and v moves the sample along the diagonal and nowhere
+// else -- so it is half a dither, and it is blind to exactly the boundaries that
+// run at 45 degrees, which on a sphere's meridians is most of them away from the
+// centre. The v offset reads the same table TRANSPOSED: same values, same
+// distribution, decorrelated from u, and it costs one more load.
+//
+// Recentred and scaled to +-0.5 texel in 16.16: (b - 31.5) * 1024, written as
+// (2b - 63) * 512 to keep it integral.
+#define DTH(b) (((b) * 2 - 63) * 512)
+static const int32_t s_dither[64] = {
+    DTH( 0), DTH(32), DTH( 8), DTH(40), DTH( 2), DTH(34), DTH(10), DTH(42),
+    DTH(48), DTH(16), DTH(56), DTH(24), DTH(50), DTH(18), DTH(58), DTH(26),
+    DTH(12), DTH(44), DTH( 4), DTH(36), DTH(14), DTH(46), DTH( 6), DTH(38),
+    DTH(60), DTH(28), DTH(52), DTH(20), DTH(62), DTH(30), DTH(54), DTH(22),
+    DTH( 3), DTH(35), DTH(11), DTH(43), DTH( 1), DTH(33), DTH( 9), DTH(41),
+    DTH(51), DTH(19), DTH(59), DTH(27), DTH(49), DTH(17), DTH(57), DTH(25),
+    DTH(15), DTH(47), DTH( 7), DTH(39), DTH(13), DTH(45), DTH( 5), DTH(37),
+    DTH(63), DTH(31), DTH(55), DTH(23), DTH(61), DTH(29), DTH(53), DTH(21),
 };
+#undef DTH
 
 // ---------------------------------------------------------------------------
 // Tileable value noise
@@ -953,8 +987,7 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
         // With rows paired, sy steps by two, so (sy & 3) only ever produced two
         // of the four Bayer phases and the pattern lost half its vertical
         // resolution -- which is half of why the backdrop started banding.
-        const int32_t* dth =
-            &s_dither[(((row_step == 2) ? (sy >> 1) : sy) & 3) * 4];
+        const int dr = ((row_step == 2) ? (sy >> 1) : sy) & 7;
         uint16_t* dst = &band[row * SCR_W];
         const uint16_t* tex = s_tex;
 
@@ -999,9 +1032,12 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
             // banding after the fill was widened.
             const int chunk0 = k * (seg_px / SPLASH);
             for (int i = 0; i < seg_px / SPLASH; i++) {
-                const int32_t  o   = dth[(chunk0 + i) & 3];
-                const uint32_t idx = (uint32_t)(((((v + o) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
-                                                 (((u + o) >> 16) & SKY_TEX_MASK));
+                // One cell of the 8x8, and the transpose for v -- see the table.
+                const int      dc  = (chunk0 + i) & 7;
+                const int32_t  ou  = s_dither[(dr << 3) | dc];
+                const int32_t  ov  = s_dither[(dc << 3) | dr];
+                const uint32_t idx = (uint32_t)(((((v + ov) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
+                                                 (((u + ou) >> 16) & SKY_TEX_MASK));
                 const uint32_t c  = tex[idx];
                 uint32_t cc = (c << 16) | c;
                 if (tint) {
