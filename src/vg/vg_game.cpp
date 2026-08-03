@@ -482,10 +482,19 @@ void vg_game_update(float dt, const VgInput* in) {
     }
     s_held = in->menu_held;
 
+    // ONE CALL, NOT SEVEN. Hoisted out of the cases because it is a property of
+    // the state rather than a step in its logic -- and hoisted on VGS_DRIFT and
+    // NOT on VGS_MENU, which is the trap this replaces. Nine states are menus;
+    // only seven of them drift. INTRO gives the viewpoint to the cutscene camera
+    // and OVER tumbles the wreck with its own world step, so hoisting on
+    // VGS_MENU would have run two world motions at once in both.
+    //
+    // It was the first statement of all seven cases, so nothing moves past it.
+    if (sf & VGS_DRIFT) vg_menu_world(dt);
+
     switch (vg.state) {
 
     case VG_ATTRACT: {
-        vg_menu_world(dt);
 #if VG_BENCH
         // Synthetic worst case: a full complement of fighters, all manoeuvring,
         // trailing and shooting, plus the player's own rack cycling. Reproduces
@@ -517,7 +526,6 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_ENTRY: {
-        vg_menu_world(dt);
         if (vg_entry_update(in, tap_up, tap_x, tap_y)) {
             vg_state_go(VG_SELECT);
         }
@@ -525,13 +533,11 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_REPAIR: {
-        vg_menu_world(dt);
         if (vg_repair_update(in, tap_up, tap_x, tap_y)) vg_state_go(VG_BRACKET);
         break;
     }
 
     case VG_SELECT: {
-        vg_menu_world(dt);
         // The +/- key cycles as well as the cards, since it is already wired and
         // is the fastest way to feel the difference between classes.
         if (in->alt_edge)
@@ -650,7 +656,6 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_BRACKET: {
-        vg_menu_world(dt);
         if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
         if (tap_up) {
             if (vg_bracket_ready_at(tap_x, tap_y)) {
@@ -713,7 +718,6 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_ROUND_WON: {
-        vg_menu_world(dt);
         if (vg.state_t > 2.4f) {
             vg_tourney_resolve(true);
             if (vt.complete) {
@@ -732,7 +736,6 @@ void vg_game_update(float dt, const VgInput* in) {
     }
 
     case VG_WON: {
-        vg_menu_world(dt);
         // Returns on its own. The sequence ends by handing the player back to
         // the title card, where the crawl now says the rumour is about them --
         // so the payoff is not the win screen, it is the menu behind it having

@@ -357,6 +357,13 @@ enum TvPhase : uint8_t {
 #define VGS_LIVE    0x02u   // the panel answers -- alerts, threat, instruments
 #define VGS_ENGINE  0x04u   // the airframe is still under power
 #define VGS_COMBAT  0x08u   // a fight is actually in progress
+// The backdrop drifts on its own behind this screen, so it is a place and not a
+// still. NOT the same set as VGS_MENU, which is the trap: nine states are menus
+// and only seven of them drift. INTRO hands the viewpoint to the cutscene camera
+// and OVER tumbles the wreck with its own world step, so either one would end up
+// running two world motions at once. That was implicit in seven copies of one
+// call and is a column now.
+#define VGS_DRIFT   0x10u
 
 uint8_t     vg_state_flags(VgState s);
 

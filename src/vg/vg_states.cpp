@@ -163,24 +163,24 @@ struct VgStateDef {
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
 static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU,                           vg_enter_attract},
-    { "ENTRY",     VGS_MENU,                           nullptr         },
-    { "SELECT",    VGS_MENU,                           nullptr         },
-    { "REPAIR",    VGS_MENU,                           nullptr         },
-    { "BRACKET",   VGS_MENU,                           enter_bracket   },
-    { "INTRO",     VGS_MENU,                           vg_match_start  },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr         },
-    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr         },
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract },
+    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr },
+    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr },
+    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr },
+    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket },
+    { "INTRO",     VGS_MENU,                           vg_match_start },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
     // would be the loudest thing about it.
-    { "KILL",      VGS_ENGINE,                         nullptr         },
+    { "KILL",      VGS_ENGINE,                         nullptr },
     // Nothing. A pause is not a place -- it suspends one.
-    { "PAUSE",     0,                                  nullptr         },
-    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course    },
-    { "ROUND_WON", VGS_MENU,                           nullptr         },
-    { "OVER",      VGS_MENU,                           nullptr         },
-    { "WON",       VGS_MENU,                           nullptr         },
+    { "PAUSE",     0,                                  nullptr },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course },
+    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr },
+    { "OVER",      VGS_MENU,                           nullptr },
+    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr },
 };
 
 static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
