@@ -59,6 +59,12 @@ struct Sub {
     uint8_t aa;                      // vg_line_aa_mode
     bool    fills;                   // vg_rast_fills
     int     cx0, cy0, cx1, cy1;      // clip window, PANEL space, inclusive
+    // The HUD warp and the panel shake. In the context for the same reason as the
+    // rest: vg_line, vg_fill_rect and vg_text all consult it, group B opens the
+    // bracket, and a shared flag would have core 0 bending core 1's WORLD geometry.
+    bool    warp;
+    float   warp_k;
+    float   jx, jy;
     bool    overflow;
     int     tri;
 };
@@ -164,6 +170,9 @@ void vg_rast_begin_frame(void) {
         u->aa    = 1;
         u->fills = true;
         u->cx0 = 0; u->cy0 = 0; u->cx1 = SCR_W - 1; u->cy1 = SCR_H - 1;
+        u->warp   = false;
+        u->warp_k = HUD_WARP_K;
+        u->jx = 0.0f; u->jy = 0.0f;
         u->overflow = false;
         u->tri      = 0;
     }
@@ -224,22 +233,19 @@ uint16_t vg_mix(uint16_t a, uint16_t b, float t) {
 // Spherical HUD warp
 // ---------------------------------------------------------------------------
 
-static bool  s_warp   = false;
-static float s_warp_k = HUD_WARP_K;
-
 void vg_hud_warp(bool on, float scale) {
-    s_warp   = on;
-    s_warp_k = HUD_WARP_K * scale;
+    Sub* u = sub();
+    u->warp   = on;
+    u->warp_k = HUD_WARP_K * scale;
 }
 
-static float s_hud_jx = 0.0f, s_hud_jy = 0.0f;
-
-void vg_hud_jitter(float dx, float dy) { s_hud_jx = dx; s_hud_jy = dy; }
+void vg_hud_jitter(float dx, float dy) { Sub* u = sub(); u->jx = dx; u->jy = dy; }
 
 static inline void warp_pt(float* x, float* y) {
+    const Sub* u = sub();
     float dx = *x - SCR_CX, dy = *y - SCR_CY;
     float r2 = (dx * dx + dy * dy) * (1.0f / (SCR_CX * SCR_CX + SCR_CY * SCR_CY));
-    float k  = 1.0f + s_warp_k * r2;
+    float k  = 1.0f + u->warp_k * r2;
     // Displacement is added AFTER the bend, so the whole assembly translates as
     // one rather than the curvature being recomputed about a moved centre --
     // the panel vibrates, it does not flex.
@@ -248,8 +254,8 @@ static inline void warp_pt(float* x, float* y) {
     // subdivide through it and fills go out as warped quads through it. So this
     // is the one point that moves the entire panel and nothing else, and the
     // world, which is drawn outside the bracket, is untouched.
-    *x = SCR_CX + dx * k + s_hud_jx;
-    *y = SCR_CY + dy * k + s_hud_jy;
+    *x = SCR_CX + dx * k + u->jx;
+    *y = SCR_CY + dy * k + u->jy;
 }
 
 // The bend of ONE point at an arbitrary warp scale, with no jitter and without
@@ -418,7 +424,7 @@ static void line_raw(float x0, float y0, float x1, float y1, uint16_t color) {
 }
 
 void vg_line(float x0, float y0, float x1, float y1, uint16_t color) {
-    if (!s_warp) { line_raw(x0, y0, x1, y1, color); return; }
+    if (!sub()->warp) { line_raw(x0, y0, x1, y1, color); return; }
 
     // Subdivide, or the warp would just displace the endpoints and leave the
     // line straight between them.
@@ -502,7 +508,7 @@ static void fill_rect_raw(int x, int y, int w, int h, uint16_t color) {
 }
 
 void vg_fill_rect(int x, int y, int w, int h, uint16_t color) {
-    if (!s_warp) { fill_rect_raw(x, y, w, h, color); return; }
+    if (!sub()->warp) { fill_rect_raw(x, y, w, h, color); return; }
     if (!color || w <= 0 || h <= 0) return;
 
     // A warped rectangle is no longer axis-aligned, so it goes out as a strip of
@@ -618,7 +624,7 @@ void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
         // Warping the bitmaps themselves would cost far more and read worse at
         // this size than letting the baseline arc.
         float gx = (float)x, gy = (float)y;
-        if (s_warp) warp_pt(&gx, &gy);
+        if (sub()->warp) warp_pt(&gx, &gy);
         rot_pt(&gx, &gy);
 
         Prim* p = push();

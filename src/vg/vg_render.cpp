@@ -130,6 +130,80 @@ static void draw_rear_patch(const VgCam& base, float warp) {
     s_mirror_us = micros() - t0;
 }
 
+// ===========================================================================
+// SUBMIT ON BOTH CORES
+//
+// Submit is 3.8 ms of the 4.37 ms that bills frame time directly -- the panel eats
+// 12.3 ms of every frame whatever the CPU does -- and combat was spending 5.9. It
+// splits in half where the draw order already breaks, and the halves are nearly
+// even: the world at 2.0 ms against the instruments at 1.8.
+//
+// So core 1 builds the world while core 0 builds the instruments, into two slices
+// of the one primitive array that vg_prim_join then makes contiguous. Neither half
+// writes game state and every piece of submit state that used to be global is now
+// per-submitter, so there is nothing left for them to fight over.
+//
+// A GO/DONE PAIR rather than a queue. There is exactly one item of work per frame
+// and the render thread cannot proceed past it, so a queue would be machinery
+// around a rendezvous. Two binary semaphores are a couple of microseconds against
+// the 1.8 ms they overlap.
+//
+// STARTED LAZILY, like the sensor task, so nothing depends on a host calling an
+// init in a particular order -- the game is meant to drop into another firmware
+// whose launcher does its own setup. Until the task exists, and on any board where
+// it cannot be created, kick_instruments returns false and the caller submits group
+// B itself on this thread. That path is the old serial code exactly.
+// ===========================================================================
+static void submit_instruments(const VgCam& cam, const VgInput* in, float fps);
+
+static SemaphoreHandle_t s_gb_go   = nullptr;
+static SemaphoreHandle_t s_gb_done = nullptr;
+
+// The frame's arguments, handed over by the kick. Written by the render thread
+// before the give and read by core 0 after the take, so the semaphore is the
+// barrier that publishes them -- no other synchronisation is needed or wanted.
+static VgCam          s_gb_cam;
+static const VgInput* s_gb_in  = nullptr;
+static float          s_gb_fps = 0.0f;
+
+static void instruments_task(void*) {
+    for (;;) {
+        xSemaphoreTake(s_gb_go, portMAX_DELAY);
+        submit_instruments(s_gb_cam, s_gb_in, s_gb_fps);
+        xSemaphoreGive(s_gb_done);
+    }
+}
+
+static bool kick_instruments(const VgCam& cam, const VgInput* in, float fps) {
+    if (!s_gb_go) {
+        s_gb_go   = xSemaphoreCreateBinary();
+        s_gb_done = xSemaphoreCreateBinary();
+        if (!s_gb_go || !s_gb_done) return false;
+        // Priority 3: above the audio task and the sensors, because the render
+        // thread is BLOCKED on this one -- a frame cannot finish without it, where
+        // a late audio chunk only eats into a 65 ms ring. It yields by blocking on
+        // the semaphore, so it cannot starve either of them.
+        if (xTaskCreatePinnedToCore(instruments_task, "subB", 4096, nullptr, 3,
+                                    nullptr, 0) != pdPASS) {
+            s_gb_go = nullptr;
+            return false;
+        }
+    }
+    s_gb_cam = cam;
+    s_gb_in  = in;
+    s_gb_fps = fps;
+    xSemaphoreGive(s_gb_go);
+    return true;
+}
+
+static void await_instruments(void) {
+    // Bounded, and generous: this is a 1.8 ms job. If it ever times out the frame
+    // goes out with half its instruments rather than the game stopping, and the
+    // primitive count in the corner will show it.
+    if (xSemaphoreTake(s_gb_done, pdMS_TO_TICKS(100)) != pdTRUE)
+        Serial.println("vg_render: group B did not finish");
+}
+
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
 
@@ -233,6 +307,12 @@ void vg_render_frame(const VgInput* in, float fps) {
     // GROUP A: the world. See the note on Sub in vg_raster.cpp -- submit splits in
     // half here because the draw order already does, and the two halves can be
     // built at the same time on the two cores.
+    // HANDED TO CORE 0 HERE -- before the world rather than after, so the two
+    // halves overlap for as long as possible. The wait is at the end of this
+    // function, and group B is the shorter half (1.8 ms against 2.0), so in
+    // practice it has finished by the time the world is done and the wait is free.
+    const bool async = kick_instruments(cam, in, fps);
+
     vg_prim_select(0);
     vg_line_aa_mode(false);
 
@@ -247,6 +327,53 @@ void vg_render_frame(const VgInput* in, float fps) {
     // would be confusing at best, and its normal is only guaranteed sane while
     // the course owns it.
     if (vg.state == VG_COURSE) vg_course_draw(cam);
+
+    // Collect core 0. If it was never started -- the first frame, or a board where
+    // the task could not be created -- group B has not been submitted at all, so it
+    // happens here instead, on this thread, exactly as it used to.
+    if (async) await_instruments();
+    else       submit_instruments(cam, in, fps);
+
+    // THE FRAME COUNTER LAST, AND ON THIS THREAD, because it prints the primitive
+    // count INTO THE FRAME and that count is only whole once both halves are in.
+    // Left in group B it ran on core 0 while the world was still being submitted, so
+    // the number it read was a moving target and the frame stopped being
+    // reproducible -- which the replay harness would have called a rendering bug.
+    //
+    // Into group B's SLICE, so it still lands last in draw order exactly where it
+    // was. And gated on the same condition as group B's early return, so a menu
+    // frame still does not get one.
+    if (!vg_state_is_menu(vg.state)) {
+        vg_prim_select(1);
+        draw_fps(fps);
+    }
+}
+
+// ===========================================================================
+// GROUP B: the instruments, and core 0 runs it.
+//
+// Everything from the antialiasing boundary to the end of the frame -- the lock
+// box, the HUD, the rear-view patch, the markers, the overlays, the captions.
+// Lifted into a function for exactly one reason, so the other core can call it;
+// the body is unchanged from when it was inline.
+//
+// SAFE TO RUN BESIDE GROUP A because it reads `vg` and writes nothing to it -- true
+// of all six draw modules, since vg_cockpit's writes live in vg_update_alerts and
+// vg_hud_decay, which are update functions. The rasteriser side took more work: see
+// the note on Sub in vg_raster.cpp for the eight pieces of submit state that had to
+// stop being global before this was safe there too.
+//
+// The early return for menu states is the original one, and it is why the join has
+// to live in vg_rast_flush rather than at the end of submit.
+// ===========================================================================
+static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
+    // Two locals that group A used to share with this code when the two were one
+    // function. `rear_view` comes off the camera rather than being re-read from vg,
+    // because the preamble set cam.rear from it -- same value, and it keeps this
+    // half's inputs to what was handed in.
+    uint32_t   t_sub     = micros();
+    const bool rear_view = cam.rear;
+
 
     // ...AND ALL OF IT ON THE INSTRUMENTS, from here to the end of the frame.
     // Everything past this line is read rather than flown through: the reticle,
@@ -446,6 +573,4 @@ void vg_render_frame(const VgInput* in, float fps) {
 
     // Last of all, over everything including the instruments.
     if (vg.state == VG_PAUSE) vg_draw_pause();
-
-    draw_fps(fps);
 }
