@@ -230,6 +230,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // reached this conclusion locally and switched AA off for themselves. This is
     // the same decision made once, for the whole layer, so the next thing added
     // to the world does not have to rediscover it.
+    // GROUP A: the world. See the note on Sub in vg_raster.cpp -- submit splits in
+    // half here because the draw order already does, and the two halves can be
+    // built at the same time on the two cores.
+    vg_prim_select(0);
     vg_line_aa_mode(false);
 
     uint32_t t_sub = micros();
@@ -248,6 +252,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Everything past this line is read rather than flown through: the reticle,
     // the bars, the radar, the captions. Static geometry a few pixels wide is
     // exactly where a half-pixel crawl shows and where smoothing earns its cost.
+    //
+    // GROUP B FROM HERE, and the AA boundary and the group boundary being the same
+    // line is not a coincidence -- the reason the halves are separable is the same
+    // reason they want different settings.
+    vg_prim_select(1);
     vg_line_aa_mode(true);
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on

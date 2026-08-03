@@ -908,6 +908,15 @@ uint32_t vg_rast_raster_us(void) { return s_raster_us; }
 uint32_t vg_rast_wait_us(void)   { return s_wait_us; }
 
 void vg_rast_flush(void) {
+    // CLOSE THE LIST HERE, in the consumer, not at the end of submit.
+    //
+    // It was at the end of vg_render_frame, which has an early return for menu
+    // states -- so on every menu and attract frame the join never ran, the count
+    // stayed zero and nothing but the backdrop drew. Putting it at the top of the
+    // flush makes it unreachable-by-omission: whatever submit did or skipped, the
+    // thing that reads the list closes it first.
+    vg_prim_join();
+
     // Drain the LAST band of the previous frame before touching its buffer
     // again. Waiting here rather than at the end of the loop means that final
     // transfer overlaps this frame's input and simulation, which are already

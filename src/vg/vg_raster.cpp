@@ -18,9 +18,88 @@
 // Primitive list
 // ---------------------------------------------------------------------------
 
+// Triangles are counted apart from everything else because their cost has
+// nothing to do with how many there are -- one face of a close asteroid can
+// cover more pixels than the entire rest of the frame.
+
 static Prim* s_prims    = nullptr;
-static int   s_count    = 0;
-static bool  s_overflow = false;
+static int   s_count    = 0;          // the JOINED total, set by vg_prim_join
+
+// ===========================================================================
+// TWO SUBMITTERS, ONE ARRAY
+//
+// Submit is 3.8 ms of the 4.37 ms that bills frame time directly, and it splits
+// cleanly in half where the draw order already breaks: the world (starfield, grid,
+// objects, course gate) against the instruments (HUD, overlays, markers, mirror).
+// Measured at 2.0 ms and 1.8 ms. Nothing in either half writes game state -- all
+// six draw modules are read-only on `vg`, and vg_cockpit's writes live in
+// vg_update_alerts and vg_hud_decay, which are update functions -- so the two can
+// be built AT THE SAME TIME on the two cores.
+//
+// ONE ARRAY, NOT TWO, and that is what makes it free. Each submitter fills its own
+// slice; vg_prim_join then memmoves the second block down to sit immediately after
+// the first. What the band raster then sees is byte-for-byte the array a serial
+// submit would have produced, in the same order, so the whole scanline active-list
+// machinery below is untouched and no second 68KB list is needed. The peak count is
+// 920 against MAX_PRIMS 3400, so the halves have room to spare.
+//
+// WHAT HAD TO BECOME PER-SUBMITTER, because all four are set by one half and read
+// by the other's primitives if left global:
+//   the AA flag      vg_render turns it OFF for the world and ON for the
+//                    instruments -- precisely the two halves
+//   fills            the mirror turns hidden-line fills off for its own content
+//   the clip window  the mirror runs inside a viewport; the main view does not
+//   the cursor       obviously
+//
+// The current context is selected PER CORE, so no draw module has to know any of
+// this exists -- an emitter just asks which submitter is calling.
+// ===========================================================================
+struct Sub {
+    int     at, end;                 // this submitter's slice of s_prims
+    uint8_t aa;                      // vg_line_aa_mode
+    bool    fills;                   // vg_rast_fills
+    int     cx0, cy0, cx1, cy1;      // clip window, PANEL space, inclusive
+    bool    overflow;
+    int     tri;
+};
+
+// Half each. 1700 against a measured peak of 920 for BOTH halves together.
+#define SUB_SPLIT (MAX_PRIMS / 2)
+
+static Sub  s_sub[2];
+static Sub* s_cur[2] = { &s_sub[0], &s_sub[0] };
+
+static inline Sub* sub(void) { return s_cur[xPortGetCoreID()]; }
+
+// Which half the calling core is building. Called by vg_render_frame around the
+// two groups; the mapping is per core, so both cores can be inside submit at once.
+void vg_prim_select(int group) {
+    s_cur[xPortGetCoreID()] = &s_sub[group ? 1 : 0];
+}
+
+// THE LIVE TOTAL, straight off the cursors, and it has to be live rather than a
+// value written by vg_prim_join.
+//
+// draw_fps prints the primitive count INTO THE FRAME -- deliberately, so a dip in
+// the rate can be told apart from a rise in geometry. So the count is not only a
+// diagnostic, it is PIXELS, and it is read during submit while the number is still
+// growing. Parking it in s_count until join meant draw_fps read a stale value and
+// the overlay printed the wrong number: 255 pixels in a 46x14 box, which the
+// replay harness caught and nothing else would have.
+//
+// Equal to s_count once join has run, since join does not move the cursors.
+static inline int live_count(void) {
+    return s_sub[0].at + (s_sub[1].at - SUB_SPLIT);
+}
+
+// Close the frame: bring the second block down against the first so the list is
+// contiguous and in draw order.
+void vg_prim_join(void) {
+    const int na = s_sub[0].at;
+    const int nb = s_sub[1].at - SUB_SPLIT;
+    if (nb > 0) memmove(&s_prims[na], &s_prims[SUB_SPLIT], (size_t)nb * sizeof(Prim));
+    s_count = na + nb;
+}
 
 bool vg_prim_init(void) {
     // Internal: the list is swept once per band, 15 times a frame.
@@ -34,16 +113,11 @@ bool vg_prim_init(void) {
 }
 
 const Prim* vg_prim_list(void) { return s_prims; }
-int         vg_prim_live(void) { return s_count; }
+int         vg_prim_live(void) { return s_count; }   // the JOINED list
 
-static uint8_t s_line_aa = 1;
-void vg_line_aa_mode(bool on) { s_line_aa = on ? 1 : 0; }
+void vg_line_aa_mode(bool on) { sub()->aa = on ? 1 : 0; }
 
-// Triangles are counted apart from everything else because their cost has
-// nothing to do with how many there are -- one face of a close asteroid can
-// cover more pixels than the entire rest of the frame.
-static int s_tri_count = 0;
-int vg_rast_tri_count(void) { return s_tri_count; }
+int vg_rast_tri_count(void) { return s_sub[0].tri + s_sub[1].tri; }
 
 bool vg_rast_init(void) {
     if (!vg_prim_init()) return false;
@@ -77,16 +151,33 @@ bool vg_rast_init(void) {
 static int s_peak = 0;
 
 void vg_rast_begin_frame(void) {
-    if (s_count > s_peak) s_peak = s_count;
-    s_count = 0; s_overflow = false; s_tri_count = 0;
+    // From the cursors, before they are reset, so the peak does not depend on join
+    // having run at all.
+    if (live_count() > s_peak) s_peak = live_count();
+    s_count = 0;
+    // Both submitters, to the same defaults the globals used to hold: AA on, fills
+    // on, clipping to the whole panel. vg_render overrides what it needs per half.
+    for (int i = 0; i < 2; i++) {
+        Sub* u = &s_sub[i];
+        u->at    = i ? SUB_SPLIT : 0;
+        u->end   = i ? MAX_PRIMS : SUB_SPLIT;
+        u->aa    = 1;
+        u->fills = true;
+        u->cx0 = 0; u->cy0 = 0; u->cx1 = SCR_W - 1; u->cy1 = SCR_H - 1;
+        u->overflow = false;
+        u->tri      = 0;
+    }
+    s_cur[0] = &s_sub[0];
+    s_cur[1] = &s_sub[0];
 }
-int  vg_rast_prim_count(void)  { return s_count; }
+int  vg_rast_prim_count(void)  { return live_count(); }
 int  vg_rast_prim_peak(void)   { return s_peak; }
-bool vg_rast_overflowed(void)  { return s_overflow; }
+bool vg_rast_overflowed(void)  { return s_sub[0].overflow || s_sub[1].overflow; }
 
 static inline Prim* push(void) {
-    if (s_count >= MAX_PRIMS) { s_overflow = true; return nullptr; }
-    return &s_prims[s_count++];
+    Sub* u = sub();
+    if (u->at >= u->end) { u->overflow = true; return nullptr; }
+    return &s_prims[u->at++];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,8 +341,6 @@ void vg_sky_patch_prim(int x, int y, int w, int h) {
 // anything is clipped. vg_rast_viewport takes the rectangle the way the game
 // thinks about it and turns it once, here, rather than making every caller
 // know which way the panel is scanned.
-static int s_cx0 = 0, s_cy0 = 0, s_cx1 = SCR_W - 1, s_cy1 = SCR_H - 1;
-
 void vg_rast_viewport(int x, int y, int w, int h) {
     if (w <= 0 || h <= 0) return;
     rot_rect(&x, &y, &w, &h);
@@ -260,23 +349,27 @@ void vg_rast_viewport(int x, int y, int w, int h) {
     if (y  < 0) y = 0;
     if (x1 > SCR_W - 1) x1 = SCR_W - 1;
     if (y1 > SCR_H - 1) y1 = SCR_H - 1;
-    s_cx0 = x; s_cy0 = y; s_cx1 = x1; s_cy1 = y1;
+    Sub* u = sub();
+    u->cx0 = x; u->cy0 = y; u->cx1 = x1; u->cy1 = y1;
 }
 
 void vg_rast_viewport_full(void) {
-    s_cx0 = 0; s_cy0 = 0; s_cx1 = SCR_W - 1; s_cy1 = SCR_H - 1;
+    Sub* u = sub();
+    u->cx0 = 0; u->cy0 = 0; u->cx1 = SCR_W - 1; u->cy1 = SCR_H - 1;
 }
 
 static inline int outcode(float x, float y) {
+    const Sub* u = sub();
     int c = 0;
-    if      (x < s_cx0) c |= 1;
-    else if (x > s_cx1) c |= 2;
-    if      (y < s_cy0) c |= 4;
-    else if (y > s_cy1) c |= 8;
+    if      (x < u->cx0) c |= 1;
+    else if (x > u->cx1) c |= 2;
+    if      (y < u->cy0) c |= 4;
+    else if (y > u->cy1) c |= 8;
     return c;
 }
 
 static bool clip_screen(float* px0, float* py0, float* px1, float* py1) {
+    const Sub* u = sub();
     float ax = *px0, ay = *py0, bx = *px1, by = *py1;
     int c0 = outcode(ax, ay), c1 = outcode(bx, by);
 
@@ -286,10 +379,10 @@ static bool clip_screen(float* px0, float* py0, float* px1, float* py1) {
 
         int   c = c0 ? c0 : c1;
         float x = 0, y = 0;
-        if (c & 8)      { y = (float)s_cy1; x = ax + (bx - ax) * (y - ay) / (by - ay); }
-        else if (c & 4) { y = (float)s_cy0; x = ax + (bx - ax) * (y - ay) / (by - ay); }
-        else if (c & 2) { x = (float)s_cx1; y = ay + (by - ay) * (x - ax) / (bx - ax); }
-        else            { x = (float)s_cx0; y = ay + (by - ay) * (x - ax) / (bx - ax); }
+        if (c & 8)      { y = (float)u->cy1; x = ax + (bx - ax) * (y - ay) / (by - ay); }
+        else if (c & 4) { y = (float)u->cy0; x = ax + (bx - ax) * (y - ay) / (by - ay); }
+        else if (c & 2) { x = (float)u->cx1; y = ay + (by - ay) * (x - ax) / (bx - ax); }
+        else            { x = (float)u->cx0; y = ay + (by - ay) * (x - ax) / (bx - ax); }
 
         if (!isfinite(x) || !isfinite(y)) return false;
 
@@ -314,7 +407,7 @@ static void line_raw(float x0, float y0, float x1, float y1, uint16_t color) {
     if (!p) return;
     color = vg_tint_prim(color, (x0 + x1) * 0.5f, (y0 + y1) * 0.5f);
     p->type  = PRIM_LINE;
-    p->aa    = s_line_aa;
+    p->aa    = sub()->aa;
     p->x0    = (int16_t)lrintf(x0);
     p->y0    = (int16_t)lrintf(y0);
     p->x1    = (int16_t)lrintf(x1);
@@ -363,6 +456,7 @@ void vg_line_w(float x0, float y0, float x1, float y1, uint16_t color, int w) {
 }
 
 void vg_point(int x, int y, uint16_t color) {
+    const Sub* u = sub();
     if (!color) return;
     {
         float fx = (float)x, fy = (float)y;
@@ -370,7 +464,7 @@ void vg_point(int x, int y, uint16_t color) {
         x = (int)lrintf(fx);
         y = (int)lrintf(fy);
     }
-    if (x < s_cx0 || x > s_cx1 || y < s_cy0 || y > s_cy1) return;
+    if (x < u->cx0 || x > u->cx1 || y < u->cy0 || y > u->cy1) return;
 
     Prim* p = push();
     if (!p) return;
@@ -385,12 +479,13 @@ void vg_point(int x, int y, uint16_t color) {
 }
 
 static void fill_rect_raw(int x, int y, int w, int h, uint16_t color) {
+    const Sub* u = sub();
     if (!color || w <= 0 || h <= 0) return;
     rot_rect(&x, &y, &w, &h);
-    if (x < s_cx0) { w += x - s_cx0; x = s_cx0; }
-    if (y < s_cy0) { h += y - s_cy0; y = s_cy0; }
-    if (x + w > s_cx1 + 1) w = s_cx1 + 1 - x;
-    if (y + h > s_cy1 + 1) h = s_cy1 + 1 - y;
+    if (x < u->cx0) { w += x - u->cx0; x = u->cx0; }
+    if (y < u->cy0) { h += y - u->cy0; y = u->cy0; }
+    if (x + w > u->cx1 + 1) w = u->cx1 + 1 - x;
+    if (y + h > u->cy1 + 1) h = u->cy1 + 1 - y;
     if (w <= 0 || h <= 0) return;
 
     Prim* p = push();
@@ -461,11 +556,11 @@ void vg_rect(int x, int y, int w, int h, uint16_t color) {
 //
 // So the patch draws wireframe. It is cheaper, and at that size a solid hull is
 // a blob: the thing that reads is the outline.
-static bool s_fills = true;
-void vg_rast_fills(bool on) { s_fills = on; }
+void vg_rast_fills(bool on) { sub()->fills = on; }
 
 void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t color) {
-    if (!s_fills) return;
+    const Sub* u = sub();
+    if (!sub()->fills) return;
     if (!isfinite(x0) || !isfinite(y0) || !isfinite(x1) ||
         !isfinite(y1) || !isfinite(x2) || !isfinite(y2)) return;
     rot_pt(&x0, &y0);
@@ -477,7 +572,7 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     float maxx = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
     float miny = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
     float maxy = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
-    if (maxx < s_cx0 || minx > s_cx1 || maxy < s_cy0 || miny > s_cy1) return;
+    if (maxx < u->cx0 || minx > u->cx1 || maxy < u->cy0 || miny > u->cy1) return;
 
     // Vertices are stored unclipped so the scanline interpolation stays exact;
     // the per-band fill clamps spans instead. Clamping to +-16000 only bites for
@@ -490,13 +585,13 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     color = vg_tint_prim(color, (x0 + x1 + x2) * (1.0f / 3.0f),
                                 (y0 + y1 + y2) * (1.0f / 3.0f));
     p->type  = PRIM_TRI;
-    s_tri_count++;
+    sub()->tri++;
     p->x0 = TCLAMP(x0); p->y0 = TCLAMP(y0);
     p->x1 = TCLAMP(x1); p->y1 = TCLAMP(y1);
     p->x2 = TCLAMP(x2); p->y2 = TCLAMP(y2);
     p->color = color;
-    p->ymin = (int16_t)(miny < s_cy0 ? s_cy0 : (int)miny);
-    p->ymax = (int16_t)(maxy > s_cy1 ? s_cy1 : (int)maxy);
+    p->ymin = (int16_t)(miny < u->cy0 ? u->cy0 : (int)miny);
+    p->ymax = (int16_t)(maxy > u->cy1 ? u->cy1 : (int)maxy);
     #undef TCLAMP
 }
 

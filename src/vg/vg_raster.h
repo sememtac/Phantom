@@ -109,6 +109,12 @@ int  vg_text_width(const char* s, int scale);
 // Rasterise every band and push to the panel.
 void vg_rast_flush(void);
 
+// Submit splits in two halves that can be built concurrently -- see the note on
+// Sub in vg_raster.cpp. `select` says which half the CALLING CORE is filling;
+// `join` closes the frame by making the two slices contiguous in draw order.
+void vg_prim_select(int group);
+void vg_prim_join(void);
+
 int  vg_rast_prim_count(void);
 // The most primitives any one frame has used since boot. Sizes the list -- see the
 // note at its definition for what it is being measured for.
