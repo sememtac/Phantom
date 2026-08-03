@@ -111,13 +111,24 @@ bool vg_audio_init(void);
 int  vg_audio_write(const int16_t* samples, int n);
 // How many samples the output has CONSUMED since the last call, which is how
 // many the caller now owes it. Advances an internal clock, so call it once per
-// frame and use what it returns.
+// pass and use what it returns.
+//
+// FOR THE INLINE PATH ONLY -- a replay or a capture, where the render thread owns
+// the audio and must not wait on the codec. The audio task does not use this at
+// all: it renders a fixed chunk and lets vg_audio_write_paced set the pace, which
+// is a better clock than this one because it is the actual sample clock.
 //
 // Not "room". The obvious implementation asked I2SClass::availableForWrite() --
 // and that comes from Print, which returns 0 unless a subclass overrides it, and
 // I2SClass does not. Every frame concluded there was no space, generated nothing,
 // and the game was silent by arithmetic while the codec sat there working.
 int  vg_audio_due(void);
+
+// The same write, ALLOWED TO WAIT for room in the DMA ring. Only for a caller that
+// is not on the render thread -- which since the synth moved to core 0 is where the
+// audio task lives, and waiting there is not a cost but the mechanism: the codec
+// paces the producer, so nothing above has to work out how many samples are owed.
+int  vg_audio_write_paced(const int16_t* samples, int n);
 
 // ---- IMU -------------------------------------------------------------------
 

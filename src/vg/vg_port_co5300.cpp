@@ -637,21 +637,15 @@ bool vg_audio_init(void) {
     return true;
 }
 
-// Driven by the CLOCK, not by the driver. See the note in vg_port.h: the
-// buffer-space question has no honest answer through this API, but the rate
-// does -- 22050 samples a second, however many microseconds have passed.
+// Driven by the CLOCK, and only for the inline path now -- see the note in
+// vg_port.h. The buffer-space question has no honest answer through this API, but
+// the rate does: 22050 samples a second, however many microseconds have passed.
 static uint32_t s_audio_us = 0;
 
-// The delivery instrument. See vg_prof.h for what each of these is for; the
-// model is one line: the ring holds `g_audio_lead` samples, time takes them out
-// and vg_audio_write puts them back. It is a MODEL and not a reading, because
-// this API cannot be asked how full it is -- but the two ways it can go wrong
-// are both visible from here, and they are the two that matter.
-uint32_t g_audio_starve   = 0;
-uint32_t g_audio_drop     = 0;
-int32_t  g_audio_lead     = 0;
-int32_t  g_audio_lead_min = 0x7fffffff;
-uint32_t g_audio_gap      = 0;
+// The delivery instrument. See vg_prof.h for what these are and why blocked time
+// is the number to read rather than a modelled queue depth.
+uint32_t g_audio_blocked_us = 0;
+uint32_t g_audio_short      = 0;
 
 int vg_audio_due(void) {
     if (!s_audio_ok) return 0;
@@ -669,27 +663,22 @@ int vg_audio_due(void) {
     // block until the DMA drained it, which is the frame paying for the audio
     // instead of the other way round.
     if (n > 1024) n = 1024;
-
-    // Drain the model by the same amount real time drained the ring. Clamped at
-    // the bottom on purpose: the ring cannot hold a negative number of samples,
-    // and what would have been negative is the hole -- so it is counted rather
-    // than carried, because carrying it would let one long stall hide inside the
-    // arithmetic of the next twenty passes.
-    if (n > g_audio_lead) {
-        g_audio_starve += (uint32_t)(n - g_audio_lead);
-        g_audio_lead = 0;
-    } else {
-        g_audio_lead -= n;
-    }
-    // Sampled HERE, at the bottom of the cycle, before the write refills it.
-    if (g_audio_lead < g_audio_lead_min) g_audio_lead_min = g_audio_lead;
-    if ((uint32_t)n > g_audio_gap)       g_audio_gap      = (uint32_t)n;
     return n;
 }
 
-int vg_audio_write(const int16_t* samples, int n) {
+// The one place that talks to the codec. `wait_ms` is how long it may sit there
+// when the DMA ring is full: zero for anything on the render thread, and a real
+// timeout for the audio task, which is on the other core with nothing better to
+// do than wait.
+//
+// The timeout is per-call state shared by both callers, which is safe for exactly
+// one reason: vg_sfx_update parks the audio task and waits for the acknowledgement
+// before the render thread touches any of this. The same handshake that stops both
+// sides mixing at once stops both sides setting this.
+static int audio_push(const int16_t* samples, int n, uint32_t wait_ms) {
     if (!s_audio_ok || n <= 0) return 0;
 
+    s_i2s.setTimeout(wait_ms);
     // Doubled into stereo in blocks rather than one sample at a time: a call per
     // sample would spend more time in the driver than on the arithmetic that
     // produced them.
@@ -705,9 +694,45 @@ int vg_audio_write(const int16_t* samples, int n) {
         const size_t want = (size_t)take * 4;
         const size_t got  = s_i2s.write((uint8_t*)st, want);
         done += (int)(got / 4);
-        if (got < want) break;               // short write: the caller shrugs
+        // A short write is also an ESP_LOGE inside this driver -- once per call,
+        // over USB CDC, on whichever core asked. Which is why the design above it
+        // is built to not produce them rather than to tolerate them.
+        if (got < want) break;
     }
-    g_audio_lead += done;
-    g_audio_drop += (uint32_t)(n - done);
+    return done;
+}
+
+int vg_audio_write(const int16_t* samples, int n) {
+    return audio_push(samples, n, 0);
+}
+
+// LET THE CODEC SET THE PACE. This is the one that made the crackle go away, and
+// what it does is wait.
+//
+// Every earlier attempt had something on this side of the seam deciding how many
+// samples were owed -- from a clock, from a modelled ring depth, from a target
+// that ratcheted. All of them were guessing at a number the hardware already
+// knows, and the guesses failed in different directions: a queue that could only
+// ever get shallower, a target that ratcheted to zero and silenced the board, a
+// holding buffer that turned every pass into a logged error.
+//
+// The codec knows. Hand it a fixed chunk and let the write return when there is
+// room, and the ring runs as full as it can, the loop is paced by the sample clock
+// itself, and no part of this file has to model anything. The only reason this was
+// not always the answer is that the write used to be on the render thread, where
+// waiting would have been the frame paying for the audio -- the note in vg_port.h
+// about a two-minute frozen screen is what that cost. It is on core 0 now.
+//
+// 50 ms rather than forever: if the codec ever stops draining, the task should
+// come back and find out rather than disappear into the driver.
+#define VG_AUDIO_WAIT_MS 50
+
+int vg_audio_write_paced(const int16_t* samples, int n) {
+    const uint32_t t0 = micros();
+    const int done = audio_push(samples, n, VG_AUDIO_WAIT_MS);
+    // Wall time inside the write. Nearly all of it is the wait when things are
+    // healthy; the copy and the driver's own work are tens of microseconds.
+    g_audio_blocked_us += micros() - t0;
+    g_audio_short      += (uint32_t)(n - done);
     return done;
 }

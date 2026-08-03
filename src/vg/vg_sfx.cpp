@@ -270,7 +270,11 @@ static volatile bool s_task_parked   = true;    // acknowledged by the task
 static int16_t       s_buf[512];
 
 // Render whatever is due and hand it to the codec. One body, both callers.
-static void sfx_render_due(int n) {
+//
+// `paced` picks which write: the audio task may wait for room in the DMA ring and
+// wants to, because that wait is what keeps the ring full and the producer honest.
+// The render thread may not, for the reason vg_port.h gives at some length.
+static void sfx_render_due(int n, bool paced) {
     if (n <= 0) return;
     if (n > 512) n = 512;               // a frame's worth is ~370; cap the burst
 
@@ -291,8 +295,15 @@ static void sfx_render_due(int n) {
         const float mix = vg.vol_sfx * vg.vol_sfx;
         for (int i = 0; i < n; i++) s_buf[i] = (int16_t)((float)s_buf[i] * mix);
     }
-    vg_audio_write(s_buf, n);
+    if (paced) vg_audio_write_paced(s_buf, n);
+    else       vg_audio_write(s_buf, n);
 }
+
+// A FIXED CHUNK, about 11.6 ms of audio, and the write is what decides when the
+// next one is wanted. Big enough that the per-pass overhead disappears against the
+// mixing; small enough that a cue posted just after a pass began is looked at
+// promptly, since q_drain only runs between chunks.
+#define SFX_CHUNK 256
 
 static void sfx_task(void*) {
     for (;;) {
@@ -306,11 +317,14 @@ static void sfx_task(void*) {
         }
         s_task_parked = false;
         q_drain();
-        // ~4 ms of audio per pass, about 88 samples. Small enough that a pass is
-        // cheap and latency stays under a frame, and paced by the clock rather
-        // than by the renderer -- which is the entire point of moving it here.
-        sfx_render_due(vg_audio_due());
-        vTaskDelay(pdMS_TO_TICKS(4));
+        // PACED BY THE CODEC, not by a delay and not by a clock. The write returns
+        // when the ring has room for the next chunk, so this loop runs at exactly
+        // the sample rate without anything here having to know what that is.
+        sfx_render_due(SFX_CHUNK, true);
+        // Insurance, not pacing. If the codec never came up the write returns
+        // immediately, and a tight loop at priority 2 would starve core 0's idle
+        // task and trip its watchdog -- a silent speaker should not panic the game.
+        vTaskDelay(1);
     }
 }
 
@@ -393,5 +407,6 @@ void vg_sfx_update(float dt) {
     // -- a click there is not a thing anybody is listening to.
     sfx_render_due((vg_replay_mode() == VG_RP_PLAY)
                    ? (int)(dt * (float)VG_AUDIO_RATE + 0.5f)
-                   : vg_audio_due());
+                   : vg_audio_due(),
+                   false);
 }

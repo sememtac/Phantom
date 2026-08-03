@@ -500,18 +500,15 @@ void loop(void) {
         // Audio delivery, on its own line because it is not a frame-time number
         // and reading it as one would be a mistake. Samples, at 22050 a second:
         // 22 of them is a millisecond. See vg_prof.h for the decision this makes.
-        Serial.printf("        aud = lead %ld min %ld starve %lu drop %lu gap %lu\n",
-                      (long)g_audio_lead, (long)g_audio_lead_min,
-                      (unsigned long)g_audio_starve,
-                      (unsigned long)g_audio_drop,
-                      (unsigned long)g_audio_gap);
-        // Reset the window's extremes but NOT the lead itself -- that one is a
-        // level, not an accumulator, and zeroing it would tell the model the ring
-        // had emptied.
-        g_audio_lead_min = g_audio_lead;
-        g_audio_starve   = 0;
-        g_audio_drop     = 0;
-        g_audio_gap      = 0;
+        // Audio delivery. The window is the same two seconds as the lines above,
+        // so `blocked` reads straight off as a percentage: 1700 of 2000 ms waiting
+        // for ring space means the queue is full 85% of the time, which is health
+        // and not a problem. Near zero is the fault. See vg_prof.h.
+        Serial.printf("        aud = blocked %lu ms/2s short %lu\n",
+                      (unsigned long)(g_audio_blocked_us / 1000u),
+                      (unsigned long)g_audio_short);
+        g_audio_blocked_us = 0;
+        g_audio_short      = 0;
         for (int i = 0; i < FT_BUCKETS; i++) ft_hist[i] = 0;
         ft_worst = 0;
         ft_late  = 0;
