@@ -328,24 +328,6 @@ void vg_render_frame(const VgInput* in, float fps) {
     // the course owns it.
     if (vg.state == VG_COURSE) vg_course_draw(cam);
 
-    // THE SPLIT POINT SLIDES, and this is the cheap half of rebalancing it.
-    //
-    // `sub` costs max(A, B), so what matters is the halves being EVEN, and they are
-    // not: the instruments run 2.5 ms against the world's 2.1. Anything at the HEAD
-    // of group B can move to the TAIL of group A without touching draw order, because
-    // A's tail is immediately before B's head -- and the lock box is first in B.
-    //
-    // The boundary no longer has to sit at the antialiasing change, which is what it
-    // was pinned to when it was made: AA is per-submitter now, so group A can simply
-    // turn it on for its own tail. That is the only reason this move is available.
-    //
-    // Gated on the same condition as group B's early return, because in the original
-    // the menu branch returned before reaching the lock box.
-    if (!vg_state_is_menu(vg.state)) {
-        vg_line_aa_mode(true);
-        vg_draw_lock_box(cam);
-    }
-
     // Collect core 0. If it was never started -- the first frame, or a board where
     // the task could not be created -- group B has not been submitted at all, so it
     // happens here instead, on this thread, exactly as it used to.
@@ -417,6 +399,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         vg_draw_ift();
         return;
     }
+
+    vg_draw_lock_box(cam);
 
 
     // Instruments are drawn onto the virtual canopy. The bend tracks speed, so
