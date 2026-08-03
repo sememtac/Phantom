@@ -30,8 +30,42 @@ struct SaveRecord {
     uint8_t  hue;         // trail colour, quantised to 0..255
     uint8_t  vol_music;   // 0..255
     uint8_t  vol_sfx;
-    uint8_t  reserved[3]; // keeps the record 16 bytes and leaves room to grow
+    uint8_t  reserved[3]; // room to grow without a version bump
 };
+
+// THE COMMENT ON `reserved` USED TO SAY "keeps the record 16 bytes", AND IT WAS
+// WRONG. The record is 20. It was 16 before vol_music and vol_sfx were added, and
+// those two bytes pushed it to 18 and then the alignment to 20 -- without anybody
+// touching `reserved` or the sentence describing it. Which is the same failure this
+// table is about: a field added on one side, everything still compiling, and a
+// statement about the layout quietly becoming false.
+//
+// So it is asserted now rather than described. If this fires, the record grew, and
+// growing it means bumping SAVE_VERSION -- a record of a different size read as if
+// it were this one is the "callsign of random bytes" the note above is about.
+static_assert(sizeof(SaveRecord) == 20, "record grew: bump SAVE_VERSION too");
+
+// ONE ROW PER PERSISTED FIELD, AND BOTH DIRECTIONS COME FROM IT.
+//
+// The hazard this removes is adding a field to one side only. Load and store were
+// two independent lists of assignments in opposite directions, and nothing
+// anywhere related them -- a new setting that got saved but never loaded, or
+// loaded but never saved, compiles clean, runs clean, and simply does not persist.
+// That is not a bug anybody finds by reading, because both functions look right on
+// their own.
+//
+// The plan for this phase said to share one struct with VgGame and memcpy it. That
+// would be worse in two ways. The CLAMPS ARE NOT BOILERPLATE: storage is the one
+// input the game cannot vouch for, and the note above is about a corrupted byte
+// indexing the ship table out of bounds on the first frame -- a memcpy has nowhere
+// to put that. And the representations differ ON PURPOSE, floats in play against
+// quantised bytes in flash, because the record is sixteen bytes by design and a
+// volume slider does not need thirty-two bits.
+//
+// So the fields stay converted and clamped, and what becomes single is the LIST.
+// Each row is the field, how it packs, and how it unpacks -- side by side, where
+// leaving one out is visible.
+#define VG_PROFILE_FIELDS(F)                                                       F(credits,                                                                       r.credits = (uint16_t)((vg.credits < 0) ? 0 : vg.credits),                     vg.credits = (int)r.credits;                                                   if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;                          if (vg.credits < 0)          vg.credits = 0)                                 F(callsign,                                                                      memcpy(r.callsign, vg.callsign, 4),                                            for (int i = 0; i < 3; i++) {                                                      const char c = r.callsign[i];                                                  vg.callsign[i] = (c >= 'A' && c <= 'Z') ? c : 'A';                         }                                                                              vg.callsign[3] = 0)                                                          F(ship,                                                                          r.ship = (uint8_t)vg.ship,                                                     vg.ship = (r.ship < SHIP_CLASSES) ? (ShipClass)r.ship : SHIP_AEGIS;            vg.spec = vg_spec(vg.ship))                                                  F(champion,                                                                      r.champion = vg.champion ? 1u : 0u,                                            vg.champion = (r.champion != 0))                                             F(hue,                                                                           { float h = vg.trail_hue - (float)(int)vg.trail_hue;                             if (h < 0.0f) h += 1.0f;                                                       r.hue = (uint8_t)(h * 255.0f); },                                            vg.trail_hue = (float)r.hue * (1.0f / 255.0f))                               F(vol_music,                                                                     r.vol_music = (uint8_t)(vg.vol_music * 255.0f + 0.5f),                         vg.vol_music = (float)r.vol_music * (1.0f / 255.0f))                         F(vol_sfx,                                                                       r.vol_sfx = (uint8_t)(vg.vol_sfx * 255.0f + 0.5f),                             vg.vol_sfx = (float)r.vol_sfx * (1.0f / 255.0f))
 
 void vg_save_load(void) {
     SaveRecord r;
@@ -39,28 +73,14 @@ void vg_save_load(void) {
     if (r.magic != SAVE_MAGIC)                    return;
     if (r.version != SAVE_VERSION)                return;
 
-    // Clamp everything on the way in. Storage is the one input the game cannot
-    // vouch for -- a corrupted byte here would otherwise index the ship table
-    // out of bounds on the very first frame.
-    vg.credits = (int)r.credits;
-    if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;
-    if (vg.credits < 0)          vg.credits = 0;
-
-    for (int i = 0; i < 3; i++) {
-        const char c = r.callsign[i];
-        vg.callsign[i] = (c >= 'A' && c <= 'Z') ? c : 'A';
-    }
-    vg.callsign[3] = 0;
-
-    vg.ship      = (r.ship < SHIP_CLASSES) ? (ShipClass)r.ship : SHIP_AEGIS;
-    vg.spec      = vg_spec(vg.ship);
-    vg.champion  = (r.champion != 0);
-    vg.trail_hue = (float)r.hue * (1.0f / 255.0f);
-    vg.vol_music = (float)r.vol_music * (1.0f / 255.0f);
-    vg.vol_sfx   = (float)r.vol_sfx   * (1.0f / 255.0f);
+    // Clamped on the way in, per field, by the third column of the table above.
+#define VG_PROFILE_UNPACK(name, pack, unpack) unpack;
+    VG_PROFILE_FIELDS(VG_PROFILE_UNPACK)
+#undef VG_PROFILE_UNPACK
 
     // Hull follows the class, or a CHARIOT saved last session would come back
-    // carrying an AEGIS-sized bar.
+    // carrying an AEGIS-sized bar. Derived rather than persisted, which is why it
+    // is here and not a row in the table.
     vg.health_max = vg.spec->hull;
     vg.health     = vg.health_max;
 
@@ -78,20 +98,12 @@ void vg_save_store(void) {
     SaveRecord r;
     memset(&r, 0, sizeof(r));
 
-    r.magic    = SAVE_MAGIC;
-    r.version  = SAVE_VERSION;
-    r.credits  = (uint16_t)((vg.credits < 0) ? 0 : vg.credits);
-    r.ship     = (uint8_t)vg.ship;
-    r.champion = vg.champion ? 1u : 0u;
+    r.magic   = SAVE_MAGIC;
+    r.version = SAVE_VERSION;
 
-    float h = vg.trail_hue - (float)(int)vg.trail_hue;
-    if (h < 0.0f) h += 1.0f;
-    r.hue = (uint8_t)(h * 255.0f);
-
-    r.vol_music = (uint8_t)(vg.vol_music * 255.0f + 0.5f);
-    r.vol_sfx   = (uint8_t)(vg.vol_sfx   * 255.0f + 0.5f);
-
-    memcpy(r.callsign, vg.callsign, 4);
+#define VG_PROFILE_PACK(name, pack, unpack) pack;
+    VG_PROFILE_FIELDS(VG_PROFILE_PACK)
+#undef VG_PROFILE_PACK
 
     vg_store_save(&r, sizeof(r));
 }
