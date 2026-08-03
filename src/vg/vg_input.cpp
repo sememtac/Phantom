@@ -83,54 +83,70 @@ void vg_input_calibrate(void) {
 }
 
 // ===========================================================================
-// THE SENSORS ARE READ ON CORE 0
+// THE IMU AND THE PMU READ ON CORE 0. THE TOUCH CONTROLLER DOES NOT.
 //
-// Measured cause. The `in` phase billed 862-960 us a frame and it is two I2C
-// transactions at 400 kHz -- the touch controller and the IMU. That is bus latency,
-// not arithmetic, and it was being spent on the render thread in front of
-// everything else.
+// Measured cause. The `in` phase billed 862-960 us a frame and almost none of it
+// was arithmetic: it was I2C latency, for the touch controller, the IMU, and the
+// PMU's power-key poll, all on the render thread in front of everything else.
 //
-// It matters because of WHICH budget it lands in. The panel transfer costs 12.3 ms
-// of every frame however little CPU there is -- 460,800 bytes over QSPI at 80 MHz,
-// plus band zero, which cannot overlap anything -- so the work that bills frame
-// time directly has 4.37 ms to fit in. Combat spends 5.9. This is 900 us of that
-// 1.53 us overrun, and it is the cheapest 900 us on the board.
+// It matters because of WHICH budget it lands in. The panel costs 12.3 ms of every
+// frame however little CPU there is -- 460,800 bytes over QSPI at 80 MHz, plus band
+// zero, which cannot overlap anything -- so the work that bills frame time directly
+// has 4.37 ms to fit in. Combat spends 5.9.
 //
-// WHAT MOVED AND WHAT DID NOT, because that distinction is the entire safety
-// argument. Only the two READS are over here. Every decision stays on the render
-// thread with the frame's own dt: partitioning contacts into throttle, rear and
-// stick; the throttle's acquire-and-retain; the stick's origin, age and trackball
-// delta; the button edges; the deflection smoothing. All of it is frame-coupled,
-// and the VgInput it produces is what a `.phr` records -- so moving the state
-// machine would change the feel AND the recording, where moving the bus wait
+// WHAT MOVED AND WHAT DID NOT, because that distinction is the safety argument.
+// Only READS moved, never a decision. Everything that decides anything stays on the
+// render thread with the frame's own dt: partitioning contacts into throttle, rear
+// and stick; the throttle's acquire-and-retain; the stick's origin, age and
+// trackball delta; the button edges; the deflection smoothing. All of it is
+// frame-coupled, and the VgInput it produces is what a `.phr` records -- so moving
+// the state machine would change the feel AND the recording, where moving a bus wait
 // changes neither.
 //
-// REPLAY IS UNTOUCHED BY CONSTRUCTION, not by care: main.cpp calls
-// vg_input_update only when the mode is not VG_RP_PLAY, so during a render this
-// task's samples reach nothing at all.
+// AND THE TOUCH READ CAME BACK. It went over too, on the first attempt, and broke
+// steering -- see the note on Sensors below for the driver contract that forbids it.
+// The frame is the only thing allowed to poll that part.
 //
-// Wire is shared with the PMU poll on core 1. esp32-hal-i2c takes a per-bus
-// semaphore around every transaction, so the two serialise rather than corrupt
-// each other, and the PMU is read once every two seconds -- the contention is
-// noise. vg_input_calibrate keeps its own direct reads for the same reason: they
-// are correct while the task is polling, just occasionally interleaved with it,
-// and they are averaging twelve samples of the same sensor.
+// REPLAY IS UNTOUCHED BY CONSTRUCTION, not by care: main.cpp calls vg_input_update
+// only when the mode is not VG_RP_PLAY, so during a render this task is never even
+// created. Verified against the d335430 baseline -- all nine frames identical.
+//
+// Two cores now share the Wire object, so every runtime I2C entry point in vg_port
+// takes a mutex. That is NOT about the bus, which esp32-hal-i2c already serialises;
+// it is about TwoWire's rxBuffer and rxIndex being members of one shared object, so
+// two threads interleave their read-outs even when each transfer is atomic. See the
+// note on the lock in vg_port_co5300.cpp.
+//
+// vg_input_calibrate keeps its own direct reads. They are safe under the same lock,
+// and it is averaging twelve samples of the same sensor.
 // ===========================================================================
 
+// THE IMU ONLY. The touch controller CANNOT come over here, and the reason is in
+// TouchClassCST226::getPoint: it returns 0 when the status buffer's fresh-data
+// marker is absent, which is indistinguishable from "every finger lifted". The part
+// reports at about 100 Hz, so reading once per 16-23 ms frame always finds a fresh
+// sample -- but a task polling at 4 ms consumes it first, and the frame then sees
+// no contacts on most frames.
+//
+// That was tried and it broke steering while leaving the throttle apparently fine,
+// which is a diagnostic in itself: the throttle's retain guard holds its last value
+// when no candidate contact appears, so it looks healthy, while the stick needs a
+// live contact every frame and simply died. The consumer has to be the poller for
+// this part, so the touch read stays on the render thread.
+//
+// The IMU has no such contract -- it is a continuous quantity, every read returns
+// the current acceleration, and the value is smoothed against dt afterwards anyway.
+// A sample up to 4 ms old is indistinguishable from a fresh one.
 struct Sensors {
-    uint16_t xs[VG_MAX_TOUCH], ys[VG_MAX_TOUCH];
-    int      n;
     float    ax, ay, az;
     bool     imu_ok;
 };
 
-// A SEQLOCK, not the double buffer this file's first instinct was. The task
-// publishes every 4 ms and a frame is 16 to 23, so the writer laps the reader
-// several times per read -- with two alternating buffers the reader can be sitting
-// in the one the writer comes back to, and the tear would be a touch coordinate
-// from one sample beside a count from another. That reads as a phantom contact,
-// which is exactly the class of fault the throttle's retain guard exists to
-// survive and not one to manufacture on purpose.
+// A SEQLOCK, not a double buffer. The task publishes every 4 ms against a 16-23 ms
+// frame, so the writer laps the reader several times per read, and two alternating
+// buffers would let the reader sit in the one the writer comes back to. The tear
+// would be one axis of an acceleration beside another axis from a different sample
+// -- a direction that was never measured, fed straight into the tilt steering.
 //
 // Odd while writing. Two stores for the writer, and a reader that checks the
 // sequence is unchanged either side of its copy; in practice it never retries.
@@ -139,15 +155,13 @@ static uint32_t s_sens_seq = 0;
 
 static void sensor_task(void*) {
     for (;;) {
-        // The PMU comes with them, because this task now OWNS THE BUS. It needs the
-        // clock at 400 kHz where these two run it at 1 MHz, and the clock is global
-        // -- polling it from the render thread while this one is mid-transaction is
-        // exactly the race that produced `pmu FFFFFF` the first time this task ran.
-        // Its own 50 ms gate is inside it, so calling it every pass costs nothing.
+        // The PMU comes with it. Off the render thread for the same reason the IMU
+        // is -- three transactions and two clock changes -- and safe beside the
+        // frame's touch read because every entry point in vg_port now takes the I2C
+        // lock. Its own 50 ms gate is inside it, so calling it every pass is free.
         vg_pmu_poll();
 
         Sensors s;
-        s.n      = vg_touch_read(s.xs, s.ys);
         s.imu_ok = vg_imu_read(&s.ax, &s.ay, &s.az);
 
         const uint32_t q = __atomic_load_n(&s_sens_seq, __ATOMIC_RELAXED);
@@ -200,17 +214,16 @@ void vg_input_update(float dt, VgInput* out) {
         xTaskCreatePinnedToCore(sensor_task, "sens", 4096, nullptr, 2, nullptr, 0);
     }
 
+    // ON THIS THREAD, always -- see the note on Sensors for why this one cannot
+    // move. It is also the only I2C left in the frame.
+    uint16_t xs[VG_MAX_TOUCH], ys[VG_MAX_TOUCH];
+    const int n = vg_touch_read(xs, ys);
+
     Sensors sn;
     if (!sensors_take(&sn)) {
-        // The first frame after the task is created, before it has published. Read
-        // the bus here rather than fly a frame blind -- a dropped sample would look
-        // like every finger lifting, which releases the throttle and the stick.
-        sn.n      = vg_touch_read(sn.xs, sn.ys);
+        // First frame after the task is created, before it has published anything.
         sn.imu_ok = vg_imu_read(&sn.ax, &sn.ay, &sn.az);
     }
-    const uint16_t* xs = sn.xs;
-    const uint16_t* ys = sn.ys;
-    const int       n  = sn.n;
 
     // ---- partition contacts into throttle side and steering side ----
     int zone[VG_MAX_TOUCH];

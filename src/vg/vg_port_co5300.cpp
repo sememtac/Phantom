@@ -328,6 +328,39 @@ uint8_t vg_buttons_read(void) {
 #define IIC_HZ_FAST   1000000
 #define IIC_HZ_PMU     400000
 
+// ---------------------------------------------------------------------------
+// THE I2C LOCK, and it is not about the bus.
+//
+// esp32-hal-i2c already takes a per-bus semaphore around each transfer, so two
+// cores cannot interleave on the WIRE. What it does not protect is TwoWire itself:
+// rxBuffer, rxIndex, rxLength and txBuffer are members of the one shared Wire
+// object, so two threads doing beginTransmission / requestFrom / read() interleave
+// their BUFFERS even though each individual transfer is serialised.
+//
+// That is what `pmu FFFFFF` was -- every interrupt bit set, the accumulator
+// saturating on a three-byte read that came back as somebody else's bytes. The
+// first guess was the bus clock, since this file switches between 1 MHz and 400 kHz
+// and the setting is global; that was wrong, and it is worth recording as wrong
+// because it would have been fixed by moving the clock switch and the fault would
+// have stayed.
+//
+// So the lock spans the whole LOGICAL transaction -- address, transfer and
+// read-out, plus any clock change around it -- and every runtime I2C entry point
+// below takes it. The inits do not need to: they all run in setup(), on one thread,
+// before any task exists.
+// ---------------------------------------------------------------------------
+static SemaphoreHandle_t s_i2c_mux = nullptr;
+
+static void i2c_lock_init(void) {
+    if (!s_i2c_mux) s_i2c_mux = xSemaphoreCreateMutex();
+}
+static inline void i2c_take(void) {
+    if (s_i2c_mux) xSemaphoreTake(s_i2c_mux, portMAX_DELAY);
+}
+static inline void i2c_give(void) {
+    if (s_i2c_mux) xSemaphoreGive(s_i2c_mux);
+}
+
 // Polling every frame would spend three I2C transactions and two clock changes
 // on a key nobody presses. 50 ms is far below the shortest press anyone can make.
 #define PMU_POLL_MS        50
@@ -354,6 +387,7 @@ static bool pmu_read(uint8_t reg, uint8_t* v, int n) {
 }
 
 bool vg_pmu_init(void) {
+    i2c_lock_init();
     Wire.setClock(IIC_HZ_PMU);
 
     // ONLY the power-key events. Enabling everything was the probe's expedient
@@ -395,6 +429,10 @@ void vg_pmu_poll(void) {
     if (now - s_pmu_last_ms < PMU_POLL_MS) return;
     s_pmu_last_ms = now;
 
+    // Held across the clock change as well as the transfers: leaving the bus at
+    // 400 kHz for somebody else is merely slow, but sharing TwoWire's rxBuffer is
+    // the fault this lock exists for.
+    i2c_take();
     Wire.setClock(IIC_HZ_PMU);
 
     uint8_t st[3];
@@ -408,6 +446,7 @@ void vg_pmu_poll(void) {
     }
 
     Wire.setClock(IIC_HZ_FAST);
+    i2c_give();
 }
 
 bool vg_pmu_pwr_pressed(void) {
@@ -499,6 +538,7 @@ bool vg_store_diag_save(const void* data, unsigned len) {
 // ---------------------------------------------------------------------------
 
 bool vg_imu_init(void) {
+    i2c_lock_init();
     if (!s_imu.begin(Wire, QMI8658_L_SLAVE_ADDRESS, IIC_SDA, IIC_SCL)) {
         Serial.println("vg_imu_init: QMI8658 not found");
         s_imu_ok = false;
@@ -517,7 +557,10 @@ bool vg_imu_init(void) {
 
 bool vg_imu_read(float* ax, float* ay, float* az) {
     if (!s_imu_ok) return false;
-    return s_imu.getAccelerometer(*ax, *ay, *az);
+    i2c_take();
+    const bool ok = s_imu.getAccelerometer(*ax, *ay, *az);
+    i2c_give();
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +568,7 @@ bool vg_imu_read(float* ax, float* ay, float* az) {
 // ---------------------------------------------------------------------------
 
 bool vg_touch_init(void) {
+    i2c_lock_init();
     s_touch.setPins(TP_RST, TP_INT);
     if (!s_touch.begin(Wire, CST9220_ADDR, IIC_SDA, IIC_SCL)) {
         Serial.println("vg_touch_init: CST9220 not found");
@@ -547,6 +591,11 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     int16_t tx[VG_MAX_TOUCH] = {0};
     int16_t ty[VG_MAX_TOUCH] = {0};
 
+    // LOCKED, and this one is easy to forget because it is the read that did NOT
+    // move to another core -- which is exactly why it needs the lock: one unlocked
+    // participant defeats the mutex for everybody. Left out on the first attempt,
+    // and `pmu 0000FF` stayed on the telemetry until it went in.
+    i2c_take();
     uint8_t want = s_touch.getSupportTouchPoint();
     if (want > VG_MAX_TOUCH) want = VG_MAX_TOUCH;
 
@@ -554,6 +603,7 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // the *current* set of contacts, including "all fingers lifted", which an
     // edge-triggered latch does not give you.
     uint8_t n = s_touch.getPoint(tx, ty, want);
+    i2c_give();
     if (n > VG_MAX_TOUCH) n = VG_MAX_TOUCH;
 
     int out = 0;
