@@ -615,8 +615,21 @@ const char* vg_sky_name(void) {
     }
 }
 
+// A HELD-OPEN DOOR for looking at one backdrop kind on purpose. Off by default and
+// meant to stay that way; it earned its place finding the magnification banding,
+// which is a bright-sky fault that a seeded rotation only shows one venue in three,
+// so waiting for one costs a match per look.
+//
+// It overrides the MENU backdrop too, which is a feature rather than an oversight:
+// the menu is the fastest way to get a steady look at a texture without flying.
+//   -1 the seed's own choice   0 nebula   1 galaxy   2 cluster
+#define VG_SKY_FORCE (-1)
+
 void vg_sky_generate(SkyKind kind, uint32_t seed) {
     if (!s_tex) return;
+#if VG_SKY_FORCE >= 0
+    kind = (SkyKind)VG_SKY_FORCE;
+#endif
     // Whatever this builds, it is not the menu's any more -- vg_sky_menu sets
     // the flag back after it calls through here.
     s_is_menu = false;
