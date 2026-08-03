@@ -147,6 +147,47 @@ void loop(void) {
     static uint32_t acc_tint = 0, acc_mir = 0;
     static uint32_t frames    = 0;
 
+    // THE DISTRIBUTION, not just the mean.
+    //
+    // The mean read 58.1 fps while the steady state was 59.6, because a handful
+    // of frames were dragging it. An average cannot tell those apart, and they
+    // are opposite problems: being 0.5 ms short on EVERY frame is a budget to
+    // trim, and being 8 ms short once a second is an event to find. Optimising
+    // for the wrong one is how you spend a week making the fast frames faster.
+    //
+    // A histogram rather than a running percentile: no sorting, no allocation,
+    // integer bucket arithmetic, 66 bytes. 0.5 ms buckets from 12 ms, which
+    // brackets comfortably-fast through twice the budget, and the top bucket
+    // catches everything worse.
+#define FT_BUCKETS 33
+#define FT_BASE_US 12000u
+#define FT_STEP_US 500u
+    static uint16_t ft_hist[FT_BUCKETS];
+    // And the worst frame of the window WITH its phase split, because "p95 is
+    // 24 ms" is half an answer -- the other half is which phase owned it, and
+    // that is the half that says what to go and look at.
+    static uint32_t ft_worst = 0;
+    static uint32_t ft_w_in = 0, ft_w_upd = 0, ft_w_sub = 0, ft_w_blit = 0;
+    static uint8_t  ft_w_state = 0;
+    // Counted exactly rather than read off the histogram. 16667 us falls INSIDE
+    // a 0.5 ms bucket (bucket 9 spans 16.5-17.0), so a bucket-derived count
+    // would silently miss every frame between 16.67 and 17.0 ms -- and this is
+    // the number anybody reads first. One compare is cheaper than the caveat.
+    static uint32_t ft_late = 0;
+    // AND THE REPORT FRAME DOES NOT COUNT.
+    //
+    // The three telemetry lines are ~600 characters into the serial ring, and
+    // they cost about 1.8 ms on the frame that writes them -- which lands in the
+    // NEXT frame's period, because the period is measured at the top of the loop.
+    // Left in, that frame won the "worst frame" slot almost every window, and its
+    // phase split summed to 1.8 ms less than its period, because the cost is
+    // outside t0..t4 entirely. The first reading off this instrument was the
+    // instrument.
+    //
+    // Same rule the stall record already applies to capture waits, for the same
+    // reason: never let the measurement be the thing measured.
+    static bool ft_skip_next = false;
+
     // Not while replaying: the host is sending frame records, and the capture
     // poller would eat them as if they were commands.
     vg_crumb(CRUMB_POLL, (uint8_t)vg.state);
@@ -154,6 +195,11 @@ void loop(void) {
 
     uint32_t now = micros();
     if (last_us == 0) last_us = now;
+    // Kept as an integer, before every clamp below touches it. This is the real
+    // frame PERIOD -- what the panel actually showed -- rather than the sim step,
+    // which is sub-stepped and clamped and therefore lies about long frames on
+    // purpose.
+    const uint32_t frame_us = now - last_us;
     float frame_dt = (now - last_us) * 1e-6f;
     last_us = now;
     if (frame_dt < 0.0005f) frame_dt = 0.0005f;
@@ -306,6 +352,29 @@ void loop(void) {
         vg_crumb_stall(stall_ms, (uint8_t)vg.state, phase);
     }
 
+    // NOT DURING A SESSION, for the same reason the stall record is not: a
+    // capture or a replay blocks the loop waiting on the host, and those waits
+    // are longer and far more frequent than any real slow frame. Left in, they
+    // would own every percentile and the instrument would only ever be measuring
+    // the tool measuring it.
+    if (ft_skip_next) {
+        ft_skip_next = false;               // this frame carries the printf
+    } else if (!vg_capture_active() && vg_replay_mode() == VG_RP_OFF) {
+        uint32_t fb = (frame_us > FT_BASE_US)
+                    ? (frame_us - FT_BASE_US) / FT_STEP_US : 0u;
+        if (fb >= FT_BUCKETS) fb = FT_BUCKETS - 1;
+        ft_hist[fb]++;
+        if (frame_us > 16667u) ft_late++;
+        if (frame_us > ft_worst) {
+            ft_worst   = frame_us;
+            ft_w_in    = t1 - t0;
+            ft_w_upd   = t2 - t1;
+            ft_w_sub   = t3 - t2;
+            ft_w_blit  = t4 - t3;
+            ft_w_state = (uint8_t)vg.state;
+        }
+    }
+
     acc_input  += t1 - t0;
     acc_update += t2 - t1;
     acc_submit += t3 - t2;
@@ -394,6 +463,45 @@ void loop(void) {
                       (double)in.raw_ax, (double)in.raw_ay, (double)in.raw_az,
                       (double)in.pitch, (double)in.yaw, (double)in.throttle);
 #endif
+        // A third line, and the one to read first when the question is "why is
+        // this not 60". p50 is what the game normally does; the gap between p50
+        // and p95 is how consistent it is; and the worst frame's split names the
+        // phase to go and look at.
+        //
+        // Percentiles come out of the histogram by counting, and a bucket is
+        // reported by its UPPER edge -- so "p95 18000" means 95% of frames came
+        // in under 18.0 ms, which is the direction that cannot flatter the
+        // result. The bottom bucket is everything at or under 12.0 ms.
+        {
+            uint32_t tot = 0;
+            for (int i = 0; i < FT_BUCKETS; i++) tot += ft_hist[i];
+            uint32_t p50 = 0, p95 = 0, seen = 0;
+            const uint32_t n50 = tot / 2, n95 = (tot * 95 + 99) / 100;
+            for (int i = 0; i < FT_BUCKETS; i++) {
+                seen += ft_hist[i];
+                const uint32_t edge = FT_BASE_US + (uint32_t)(i + 1) * FT_STEP_US;
+                if (!p50 && seen >= n50) p50 = edge;
+                if (!p95 && seen >= n95) p95 = edge;
+            }
+            const uint32_t late = ft_late;   // exact; see the note above
+            if (tot) {
+                Serial.printf("        frames %lu | p50 %lu p95 %lu late %lu (%lu%%) "
+                              "| worst %lu us = in %lu upd %lu sub %lu blit %lu, state %u\n",
+                              (unsigned long)tot,
+                              (unsigned long)p50, (unsigned long)p95,
+                              (unsigned long)late,
+                              (unsigned long)(late * 100 / tot),
+                              (unsigned long)ft_worst,
+                              (unsigned long)ft_w_in, (unsigned long)ft_w_upd,
+                              (unsigned long)ft_w_sub, (unsigned long)ft_w_blit,
+                              (unsigned)ft_w_state);
+            }
+        }
+        for (int i = 0; i < FT_BUCKETS; i++) ft_hist[i] = 0;
+        ft_worst = 0;
+        ft_late  = 0;
+        ft_skip_next = true;
+
         acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = 0;
         acc_sky   = acc_prim = acc_scan = 0;
