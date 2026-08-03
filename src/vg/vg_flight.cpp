@@ -5,10 +5,6 @@
 #include <math.h>
 
 // The flight model and the per-frame world transform.
-//
-// hud_decay is a LODGER here. It is the panel's own timers, not flight, and it
-// only lives in this file because the world step's tail is what calls it and
-// there is no cockpit module to own it yet. When there is one, it leaves.
 
 // ---------------------------------------------------------------------------
 // World step
@@ -46,21 +42,6 @@ float vg_roll_angle(const VgInput* in, float dt) {
     vg.roll_rate += (want - vg.roll_rate) * k;
 
     return vg.roll_rate * dt;
-}
-
-// The cockpit's own timers: what the panel is doing about things that already
-// happened. None of it is simulation -- the hull is not healing here, a light is
-// going out.
-static void hud_decay(float dt) {
-    // Faster than the damage vignette. A flash is the arrival of light, not a
-    // state the cockpit sits in.
-    if (vg.blast_flash > 0) {
-        vg.blast_flash -= dt * 4.2f;
-        if (vg.blast_flash < 0) vg.blast_flash = 0;
-    }
-    if (vg.hit_flash     > 0) vg.hit_flash     -= dt;
-    if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
-    if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
 }
 
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
@@ -354,7 +335,7 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // order within it never mattered. Only their position AFTER vg_vfx_tick does
     // -- a bench shot raises the flash and the knock, and both have to be laid
     // down before they are decayed and before the shake is assembled.
-    hud_decay(dt);
+    vg_hud_decay(dt);
     vg_comms_step(dt);
     // The course's, and the only one left inline. It decays here rather than in
     // vg_course_update because that runs from the state dispatch, a different

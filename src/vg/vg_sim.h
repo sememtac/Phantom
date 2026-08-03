@@ -139,6 +139,40 @@ void vg_kill_player(void);
 bool vg_player_was_hit(void);
 void vg_clear_player_hit(void);
 
+// One rock into the field, somewhere down the cone. Public because three
+// different things populate the field: the lifecycle fills it at once, the
+// dispatch tops it up while flying, and the menus keep it drifting.
+void vg_spawn_asteroid(void);
+
+// --- vg_states.cpp ---------------------------------------------------------
+
+// The attract loop's set-up. Called through the STATES table like every other
+// entry hook, and ALSO called directly from the won-screen exit, which is the
+// kind of thing Phase 4's `leave` column is meant to stop.
+void vg_enter_attract(void);
+
+
+// The menus' own world motion: enough drift to stop the backdrop looking like a
+// still, and nothing that can be flown into.
+void vg_menu_world(float dt);
+
+// Put the menu backdrop up. Free unless a venue has displaced it, so moving
+// between the title, the bracket and the repair screen costs nothing.
+void vg_use_menu_sky(void);
+
+// One frame of the set turning on or off between two states.
+void vg_tv_update(float dt);
+
+// --- vg_cockpit.cpp --------------------------------------------------------
+
+// The caution annunciators. Here rather than in the HUD because the phase has to
+// be advanced by dt and a draw has no dt -- and because a sound triggered from
+// drawing code does not happen when the panel is not drawn.
+void vg_update_alerts(float dt, bool alive);
+
+// The panel's own timers: hit flash, boot sweep, damage glitch, blast flash.
+void vg_hud_decay(float dt);
+
 // --- vg_missile.cpp --------------------------------------------------------
 
 // `spec` is the LAUNCHING ship's class: the round carries its warhead, seeker
