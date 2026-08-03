@@ -116,6 +116,29 @@ void vg_draw_world(const VgCam& cam);
 void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps);
 void vg_draw_overlays(void);
 
+// HUD pieces that must NOT be warped, so the render layer calls them from outside
+// the warp bracket. That is the only reason they are separate from vg_draw_hud.
+//
+// DECLARED HERE, not privately in vg_render.cpp where they used to be. The reason
+// is legibility, and it is worth being precise about what it is NOT: these are
+// C++, so a stale declaration cannot bind silently -- the mangled name changes and
+// the link fails. Tested rather than assumed.
+//
+// What the move buys is that the interface is stated once, in the header both the
+// caller and vg_hud.cpp already include, so a change is made in view of the
+// declaration instead of in view of a copy. A return type or const mismatch is now
+// a compile error at the definition rather than an undefined reference at the end
+// of the build, and a new caller finds these where every other draw entry point
+// lives.
+void vg_draw_lock_box(const VgCam& cam);
+void vg_draw_steer_indicator(const VgInput* in);
+void vg_draw_target_markers(const VgCam& cam);
+// The bounds and the size clamps are the caller's: this runs twice with very
+// different room, the main window and the rear-view patch at 145x44.
+void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
+                             float x1, float y1, float hmin, float hmax);
+void vg_draw_threat_indicator(const VgCam& cam);
+
 // The broadcast caption. Drawn by the render layer rather than by the HUD,
 // because the IFT speaks over the INTRO -- which has no instruments at all -- as
 // well as over a finished match.

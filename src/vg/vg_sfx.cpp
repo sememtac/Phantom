@@ -1,4 +1,5 @@
-#include "vg_sfx.h"
+﻿#include "vg_sfx.h"
+#include "vg_prof.h"
 #include <Arduino.h>
 #include "vg_synth.h"
 #include "vg_port.h"
@@ -229,7 +230,6 @@ void vg_sfx_update(float dt) {
     // as it sounds, and baking somebody's volume slider into a recording is the
     // kind of thing nobody notices until the file is the only copy left.
     {
-        extern uint32_t g_sfx_render_us;
         const uint32_t t0 = micros();
         vg_synth_render(buf, n, 1.0f);
         g_sfx_render_us = micros() - t0;

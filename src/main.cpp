@@ -1,4 +1,4 @@
-// PHANTOM - standalone entry point.
+﻿// PHANTOM - standalone entry point.
 //
 // This file exists only for the standalone build. When the game is embedded in
 // another firmware, its launcher calls the same four functions per frame:
@@ -9,6 +9,7 @@
 
 uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
 int      vg_fire_live(void);          // live fireballs, defined in vg_game.cpp
+// Defined here, declared in vg_prof.h, which both writers include.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
@@ -19,6 +20,7 @@ uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
 #include "vg/vg_render.h"
+#include "vg/vg_prof.h"
 #include "vg/vg_capture.h"
 #include "vg/vg_replay.h"
 #include "vg/vg_crumb.h"

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "vg_sky.h"
 #include "vg_draw.h"
+#include "vg_prof.h"
 #include "vg_game.h"
 #include "vg_screens.h"
 #include "vg_glitch.h"
@@ -13,15 +14,6 @@
 // Frame orchestration only. Every actual drawing routine lives in a vg_draw_*
 // or vg_hud/vg_overlay module; what remains here is the part that is genuinely
 // global -- the draw ORDER, and which layers get the spherical warp.
-
-// Declared here rather than in vg_draw.h because these are HUD pieces that must
-// NOT be warped, so they are called from outside the warp bracket.
-void vg_draw_lock_box(const VgCam& cam);
-void vg_draw_steer_indicator(const VgInput* in);
-void vg_draw_target_markers(const VgCam& cam);
-void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
-                             float x1, float y1, float hmin, float hmax);
-void vg_draw_threat_indicator(const VgCam& cam);
 
 // Frame rate, bottom left, during flight only. The menus sit comfortably above
 // 60 and have nothing to report; the number is there to be read while something
@@ -213,7 +205,6 @@ void vg_render_frame(const VgInput* in, float fps) {
     // World, back to front. The boundary goes down before anything solid so the
     // hidden-line fills occlude it.
     // Submit, timed per layer. "sub 11ms" names a stage; this names the layer.
-    extern uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;
     // Zeroed every frame. A frame that skips a layer must report zero for it,
     // not last flight's number -- the stale HUD value made menu frames claim
     // more submit time than the whole stage took.
