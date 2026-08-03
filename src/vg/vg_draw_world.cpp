@@ -116,7 +116,6 @@ static void draw_motes(const VgCam& cam) {
         if (tz < NEAR_Z) tz = NEAR_Z;
         vg_edge_w(fwd, p, v3(p.x, p.y, tz), col, w);
     }
-    vg_line_aa_mode(true);
 }
 
 static void draw_debris(const VgCam& cam) {
@@ -149,7 +148,6 @@ static void draw_debris(const VgCam& cam) {
         else if (f > 0.40f) vg_edge_w(cam, d->pos, tip, col, 2);
         else                vg_edge  (cam, d->pos, tip, col);
     }
-    vg_line_aa_mode(true);
 }
 
 // --- fireballs -------------------------------------------------------------
@@ -352,7 +350,6 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
         vg_edge(cam, B, C, col);
         vg_edge(cam, C, A, col);
     }
-    vg_line_aa_mode(true);
 }
 
 // `hero` marks the cutscene ship: drawn on the amber ramp rather than in threat
@@ -494,7 +491,6 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
         // stays continuous because each segment starts where the last ended.
         t += (t < 28) ? 1 : (t < 72) ? 2 : 3;
     }
-    vg_line_aa_mode(true);
 }
 
 // The entry gate: a lit plane in the pilot's colour, square to their travel,
@@ -592,7 +588,6 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
         vg_edge_w(cam, prev, cur, vg_dim(trail_col, f * f), w);
         prev = cur;
     }
-    vg_line_aa_mode(true);
 
     // Body: a short, fat, bright segment along the heading. Screen-space width is
     // constant with range, which is deliberate -- a missile inbound from distance

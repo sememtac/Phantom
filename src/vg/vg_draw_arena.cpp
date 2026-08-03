@@ -1,4 +1,4 @@
-#include "vg_draw.h"
+﻿#include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_arena.h"
 #include <math.h>
@@ -164,5 +164,4 @@ void vg_draw_arena_grid(const VgCam& cam) {
     }
 
     // arena_seg leaves the flag wherever the last segment put it.
-    vg_line_aa_mode(true);
 }

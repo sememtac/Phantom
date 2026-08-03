@@ -103,9 +103,14 @@ static void draw_rear_patch(const VgCam& base, float warp) {
 
     vg_rast_viewport(px, py, REAR_W, REAR_H);
     vg_rast_fills(false);
+    // The patch is world content, and it is drawn after the main view has already
+    // switched AA back on for the instruments -- so it has to say so again.
+    vg_line_aa_mode(false);
     vg_draw_arena_grid(rc);
     vg_draw_world(rc);
     if (vg.state == VG_COURSE) vg_course_draw(rc);
+    // The diamonds below are an instrument, and so is the bezel after them.
+    vg_line_aa_mode(true);
     // Threat diamonds in the mirror, INSIDE the viewport bracket so they are
     // clipped to the patch like everything else in it. Bounds are the patch,
     // inset a little, and the half-size is clamped to 2..6px -- the main view's
@@ -209,6 +214,24 @@ void vg_render_frame(const VgInput* in, float fps) {
     // not last flight's number -- the stale HUD value made menu frames claim
     // more submit time than the whole stage took.
     g_sub_star = g_sub_arena = g_sub_world = g_sub_hud = 0;
+    // NO ANTIALIASING IN THE WORLD. AUTHOR'S CALL, and the reasoning is the
+    // player's: the HUD carries nearly everything the player needs to know, and a
+    // dogfight gives the ship itself very little screen -- contacts are small,
+    // distant and moving unpredictably, so a smoothed hull edge buys almost
+    // nothing while an instrument that has to be READ buys a great deal.
+    //
+    // It is also where the money is. An AA span costs per PIXEL, so its price
+    // tracks LENGTH -- arena_seg's note works this out in full -- and in combat
+    // the long spans are near ship hulls. Measured at 1158 us of a 21 ms frame,
+    // alongside 154 triangles of solids the attract loop never draws, which is
+    // why the first measurement of this missed it completely.
+    //
+    // The grid, the motes, the debris, the trails and the course gate had each
+    // reached this conclusion locally and switched AA off for themselves. This is
+    // the same decision made once, for the whole layer, so the next thing added
+    // to the world does not have to rediscover it.
+    vg_line_aa_mode(false);
+
     uint32_t t_sub = micros();
     vg_draw_starfield(cam);
     g_sub_star = micros() - t_sub;  t_sub = micros();
@@ -220,6 +243,12 @@ void vg_render_frame(const VgInput* in, float fps) {
     // would be confusing at best, and its normal is only guaranteed sane while
     // the course owns it.
     if (vg.state == VG_COURSE) vg_course_draw(cam);
+
+    // ...AND ALL OF IT ON THE INSTRUMENTS, from here to the end of the frame.
+    // Everything past this line is read rather than flown through: the reticle,
+    // the bars, the radar, the captions. Static geometry a few pixels wide is
+    // exactly where a half-pixel crawl shows and where smoothing earns its cost.
+    vg_line_aa_mode(true);
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on
     // the ship-select screen would be reporting on a fight that is not happening.

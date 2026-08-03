@@ -184,5 +184,4 @@ void vg_course_draw(const VgCam& cam) {
         vg_edge(cam, prev, cur, COL_IFT);
         prev = cur;
     }
-    vg_line_aa_mode(true);
 }
