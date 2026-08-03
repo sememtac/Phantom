@@ -110,6 +110,9 @@ int  vg_text_width(const char* s, int scale);
 void vg_rast_flush(void);
 
 int  vg_rast_prim_count(void);
+// The most primitives any one frame has used since boot. Sizes the list -- see the
+// note at its definition for what it is being measured for.
+int  vg_rast_prim_peak(void);
 bool vg_rast_overflowed(void);
 
 // Frame cost, split. `blit` on its own conflates two very different things: CPU

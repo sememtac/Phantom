@@ -421,7 +421,7 @@ void loop(void) {
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu blit %lu "
                       "| rast %lu = sky %lu prim %lu scan %lu "
                       "| aa %lu ln %lu tri %lu oth %lu tnt %lu mir %lu "
-                      "| P %d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
+                      "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
@@ -438,6 +438,7 @@ void loop(void) {
                       (unsigned long)(acc_tint / frames),
                       (unsigned long)(acc_mir  / frames),
                       vg_rast_prim_count(),
+                      vg_rast_prim_peak(),
                       vg_rast_tri_count(),
                       // A leak shows as heap falling steadily; a stack overflow
                       // shows as headroom approaching zero before it panics.

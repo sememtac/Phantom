@@ -71,6 +71,11 @@ bool vg_pmu_init(void);
 // True once per short press of PWR. Latched, so a press is never missed for
 // having happened between polls.
 bool vg_pmu_pwr_pressed(void);
+// Reads the PMU's interrupt status and latches a power-key press. MUST be called
+// from whichever thread owns the I2C bus and from nowhere else: it switches the bus
+// clock to 400 kHz and back, and the touch controller and IMU run it at 1 MHz. See
+// the note at the definition for what happens when two cores do this at once.
+void vg_pmu_poll(void);
 // Every PMU interrupt bit seen since boot -- diagnostics only.
 void vg_pmu_seen(uint8_t* st3);
 // One-shot boot dump: bus scan, chip id, interrupt enables and status.

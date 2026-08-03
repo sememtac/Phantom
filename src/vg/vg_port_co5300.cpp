@@ -375,7 +375,21 @@ bool vg_pmu_init(void) {
 
 // Poll, and latch a short press until somebody collects it. A press has to
 // survive not being looked at on the exact frame it happened.
-static void pmu_poll(void) {
+//
+// CALLED ONLY FROM THE SENSOR TASK, and that is a correctness requirement rather
+// than a preference. Note the two setClock calls below: this part needs the bus at
+// 400 kHz where the touch controller and the IMU run it at 1 MHz, and the clock is
+// GLOBAL BUS STATE. While the reads all sat on the render thread that was merely a
+// pair of switches; the moment the sensors moved to core 0 it became a race, and it
+// showed up immediately as `pmu FFFFFF` in the telemetry -- every interrupt bit set,
+// which is the accumulator saturating on reads that failed and returned 0xFF
+// because they went out at 1 MHz.
+//
+// One owner for the bus fixes it at the root, where a mutex would only have made
+// the clock switching safe while leaving it on the render thread. Now every I2C
+// transaction in the running game -- touch, IMU and this -- happens on one task, so
+// the switches are serialised by there being nobody else to race.
+void vg_pmu_poll(void) {
     if (!s_pmu_present) return;
     const uint32_t now = millis();
     if (now - s_pmu_last_ms < PMU_POLL_MS) return;
@@ -389,17 +403,23 @@ static void pmu_poll(void) {
         s_pmu_seen[0] |= st[0];
         s_pmu_seen[1] |= st[1];
         s_pmu_seen[2] |= st[2];
-        if (st[1] & AXP_PKEY_SHORT) s_pwr_short = true;
+        if (st[1] & AXP_PKEY_SHORT)
+            __atomic_store_n(&s_pwr_short, true, __ATOMIC_RELEASE);
     }
 
     Wire.setClock(IIC_HZ_FAST);
 }
 
 bool vg_pmu_pwr_pressed(void) {
-    pmu_poll();
-    if (!s_pwr_short) return false;
-    s_pwr_short = false;
-    return true;
+    // COLLECTS, no longer polls -- the sensor task does that on the core that owns
+    // the bus. The latch is what makes the split safe, and it was already here for
+    // the same reason: a press must survive not being looked at on the frame it
+    // happened, and now it must also survive being set by the other core.
+    //
+    // An exchange rather than a test-and-clear. The set happens on core 0 and the
+    // clear here on core 1, so the read-modify-write has to be one operation or a
+    // press arriving between the test and the clear is swallowed.
+    return __atomic_exchange_n(&s_pwr_short, false, __ATOMIC_ACQ_REL);
 }
 
 void vg_pmu_seen(uint8_t* st3) {

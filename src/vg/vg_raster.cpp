@@ -57,8 +57,31 @@ bool vg_rast_init(void) {
     return true;
 }
 
-void vg_rast_begin_frame(void) { s_count = 0; s_overflow = false; s_tri_count = 0; }
+// THE HIGH WATER MARK, since boot and never reset.
+//
+// MAX_PRIMS is 3400 and sizeof(Prim) is 20, so the list is 68KB of internal SRAM --
+// and there are only ~36KB free, which is what blocks the one change that would
+// clear both frame budgets at once: building the NEXT frame's list on core 0 while
+// core 1 rasterises this one needs two lists.
+//
+// So the question is not what the list costs, it is what it USES. 3400 was sized
+// for the shard burst -- 160 shards at one primitive each, plus everything else
+// they are on top of -- and the per-frame count reads 470-652 in combat. If the
+// true peak across a whole session is under half the ceiling, two lists fit inside
+// the 68KB already spent and the pipeline becomes affordable without another byte.
+//
+// Peak rather than a mean, and never reset, because the number that decides a
+// buffer size is the worst moment the game can produce, not the usual one. Sampled
+// at the START of a frame, which is the only point where the previous frame's count
+// is complete.
+static int s_peak = 0;
+
+void vg_rast_begin_frame(void) {
+    if (s_count > s_peak) s_peak = s_count;
+    s_count = 0; s_overflow = false; s_tri_count = 0;
+}
 int  vg_rast_prim_count(void)  { return s_count; }
+int  vg_rast_prim_peak(void)   { return s_peak; }
 bool vg_rast_overflowed(void)  { return s_overflow; }
 
 static inline Prim* push(void) {
