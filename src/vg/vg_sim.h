@@ -163,6 +163,14 @@ void vg_use_menu_sky(void);
 // One frame of the set turning on or off between two states.
 void vg_tv_update(float dt);
 
+// Start the flight phase of a match: arena, racks, opponent, panel boot.
+//
+// Called BY NAME rather than hung on VG_PLAYING's entry hook, and it must stay
+// that way. VG_HIT returns control to VG_PLAYING through vg_state_go, so an entry
+// hook here would rebuild the arena, empty the racks and respawn the opponent
+// after every hit the player takes. See the note on VgStateDef::leave.
+void vg_begin_flight(void);
+
 // --- vg_cockpit.cpp --------------------------------------------------------
 
 // The caution annunciators. Here rather than in the HUD because the phase has to

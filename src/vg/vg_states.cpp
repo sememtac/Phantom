@@ -129,6 +129,42 @@ static void enter_bracket(void) {
     vg_bracket_focus_player();
 }
 
+// Leaving the cutscene. Its own state, and nothing about the match: the shot is
+// finished with and the cockpit is never zoomed.
+static void leave_intro(void) {
+    vg_cine_clear();
+    vg.cam_zoom = 1.0f;
+}
+
+// Starting the flight phase of a match.
+//
+// NOT an entry hook, and the note on VgStateDef::leave says why: VG_HIT hands
+// control back to VG_PLAYING through vg_state_go, so anything hung on PLAYING's
+// entry would run again after every hit the player takes.
+//
+// The cutscene has spent seventeen seconds turning and drifting the viewpoint for
+// the sake of framing, and relocating between setups moved it again -- so where
+// it ended up relative to the arena is not something a match should have to
+// inherit. Both the arena and the opponent are re-established from scratch, which
+// makes a bad start structurally impossible rather than merely unlikely. Free to
+// do because the handover is a hard cut to black with the instruments rebooting
+// over it: none of the snap is visible.
+void vg_begin_flight(void) {
+    vg_arena_init(ARENA_TORUS);
+    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive  = false;
+    for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive  = false;
+    for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
+    vg_spawn_opponent();
+
+    vg.hud_boot = HUD_BOOT_TIME;
+    vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
+    vg.roll     = 0;
+    vg.bank     = 0;
+    vg.taunt_t  = 1.6f;
+    vg_input_calibrate();
+}
+
 // ---------------------------------------------------------------------------
 // THE STATES
 //
@@ -158,29 +194,42 @@ struct VgStateDef {
     const char* name;
     uint8_t     flags;
     void      (*enter)(void); // may be null: not every state sets anything up
+    // ...and what leaving it has to undo. Runs BEFORE the state changes, on
+    // every way out, which is the point: the INTRO teardown used to be written
+    // out at the one exit that happened to exist, and it kept mutating state
+    // AFTER the entry hook for the next state had already run.
+    //
+    // NOTE THE ASYMMETRY, and do not "fix" it. An entry hook cannot hold a
+    // state's set-up unless every entry wants it, and VG_PLAYING is entered
+    // twice: once at the start of a match and once every time VG_HIT hands
+    // control back. An enter_playing that rebuilt the arena, emptied the racks
+    // and respawned the opponent would do all of that after each hit taken. So
+    // the match set-up is vg_begin_flight, called by name, and PLAYING's enter
+    // column stays null on purpose.
+    void      (*leave)(void);
 };
 
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
 static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract },
-    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr },
-    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr },
-    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr },
-    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket },
-    { "INTRO",     VGS_MENU,                           vg_match_start },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr },
-    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr },
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract, nullptr },
+    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
+    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
+    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
+    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr },
+    { "INTRO",     VGS_MENU,                           vg_match_start,   leave_intro },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
     // would be the loudest thing about it.
-    { "KILL",      VGS_ENGINE,                         nullptr },
+    { "KILL",      VGS_ENGINE,                         nullptr,          nullptr },
     // Nothing. A pause is not a place -- it suspends one.
-    { "PAUSE",     0,                                  nullptr },
-    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course },
-    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr },
-    { "OVER",      VGS_MENU,                           nullptr },
-    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr },
+    { "PAUSE",     0,                                  nullptr,          nullptr },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course,     nullptr },
+    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
+    { "OVER",      VGS_MENU,                           nullptr,          nullptr },
+    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr,          nullptr },
 };
 
 static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
@@ -200,6 +249,14 @@ void vg_state_go(VgState to) {
     // The clock belongs to the state, not to the caller. It was reset by hand at
     // all nineteen sites that changed state, and it happened to be right at all
     // nineteen -- which is the good version of a rule that nothing enforces.
+    // Out before in, and the old state is still current while its leave runs.
+    // tv_join routes through here too, so a cut gets the same teardown as a
+    // direct change without a second path to keep in step.
+    if ((int)vg.state < VG_STATE_COUNT) {
+        const VgStateDef* from = &STATES[vg.state];
+        if (from->leave) from->leave();
+    }
+
     vg.state   = to;
     vg.state_t = 0.0f;
     if (d->enter) d->enter();

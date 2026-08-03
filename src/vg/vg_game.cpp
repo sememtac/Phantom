@@ -581,22 +581,12 @@ void vg_game_update(float dt, const VgInput* in) {
         }
 
         if (vg_cine_update(dt, tap_up)) {
-            vg_cine_clear();
-            vg.cam_zoom = 1.0f;              // the cockpit is never zoomed
-            vg_arena_init(ARENA_TORUS);
-            vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
-            for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive = false;
-            for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive = false;
-            for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
-            vg_spawn_opponent();
-
+            // Both halves have names now. The cutscene's own teardown is INTRO's
+            // leave hook and runs inside vg_state_go; the match set-up is
+            // vg_begin_flight, which is called by name because VG_HIT re-enters
+            // VG_PLAYING and must not repeat any of it.
+            vg_begin_flight();
             vg_state_go(VG_PLAYING);
-            vg.hud_boot = HUD_BOOT_TIME;
-    vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
-            vg.roll     = 0;
-            vg.bank     = 0;
-            vg.taunt_t  = 1.6f;
-            vg_input_calibrate();
         }
         break;
     }
