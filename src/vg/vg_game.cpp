@@ -139,8 +139,8 @@ void vg_game_init(void) {
     vg.health      = vg.health_max;
     vg.throttle    = 0.45f;
     vg.speed       = vg.spec->speed_min;
-    vg.missiles    = vg.spec->magazine;
-    vg.lock_target = -1;
+    vg.wpn.rounds    = vg.spec->magazine;
+    vg.wpn.target = -1;
 
     // Last, so anything restored overwrites the defaults just set rather than
     // being overwritten by them.
@@ -156,7 +156,7 @@ void vg_game_select_ship(ShipClass c) {
     vg.spec       = vg_spec(vg.ship);
     vg.health_max = vg.spec->hull;
     vg.health     = vg.health_max;
-    vg.missiles   = vg.spec->magazine;
+    vg.wpn.rounds   = vg.spec->magazine;
 }
 
 void vg_tournament_begin(ShipClass c) {
@@ -205,12 +205,12 @@ void vg_match_start(void) {
     vg.bank        = 0;
     vg_shake_clear();
     vg.hit_flash   = 0;
-    vg.missiles    = vg.spec->magazine;
-    vg.reload_t    = 0.0f;          // a full rack is not reloading
-    vg.fire_gap    = 0;
-    vg.lock_target = -1;
-    vg.lock_t      = 0;
-    vg.locked      = false;
+    vg.wpn.rounds    = vg.spec->magazine;
+    vg.wpn.reload_t    = 0.0f;          // a full rack is not reloading
+    vg.wpn.fire_gap    = 0;
+    vg.wpn.target = -1;
+    vg.wpn.lock_t      = 0;
+    vg.wpn.locked      = false;
     vg.spawn_t     = 0;
 
     // Torus only for now. A tunnel gives depth, a sense of place, and a line to
@@ -236,9 +236,9 @@ void vg_match_start(void) {
 
     // They open the match. The first thing you learn about an opponent should
     // be what kind of person they are, not what they are flying.
-    vg.comms_line = nullptr;
-    vg.comms_t    = 0;
-    vg.comms_pri  = 0;
+    vg.comms.line = nullptr;
+    vg.comms.t    = 0;
+    vg.comms.pri  = 0;
     vg.taunt_t    = 1.4f;
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) vg_spawn_asteroid();
@@ -404,9 +404,9 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
         }
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
         vg_update_lock(dt);
-        if (vg.fire_gap > 0) vg.fire_gap -= dt;
+        if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
         vg_update_reload(dt);
-        if (vg.locked) vg_player_fire();
+        if (vg.wpn.locked) vg_player_fire();
         vg.health = vg.health_max;      // never let the load generator "die"
     }
 #endif
@@ -516,7 +516,7 @@ void vg_upd_kill(float dt, const VgInput* in, const Tap* tap) {
     vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
     vg_update_missiles(dt);
     vg_update_threat();
-    if (vg.fire_gap > 0) vg.fire_gap -= dt;
+    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
     // After the last transmission, not over it. KILL_SPEECH is exactly how
     // long the dying pilot holds the other slot, so this lands in the silence
     // that follows and runs on into the bracket redraw.
@@ -639,7 +639,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     // tournament and only credits will undo it, which is what makes the
     // repair economy the difficulty curve rather than a side system.
 
-    if (vg.fire_gap > 0) vg.fire_gap -= dt;
+    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
     vg_update_reload(dt);
     if (in->fire_edge) vg_player_fire();
 
@@ -649,7 +649,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     vg.taunt_t -= dt;
     if (vg.taunt_t <= 0.0f) {
         vg.taunt_t = vg_frand(12.0f, 21.0f);
-        if (vg.comms_t <= 0.0f) {
+        if (vg.comms.t <= 0.0f) {
             for (int i = 0; i < MAX_ENEMIES; i++)
                 if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
         }
@@ -773,7 +773,7 @@ void vg_game_update(float dt, const VgInput* in) {
     // started the transition is still live when the new screen appears and gets
     // spent on whatever happens to be under the finger.
     VgInput gated;
-    if (vg.tv_phase != TV_NONE) {
+    if (vg.tv.phase != TV_NONE) {
         gated = *in;
         gated.fire_edge = gated.alt_edge = gated.tap_edge = gated.menu_edge = false;
         in = &gated;
@@ -794,11 +794,11 @@ void vg_game_update(float dt, const VgInput* in) {
     // ran the whole way out into the black and only stopped once the next scene
     // had already been built. Nothing flies during a transition.
     const uint8_t sf  = vg_state_flags(vg.state);
-    const bool alive  = (vg.tv_phase == TV_NONE) && (sf & VGS_LIVE);
+    const bool alive  = (vg.tv.phase == TV_NONE) && (sf & VGS_LIVE);
     // The engine runs a little wider: through VG_KILL the ship is still flying,
     // and cutting the hum the instant the opponent dies would be the loudest
     // thing about that moment.
-    const bool flying = (vg.tv_phase == TV_NONE) && (sf & VGS_ENGINE);
+    const bool flying = (vg.tv.phase == TV_NONE) && (sf & VGS_ENGINE);
 
     // Looking aft is a look and nothing else -- it takes no input away from the
     // ship and changes no state the simulation reads. Only while there is a
@@ -818,7 +818,7 @@ void vg_game_update(float dt, const VgInput* in) {
     // Outlasts the last transmission rather than ending with it: the loser stops
     // talking and the tone is still there, which is the silence doing the work.
     // On the player's own death it simply does not stop until they tap away.
-    vg_sfx_flatline(vg.tv_phase == TV_NONE
+    vg_sfx_flatline(vg.tv.phase == TV_NONE
                  && ((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
                   || (vg.state == VG_OVER)));
 

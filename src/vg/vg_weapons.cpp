@@ -1,4 +1,4 @@
-#include "vg_sim.h"
+﻿#include "vg_sim.h"
 #include "vg_shake.h"
 #include "vg_sfx.h"
 
@@ -37,21 +37,21 @@ void vg_update_lock(float dt) {
              / (vg.spec->speed_max - vg.spec->speed_min);
     if (sn < 0.0f) sn = 0.0f;
     if (sn > 1.0f) sn = 1.0f;
-    vg.lock_need = vg.spec->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
+    vg.wpn.lock_need = vg.spec->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
 
     if (best < 0) {
-        vg.lock_target = -1;
-        vg.lock_t      = 0;
-        vg.locked      = false;
+        vg.wpn.target = -1;
+        vg.wpn.lock_t      = 0;
+        vg.wpn.locked      = false;
         return;
     }
 
-    if (best != vg.lock_target) {
-        vg.lock_target = best;
-        vg.lock_t      = 0;
-        vg.locked      = false;
+    if (best != vg.wpn.target) {
+        vg.wpn.target = best;
+        vg.wpn.lock_t      = 0;
+        vg.wpn.locked      = false;
     }
-    vg.lock_t += dt;
+    vg.wpn.lock_t += dt;
 
     // ONCE EARNED, A LOCK IS HELD. It used to be re-evaluated from scratch every
     // frame against a threshold that rises with speed, so opening the throttle
@@ -68,7 +68,7 @@ void vg_update_lock(float dt) {
     // it is held by keeping the nose on them -- not by having once been fast
     // enough. Acquiring at speed is still hard; that trade is the point and it
     // stays.
-    if (vg.lock_t >= vg.lock_need) vg.locked = true;
+    if (vg.wpn.lock_t >= vg.wpn.lock_need) vg.wpn.locked = true;
 }
 
 // The magazine refills ALL AT ONCE, and only from empty.
@@ -83,19 +83,19 @@ void vg_update_lock(float dt) {
 // two seconds and then has nine seconds of nothing; BALLISTA has three and has to
 // mean all of them.
 void vg_update_reload(float dt) {
-    if (vg.missiles > 0 || vg.reload_t <= 0.0f) return;
-    vg.reload_t -= dt;
-    if (vg.reload_t <= 0.0f) {
-        vg.reload_t = 0.0f;
-        vg.missiles = vg.spec->magazine;
+    if (vg.wpn.rounds > 0 || vg.wpn.reload_t <= 0.0f) return;
+    vg.wpn.reload_t -= dt;
+    if (vg.wpn.reload_t <= 0.0f) {
+        vg.wpn.reload_t = 0.0f;
+        vg.wpn.rounds = vg.spec->magazine;
     }
 }
 
 void vg_player_fire(void) {
-    if (vg.missiles <= 0 || vg.fire_gap > 0) return;
-    if (!vg.locked || vg.lock_target < 0) return;
+    if (vg.wpn.rounds <= 0 || vg.wpn.fire_gap > 0) return;
+    if (!vg.wpn.locked || vg.wpn.target < 0) return;
 
-    const Ship* s = &vg.enemy[vg.lock_target];
+    const Ship* s = &vg.enemy[vg.wpn.target];
     if (!s->alive) return;
 
     // Alternate wing hardpoints so successive launches read as a pair.
@@ -108,31 +108,31 @@ void vg_player_fire(void) {
     // no missile existed there was no outcome to report either -- a shot that
     // vanished in both directions.
     if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
-                           vg.lock_target, vg.spec))
+                           vg.wpn.target, vg.spec))
         return;
 
-    vg.missiles--;
-    vg.fire_gap = vg.spec->fire_gap;
+    vg.wpn.rounds--;
+    vg.wpn.fire_gap = vg.spec->fire_gap;
     vg_sfx_play(SFX_LAUNCH, 1.0f);
 
     // Emptying the rack starts the clock. Doing it here rather than in the tick
     // means the reload is timed from the shot that emptied it, not from the next
     // frame that happened to notice.
-    if (vg.missiles <= 0) vg.reload_t = vg.spec->reload;
+    if (vg.wpn.rounds <= 0) vg.wpn.reload_t = vg.spec->reload;
 }
 
 // Nearest live enemy missile tracking the player, for the threat warning.
 void vg_update_threat(void) {
-    vg.threat       = false;
-    vg.threat_range = 1e9f;
+    vg.threat.on       = false;
+    vg.threat.range = 1e9f;
     for (int i = 0; i < MAX_MISSILES; i++) {
         const Missile* m = &vg.msl[i];
         if (!m->alive || m->from_player || !m->locked) continue;
         float r = vlen(m->pos);
-        if (r < vg.threat_range) {
-            vg.threat_range = r;
-            vg.threat_pos   = m->pos;
-            vg.threat       = true;
+        if (r < vg.threat.range) {
+            vg.threat.range = r;
+            vg.threat.pos   = m->pos;
+            vg.threat.on       = true;
         }
     }
 }

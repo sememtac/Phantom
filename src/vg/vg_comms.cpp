@@ -1,4 +1,4 @@
-#include "vg_sim.h"
+﻿#include "vg_sim.h"
 #include "vg_sfx.h"
 #include "vg_tourney.h"
 #include <stdio.h>
@@ -16,7 +16,7 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // VoiceEvent is ordered by weight -- taunt, fire, hurt, death -- so the
     // enum value doubles as the priority and a strict '>' means an equal event
     // still refreshes. Two hits in a row should read as two.
-    if (vg.comms_t > 0.0f && vg.comms_pri > (uint8_t)ev) return;
+    if (vg.comms.t > 0.0f && vg.comms.pri > (uint8_t)ev) return;
 
     const uint32_t pick = (uint32_t)(vg_frand01() * 997.0f);
 
@@ -24,9 +24,9 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // recognising. Taunts only -- a pilot bleeding out does not pause to admire
     // your reputation, and their own last words matter more than your legend.
     if (ev == VOICE_TAUNT && vg.champion && (pick & 1u))
-        vg.comms_line = vg_voice_champion_line(pick >> 1);
+        vg.comms.line = vg_voice_champion_line(pick >> 1);
     else
-        vg.comms_line = vg_voice_line(s->voice, ev, pick);
+        vg.comms.line = vg_voice_line(s->voice, ev, pick);
     // Badge this line unless it is genuinely CARRYING ON from the last one.
     //
     // The test used to be "is the previous line still on screen", and a pilot's
@@ -44,22 +44,22 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // the one reliably losing it. It is not the end of a sentence somebody was
     // already saying. It is a different kind of statement, and it is the last
     // thing that pilot ever says.
-    const bool same_voice = (vg.comms_tag[0] == s->tag[0]
-                          && vg.comms_tag[1] == s->tag[1]
-                          && vg.comms_tag[2] == s->tag[2]);
-    vg.comms_mark  = (ev == VOICE_DEATH)
-                  || !(same_voice && vg.comms_since < 0.7f);
-    vg.comms_since = 0.0f;
+    const bool same_voice = (vg.comms.tag[0] == s->tag[0]
+                          && vg.comms.tag[1] == s->tag[1]
+                          && vg.comms.tag[2] == s->tag[2]);
+    vg.comms.mark  = (ev == VOICE_DEATH)
+                  || !(same_voice && vg.comms.since < 0.7f);
+    vg.comms.since = 0.0f;
 
-    vg.comms_tag[0] = s->tag[0];
-    vg.comms_tag[1] = s->tag[1];
-    vg.comms_tag[2] = s->tag[2];
-    vg.comms_tag[3] = 0;
-    vg.comms_pri = (uint8_t)ev;
+    vg.comms.tag[0] = s->tag[0];
+    vg.comms.tag[1] = s->tag[1];
+    vg.comms.tag[2] = s->tag[2];
+    vg.comms.tag[3] = 0;
+    vg.comms.pri = (uint8_t)ev;
     // A last transmission is left up far longer. It is the only line the player
     // cannot provoke a second time, and the round is already decided -- there is
     // nothing it can be competing with.
-    vg.comms_t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
+    vg.comms.t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
 
     // The radio opening, not the words. A last transmission gets a lower blip --
     // the only thing distinguishing it by ear, and it should not sound routine.
@@ -194,11 +194,11 @@ void vg_comms_step(float dt) {
         }
     }
 
-    vg.comms_since += dt;
+    vg.comms.since += dt;
 
-    if (vg.comms_t > 0) {
-        vg.comms_t -= dt;
-        if (vg.comms_t <= 0) { vg.comms_line = nullptr; vg.comms_pri = 0; }
+    if (vg.comms.t > 0) {
+        vg.comms.t -= dt;
+        if (vg.comms.t <= 0) { vg.comms.line = nullptr; vg.comms.pri = 0; }
     }
     if (vg.ift_t > 0) {
         vg.ift_t -= dt;

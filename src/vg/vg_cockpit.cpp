@@ -1,4 +1,4 @@
-#include "vg_sim.h"
+﻿#include "vg_sim.h"
 #include "vg_sfx.h"
 
 // What the cockpit does about things that have already happened: the caution
@@ -43,17 +43,17 @@ static void alert_step(float* phase, bool* lit, bool active, float k, float dt,
 
 void vg_update_alerts(float dt, bool alive) {
     if (!alive) {
-        vg.alert_msl_ph = vg.alert_wall_ph = 0.0f;
-        vg.alert_msl_lit = vg.alert_wall_lit = false;
+        vg.alerts.msl_ph = vg.alerts.wall_ph = 0.0f;
+        vg.alerts.msl_lit = vg.alerts.wall_lit = false;
         return;
     }
-    const bool msl = vg.threat && vg.threat_range <= MSL_ALERT_RANGE;
-    alert_step(&vg.alert_msl_ph, &vg.alert_msl_lit, msl,
-               msl ? (1.0f - vg.threat_range / MSL_ALERT_RANGE) : 0.0f,
+    const bool msl = vg.threat.on && vg.threat.range <= MSL_ALERT_RANGE;
+    alert_step(&vg.alerts.msl_ph, &vg.alerts.msl_lit, msl,
+               msl ? (1.0f - vg.threat.range / MSL_ALERT_RANGE) : 0.0f,
                dt, SFX_MSL_ALERT);
 
     const bool wall = (vg.wall_clear <= ARENA_ALERT_RANGE);
-    alert_step(&vg.alert_wall_ph, &vg.alert_wall_lit, wall,
+    alert_step(&vg.alerts.wall_ph, &vg.alerts.wall_lit, wall,
                wall ? (1.0f - vg.wall_clear / ARENA_ALERT_RANGE) : 0.0f,
                dt, SFX_WALL_ALERT);
 }

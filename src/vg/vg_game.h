@@ -432,14 +432,18 @@ struct VgGame {
     // is red, this one means something went off next to you and is not.
     float    blast_flash;
 
-    // Weapons
-    int      missiles;         // rounds remaining
-    float    reload_t;
-    float    fire_gap;
-    int      lock_target;      // enemy index, or -1
-    float    lock_t;           // time held inside the nose cone
-    float    lock_need;        // time required at the current speed
-    bool     locked;
+    // The player's weapons. `rounds` rather than `missiles`, because the plural of
+    // the thing and the count of the thing being the same word is how you end up
+    // reading `vg.missiles` next to `vg.msl[]` and having to stop.
+    struct {
+        int   rounds;      // remaining in the rack
+        float reload_t;
+        float fire_gap;
+        int   target;      // enemy index, or -1
+        float lock_t;      // time held inside the nose cone
+        float lock_need;   // time required at the current speed
+        bool  locked;
+    } wpn;
 
     MslEvent msl_event;
     float    msl_event_t;  // counts down; the banner shows while positive
@@ -451,12 +455,14 @@ struct VgGame {
 
     // Radio. One line at a time, held by priority so a death cry is never
     // stepped on by the next round going wide.
-    char        comms_tag[4];
-    const char* comms_line;
-    float       comms_t;
-    uint8_t     comms_pri;
-    bool        comms_mark;   // this line opens a run, so it is badged
-    float       comms_since;  // seconds since the last transmission began
+    struct {
+        char        tag[4];
+        const char* line;
+        float       t;
+        uint8_t     pri;
+        bool        mark;    // this line opens a run, so it is badged
+        float       since;   // seconds since the last transmission began
+    } comms;
 
     // The broadcast voice, on its OWN slot rather than sharing the pilots'.
     //
@@ -514,8 +520,10 @@ struct VgGame {
     // more it scrambled, so the blink rate tracked the SHIP'S SPEED instead of
     // the distance, and flying away from a wall beeped exactly as fast as flying
     // into one. A phase that is advanced by dt cannot do that.
-    float       alert_msl_ph,  alert_wall_ph;
-    bool        alert_msl_lit, alert_wall_lit;
+    struct {
+        float msl_ph,  wall_ph;
+        bool  msl_lit, wall_lit;
+    } alerts;
 
     // How hard the airframe is working, 0 at rest and 1 at the reference speed
     // -- and past 1 for a light ship at full. Computed once in the world step
@@ -532,9 +540,11 @@ struct VgGame {
     // forwards without a finger on the panel to remind them why.
     bool        rear_view;
 
-    uint8_t     tv_phase;    // TvPhase
-    uint8_t     tv_to;       // VgState, entered at the join
-    float       tv_t;
+    struct {
+        uint8_t phase;   // TvPhase
+        uint8_t to;      // VgState, entered at the join
+        float   t;
+    } tv;
 
     // --- ring course -------------------------------------------------------
     // One gate at a time, in VIEW space like every other object, so the world
@@ -587,10 +597,14 @@ struct VgGame {
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
 
-    // Threat state, recomputed each frame for the HUD
-    bool     threat;
-    float    threat_range;
-    Vec3     threat_pos;
+    // Threat state, recomputed each frame for the HUD. `on` rather than a bare
+    // `threat` because the group is the noun now and the flag is one of its
+    // fields -- vg.threat.on says which, where vg.threat did not.
+    struct {
+        bool  on;
+        float range;
+        Vec3  pos;
+    } threat;
 
     float    spawn_t;
 

@@ -1,4 +1,4 @@
-#include "vg_draw.h"
+﻿#include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_voice.h"
 #include "vg_course.h"
@@ -76,26 +76,26 @@ static void draw_health(void) {
 // throttle covers anything down there. Nobody grips a screen by its top edge,
 // so the upper half is the part that is reliably visible.
 static void draw_comms(void) {
-    if (!vg.comms_line || vg.comms_t <= 0.0f) return;
+    if (!vg.comms.line || vg.comms.t <= 0.0f) return;
 
     // +4 so the tag block's top edge, not its baseline, lines up with the strip.
     const int   y  = THROTTLE_TOP + 4;
-    const bool  badge = vg.comms_mark;
-    const int   tw = badge ? vg_text_width(vg.comms_tag, 2) : 0;
+    const bool  badge = vg.comms.mark;
+    const int   tw = badge ? vg_text_width(vg.comms.tag, 2) : 0;
     const int   gap = badge ? 14 : 0;
-    const int   mw = vg_text_width(vg.comms_line, 2);
+    const int   mw = vg_text_width(vg.comms.line, 2);
     const int   x  = (SCR_W - (tw + gap + mw)) / 2;
 
     // A last transmission blinks. Brightness and blink are the whole vocabulary
     // here, and a death is the one line worth interrupting the player for.
-    const bool  dying = (vg.comms_pri == (uint8_t)VOICE_DEATH);
-    if (dying && fmodf(vg.comms_t, 0.44f) < 0.16f) return;
+    const bool  dying = (vg.comms.pri == (uint8_t)VOICE_DEATH);
+    if (dying && fmodf(vg.comms.t, 0.44f) < 0.16f) return;
 
     if (badge) {
         vg_fill_rect(x - 5, y - 4, tw + 10, 22, dying ? INK_MAX : INK);
-        vg_text(x, y, vg.comms_tag, INK_ONFILL, 2);
+        vg_text(x, y, vg.comms.tag, INK_ONFILL, 2);
     }
-    vg_text(x + tw + gap, y, vg.comms_line, dying ? INK_MAX : INK_BRIGHT, 2);
+    vg_text(x + tw + gap, y, vg.comms.line, dying ? INK_MAX : INK_BRIGHT, 2);
 }
 
 // A caution annunciator: a solid block with the label knocked out of it.
@@ -126,7 +126,7 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
 static void draw_missile_alert(void) {
     // Decided in the update -- range, cadence and beep together. See
     // update_alerts() in vg_game.cpp.
-    if (!vg.alert_msl_lit) return;
+    if (!vg.alerts.msl_lit) return;
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
@@ -137,7 +137,7 @@ static void draw_missile_alert(void) {
 // being ignored ends the run rather than costing some hull.
 static void draw_boundary_alert(void) {
     // Decided in the update, alongside the beep, so the two cannot drift apart.
-    if (!vg.alert_wall_lit) return;
+    if (!vg.alerts.wall_lit) return;
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 
@@ -333,7 +333,7 @@ static void draw_radar(void) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
-        bool is_lock = (i == vg.lock_target && vg.locked);
+        bool is_lock = (i == vg.wpn.target && vg.wpn.locked);
         // The blip stays red whatever its lock state; the lock reads as a box
         // around it, so colour always means "what is it" and never "what am I
         // doing about it".
@@ -364,8 +364,8 @@ void vg_draw_steer_indicator(const VgInput* in) {
 // Corner brackets around the tracked enemy: dim and wide while acquiring, tight
 // and bright once locked. Carries the target's hull bar.
 void vg_draw_lock_box(const VgCam& cam) {
-    if (vg.lock_target < 0) return;
-    const Ship* s = &vg.enemy[vg.lock_target];
+    if (vg.wpn.target < 0) return;
+    const Ship* s = &vg.enemy[vg.wpn.target];
     if (!s->alive) return;
 
     // No reach: the bracket is drawn around a point, so there is nothing to
@@ -377,8 +377,8 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
-    float need = (vg.lock_need > 0.01f) ? vg.lock_need : vg.spec->lock_time;
-    float prog = vg.lock_t / need;
+    float need = (vg.wpn.lock_need > 0.01f) ? vg.wpn.lock_need : vg.spec->lock_time;
+    float prog = vg.wpn.lock_t / need;
     if (prog > 1.0f) prog = 1.0f;
 
     float base = sp.rpx;
@@ -388,8 +388,8 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Monochrome hierarchy: a lock reads as maximum brightness plus blink, never
     // as a different hue.
-    uint16_t col = vg.locked ? INK_MAX : INK_TRACE;
-    if (vg.locked && fmodf(vg.state_t, 0.5f) > 0.38f) col = INK;
+    uint16_t col = vg.wpn.locked ? INK_MAX : INK_TRACE;
+    if (vg.wpn.locked && fmodf(vg.state_t, 0.5f) > 0.38f) col = INK;
 
     const float xs[2] = { cx - r, cx + r };
     const float ys[2] = { cy - r, cy + r };
@@ -425,7 +425,7 @@ void vg_draw_lock_box(const VgCam& cam) {
     // What you are up against decides whether to close or extend, so name it.
     vg_text(bx, by - 12, s->spec->name, INK_FAINT, 1);
 
-    if (vg.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
+    if (vg.wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
 }
 
 // Triangle sitting on a ring around the crosshair, pointing outward along `ang`.
@@ -473,7 +473,7 @@ void vg_draw_target_markers(const VgCam& cam) {
         if (!s->alive) continue;
         if (vlen(s->pos) > vg.spec->lock_range) continue;
 
-        uint16_t col = (i == vg.lock_target) ? INK_MAX : COL_HUD;
+        uint16_t col = (i == vg.wpn.target) ? INK_MAX : COL_HUD;
 
         float sx = 0, sy = 0, ang = 0;
         bool infront  = screen_dir(cam, s->pos, &sx, &sy, &ang);
@@ -559,11 +559,11 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
 // -- exactly when you most need to know. Sits on a wider ring than the bogey
 // markers so the two never read as the same thing.
 void vg_draw_threat_indicator(const VgCam& cam) {
-    if (!vg.threat) return;
+    if (!vg.threat.on) return;
     if (fmodf(vg.state_t, 0.42f) > 0.28f) return;   // blink
 
     float sx = 0, sy = 0, ang = 0;
-    screen_dir(cam, vg.threat_pos, &sx, &sy, &ang);
+    screen_dir(cam, vg.threat.pos, &sx, &sy, &ang);
     draw_ring_arrow(ang, 196.0f, 16.0f, COL_DANGER, 3);
 }
 
@@ -600,14 +600,14 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // divisions entirely. It cannot be read as rounds arriving because it is
     // visibly not made of rounds, and it fills from the bottom, mirroring the
     // direction the rack empties.
-    const float rl = (vg.reload_t > 0.0f && vg.spec->reload > 0.0f)
-                   ? (1.0f - vg.reload_t / vg.spec->reload) : 0.0f;
+    const float rl = (vg.wpn.reload_t > 0.0f && vg.spec->reload > 0.0f)
+                   ? (1.0f - vg.wpn.reload_t / vg.spec->reload) : 0.0f;
 
     hud_panel(SCR_W - 40, 140, 30, mag * pitch + 8, "MSL");
 
     for (int i = 0; i < mag; i++) {
         int y = 148 + i * pitch;
-        if (i < vg.missiles) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
+        if (i < vg.wpn.rounds) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
         else                 vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
     }
 
