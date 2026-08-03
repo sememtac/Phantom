@@ -23,6 +23,7 @@
 
 #include "vg_port.h"
 #include "vg_config.h"
+#include "vg_prof.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <driver/spi_master.h>
@@ -641,6 +642,17 @@ bool vg_audio_init(void) {
 // does -- 22050 samples a second, however many microseconds have passed.
 static uint32_t s_audio_us = 0;
 
+// The delivery instrument. See vg_prof.h for what each of these is for; the
+// model is one line: the ring holds `g_audio_lead` samples, time takes them out
+// and vg_audio_write puts them back. It is a MODEL and not a reading, because
+// this API cannot be asked how full it is -- but the two ways it can go wrong
+// are both visible from here, and they are the two that matter.
+uint32_t g_audio_starve   = 0;
+uint32_t g_audio_drop     = 0;
+int32_t  g_audio_lead     = 0;
+int32_t  g_audio_lead_min = 0x7fffffff;
+uint32_t g_audio_gap      = 0;
+
 int vg_audio_due(void) {
     if (!s_audio_ok) return 0;
 
@@ -657,6 +669,21 @@ int vg_audio_due(void) {
     // block until the DMA drained it, which is the frame paying for the audio
     // instead of the other way round.
     if (n > 1024) n = 1024;
+
+    // Drain the model by the same amount real time drained the ring. Clamped at
+    // the bottom on purpose: the ring cannot hold a negative number of samples,
+    // and what would have been negative is the hole -- so it is counted rather
+    // than carried, because carrying it would let one long stall hide inside the
+    // arithmetic of the next twenty passes.
+    if (n > g_audio_lead) {
+        g_audio_starve += (uint32_t)(n - g_audio_lead);
+        g_audio_lead = 0;
+    } else {
+        g_audio_lead -= n;
+    }
+    // Sampled HERE, at the bottom of the cycle, before the write refills it.
+    if (g_audio_lead < g_audio_lead_min) g_audio_lead_min = g_audio_lead;
+    if ((uint32_t)n > g_audio_gap)       g_audio_gap      = (uint32_t)n;
     return n;
 }
 
@@ -680,5 +707,7 @@ int vg_audio_write(const int16_t* samples, int n) {
         done += (int)(got / 4);
         if (got < want) break;               // short write: the caller shrugs
     }
+    g_audio_lead += done;
+    g_audio_drop += (uint32_t)(n - done);
     return done;
 }
