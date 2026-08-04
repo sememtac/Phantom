@@ -144,6 +144,7 @@ void loop(void) {
     static uint32_t acc_rast = 0, acc_wait = 0, acc_push = 0;
     static uint32_t acc_over_us = 0, acc_over_n = 0;
     static uint32_t acc_join = 0, acc_res = 0;
+    static uint32_t acc_can = 0;
     static uint32_t acc_join_mm = 0, acc_join_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
@@ -401,6 +402,7 @@ void loop(void) {
     acc_ln     += vg_rast_ln_us();
     acc_tri2   += vg_rast_tri_us();
     acc_oth    += vg_rast_oth_us();
+    acc_can    += vg_rast_can_us();
     acc_tint   += vg_rast_tint_us();
     acc_mir    += vg_render_mirror_us();
     static uint32_t acc_star = 0, acc_aren = 0, acc_wrld = 0, acc_hud = 0;
@@ -447,7 +449,7 @@ void loop(void) {
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
-                      "| aa %lu ln %lu tri %lu oth %lu tnt %lu mir %lu "
+                      "| aa %lu ln %lu tri %lu oth %lu can %lu tnt %lu mir %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
@@ -475,6 +477,7 @@ void loop(void) {
                       (unsigned long)(acc_ln   / frames),
                       (unsigned long)(acc_tri2 / frames),
                       (unsigned long)(acc_oth  / frames),
+                      (unsigned long)(acc_can  / frames),
                       (unsigned long)(acc_tint / frames),
                       (unsigned long)(acc_mir  / frames),
                       vg_rast_prim_count(),
@@ -595,6 +598,7 @@ void loop(void) {
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
         acc_join = acc_res = 0;
+        acc_can = 0;
         acc_join_mm = acc_join_n = 0;
         for (int i = 0; i < NUM_BANDS; i++) acc_band[i] = 0;
         acc_sky   = acc_prim = acc_scan = 0;

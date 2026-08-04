@@ -367,29 +367,65 @@ static void canopy_draw(const Canopy* c) {
 
 #define CAN_SCALE       0.9375f    // the drawing is 512 wide, the panel is 480
 
-#define CAN_TOP_HI      0.96f
-#define CAN_EDGE_HI     0.82f
-#define CAN_EDGE_LO     0.40f
-#define CAN_STRUT_HI0   0.57f
-#define CAN_STRUT_HI1   0.22f
-#define CAN_STRUT_LO    0.34f
-#define CAN_SPINE_HI0   0.80f
-#define CAN_SPINE_HI1   0.10f
-#define CAN_SPINE_LO0   0.40f
-#define CAN_SPINE_LO1   0.23f
-#define CAN_STRUT_SLOPE 0.8625f    // measured off the drawing, dx per dy
+// SECOND DRAWING, and the revision is not "the same thing thicker" -- it is a
+// different model, so it is worth setting the two side by side:
+//
+//                    first            second
+//   strut dark       2px  -41         6px  -41
+//   strut bright     1-2px +57        3px  +86
+//   slant lower      bright + dark    4px BODY +46, bright edge inboard
+//   spine            bright + dark    6-8px BODY +46, bright core fading
+//   dark elsewhere   yes              NONE -- only the struts carry shade now
+//
+// So the frame became a solid MEMBER with a lit edge, rather than a pair of lines.
+// The body sits at +46 and the strut's shade at -41, which are the same magnitude
+// to within a level: 0.34 of the hue either way. That symmetry is almost certainly
+// deliberate and it is what makes the two sides read as one object.
+//
+// The struts no longer fade along their length either -- 207 at every row from 20
+// to 140 -- so the earlier fade machinery is gone.
+#define CAN_BODY        0.343f     // 167, the wide member: +46 of 134
+#define CAN_TOP_HI      0.963f     // 250, the top edge, still one pixel
+#define CAN_EDGE_HI     0.828f     // 232, the lit edge along a slant
+#define CAN_EDGE_DIM    0.291f     // 160, the dim shoulder outboard of it
+#define CAN_STRUT_HI    0.642f     // 207
+#define CAN_STRUT_LO    0.339f     // 80, and note: the same 0.34 as the body
+#define CAN_SPINE_CORE  0.731f     // 219 at the top of the spine, gone by its end
 
-// The aperture, in the drawing's own pixels scaled to the panel.
-#define CAN_HX  (122.5f * CAN_SCALE)   // half-width at the top edge
+// THIRD DRAWING: broadened considerably, and the shapes are now TAPERED members
+// rather than strokes of constant width. Measured across the drawing:
+//
+//   strut        ~20px shade + ~4px bright, near enough constant along its length
+//   slant        2px at the corner -> 10 at y260 -> 17 at y320 -> 21 at the point
+//   spine        36px at the point -> 30 at y440 -> 26 at y470, edges fading out
+//
+// A taper is two numbers, so these are width-at-each-end and the fill interpolates.
+// All in panel pixels: the drawing's own widths times 0.9375, rounded UP where it
+// lands between two, because "too thin" has been the note twice.
+#define CAN_W_STRUT_LO  19.0f
+#define CAN_W_STRUT_HI  4.0f
+#define CAN_W_SLANT0    2.0f     // at the corner
+#define CAN_W_SLANT1    20.0f    // at the point
+#define CAN_W_SPINE0    34.0f    // at the point
+#define CAN_W_SPINE1    24.0f    // where it leaves the screen
+
+#define CAN_STRUT_SLOPE 0.883f     // remeasured: dx per dy over rows 20..140
+
+// The aperture, in the drawing's pixels scaled to the panel.
+#define CAN_HX  (121.0f * CAN_SCALE)   // half-width at the top edge
 #define CAN_TY  (-104.5f * CAN_SCALE)  // the top edge
-#define CAN_PY  (134.5f * CAN_SCALE)   // the point
+#define CAN_PY  (135.5f * CAN_SCALE)   // the point
+
+// Where the slant stops being a line and becomes a member, as a fraction from the
+// corner to the point. The drawing changes at image row ~253 of 151..391.
+#define CAN_BODY_AT     0.42f
 
 // One stroke, offset along its own normal, toward the centre or away from it. The
 // side is resolved against the screen centre rather than written down per stroke,
 // because "inboard" is the rule the drawing follows and a sign per line is a thing
 // to get wrong.
 static void rib(float x0, float y0, float x1, float y1,
-                bool inboard, bool add, float f) {
+                bool inboard, bool add, float f, float off) {
     if (f <= 0.02f) return;
     const float dx = x1 - x0, dy = y1 - y0;
     const float m  = sqrtf(dx * dx + dy * dy);
@@ -400,21 +436,50 @@ static void rib(float x0, float y0, float x1, float y1,
     const float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
     const float toc = (SCR_CX - mx) * nx + (SCR_CY - my) * ny;
     if ((toc < 0.0f) == inboard) { nx = -nx; ny = -ny; }
+    nx *= off; ny *= off;
 
     vg_line_blend(add ? VG_LINE_ADD : VG_LINE_SUB);
     vg_line(x0 + nx, y0 + ny, x1 + nx, y1 + ny, vg_dim(COL_HUD, f));
     vg_line_blend(0);
 }
 
-// ...and the same stroke fading along its length. Two steps, not eight: every step
-// is a line, and the warp then subdivides each one again at 64px, so this is the
-// knob that decides whether the frame costs thirty primitives or ninety.
-static void rib_fade(float x0, float y0, float x1, float y1,
-                     bool inboard, bool add, float f0, float f1) {
+// A MEMBER: a quad along the stroke, `w0` wide at one end and `w1` at the other, laid
+// on one side of the line. Two triangles.
+//
+// FILLS, NOT BUNDLES OF LINES, and the third drawing is what forced it. Broadening the
+// shapes took the frame to 6.6% of the screen -- about 15,000 pixels, every one a
+// read-modify-write rather than a store. As parallel lines that is ~1.3 ms, which is
+// most of the margin this whole session bought. As spans the bound checks move out of
+// the inner loop and the per-line overhead -- Bresenham setup, warp subdivision, an
+// active-list entry each -- disappears entirely.
+//
+// The price is that vg_tri does NOT warp, where vg_line does. So the frame is rigid
+// while the instruments still bend and shake. For a canopy that is arguably the truer
+// reading -- structure does not flex, and it gives the shake something to move
+// against -- but it IS a change, and it is the one thing here worth a second look.
+static void member(float x0, float y0, float x1, float y1,
+                   bool inboard, bool add, float f, float off, float w0, float w1) {
+    if (f <= 0.02f) return;
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float m  = sqrtf(dx * dx + dy * dy);
+    if (m < 0.001f) return;
+
+    float nx = -dy / m, ny = dx / m;
     const float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
-    const float fm = (f0 + f1) * 0.5f;
-    rib(x0, y0, mx, my, inboard, add, (f0 + fm) * 0.5f);
-    rib(mx, my, x1, y1, inboard, add, (fm + f1) * 0.5f);
+    const float toc = (SCR_CX - mx) * nx + (SCR_CY - my) * ny;
+    if ((toc < 0.0f) == inboard) { nx = -nx; ny = -ny; }
+
+    // inner edge at `off`, outer edge at off+w, tapering along the length
+    const float ax = x0 + nx * off,        ay = y0 + ny * off;
+    const float bx = x1 + nx * off,        by = y1 + ny * off;
+    const float cx = x1 + nx * (off + w1), cy = y1 + ny * (off + w1);
+    const float ex = x0 + nx * (off + w0), ey = y0 + ny * (off + w0);
+
+    const uint16_t col = vg_dim(COL_HUD, f);
+    vg_line_blend(add ? VG_LINE_ADD : VG_LINE_SUB);
+    vg_tri(ax, ay, bx, by, cx, cy, col);
+    vg_tri(ax, ay, cx, cy, ex, ey, col);
+    vg_line_blend(0);
 }
 
 static void canopy_lit(void) {
@@ -423,48 +488,55 @@ static void canopy_lit(void) {
     const float ty = cy + CAN_TY;
     const float px = cx,          py = cy + CAN_PY;   // the point
 
-    // The top edge: bright, and no shade at all. It is the edge the aim point sits
-    // under, so it is the one the eye should find first.
-    rib(lx, ty, rx, ty, true, true, CAN_TOP_HI);
+    // The top edge. One pixel, and the brightest thing in the frame -- it is the edge
+    // the aim point sits under, so it is the one the eye should find first. The second
+    // drawing left it alone, which says the thinness there was a choice.
+    rib(lx, ty, rx, ty, true, true, CAN_TOP_HI, 0.0f);
 
-    // The slanted edges. Bright the whole way inboard; shaded outboard only from
-    // halfway down, which is the transition the drawing makes.
-    const float mlx = (lx + px) * 0.5f, mly = (ty + py) * 0.5f;
-    const float mrx = (rx + px) * 0.5f, mry = (ty + py) * 0.5f;
-    rib(lx, ty, px, py, true, true, CAN_EDGE_HI);
-    rib(rx, ty, px, py, true, true, CAN_EDGE_HI);
-    rib(mlx, mly, px, py, false, false, CAN_EDGE_LO);
-    rib(mrx, mry, px, py, false, false, CAN_EDGE_LO);
+    // The slanted edges: a member tapering from almost nothing at the corner to full
+    // width at the point, with the lit edge riding its inboard face the whole way.
+    // The taper is the drawing's and it is doing real work -- the frame thins out
+    // exactly where it brackets the aim point, and thickens where it does not matter.
+    member(lx, ty, px, py, false, true, CAN_BODY, 1.0f, CAN_W_SLANT0, CAN_W_SLANT1);
+    member(rx, ty, px, py, false, true, CAN_BODY, 1.0f, CAN_W_SLANT0, CAN_W_SLANT1);
+    rib(lx, ty, px, py, true, true, CAN_EDGE_HI, 0.0f);
+    rib(rx, ty, px, py, true, true, CAN_EDGE_HI, 0.0f);
 
-    // The struts, at the author's own angle. Bright inboard and fading outward,
-    // shade outboard and constant.
+    // The struts, at the author's own angle rather than a ray from the centre. These
+    // are the only strokes carrying shade, and the shade is the wide side -- nineteen
+    // pixels of it against four of highlight.
     const float sm = sqrtf(CAN_STRUT_SLOPE * CAN_STRUT_SLOPE + 1.0f);
     const float ux = CAN_STRUT_SLOPE / sm, uy = 1.0f / sm;
     const float ex = ux * CANOPY_REACH,    ey = uy * CANOPY_REACH;
 
-    rib_fade(lx, ty, lx - ex, ty - ey, true,  true,  CAN_STRUT_HI0, CAN_STRUT_HI1);
-    rib_fade(rx, ty, rx + ex, ty - ey, true,  true,  CAN_STRUT_HI0, CAN_STRUT_HI1);
-    rib_fade(lx, ty, lx - ex, ty - ey, false, false, CAN_STRUT_LO,  CAN_STRUT_LO);
-    rib_fade(rx, ty, rx + ex, ty - ey, false, false, CAN_STRUT_LO,  CAN_STRUT_LO);
+    member(lx, ty, lx - ex, ty - ey, false, false, CAN_STRUT_LO, 1.0f,
+           CAN_W_STRUT_LO, CAN_W_STRUT_LO);
+    member(rx, ty, rx + ex, ty - ey, false, false, CAN_STRUT_LO, 1.0f,
+           CAN_W_STRUT_LO, CAN_W_STRUT_LO);
+    member(lx, ty, lx - ex, ty - ey, true, true, CAN_STRUT_HI, 0.0f,
+           CAN_W_STRUT_HI, CAN_W_STRUT_HI);
+    member(rx, ty, rx + ex, ty - ey, true, true, CAN_STRUT_HI, 0.0f,
+           CAN_W_STRUT_HI, CAN_W_STRUT_HI);
 
-    // The spine, shaded on BOTH sides -- it is the one stroke with nothing inboard
-    // of it, so it reads as a rib standing off the glass rather than an edge.
+    // The spine: the broadest member in the frame, and centred, because it is the one
+    // stroke with nothing inboard of it. It narrows on the way down and its bright
+    // core is gone well before it leaves the screen.
     const float sy2 = py + CANOPY_REACH * 0.55f;
-    rib_fade(px, py, px, sy2, true,  true,  CAN_SPINE_HI0, CAN_SPINE_HI1);
-    rib_fade(px, py, px, sy2, true,  false, CAN_SPINE_LO0, CAN_SPINE_LO1);
-    rib_fade(px, py, px, sy2, false, false, CAN_SPINE_LO0, CAN_SPINE_LO1);
+    member(px, py, px, sy2, true, true, CAN_BODY,
+           -CAN_W_SPINE0 * 0.5f, CAN_W_SPINE0, CAN_W_SPINE1);
+    member(px, py, px, py + (sy2 - py) * 0.45f, true, true, CAN_SPINE_CORE,
+           -2.0f, 4.0f, 1.0f);
 
-    // The lit bits: short bright runs where the drawing puts a tab, on the struts a
-    // third of the way out and on the slanted edges just under halfway. Two lines
-    // each, so the whole set is eight primitives before subdivision.
-    const float t = 0.30f;
+    // The lit bits, where the drawing puts a tab: a third of the way out along each
+    // strut, and at the corners. Full strength and a few pixels deep -- what "lighter
+    // pixels lighting up bits of it" comes to on a panel this size.
+    const float t = 0.30f, run = 9.0f;
     const float tlx = lx - ex * t, tly = ty - ey * t;
     const float trx = rx + ex * t, try_ = ty - ey * t;
-    const float run = 7.0f;
-    rib(tlx, tly, tlx + ux * run, tly + uy * run, true, true, 1.0f);
-    rib(trx, try_, trx - ux * run, try_ + uy * run, true, true, 1.0f);
-    rib(mlx, mly, mlx + (px - lx) * 0.03f, mly + (py - ty) * 0.03f, true, true, 1.0f);
-    rib(mrx, mry, mrx + (px - rx) * 0.03f, mry + (py - ty) * 0.03f, true, true, 1.0f);
+    member(tlx, tly, tlx + ux * run, tly + uy * run, true, true, 1.0f, 0.0f, 3.0f, 3.0f);
+    member(trx, try_, trx - ux * run, try_ + uy * run, true, true, 1.0f, 0.0f, 3.0f, 3.0f);
+    member(lx, ty, lx + 10.0f, ty, true, true, 1.0f, 0.0f, 3.0f, 3.0f);
+    member(rx, ty, rx - 10.0f, ty, true, true, 1.0f, 0.0f, 3.0f, 3.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -861,8 +933,17 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // works; this is the author's drawing applied as light, and it is one line to
     // put back. All four hulls fly it while it is being judged -- per-ship patterns
     // come after the language is settled, not before.
-    canopy_lit();
-    (void)canopy_draw;
+    // THE BAKED FRAME, from the author's own drawing. It is applied by the band raster
+    // from a table rather than built out of lines here, because at 7% coverage the
+    // shapes are broad members and the drawing is the most accurate description of
+    // them there is -- see vg_band.cpp. Submitted here so it lands in the right place
+    // in the order: over the world, under everything below.
+    //
+    // NOT warped, and that is inherent: the table is panel-space pixels. So the frame
+    // is rigid while the instruments bend and shake against it, which for structure is
+    // arguably the truer reading.
+    vg_canopy_prim();
+    (void)canopy_draw; (void)canopy_lit;
 
     draw_health();
     draw_comms();

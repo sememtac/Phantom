@@ -18,8 +18,12 @@
 // to avoid the patch. As a primitive it lands in submission order -- after the
 // world, before the patch's own geometry -- and being opaque it is also what
 // hides the forward scene inside the patch.
+// PRIM_CANOPY is the baked cockpit frame, and it is a primitive for exactly the same
+// reason PRIM_SKY is: WHERE it happens in the order matters. The frame goes over the
+// world and under the instruments, and a table applied outside the primitive list
+// could only be before everything or after it.
 enum : uint8_t { PRIM_LINE = 0, PRIM_POINT, PRIM_FILL, PRIM_GLYPH, PRIM_TRI,
-                 PRIM_SKY };
+                 PRIM_SKY, PRIM_CANOPY };
 
 // ymin/ymax are precomputed at submit time so the per-band overlap test is two
 // compares with no type dispatch. x2/y2 are only used by PRIM_TRI; carrying them

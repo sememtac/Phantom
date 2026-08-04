@@ -643,6 +643,20 @@ void vg_rect(int x, int y, int w, int h, uint16_t color) {
 // a blob: the thing that reads is the outline.
 void vg_rast_fills(bool on) { sub()->fills = on; }
 
+// The baked canopy: one primitive covering the whole panel, so the band raster runs
+// the table at the right point in the order. No coordinates -- the table is in panel
+// space already, which is also why nothing here goes through rot_pt or the warp.
+void vg_canopy_prim(void) {
+    Prim* p = push();
+    if (!p) return;
+    p->type  = PRIM_CANOPY;
+    p->aa    = LINE_OPAQUE;
+    p->color = 0;
+    p->x0 = p->y0 = p->x1 = p->y1 = p->x2 = p->y2 = 0;
+    p->ymin = 0;
+    p->ymax = (int16_t)(SCR_H - 1);
+}
+
 void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t color) {
     const Sub* u = sub();
     if (!sub()->fills) return;
@@ -675,6 +689,11 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
     p->x1 = TCLAMP(x1); p->y1 = TCLAMP(y1);
     p->x2 = TCLAMP(x2); p->y2 = TCLAMP(y2);
     p->color = color;
+    // Carries the blend mode, so vg_line_blend brackets a FILL as well as a line --
+    // which is what lets a broad canopy member be one fill instead of twenty lines.
+    // Everywhere else this is LINE_OPAQUE, and the band fill only branches on
+    // ADD/SUB, so an antialiasing request on a triangle stays a no-op as before.
+    p->aa   = u->aa;
     p->ymin = (int16_t)(miny < u->cy0 ? u->cy0 : (int)miny);
     p->ymax = (int16_t)(maxy > u->cy1 ? u->cy1 : (int)maxy);
     #undef TCLAMP

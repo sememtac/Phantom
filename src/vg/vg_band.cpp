@@ -5,6 +5,7 @@
 #include "vg_port.h"
 #include "vg_capture.h"
 #include "vg_sky.h"
+#include "vg_canopy_data.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
@@ -152,6 +153,29 @@ static void band_line_aa(uint16_t* band, int by0, int by1,
 // antialiased path already pays. Costs about what a blend costs: an order of magnitude
 // more than a store, which is affordable for a frame of a few dozen lines and would
 // not be for the world.
+// The blend itself, on a pixel already known to be inside the band. Split out so the
+// span fill below can hoist every bound check out of its inner loop -- which is the
+// whole reason a broad member is drawn as a fill and not as a bundle of lines.
+static inline void blend_px(uint16_t* p, uint16_t d_native, bool add) {
+    const uint16_t s = (uint16_t)((*p >> 8) | (*p << 8));      // panel order -> native
+
+    uint32_t r = (s >> 11) & 31u, g = (s >> 5) & 63u, b = s & 31u;
+    const uint32_t dr = (d_native >> 11) & 31u,
+                   dg = (d_native >> 5) & 63u,
+                   db =  d_native        & 31u;
+    if (add) {
+        r += dr; if (r > 31u) r = 31u;
+        g += dg; if (g > 63u) g = 63u;
+        b += db; if (b > 31u) b = 31u;
+    } else {
+        r = (r > dr) ? r - dr : 0u;
+        g = (g > dg) ? g - dg : 0u;
+        b = (b > db) ? b - db : 0u;
+    }
+    const uint16_t o = (uint16_t)((r << 11) | (g << 5) | b);
+    *p = (uint16_t)((o >> 8) | (o << 8));                      // and back
+}
+
 static inline void plot_delta(uint16_t* band, int by0, int by1,
                               int x, int y, uint16_t d_native, bool add) {
     if (y < by0 || y > by1) return;
@@ -219,9 +243,17 @@ static inline void band_line_fast(uint16_t* band, int by0, int by1,
 // Scanline-fill a triangle, clipped to the band's rows. Spans are clamped
 // horizontally rather than the vertices being clipped, which keeps the edge
 // interpolation exact for geometry running off the side of the screen.
+// `mode` is LINE_* -- ADD and SUB make the fill a DELTA over what is already there,
+// which is how a broad canopy member gets drawn. A member is a fill and not a bundle
+// of parallel lines for one reason: the span loop below pays its bound checks once a
+// row instead of once a pixel, and at 15,000 blended pixels a frame that difference is
+// the whole affordability of the thing.
 static void band_tri(uint16_t* band, int by0, int by1,
                      int x0, int y0, int x1, int y1, int x2, int y2,
-                     uint16_t color) {
+                     uint16_t color, uint8_t mode) {
+    const bool     blend = (mode == LINE_ADD || mode == LINE_SUB);
+    const bool     add   = (mode == LINE_ADD);
+    const uint16_t dn    = (uint16_t)((color >> 8) | (color << 8));
     int t;
     if (y1 < y0) { t=x0; x0=x1; x1=t; t=y0; y0=y1; y1=t; }
     if (y2 < y0) { t=x0; x0=x2; x2=t; t=y0; y0=y2; y2=t; }
@@ -254,7 +286,8 @@ static void band_tri(uint16_t* band, int by0, int by1,
         if (xl > xr) continue;
 
         uint16_t* row = &band[(y - by0) * SCR_W];
-        for (int x = xl; x <= xr; x++) row[x] = color;
+        if (blend) { for (int x = xl; x <= xr; x++) blend_px(&row[x], dn, add); }
+        else       { for (int x = xl; x <= xr; x++) row[x] = color; }
     }
 }
 
@@ -814,11 +847,18 @@ static uint32_t s_sky_us = 0, s_prim_us = 0, s_scan_us = 0;
 // for, and guessing has burned this project before. Cheap enough to leave in:
 // one pair of ~3-cycle counter reads per primitive per band it overlaps.
 static uint32_t s_cyc_aa = 0, s_cyc_ln = 0, s_cyc_tri = 0, s_cyc_oth = 0;
+// The canopy on its OWN counter, because `oth` is a bucket -- glyphs, fills and points
+// live there too, and they grow with how busy the fight is. Four rounds of canopy
+// optimisation were read off `oth` and two of those readings were really the HUD's text
+// getting longer. A number that moves for reasons other than the thing being measured
+// is not a measurement.
+static uint32_t s_cyc_can = 0;
 static uint32_t s_tint_us = 0;
 uint32_t vg_rast_aa_us(void)   { return s_cyc_aa  / 240u; }
 uint32_t vg_rast_ln_us(void)   { return s_cyc_ln  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return s_cyc_tri / 240u; }
 uint32_t vg_rast_oth_us(void)  { return s_cyc_oth / 240u; }
+uint32_t vg_rast_can_us(void)  { return s_cyc_can / 240u; }
 uint32_t vg_rast_tint_us(void) { return s_tint_us; }
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
@@ -849,7 +889,11 @@ uint32_t vg_rast_scan_us(void) { return s_scan_us; }
 enum { ROW_SPLIT = BAND_H / 2 };
 static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair");
 
-enum { RS_SKY = 0, RS_SCAN = 1 };
+enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2 };
+
+// Forward: the canopy pass is a third row-splittable job, and it is the largest of
+// them. Declared here because the helper task below dispatches to it.
+static void canopy_rows(uint16_t* band, int by0, int r0, int r1);
 
 static SemaphoreHandle_t s_rs_go   = nullptr;
 static SemaphoreHandle_t s_rs_done = nullptr;
@@ -862,8 +906,9 @@ static struct {
 static void rowsplit_task(void*) {
     for (;;) {
         xSemaphoreTake(s_rs_go, portMAX_DELAY);
-        if (s_rs.op == RS_SKY) vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
-        else                   band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        if      (s_rs.op == RS_SKY)    vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        else if (s_rs.op == RS_CANOPY) canopy_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        else                           band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         xSemaphoreGive(s_rs_done);
     }
 }
@@ -894,6 +939,140 @@ static bool rowsplit_start(uint8_t op, uint16_t* band, int by0, int r0, int r1) 
 }
 
 static inline void rowsplit_wait(void) { xSemaphoreTake(s_rs_done, portMAX_DELAY); }
+
+// ===========================================================================
+// THE BAKED CANOPY
+//
+// The author draws the frame on a grey field and this applies it as a CHANGE to the
+// finished picture: brighter than the background adds light, darker takes it away. So
+// the frame is lit BY the scene rather than painted over it, and it holds that
+// relationship over a dark nebula and a bright one alike -- which is exactly what an
+// opaque line cannot do, and what the sky gamma made obvious.
+//
+// COLUMNS, because the panel is turned a quarter turn: panel_x is the picture's y and
+// panel_y is 479 minus its x, so one band is 32 columns of the drawing and a column
+// layout keeps each band's data contiguous. LEFT HALF ONLY -- the drawing is symmetric
+// to within four levels of antialiasing noise, so column x serves 479-x as well and
+// nothing needs flipping inside a run, since mirroring in x leaves the y-runs alone.
+//
+// Empty pixels are not stored: a frame covers ~7% of the screen, so the table is runs
+// of used pixels and skips the rest. 9.5 KB in FLASH, where there are megabytes free,
+// rather than the 21 KB of internal SRAM that is actually scarce.
+//
+// The grey levels come through a 256-entry table built once, so the per-pixel work is
+// a load and a saturating add rather than any arithmetic on the hue.
+static uint16_t s_can_lut[256];
+static bool     s_can_ready = false;
+
+static void canopy_lut(void) {
+    for (int g = 0; g < 256; g++) {
+        const float f = (g > CANOPY_BG)
+                      ? (float)(g - CANOPY_BG) / (float)(255 - CANOPY_BG)
+                      : (float)(CANOPY_BG - g) / (float)CANOPY_BG;
+        // NATIVE order, swapped once here. Palette colours are stored in panel order
+        // and blend_px works in native, so leaving this unswapped would put the delta's
+        // red into the blue channel -- a bug that would have looked like a design
+        // decision rather than a mistake.
+        const uint16_t c = vg_dim(COL_HUD, f);
+        s_can_lut[g] = (uint16_t)((c >> 8) | (c << 8));
+    }
+    s_can_ready = true;
+}
+
+// A RUN OF ONE DELTA, which is where the cost of this actually lives.
+//
+// Two masked adds instead of three channel extracts. R+B share a word because nothing
+// can carry between them once G is masked out, and each field gets a spare bit above it
+// to catch the overflow: bit 16 above R, bit 5 above B, bit 11 above G. If the guard bit
+// is set the field saturated, so fill it -- no compares against 31 and 63, no
+// per-channel shifting back and forth.
+//
+// Subtraction is the same trick run backwards: set the guard bits first, and a field
+// that borrows through its guard has underflowed and clamps to zero.
+//
+// The delta is hoisted out of the loop, which is the other half of the win and the
+// reason the table stores runs of one level rather than a level per pixel.
+static inline uint32_t px_add(uint32_t s, uint32_t drb, uint32_t dg) {
+    const uint32_t v = ((s >> 8) | (s << 8)) & 0xFFFFu;
+    uint32_t rb = (v & 0xF81Fu) + drb;
+    uint32_t g  = (v & 0x07E0u) + dg;
+    if (rb & 0x00020u) rb |= 0x0001Fu;          // blue hit the ceiling
+    if (rb & 0x10000u) rb |= 0x0F800u;          // red did
+    if (g  & 0x00800u) g  |= 0x007E0u;          // green did
+    const uint32_t o = (rb & 0xF81Fu) | (g & 0x07E0u);
+    return ((o >> 8) | (o << 8)) & 0xFFFFu;
+}
+
+static inline uint32_t px_sub(uint32_t s, uint32_t drb, uint32_t dg) {
+    const uint32_t v = ((s >> 8) | (s << 8)) & 0xFFFFu;
+    uint32_t rb = ((v & 0xF81Fu) | 0x10020u) - drb;
+    uint32_t g  = ((v & 0x07E0u) | 0x00800u) - dg;
+    if (!(rb & 0x00020u)) rb &= ~0x0001Fu;      // blue went below zero
+    if (!(rb & 0x10000u)) rb &= ~0x0F800u;      // red did
+    if (!(g  & 0x00800u)) g  &= ~0x007E0u;      // green did
+    const uint32_t o = (rb & 0xF81Fu) | (g & 0x07E0u);
+    return ((o >> 8) | (o << 8)) & 0xFFFFu;
+}
+
+// TWO PIXELS PER ACCESS, because this loop is bound by memory and not by arithmetic.
+// Taking eight cycles of maths out of it earlier changed nothing at all -- the work was
+// already hidden behind the load and the store -- so the only thing left to remove is
+// the number of accesses. One 32-bit load and one 32-bit store per pair halves them.
+//
+// The pixel maths stays per-pixel on purpose. Packing both into one 32-bit add would
+// need a spare bit above red to catch its carry, and red sits at the top of its half,
+// so the carry lands in the neighbouring pixel's blue. That is a real trap and not
+// worth the two cycles it would save.
+//
+// Xtensa will not do an unaligned 32-bit load, so a span starting on an odd pixel does
+// that one singly first.
+#define SPAN_BODY(FN)                                                        \
+    const uint32_t drb = (uint32_t)d & 0xF81Fu, dg = (uint32_t)d & 0x07E0u;  \
+    int i = 0;                                                               \
+    if (n > 0 && (((uintptr_t)q & 3u) != 0u)) {                              \
+        q[0] = (uint16_t)FN(q[0], drb, dg);                                  \
+        i = 1;                                                               \
+    }                                                                        \
+    for (; i + 1 < n; i += 2) {                                              \
+        uint32_t* w = (uint32_t*)(void*)(q + i);                             \
+        const uint32_t v = *w;                                               \
+        *w = FN(v & 0xFFFFu, drb, dg) | (FN(v >> 16, drb, dg) << 16);         \
+    }                                                                        \
+    for (; i < n; i++) q[i] = (uint16_t)FN(q[i], drb, dg);
+
+static inline void span_add(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
+static inline void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
+
+// Rows [r0, r1) of the band, so the pass can be halved across the cores. Each panel
+// row is an independent column of the drawing -- nothing carries between them -- which
+// is what makes this splittable at all, and it is by far the biggest of the three
+// row-split jobs: measured at ~4 ms against the backdrop's 2.5 and the scanlines' 1.8.
+static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
+    if (!s_can_ready) canopy_lut();
+
+    for (int py = by0 + r0; py < by0 + r1; py++) {
+        const int lx = SCR_H - 1 - py;                 // this panel row IS a column
+        // Mirrored only when the drawing is symmetric, which the baker decides and
+        // records. An asymmetric frame stores every column and is read straight
+        // through -- a cockpit is allowed to be lopsided.
+        const int c  = (CANOPY_MIRROR && lx >= CANOPY_COLS) ? (SCR_W - 1 - lx) : lx;
+        if (c < 0 || c >= CANOPY_COLS) continue;
+
+        const uint8_t* p = &CANOPY_DATA[CANOPY_OFS[c]];
+        const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
+        uint16_t* row = &band[(py - by0) * SCR_W];
+
+        while (p + 5 <= e) {
+            const int     y0  = (p[0] << 8) | p[1];   // the picture's y is panel x
+            const int     len = (p[2] << 8) | p[3];
+            const uint8_t g   = p[4];                 // one level for the whole run
+            p += 5;
+            if (!len) continue;
+            if (g > CANOPY_BG) span_add(&row[y0], len, s_can_lut[g]);
+            else if (g < CANOPY_BG) span_sub(&row[y0], len, s_can_lut[g]);
+        }
+    }
+}
 
 static void draw_band(int band_index, uint16_t* band) {
     const int by0 = band_index * BAND_H;
@@ -991,6 +1170,23 @@ static void draw_band(int band_index, uint16_t* band) {
             vg_sky_fill_patch(band, by0);
             break;
 
+        case PRIM_CANOPY: {
+            // HALF ON EACH CORE, and this is where it pays most: during the primitive
+            // phase core 0 has nothing to do at all -- the backdrop is finished and the
+            // scanlines have not started -- so the whole pass is being done by one core
+            // while the other waits. The rendezvous is the same one the backdrop and
+            // the scanlines already use.
+            // Split where this band's pixels actually balance, not at its midpoint. A
+            // band costs the SLOWER half, so an even-looking split of uneven work
+            // returns almost nothing -- measured, the midpoint gave 1.2 of the 1.9 ms
+            // it should have. The baker computes the point; it is fifteen bytes.
+            const int at = CANOPY_SPLIT[band_index];
+            const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
+            canopy_rows(band, by0, 0, split ? at : BAND_H);
+            if (split) rowsplit_wait();
+            break;
+        }
+
         case PRIM_POINT:
             band[(p->y0 - by0) * SCR_W + p->x0] = p->color;
             break;
@@ -1023,7 +1219,8 @@ static void draw_band(int band_index, uint16_t* band) {
         }
 
         case PRIM_TRI:
-            band_tri(band, by0, by1, p->x0, p->y0, p->x1, p->y1, p->x2, p->y2, p->color);
+            band_tri(band, by0, by1, p->x0, p->y0, p->x1, p->y1, p->x2, p->y2,
+                     p->color, p->aa);
             break;
 
         case PRIM_FILL: {
@@ -1045,6 +1242,7 @@ static void draw_band(int band_index, uint16_t* band) {
         if      (p->type == PRIM_LINE && p->aa) s_cyc_aa  += dc;
         else if (p->type == PRIM_LINE)          s_cyc_ln  += dc;
         else if (p->type == PRIM_TRI)           s_cyc_tri += dc;
+        else if (p->type == PRIM_CANOPY)        s_cyc_can += dc;
         else                                    s_cyc_oth += dc;
     }
 
@@ -1106,7 +1304,7 @@ void vg_rast_flush(void) {
     s_push_us = s_over_us = 0;
     s_over_n  = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
-    s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = 0;
+    s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = s_cyc_can = 0;
     s_tint_us = 0;
 
     const float tint_k = s_tint_k;
