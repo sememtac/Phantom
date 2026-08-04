@@ -903,9 +903,27 @@ static void draw_band(int band_index, uint16_t* band) {
 
 static uint32_t s_raster_us = 0;
 static uint32_t s_wait_us   = 0;
+static uint32_t s_push_us   = 0;
+static int      s_over_n    = 0;
+static uint32_t s_over_us   = 0;
+
+// One band's time on the wire, which is the window everything above has to fit
+// inside: 480 x 32 pixels x 16 bits over four QSPI data lines at 80 MHz is
+// 61440 clocks, 768 us. A band that comes in under this costs nothing at all --
+// its CPU hid under the previous band's transfer. The amount by which a band
+// goes OVER is frame time, and it is the only part of the raster that splitting
+// the work across cores can win back.
+//
+// Derived rather than written down so it follows BAND_H. The 80 is LCD_CLOCK_HZ
+// in MHz and the 4 is the QSPI data lines; both live in vg_port_co5300.cpp,
+// which is why this is an assumption stated here and not an include.
+#define BAND_DMA_US ((SCR_W * BAND_H * 16) / 4 / 80)
 
 uint32_t vg_rast_raster_us(void) { return s_raster_us; }
 uint32_t vg_rast_wait_us(void)   { return s_wait_us; }
+uint32_t vg_rast_push_us(void)   { return s_push_us; }
+int      vg_rast_over_bands(void){ return s_over_n; }
+uint32_t vg_rast_over_us(void)   { return s_over_us; }
 
 void vg_rast_flush(void) {
     // CLOSE THE LIST HERE, in the consumer, not at the end of submit.
@@ -927,6 +945,8 @@ void vg_rast_flush(void) {
     s_wait_us = micros() - w0;
 
     uint32_t raster = 0;
+    s_push_us = s_over_us = 0;
+    s_over_n  = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
     s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = 0;
     s_tint_us = 0;
@@ -963,7 +983,9 @@ void vg_rast_flush(void) {
         // going away rather than another layer drawn on top of it.
         if (vg_rast_tv_active()) band_tv(buf, b * BAND_H);
         s_scan_us += micros() - t_scan;
-        raster += micros() - r0;
+        const uint32_t dr = micros() - r0;
+        raster += dr;
+        if (dr > BAND_DMA_US) { s_over_n++; s_over_us += dr - BAND_DMA_US; }
 
         // Captured AFTER the scanline pass and BEFORE the blit, so the recording
         // is exactly the bytes the panel receives -- effects included, and with
@@ -974,8 +996,17 @@ void vg_rast_flush(void) {
 
         // Queues and returns: the next iteration rasterises into the other
         // buffer while this one is on the wire.
+        //
+        // TIMED, because "queues and returns" is only true when the previous
+        // transfer has finished. The push drains it first, so the time spent in
+        // here is the CPU standing still with nothing left to do -- the frame
+        // being panel-bound rather than compute-bound. It was the one piece of
+        // the flush nobody had a number for, and blit minus wait minus rast
+        // minus push is now zero by construction.
         vg_crumb(CRUMB_FPUSH, (uint8_t)b);
+        const uint32_t p0 = micros();
         vg_panel_push_band(b * BAND_H, BAND_H, buf);
+        s_push_us += micros() - p0;
     }
 
     vg_capture_frame_end();

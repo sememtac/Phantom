@@ -133,6 +133,20 @@ bool vg_rast_overflowed(void);
 uint32_t vg_rast_raster_us(void);
 uint32_t vg_rast_wait_us(void);
 
+// The third piece, and the one that decides whether any of the rest is worth
+// touching: time blocked inside the band push, waiting on the previous
+// transfer. High `push` means the panel gates the frame and no amount of CPU
+// parallelism will help; low `push` with `over` bands means the raster is
+// spilling out of the transfer window and there is something to win.
+//
+// `over` counts the bands whose CPU exceeded one band's DMA window and `over_us`
+// sums the excess. That sum is the CEILING on what splitting band work across
+// cores can return -- an upper bound, since a split band still pays its own
+// window and the rendezvous.
+uint32_t vg_rast_push_us(void);
+int      vg_rast_over_bands(void);
+uint32_t vg_rast_over_us(void);
+
 // ...and the raster half split by stage, because the primitive COUNT cannot
 // distinguish a long antialiased span from a triangle fill covering a third of
 // the screen, and neither shows against a fixed backdrop cost.

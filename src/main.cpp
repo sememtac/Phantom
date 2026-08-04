@@ -141,7 +141,8 @@ void loop(void) {
     static float    fps       = 30.0f;
     static uint32_t report_ms = 0;
     static uint32_t acc_input = 0, acc_update = 0, acc_submit = 0, acc_flush = 0;
-    static uint32_t acc_rast = 0, acc_wait = 0;
+    static uint32_t acc_rast = 0, acc_wait = 0, acc_push = 0;
+    static uint32_t acc_over_us = 0, acc_over_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
     static uint32_t acc_tint = 0, acc_mir = 0;
@@ -381,6 +382,9 @@ void loop(void) {
     acc_flush  += t4 - t3;
     acc_rast   += vg_rast_raster_us();
     acc_wait   += vg_rast_wait_us();
+    acc_push   += vg_rast_push_us();
+    acc_over_us += vg_rast_over_us();
+    acc_over_n  += (uint32_t)vg_rast_over_bands();
     acc_sky    += vg_rast_sky_us();
     acc_aa     += vg_rast_aa_us();
     acc_ln     += vg_rast_ln_us();
@@ -407,19 +411,31 @@ void loop(void) {
     // Also silent while recording a session: the log shares this link, and a
     // telemetry line landing between frame records is indistinguishable from a
     // corrupt one to the host.
-    // availableForWrite() as well: with the timeout at zero a full ring only
-    // costs a dropped line, but checking first means the frame does not even pay
-    // for formatting one nobody can receive.
-    if (!vg_capture_active() && vg_replay_mode() == VG_RP_OFF
-        && ms - report_ms >= 2000 && Serial.availableForWrite() > 256) {
-        report_ms = ms;
+    // The WINDOW closes on time whether or not the report goes out. Only the
+    // printing is conditional on the link having room -- the accumulators reset
+    // either way, because when they reset inside the print block a skipped line
+    // rolled its whole window into the next one: the next report then averaged
+    // over four seconds and `frames` became a running total. One run read 35637
+    // frames and 625% blocked time, which is not a number, it is two windows
+    // stacked. Per-window values are only sound if the window is really a window.
+    //
+    // availableForWrite() rather than letting the write block: with the timeout
+    // at zero a full ring costs a dropped line, but checking first means the
+    // frame does not even pay for formatting one nobody can receive.
+    const bool win = !vg_capture_active() && vg_replay_mode() == VG_RP_OFF
+                   && ms - report_ms >= 2000;
+    if (win && Serial.availableForWrite() > 256) {
         uint8_t pmu_seen[3];
         vg_pmu_seen(pmu_seen);
-        // rast is CPU spent building bands; wait is time stalled on the panel
-        // DMA. Only the amount by which rast exceeds the transfer window costs
-        // frame time, so those two numbers are what any optimisation is aimed at.
-        Serial.printf("%.1f fps | in %lu upd %lu sub %lu blit %lu "
-                      "| rast %lu = sky %lu prim %lu scan %lu "
+        // blit is now fully accounted: wait is the previous frame's last transfer
+        // draining, rast is CPU spent building bands, push is the CPU standing
+        // still because the panel had not finished the band before. The three sum
+        // to blit by construction, and WHICH of them dominates decides what is
+        // worth optimising -- push says the wire gates the frame, over says the
+        // raster is spilling out of the transfer window.
+        Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
+                      "| blit %lu = wait %lu rast %lu push %lu "
+                      "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
                       "| aa %lu ln %lu tri %lu oth %lu tnt %lu mir %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
@@ -427,10 +443,19 @@ void loop(void) {
                       (unsigned long)(acc_update / frames),
                       (unsigned long)(acc_submit / frames),
                       (unsigned long)(acc_flush  / frames),
+                      (unsigned long)(acc_wait   / frames),
                       (unsigned long)(acc_rast   / frames),
+                      (unsigned long)(acc_push   / frames),
                       (unsigned long)(acc_sky    / frames),
                       (unsigned long)(acc_prim   / frames),
                       (unsigned long)(acc_scan   / frames),
+                      // Bands over the window, to a tenth: an integer mean would
+                      // read as zero for the case that matters, one heavy band in
+                      // every few frames.
+                      (unsigned long)(acc_over_n * 10 / frames / 10),
+                      (unsigned long)(acc_over_n * 10 / frames % 10),
+                      (int)NUM_BANDS,
+                      (unsigned long)(acc_over_us / frames),
                       (unsigned long)(acc_aa   / frames),
                       (unsigned long)(acc_ln   / frames),
                       (unsigned long)(acc_tri2 / frames),
@@ -522,6 +547,13 @@ void loop(void) {
                       (unsigned long)(acc_hud > acc_hud_radar + acc_hud_thr
                                       ? (acc_hud - acc_hud_radar - acc_hud_thr) / frames
                                       : 0));
+        ft_skip_next = true;
+    }
+
+    // The window closes on time whether or not the report went out -- which is
+    // why this is a second block and not the tail of the one above.
+    if (win) {
+        report_ms = ms;
         g_audio_blocked_us = 0;
         g_audio_short      = 0;
         g_synth_peak       = 0.0f;
@@ -529,10 +561,12 @@ void loop(void) {
         for (int i = 0; i < FT_BUCKETS; i++) ft_hist[i] = 0;
         ft_worst = 0;
         ft_late  = 0;
-        ft_skip_next = true;
+        // ft_skip_next belongs to the PRINTING, not to the window: it exists to
+        // keep the frame that paid for the formatting out of the histogram.
 
         acc_input = acc_update = acc_submit = acc_flush = 0;
-        acc_rast  = acc_wait = 0;
+        acc_rast  = acc_wait = acc_push = 0;
+        acc_over_us = acc_over_n = 0;
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;

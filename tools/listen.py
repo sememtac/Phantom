@@ -16,10 +16,13 @@ every other program that uses the port before you run this.
 Read line 3 first. A mean cannot tell "0.5 ms short on every frame" from "8 ms
 short once a second", and the two need opposite fixes.
 
-LIMIT: the totals across windows are not reliable. The board resets its frame
-counter and its histogram only when it prints a report, and it skips a report if
-the serial buffer is full. The next report then includes the skipped frames. One
-run reported 35637 frames and 625% blocked time. Use the per-window values.
+Line 1 splits the flush three ways: wait, rast and push. They add up to blit.
+    wait  the last transfer of the previous frame draining
+    rast  CPU spent drawing the bands
+    push  CPU stopped, because the panel had not finished the band before
+A large push means the panel sets the frame rate. A small push with bands over
+the window means the drawing does not fit in the window, and moving band work to
+the second core can win back at most the "by" figure.
 """
 import re
 import sys
@@ -71,12 +74,33 @@ if fps:
     m = sum(float(v) for v in fps) / len(fps)
     print("fps  %.1f  (%.2f ms/frame; 60 fps needs 16.67)" % (m, 1000.0 / m))
 
-a = avg(rows, ["in", "upd", "sub", "blit", "rast", "sky", "prim", "scan"])
+a = avg(rows, ["in", "upd", "sub", "blit", "wait", "rast", "push",
+               "sky", "prim", "scan"])
 for k in ["in", "upd", "sub", "blit"]:
     if k in a:
         print("  %-5s %7.0f us" % (k, a[k]))
-print("  (rast %.0f = sky %.0f prim %.0f scan %.0f -- all of it hides under DMA)"
+if "push" in a:
+    print("  blit  = wait %.0f + rast %.0f + push %.0f"
+          % (a.get("wait", 0), a.get("rast", 0), a.get("push", 0)))
+print("  (rast %.0f = sky %.0f prim %.0f scan %.0f)"
       % (a.get("rast", 0), a.get("sky", 0), a.get("prim", 0), a.get("scan", 0)))
+
+# Bands over the transfer window, and by how much. This is the number that says
+# whether splitting band work across the two cores is worth building.
+over = [m for m in (re.search(r"over ([\d.]+)/(\d+) by (\d+)", r) for r in rows) if m]
+if over:
+    n = sum(float(m.group(1)) for m in over) / len(over)
+    by = sum(float(m.group(3)) for m in over) / len(over)
+    print("  over  %.1f of %s bands, by %.0f us per frame" % (n, over[0].group(2), by))
+    push = a.get("push", 0.0)
+    if push > by * 2 and push > 500:
+        print("     -> PANEL BOUND. The CPU waits %.0f us for the wire and only" % push)
+        print("        overruns it by %.0f. Parallel band work has nothing to win." % by)
+    elif by > 1000:
+        print("     -> COMPUTE BOUND. Up to %.0f us per frame is reachable by" % by)
+        print("        splitting band work; less, once each half pays the window.")
+    else:
+        print("     -> BALANCED. Neither side is worth much; look before blit.")
 
 b = avg(subs, ["star", "arena", "world", "hud", "mir", "sfx", "sxr"])
 if b:
@@ -144,5 +168,6 @@ print("HOW TO READ IT")
 print("  p50 at or under 16667 and late% small  -> the steady state is fine and")
 print("     the misses are EVENTS. Find the events; do not trim the budget.")
 print("  p50 above 16667                        -> every frame is short. Trim the")
-print("     pre-flush phase (in + upd + sub); blit is near its 11.52 ms DMA floor.")
+print("     pre-flush phase (in + upd + sub), or the part of blit the split above")
+print("     says is reachable. 11.52 ms of blit is the DMA floor and cannot move.")
 print("  worst frame's split names the phase that owned the slowest frame.")
