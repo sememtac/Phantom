@@ -147,6 +147,12 @@ uint32_t vg_rast_push_us(void);
 int      vg_rast_over_bands(void);
 uint32_t vg_rast_over_us(void);
 
+// This frame's raster cost per band, NUM_BANDS entries, for the SHAPE of the
+// overrun. A total cannot tell an even overshoot -- which no scheduling trick
+// reaches -- from two heavy bands holding the ships, which is a different and
+// much more tractable problem. Valid until the next flush.
+const uint32_t* vg_rast_band_us(void);
+
 // ...and the raster half split by stage, because the primitive COUNT cannot
 // distinguish a long antialiased span from a triangle fill covering a third of
 // the screen, and neither shows against a fixed backdrop cost.

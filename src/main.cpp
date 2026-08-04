@@ -385,6 +385,11 @@ void loop(void) {
     acc_push   += vg_rast_push_us();
     acc_over_us += vg_rast_over_us();
     acc_over_n  += (uint32_t)vg_rast_over_bands();
+    static uint32_t acc_band[NUM_BANDS];
+    {
+        const uint32_t* bu = vg_rast_band_us();
+        for (int i = 0; i < NUM_BANDS; i++) acc_band[i] += bu[i];
+    }
     acc_sky    += vg_rast_sky_us();
     acc_aa     += vg_rast_aa_us();
     acc_ln     += vg_rast_ln_us();
@@ -547,6 +552,18 @@ void loop(void) {
                       (unsigned long)(acc_hud > acc_hud_radar + acc_hud_thr
                                       ? (acc_hud - acc_hud_radar - acc_hud_thr) / frames
                                       : 0));
+        // A fifth line, and the one that says whether band work is worth moving:
+        // the raster cost of each band against the 768 us it has to fit inside.
+        // An even overshoot is a rasteriser problem; two tall numbers in the
+        // middle of the list are the ships, and those are reachable.
+        {
+            char row[NUM_BANDS * 6 + 1];
+            int  at = 0;
+            for (int i = 0; i < NUM_BANDS && at < (int)sizeof(row) - 1; i++)
+                at += snprintf(row + at, sizeof(row) - at, "%lu ",
+                               (unsigned long)(acc_band[i] / frames));
+            Serial.printf("        band us/768 = %s\n", row);
+        }
         ft_skip_next = true;
     }
 
@@ -567,6 +584,7 @@ void loop(void) {
         acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
+        for (int i = 0; i < NUM_BANDS; i++) acc_band[i] = 0;
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;

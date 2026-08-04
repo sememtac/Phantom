@@ -906,6 +906,7 @@ static uint32_t s_wait_us   = 0;
 static uint32_t s_push_us   = 0;
 static int      s_over_n    = 0;
 static uint32_t s_over_us   = 0;
+static uint32_t s_band_us[NUM_BANDS];
 
 // One band's time on the wire, which is the window everything above has to fit
 // inside: 480 x 32 pixels x 16 bits over four QSPI data lines at 80 MHz is
@@ -924,6 +925,7 @@ uint32_t vg_rast_wait_us(void)   { return s_wait_us; }
 uint32_t vg_rast_push_us(void)   { return s_push_us; }
 int      vg_rast_over_bands(void){ return s_over_n; }
 uint32_t vg_rast_over_us(void)   { return s_over_us; }
+const uint32_t* vg_rast_band_us(void) { return s_band_us; }
 
 void vg_rast_flush(void) {
     // CLOSE THE LIST HERE, in the consumer, not at the end of submit.
@@ -985,6 +987,7 @@ void vg_rast_flush(void) {
         s_scan_us += micros() - t_scan;
         const uint32_t dr = micros() - r0;
         raster += dr;
+        s_band_us[b] = dr;
         if (dr > BAND_DMA_US) { s_over_n++; s_over_us += dr - BAND_DMA_US; }
 
         // Captured AFTER the scanline pass and BEFORE the blit, so the recording
