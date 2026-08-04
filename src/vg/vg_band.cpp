@@ -707,10 +707,17 @@ static void band_tv(uint16_t* band, int by0) {
 #endif
 }
 
-static inline void band_scanlines(uint16_t* band, int by0) {
+// Rows [r0, r1) of the band. The lit rows are chosen from by0 so the pitch runs
+// unbroken across band boundaries; restricting to a row range then advances to
+// the first lit row at or after r0 rather than restarting the phase, which is
+// what lets two cores each take half a band and land on the same pixels a single
+// core would have.
+static inline void band_scanlines(uint16_t* band, int by0, int r0, int r1) {
     int first = (SCANLINE_PITCH - (by0 % SCANLINE_PITCH)) % SCANLINE_PITCH;
+    if (first < r0)
+        first += ((r0 - first + SCANLINE_PITCH - 1) / SCANLINE_PITCH) * SCANLINE_PITCH;
 
-    for (int y = first; y < BAND_H; y += SCANLINE_PITCH) {
+    for (int y = first; y < r1; y += SCANLINE_PITCH) {
         // Rows are 960 bytes and the buffer is 16-byte aligned, so this is
         // always 4-byte aligned. The zero test still pays off wherever the
         // backdrop is dark.
@@ -760,6 +767,76 @@ uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
 uint32_t vg_rast_prim_us(void) { return s_prim_us; }
 uint32_t vg_rast_scan_us(void) { return s_scan_us; }
 
+// ===========================================================================
+// THE ROW SPLIT: half a band on each core
+//
+// Bands cannot be parallelised against each other -- the active list is built
+// incrementally across them and RAMWRC forces the transfers out in order -- but
+// within one band the rows are independent, and core 0 spends ~15 ms of every
+// frame doing nothing.
+//
+// ONLY THE TWO PASSES THAT HAVE NO CROSS-ROW STATE go through here: the backdrop
+// fill and the scanline overlay. Both are per-pixel functions of the row index,
+// so splitting them is bit-identical and the replay proves it.
+//
+// The primitives are NOT split, and that is a correctness decision rather than a
+// scheduling one. A line is a Bresenham or Wu walk whose phase is set by where
+// it was clipped, so clipping one at a mid-band row and rasterising the halves
+// separately does not reproduce the pixels a full-band walk produces -- it would
+// add fifteen more of the +-1px boundary jogs the band edges already make. That
+// is a change to the look, which is the author's call and not a free win.
+//
+// The split point must be EVEN: the backdrop walks rows in pairs and a pair that
+// straddled the boundary would be filled by one core and copied by the other.
+enum { ROW_SPLIT = BAND_H / 2 };
+static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair");
+
+enum { RS_SKY = 0, RS_SCAN = 1 };
+
+static SemaphoreHandle_t s_rs_go   = nullptr;
+static SemaphoreHandle_t s_rs_done = nullptr;
+static struct {
+    uint16_t* band;
+    int       by0, r0, r1;
+    uint8_t   op;
+} s_rs;
+
+static void rowsplit_task(void*) {
+    for (;;) {
+        xSemaphoreTake(s_rs_go, portMAX_DELAY);
+        if (s_rs.op == RS_SKY) vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        else                   band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        xSemaphoreGive(s_rs_done);
+    }
+}
+
+// Hands the bottom half to core 0 and says whether it took it. A false return
+// means the caller does the whole band itself, so a failed task creation costs
+// frame rate and nothing else.
+//
+// Priority 3, above the audio task at 2: a rendezvous that waited behind an
+// audio chunk would cost more than the split saves. Audio has a 65 ms ring
+// against thirty bursts of ~90 us, so it never notices.
+static bool rowsplit_start(uint8_t op, uint16_t* band, int by0, int r0, int r1) {
+    if (!s_rs_go) {
+        s_rs_go   = xSemaphoreCreateBinary();
+        s_rs_done = xSemaphoreCreateBinary();
+        if (!s_rs_go || !s_rs_done) return false;
+        if (xTaskCreatePinnedToCore(rowsplit_task, "rowsplit", 4096, nullptr,
+                                    3, nullptr, 0) != pdPASS) {
+            s_rs_go = nullptr;      // and never try again
+            return false;
+        }
+    }
+    s_rs.op = op; s_rs.band = band; s_rs.by0 = by0; s_rs.r0 = r0; s_rs.r1 = r1;
+    // The give is the release fence for everything above, including the band
+    // prep the helper is about to read.
+    xSemaphoreGive(s_rs_go);
+    return true;
+}
+
+static inline void rowsplit_wait(void) { xSemaphoreTake(s_rs_done, portMAX_DELAY); }
+
 static void draw_band(int band_index, uint16_t* band) {
     const int by0 = band_index * BAND_H;
     const int by1 = by0 + BAND_H - 1;
@@ -768,8 +845,16 @@ static void draw_band(int band_index, uint16_t* band) {
 
     // The backdrop fill REPLACES the clear rather than adding to it, so its net
     // cost is only what it exceeds a memset by.
-    if (vg_sky_ready()) vg_sky_fill_band(band, by0);
-    else                memset(band, 0, SCR_W * BAND_H * 2);
+    if (vg_sky_ready()) {
+        // Prep first and once: the chart work is per band, and both halves read
+        // what it leaves behind.
+        vg_sky_band_prep(by0);
+        const bool split = rowsplit_start(RS_SKY, band, by0, ROW_SPLIT, BAND_H);
+        vg_sky_fill_rows(band, by0, 0, split ? ROW_SPLIT : BAND_H);
+        if (split) rowsplit_wait();
+    } else {
+        memset(band, 0, SCR_W * BAND_H * 2);
+    }
 
     const uint32_t t_prim = micros();
     s_sky_us += t_prim - t_sky;
@@ -977,7 +1062,12 @@ void vg_rast_flush(void) {
         // instead silently skipped every vector element.
         const uint32_t t_scan = micros();
         vg_crumb(CRUMB_FSCAN, (uint8_t)b);
-        band_scanlines(buf, b * BAND_H);
+        {
+            const bool split = rowsplit_start(RS_SCAN, buf, b * BAND_H,
+                                              ROW_SPLIT, BAND_H);
+            band_scanlines(buf, b * BAND_H, 0, split ? ROW_SPLIT : BAND_H);
+            if (split) rowsplit_wait();
+        }
         // After the scanlines, so the tint colours those too. A red warning that
         // left the scanlines amber would read as an overlay rather than as the
         // whole picture going red.

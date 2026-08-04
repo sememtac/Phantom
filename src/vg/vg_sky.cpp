@@ -886,7 +886,34 @@ static void sky_chart(float lx, float ly, int li, float sign,
     *out_v = *ref_lat + ang_wrap(lat - *ref_lat);
 }
 
-void vg_sky_fill_band(uint16_t* band, int band_y0) {
+// Ten, not eight: the segment length must divide by the 8-pixel splash or the
+// walk leaves a gap of unwritten pixels at every segment boundary -- 480/8
+// segments is 60px, 60/8 rounds to 7 chunks, and the missing 4px showed the
+// previous band's leftovers as amber dashes every 60 pixels. 480/10 is 48,
+// which is six exact chunks.
+enum { SEGS = 10 };
+
+// Pixels painted from one texture sample. The chart is evaluated per segment
+// either way, so this trades backdrop detail against the per-chunk overhead --
+// the stores are the same 460KB a frame at any width. seg_px is 48, so 8 and 16
+// both divide exactly and neither leaves the unwritten gap the SEGS comment
+// above warns about.
+enum { SPLASH = 16 };
+
+// WHAT THE ROW LOOP NEEDS AND THE ROWS DO NOT EACH RECOMPUTE.
+//
+// Split out so the band's rows can be filled by two cores. The chart work is
+// per BAND -- eighteen evaluations and the bank trig -- while the row loop is
+// per ROW and reads nothing but this and the texture. One core preps, both
+// fill, and the handshake that starts them is the fence that publishes it.
+struct SkyBand {
+    float Au[SEGS + 1], Av[SEGS + 1];
+    float Du[SEGS + 1], Dv[SEGS + 1];
+    int   row_step;
+};
+static SkyBand s_bd;
+
+void vg_sky_band_prep(int band_y0) {
     if (!s_ready) return;
 
     // THE SPHERE, PIECEWISE. The old fill mapped the whole frame as one rigid
@@ -914,13 +941,9 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     const float lx_c = (float)(SCR_W / 2);   // other rotations: centre column
 #endif
 
-    // Ten, not eight: the segment length must divide by the 8-pixel splash or
-    // the walk leaves a gap of unwritten pixels at every segment boundary --
-    // 480/8 segments is 60px, 60/8 rounds to 7 chunks, and the missing 4px
-    // showed the previous band's leftovers as amber dashes every 60 pixels.
-    // 480/10 is 48, which is six exact chunks.
-    enum { SEGS = 10 };
-    float Au[SEGS + 1], Av[SEGS + 1], Cu[SEGS + 1], Cv[SEGS + 1];
+    float* Au = s_bd.Au;
+    float* Av = s_bd.Av;
+    float  Cu[SEGS + 1], Cv[SEGS + 1];
     // Chained lift: the first sample references the frame accumulator, each
     // later one references its predecessor, and each cross sample references
     // its own column sample. In ANGLE space, then scaled to texels once.
@@ -965,20 +988,37 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // The cross OFFSET per endpoint, banked once for the whole band. The row
     // loop used to rebuild (A - C) for four endpoints of every segment, which
     // is the same eleven subtractions repeated thirty-two times.
-    float Du[SEGS + 1], Dv[SEGS + 1];
+    float* Du = s_bd.Du;
+    float* Dv = s_bd.Dv;
     for (int k = 0; k <= SEGS; k++) {
         Du[k] = Au[k] - Cu[k];
         Dv[k] = Av[k] - Cv[k];
     }
 
+    // ROWS IN PAIRS, except while the backdrop is dissolving in: the reveal
+    // pattern is keyed on ORDER[sy & 7], so the two rows of a pair are not
+    // always on the same side of the threshold and copying one onto the other
+    // would coarsen the dissolve to 2px steps. It runs for under a second at a
+    // screen change.
+    s_bd.row_step = (s_reveal < 1.0f) ? 1 : 2;
+}
+
+void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
+    if (!s_ready) return;
+
+    const float* Au = s_bd.Au;
+    const float* Av = s_bd.Av;
+    const float* Du = s_bd.Du;
+    const float* Dv = s_bd.Dv;
+    const int    row_step = s_bd.row_step;
+
     static const uint8_t ORDER[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
     const int seg_px = SCR_H / SEGS;
-    // Pixels painted from one texture sample. The chart is evaluated per
-    // segment either way, so this trades backdrop detail against the per-chunk
-    // overhead -- the stores are the same 460KB a frame at any width. seg_px is
-    // 48, so 8 and 16 both divide exactly and neither leaves the unwritten gap
-    // the SEGS comment above warns about.
-    enum { SPLASH = 16 };
+#if VG_ROTATE == 1
+    const float lx_c = (float)(SCR_H - 1 - (band_y0 + BAND_H / 2));
+#else
+    const float lx_c = (float)(SCR_W / 2);
+#endif
     // One constant for the step: the 8-pixel splash over the segment length,
     // into 16.16. Folding the two multiplies into one is bit-exact rather than
     // merely close, because 65536 is a power of two -- scaling by it moves the
@@ -992,13 +1032,10 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // each pair is a copy, so a pair costs one walk plus a 960-byte memcpy
     // instead of two walks.
     //
-    // Per-row while the backdrop is dissolving in: the reveal pattern is keyed
-    // on ORDER[sy & 7], so the two rows of a pair are not always on the same
-    // side of the threshold and copying one onto the other would coarsen the
-    // dissolve to 2px steps. It runs for under a second at a screen change.
-    const int row_step = (s_reveal < 1.0f) ? 1 : 2;
-
-    for (int row = 0; row < BAND_H; row += row_step) {
+    // r0 IS EVEN AND SO IS r1, which is what keeps a split band bit-identical to
+    // an unsplit one: pairs never straddle the boundary, so each half walks the
+    // same rows and copies onto the same partners it would have anyway.
+    for (int row = r0; row < r1; row += row_step) {
         const int sy = band_y0 + row;
         if (s_reveal < 1.0f &&
             (float)(ORDER[sy & 7] + 1) * (1.0f / 8.0f) > s_reveal) {
@@ -1095,6 +1132,13 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
         // every band.
         if (row_step == 2) memcpy(&band[(row + 1) * SCR_W], dst, SCR_W * 2);
     }
+}
+
+// The whole band, for every caller that is not splitting it.
+void vg_sky_fill_band(uint16_t* band, int band_y0) {
+    if (!s_ready) return;
+    vg_sky_band_prep(band_y0);
+    vg_sky_fill_rows(band, band_y0, 0, BAND_H);
 }
 
 // The patch's backdrop, called from the band raster when it meets a PRIM_SKY.

@@ -89,3 +89,10 @@ void vg_sky_fill_patch(uint16_t* band, int band_y0);
 
 // Fill one band from the texture. Replaces the memset entirely.
 void vg_sky_fill_band(uint16_t* band, int band_y0);
+
+// ...and the same fill in two pieces, so two cores can share one band. The prep
+// does the chart work once and must complete before either core fills; the fill
+// touches only the rows it is given. r0 and r1 MUST BE EVEN or the row pairing
+// straddles the boundary and the split stops being bit-identical.
+void vg_sky_band_prep(int band_y0);
+void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1);
