@@ -138,8 +138,9 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session")
     ap.add_argument("--port", required=True)
-    ap.add_argument("--frames", default=DEFAULT_FRAMES,
-                    help="comma separated frame numbers")
+    ap.add_argument("--frames", default=None,
+                    help="comma separated frame numbers. With --against, the "
+                         "default is the frames the baseline holds")
     ap.add_argument("--save", metavar="FILE", help="write a baseline")
     ap.add_argument("--against", metavar="FILE", help="compare with a baseline")
     ap.add_argument("--dir", help="also write each frame as a .ppm here")
@@ -147,7 +148,17 @@ def main():
 
     if args.dir:
         os.makedirs(args.dir, exist_ok=True)
-    wanted = sorted(int(x) for x in args.frames.split(",") if x.strip())
+
+    # A comparison renders the frames the baseline holds. Passing --frames as
+    # well is allowed, but the default must come from the file: a run that
+    # rendered the default list against a baseline built from another list
+    # compared nothing at all and still printed "identical".
+    spec = args.frames
+    if spec is None and args.against:
+        with open(args.against) as fh:
+            spec = ",".join(sorted(json.load(fh)["frames"], key=int))
+        print(f"frames from {args.against}: {spec}")
+    wanted = sorted(int(x) for x in (spec or DEFAULT_FRAMES).split(",") if x.strip())
     got = render(args.port, args.session, wanted, args.dir)
 
     if args.save:
@@ -165,6 +176,7 @@ def main():
         old = base["frames"]
         print(f"\nbaseline commit {base['commit']}, now {git_commit()}")
         bad = 0
+        same = 0
         for k in sorted(got, key=int):
             a = old.get(str(k))
             b = got[k]
@@ -173,11 +185,20 @@ def main():
             elif a != b:
                 print(f"  {k:6d}  DIFFERENT")
                 bad += 1
+            else:
+                same += 1
         if bad:
-            print(f"\n{bad} of {len(got)} frames changed. If this change was "
+            print(f"\n{bad} of {bad + same} frames changed. If this change was "
                   f"meant to keep the picture identical, it did not.")
             return 1
-        print(f"\nall {len(got)} frames identical.")
+        # Count the frames that were really COMPARED, not the frames rendered. A
+        # frame the baseline does not hold proves nothing, and a run where none
+        # of them matched up used to report a clean result.
+        if not same:
+            print("\nNOTHING WAS COMPARED: no rendered frame is in the baseline. "
+                  "This is not a pass.")
+            return 1
+        print(f"\nall {same} frames identical.")
         return 0
 
     print("\nno --save and no --against, so nothing was compared")
