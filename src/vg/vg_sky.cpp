@@ -39,6 +39,36 @@
 // foreground is just noise.
 #define SKY_MAX_LEVEL   0.52f
 
+// HOW MANY OF THE 31 LEVELS THE SKY ACTUALLY USES, which turned out to be the
+// whole banding defect.
+//
+// Measured from a real frame: two adjacent quantisation levels were 58% and 29%
+// of the screen, 87% between them. A dim nebula reports `peak 30/125` -- 24% of
+// the ceiling -- so after SKY_MAX_LEVEL it spans about FOUR of the 31 steps 565
+// offers, and a smooth gradient drawn in four steps is flat plates with hard
+// edges. That is what the author reported as vertical banding, and it is not a
+// sampling problem: no dither or interpolation in the FILL can invent a value
+// the texture does not hold.
+//
+// So the levels are earned back here, where it is free -- this runs once per
+// venue, not per frame. Gamma below 1 spends more steps at the low end where
+// these skies live.
+//
+// NORMALISED SO THE PEAK DOES NOT MOVE. dens/SKY_MAX_LEVEL raised to the gamma
+// and scaled back means SKY_MAX_LEVEL maps to itself: the brightest cores stay
+// exactly where they were, and only the dim expanse lifts. That is a DIFFERENT
+// trade from raising SKY_MAX_LEVEL, which was tried at 0.80 and rejected because
+// it moved the peak and thin HUD strokes lost contrast against it.
+//
+// 0.60 roughly doubles the levels in use: 0.1 of the ceiling lifts to 0.25.
+#define SKY_GAMMA       0.60f
+
+static inline float sky_level(float dens) {
+    if (dens <= 0.0f) return 0.0f;
+    if (dens >= SKY_MAX_LEVEL) return SKY_MAX_LEVEL;
+    return SKY_MAX_LEVEL * powf(dens * (1.0f / SKY_MAX_LEVEL), SKY_GAMMA);
+}
+
 // ...and nothing may be perfectly black. See the lift in vg_sky_generate.
 //
 // These are the values an empty texel lifts TO, and they are cool rather than
@@ -496,6 +526,7 @@ static void gen_galaxy(uint32_t seed) {
             float dens = (disk * (0.20f + 0.80f * arm) * (0.55f + 0.75f * mott)
                           + core * 1.6f) * edge * SKY_MAX_LEVEL;
             if (dens > SKY_MAX_LEVEL) dens = SKY_MAX_LEVEL;
+            dens = sky_level(dens);
 
             float warm = core * 2.2f;
             if (warm > 1.0f) warm = 1.0f;
@@ -543,6 +574,7 @@ static void gen_cluster(uint32_t seed) {
 
             float dens = (sum + haze * 0.22f) * SKY_MAX_LEVEL;
             if (dens > SKY_MAX_LEVEL) dens = SKY_MAX_LEVEL;
+            dens = sky_level(dens);
 
             float tone = (sum > 0.001f) ? (tsum / sum) : 0.5f;
 
@@ -578,7 +610,7 @@ static void gen_nebula(uint32_t seed) {
             mask = (mask - 0.30f) * 2.2f;
             if (mask < 0.0f) mask = 0.0f; else if (mask > 1.0f) mask = 1.0f;
 
-            float dens = d * mask * SKY_MAX_LEVEL;
+            float dens = sky_level(d * mask * SKY_MAX_LEVEL);
 
             // A second field shifts the tone across the cloud so it is not one
             // flat colour: cool indigo through violet to a warm core.
