@@ -4,11 +4,15 @@
 Usage:
     python tools/listen.py COM6 45
 
-The board prints four lines every two seconds:
+The board prints five lines every two seconds:
     1. the frame budget: fps, and the time in each phase
     2. the submit breakdown, per layer
     3. the frame-time distribution: p50, p95, and the worst frame
     4. audio delivery, the mixer peak, and the HUD split
+    5. the raster cost of each of the 15 bands, against the 768 us window
+
+This program does not read line 5. Read it by eye: two tall numbers mean a few
+bands hold most of the work, and an even row means they all do.
 
 The board prints none of them while a capture or a replay holds the link. Close
 every other program that uses the port before you run this.
