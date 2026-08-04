@@ -144,6 +144,7 @@ void loop(void) {
     static uint32_t acc_rast = 0, acc_wait = 0, acc_push = 0;
     static uint32_t acc_over_us = 0, acc_over_n = 0;
     static uint32_t acc_join = 0, acc_res = 0;
+    static uint32_t acc_join_mm = 0, acc_join_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
     static uint32_t acc_tint = 0, acc_mir = 0;
@@ -388,6 +389,8 @@ void loop(void) {
     acc_over_n  += (uint32_t)vg_rast_over_bands();
     acc_join    += vg_rast_join_us();
     acc_res     += vg_rast_res_us();
+    acc_join_mm += vg_rast_join_mm_us();
+    acc_join_n  += (uint32_t)vg_rast_join_n();
     static uint32_t acc_band[NUM_BANDS];
     {
         const uint32_t* bu = vg_rast_band_us();
@@ -442,7 +445,7 @@ void loop(void) {
         // worth optimising -- push says the wire gates the frame, over says the
         // raster is spilling out of the transfer window.
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
-                      "| blit %lu = wait %lu rast %lu push %lu join %lu res %lu "
+                      "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
                       "| aa %lu ln %lu tri %lu oth %lu tnt %lu mir %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
@@ -455,6 +458,8 @@ void loop(void) {
                       (unsigned long)(acc_rast   / frames),
                       (unsigned long)(acc_push   / frames),
                       (unsigned long)(acc_join   / frames),
+                      (unsigned long)(acc_join_mm / frames),
+                      (unsigned long)(acc_join_n  / frames),
                       (unsigned long)(acc_res    / frames),
                       (unsigned long)(acc_sky    / frames),
                       (unsigned long)(acc_prim   / frames),
@@ -590,6 +595,7 @@ void loop(void) {
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
         acc_join = acc_res = 0;
+        acc_join_mm = acc_join_n = 0;
         for (int i = 0; i < NUM_BANDS; i++) acc_band[i] = 0;
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;

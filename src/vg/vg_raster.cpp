@@ -100,10 +100,25 @@ static inline int live_count(void) {
 
 // Close the frame: bring the second block down against the first so the list is
 // contiguous and in draw order.
+// Timed apart from its caller's bracket because the two disagree: the bracket in
+// vg_rast_flush reads 361-400 us in combat, which is far too much for a copy of a
+// few hundred 20-byte structs in internal SRAM, and it does not track the prim
+// count -- attract pays 141 us at P 364 while a light combat frame pays 13 at
+// P 293. So the copy gets its own counter and the count comes out with it. If the
+// copy is cheap, the time is going somewhere else in the flush prologue and the
+// name `join` is a red herring.
+static uint32_t s_join_mm_us = 0;
+static int      s_join_n     = 0;
+uint32_t vg_rast_join_mm_us(void) { return s_join_mm_us; }
+int      vg_rast_join_n(void)     { return s_join_n; }
+
 void vg_prim_join(void) {
     const int na = s_sub[0].at;
     const int nb = s_sub[1].at - SUB_SPLIT;
+    s_join_n = nb;
+    const uint32_t t0 = micros();
     if (nb > 0) memmove(&s_prims[na], &s_prims[SUB_SPLIT], (size_t)nb * sizeof(Prim));
+    s_join_mm_us = micros() - t0;
     s_count = na + nb;
 }
 

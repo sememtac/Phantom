@@ -160,6 +160,11 @@ const uint32_t* vg_rast_band_us(void);
 uint32_t vg_rast_join_us(void);
 uint32_t vg_rast_res_us(void);
 
+// The join's memmove on its own, and how many primitives it moved -- see the note
+// at vg_prim_join for why the caller's bracket is not to be trusted.
+uint32_t vg_rast_join_mm_us(void);
+int      vg_rast_join_n(void);
+
 // ...and the raster half split by stage, because the primitive COUNT cannot
 // distinguish a long antialiased span from a triangle fill covering a third of
 // the screen, and neither shows against a fixed backdrop cost.
