@@ -34,15 +34,9 @@ static void hud_panel(int x, int y, int w, int h, const char* label) {
     vg_text(x + 9, y - 3, label, INK_ONFILL, 1);
 }
 
-static void draw_reticle(void) {
-    const int cx = SCR_W / 2, cy = SCR_H / 2;
-    const int g = 11, len = 9;
-    vg_line(cx - g - len, cy, cx - g, cy, COL_HUD);
-    vg_line(cx + g, cy, cx + g + len, cy, COL_HUD);
-    vg_line(cx, cy - g - len, cx, cy - g, COL_HUD);
-    vg_line(cx, cy + g, cx, cy + g + len, COL_HUD);
-    vg_point(cx, cy, COL_STAR_BRIGHT);
-}
+// The reticle is GONE, replaced by the canopy's aperture -- see the note there.
+// Kept as a comment rather than as dead code so the shape it drew is on record: four
+// ticks at a gap of 11 and a length of 9, with one lit pixel dead centre.
 
 // Hull integrity. The fill slides amber -> red as it drops and blinks below the
 // self-repair floor, so "I am below 30% and this damage is now permanent" is
@@ -245,6 +239,98 @@ static void draw_throttle(void) {
 
     for (int i = 0; i <= 4; i++)
         vg_fill_rect(x0 + w + 4, y0 + (h * i) / 4, 7, HUD_STROKE, INK_TRACE);
+}
+
+// ---------------------------------------------------------------------------
+// THE CANOPY
+//
+// Panel lines: a central aperture with struts running from its corners out past the
+// bezel. Very faint, in the HUD's own hue.
+//
+// What it buys is what a floating reticle cannot. A crosshair hangs in the void and
+// says "here is the middle"; a frame says the view is being seen THROUGH something,
+// and the eye reads the structure as a thing it is sitting inside. It is also the
+// cheapest identity cue available -- one pattern per hull and the player knows which
+// cockpit they are in before reading a single word.
+//
+// AND IT REPLACES THE CROSSHAIR, which is the other half of the idea. The aperture
+// brackets where the nose is pointing WITHOUT drawing anything on it, which is
+// strictly better for aiming than four ticks and a lit pixel: nothing occludes the
+// target, and a shape is easier to centre something in than a gap is to judge.
+//
+// A TABLE, one row per hull, because per-ship patterns are the point. Adding one is
+// adding a row and an array of vertices.
+// ---------------------------------------------------------------------------
+
+// Where a strut ends. Further than any vertex can be from a screen corner --
+// sqrt(240^2 + 240^2) is 340 -- so every strut leaves the panel whatever the shape.
+// The rasteriser clips, and the corners are cut by the bezel in any case.
+#define CANOPY_REACH 400.0f
+
+struct Canopy {
+    const int16_t* ap;      // aperture vertices, interleaved dx,dy from the centre
+    uint8_t        n;        // how many
+    uint8_t        rays;     // one bit per vertex: run a strut out from it
+};
+
+// THE INVERTED TRIANGLE. Two corners up, the point down, and a strut off each.
+// Three panels come out of it: one above the top edge between the two rising
+// struts, and one either side of the falling one.
+//
+// The drop is TWICE the rise, which is what puts the centroid exactly on the aim
+// point rather than merely near it. At the centre row the aperture is 62 px across,
+// so the point the nose is pointing at sits inside with about 31 px of clear air on
+// either side -- the whole reason this can retire the reticle.
+static const int16_t CANOPY_TRI[] = {
+    -46, -26,      // top left
+     46, -26,      // top right
+      0,  52,      // the point
+};
+
+// One row per ShipClass, indexed directly by vg.ship. All four fly the triangle for
+// now; the mechanism is here so that giving BALLISTA a heavier frame or LANCE a
+// narrower one is a row, not a rewrite.
+static const Canopy CANOPY[SHIP_CLASSES] = {
+    { CANOPY_TRI, 3, 0x7 },    // AEGIS
+    { CANOPY_TRI, 3, 0x7 },    // LANCE
+    { CANOPY_TRI, 3, 0x7 },    // CHARIOT
+    { CANOPY_TRI, 3, 0x7 },    // BALLISTA
+};
+
+// Three sqrtf a frame, and deliberately not tabled. The radar's dome was worth a
+// table at fifty-three trig calls; this is three, which is a couple of microseconds
+// against the 0.85 us those cost each. Said out loud so the next person reading it
+// does not have to wonder whether it was missed.
+// Three sqrtf a frame, and deliberately not tabled: the radar's dome was worth a
+// table at fifty-three trig calls, this is three, against 0.85 us each.
+//
+// One pass, no antialiasing bracket. There was one -- the aperture smoothed and the
+// struts not, to buy back the 380 us the smoothing cost -- and it became pointless
+// the moment antialiasing came off the instruments altogether. Nothing here asks for
+// it now, so nothing here has to argue about it.
+static void canopy_draw(const Canopy* c) {
+    for (int i = 0; i < c->n; i++) {
+        const int   j  = (i + 1) % c->n;
+        vg_line(SCR_CX + (float)c->ap[i * 2], SCR_CY + (float)c->ap[i * 2 + 1],
+                SCR_CX + (float)c->ap[j * 2], SCR_CY + (float)c->ap[j * 2 + 1],
+                COL_CANOPY);
+    }
+
+    for (int i = 0; i < c->n; i++) {
+        if (!(c->rays & (1u << i))) continue;
+        const float ax = SCR_CX + (float)c->ap[i * 2];
+        const float ay = SCR_CY + (float)c->ap[i * 2 + 1];
+        // Outward along the ray from the centre THROUGH the vertex, so a strut always
+        // continues the aperture's own corner rather than picking a direction of its
+        // own. That is what lets an arbitrary polygon work here with no per-pattern
+        // table of angles.
+        const float dx = ax - SCR_CX, dy = ay - SCR_CY;
+        const float m  = sqrtf(dx * dx + dy * dy);
+        if (m > 0.001f) {
+            const float k = CANOPY_REACH / m;
+            vg_line(ax, ay, ax + dx * k, ay + dy * k, COL_CANOPY);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +715,16 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     (void)cam; (void)in;
     char buf[40];
 
+    // FIRST, so every instrument draws on top of it. The canopy is structure and the
+    // instruments are mounted ON that structure, which is the reading this order
+    // produces -- drawn last it would lay faint lines across the readouts instead.
+    //
+    // Inside the warp bracket, because vg_draw_hud is called inside it: the panel
+    // lines bend and shake with the rest of the assembly. That is the point of
+    // putting them here rather than in the flat pass -- a canopy that stayed rigid
+    // while the instruments mounted on it moved would read as two separate objects.
+    canopy_draw(&CANOPY[vg.ship < SHIP_CLASSES ? vg.ship : SHIP_AEGIS]);
+
     draw_health();
     draw_comms();
 
@@ -690,7 +786,6 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // draw_fps; the arena name used to sit under it in trace ink and read as
     // ghost text behind the number.
 
-    draw_reticle();
     // Split out because `hud` is one number covering half a dozen unrelated
     // instruments, and the plan for it named the radar on the strength of its trig
     // without ever measuring which part actually costs.

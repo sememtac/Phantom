@@ -415,6 +415,21 @@ void vg_sky_menu(void) {
     s_is_menu = true;
 }
 
+// NO DITHER HERE, AND THAT IS A CONCLUSION RATHER THAN AN OMISSION.
+//
+// A 4x4 Bayer offset of up to one LSB was added here to break the tonal contours a
+// bright sky bands along -- SKY_MAX_LEVEL is 0.52, so the brightest texel lands at
+// r*31 of about sixteen, and the whole sky is drawn in half the steps 565 offers.
+// The contours are real and they are in the texel VALUES, where the fill's coordinate
+// dither cannot reach them.
+//
+// It still made things WORSE, visibly, and the reason is the whole point: the texture
+// is magnified about 23x on the way to the screen. A dither that is invisible at 1:1
+// becomes a 23-PIXEL CHECKERBOARD when every texel covers a block that size. It read
+// as the nebula going pixelated, which is exactly what it was.
+//
+// Dither belongs at OUTPUT resolution or nowhere. Anything applied in texel space is
+// magnified along with the picture.
 static inline uint16_t pack565_swapped(float r, float g, float b) {
     if (r < 0) r = 0; if (r > 1) r = 1;
     if (g < 0) g = 0; if (g > 1) g = 1;

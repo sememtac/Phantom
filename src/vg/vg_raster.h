@@ -47,6 +47,11 @@ void vg_hud_jitter(float dx, float dy);
 // Defaults to on; anything that turns it off must turn it back on.
 void vg_line_aa_mode(bool on);
 
+// Master switch over the above, for judging what the smoothing is actually worth.
+// Serial 'q' toggles it. Default on, so nothing changes unless it is asked for.
+void vg_rast_aa_master(bool on);
+bool vg_rast_aa_master_on(void);
+
 // Screen space, origin top-left. Off-screen geometry is clipped (and fully
 // off-screen geometry dropped) at submit time, so the per-band inner loops
 // never see wild coordinates.

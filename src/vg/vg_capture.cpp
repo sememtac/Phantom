@@ -4,6 +4,7 @@
 #include "vg_replay.h"
 #include "vg_crumb.h"
 #include "vg_sim.h"     // the VFX bench commands
+#include "vg_raster.h"  // the 'q' antialiasing toggle
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
@@ -218,7 +219,15 @@ void vg_capture_poll(void) {
             if (vg_replay_mode() != VG_RP_OFF) break;
             continue;
         }
-        if (c == 'A') {
+        if (c == 'q') {
+            // ANTIALIASING, ON AND OFF, WHILE FLYING. A compile-time switch would
+            // mean comparing two flights from memory, which is no way to judge how
+            // something looks -- flipping it mid-fight puts the two versions of the
+            // same scene a second apart.
+            const bool on = !vg_rast_aa_master_on();
+            vg_rast_aa_master(on);
+            if (!vg_link_busy()) Serial.println(on ? "hud aa: on" : "hud aa: off");
+        } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an
             // unknown tag as a desync -- so it drops every frame and renders

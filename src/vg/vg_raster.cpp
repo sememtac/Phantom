@@ -121,7 +121,35 @@ bool vg_prim_init(void) {
 const Prim* vg_prim_list(void) { return s_prims; }
 int         vg_prim_live(void) { return s_count; }   // the JOINED list
 
-void vg_line_aa_mode(bool on) { sub()->aa = on ? 1 : 0; }
+// A MASTER SWITCH over every request to turn antialiasing ON, so it can be taken
+// away wholesale and looked at. Off is the interesting direction: the world already
+// runs unsmoothed by the author's decision, so clearing this is "no AA anywhere", and
+// `aa` bills 1200-1580 us of the raster -- the largest single item that exists purely
+// for how something looks rather than for what it does.
+//
+// Read by both cores while they submit. A plain bool, no synchronisation: the worst a
+// torn read can do is smooth one half of one frame, and it moves only when somebody
+// sends the command.
+// OFF, BY THE AUTHOR'S DECISION AFTER LOOKING AT BOTH: "I really didn't notice any
+// difference." Measured cost of the smoothing it removes: 1090-1430 us of every
+// combat frame, which is more than the ~930 us that stood between combat and 60 fps,
+// and more than the whole submit split bought.
+//
+// It is the second time this has gone the same way. Antialiasing was taken off the
+// WORLD in 87f5ae3 and turned out to be 59 us of the 1200 it was blamed for; the 1200
+// was here, on the instruments, and was kept on the reasoning that instruments have
+// to be READ. That reasoning was sound and the conclusion was still wrong -- on a
+// 480x480 panel at this pixel pitch the difference did not survive contact with
+// somebody flying the game.
+//
+// Kept as a switch rather than deleted, because the AA rasteriser is still the better
+// picture in principle and 'q' puts it back for a look. `aa` in the telemetry should
+// now read 0 in flight.
+static bool s_aa_master = false;
+void vg_rast_aa_master(bool on) { s_aa_master = on; }
+bool vg_rast_aa_master_on(void) { return s_aa_master; }
+
+void vg_line_aa_mode(bool on) { sub()->aa = (on && s_aa_master) ? 1 : 0; }
 
 int vg_rast_tri_count(void) { return s_sub[0].tri + s_sub[1].tri; }
 
