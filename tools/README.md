@@ -258,6 +258,8 @@ would move the simulation off the sequence the recording was made from.
 | `phantom_recorder.py` | the window |
 | `phantom_session.py` | the command line |
 | `phantom_vfx.py` | fires the explosions, to look at them |
+| `canopy_bake.py` | turns a canopy drawing into a table the firmware draws |
+| `canopy.ps1` | bake, build and flash a new canopy in one command |
 
 Both front ends use `phantom_link`, so there is one copy of the protocol code.
 The first version had two bugs of the type that one copy prevents. It looked for
