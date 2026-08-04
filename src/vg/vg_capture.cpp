@@ -227,6 +227,19 @@ void vg_capture_poll(void) {
             const bool on = !vg_rast_aa_master_on();
             vg_rast_aa_master(on);
             if (!vg_link_busy()) Serial.println(on ? "hud aa: on" : "hud aa: off");
+        } else if (c == 'k') {
+            // WHAT THE CANOPY COSTS, from anywhere -- the attract loop included.
+            //
+            // The drawing only appears in a match, so the frame counter needs a pilot,
+            // and it reports a band's slower half rather than the pass. This is the
+            // whole pass on one core, so a change to the table or the inner loop can be
+            // judged in one flash instead of one flight.
+            VgCanopyCost k;
+            vg_canopy_bench(&k);
+            if (!vg_link_busy()) {
+                Serial.printf("canopy: %lu us for %d blocks, %d flat px, %d literal px\n",
+                              (unsigned long)k.us, k.blocks, k.flat_px, k.lit_px);
+            }
         } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an

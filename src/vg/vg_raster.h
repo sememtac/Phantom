@@ -92,6 +92,16 @@ void vg_sky_patch_prim(int x, int y, int w, int h);
 // picture, so the frame lights what is behind it rather than painting over it.
 void vg_canopy_prim(void);
 
+// WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
+//
+// The canopy only draws inside a match, so the frame counter cannot be read without
+// someone at the controls -- and what it reports is one band's slower half plus the
+// rendezvous, which no table can be judged against. This runs the whole pass on one core
+// and reports it flat, with the counts it got through, so the baker's estimate has
+// something to be right or wrong about. See the note at its definition.
+struct VgCanopyCost { uint32_t us; int blocks, flat_px, lit_px; };
+void vg_canopy_bench(VgCanopyCost* out);
+
 // Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
 // which KIND of primitive the band raster is spending its time on.
 uint32_t vg_rast_aa_us(void);

@@ -12,19 +12,33 @@ The table stores COLUMNS, not rows. The panel is turned a quarter turn, so one
 band of the display is 32 columns of the picture, and a column layout keeps each
 band's data together.
 
-Only the left half is stored. The drawing must be left-right symmetric; this
-program checks and refuses if it is not. The right half is drawn from the same
-data mirrored.
+Symmetry is detected, not required. A symmetric drawing stores its left half and
+is mirrored when drawn, which halves the table. A lopsided one stores every
+column.
 
-Empty pixels are not stored at all. A frame covers about 7% of the screen, so the
-table holds runs of used pixels and skips the rest.
+Empty pixels are not stored at all. A frame covers about 10% of the screen, so
+the table holds only the used pixels and skips the rest.
 """
 import sys
 from PIL import Image
 
 PANEL = 480          # the display is 480 x 480
 TOL = 6              # ignore a pixel this close to the background
-QUANT = 4            # snap levels to this, so flat areas become one run
+QUANT = 4            # snap levels to this, so flat areas become one block
+MINFLAT = 4          # shorter than this is cheaper stored pixel by pixel
+
+# WHAT A BLOCK COSTS, relative to one flat pixel. Measured on the device, not
+# reasoned about: see the note above the estimate at the end of this file. These
+# set where each band splits across the two cores, so they only have to be right
+# in proportion to each other.
+#
+# Both are close to 1, and that is the finding rather than the setting: a block
+# header costs less than one pixel, so a band's cost IS very nearly its pixel
+# count. Balancing the split by cost instead of by pixels was expected to be
+# worth about a millisecond and is worth almost nothing. It would have mattered
+# under the old encoding, where headers were 17% of the cost.
+ITEM_W = 0.87        # a block header, in flat pixels
+LIT_W = 1.08         # a pixel that carries its own level
 
 
 def bake(src, out, name="CANOPY"):
@@ -66,45 +80,93 @@ def bake(src, out, name="CANOPY"):
         bot = c + (d - c) * fx
         return int(round(top + (bot - top) * fy))
 
+    def level(g):
+        """The stored grey, snapped so that flat areas become one block.
+
+        Steps below about four greys cannot be told apart once the level is turned
+        into a 5-bit-per-channel colour, so this loses nothing visible and it is
+        what makes a solid member one block instead of a hundred.
+        """
+        return max(0, min(255, bg + int(round((g - bg) / float(QUANT))) * QUANT))
+
     cols = PANEL // 2 if mirror else PANEL
     stream = bytearray()
     offsets = []
-    runs = used = 0
+    n_flat = n_lit = flat_px = lit_px = 0
+    col_cost = []                # per stored column, for the band split
 
-    # RUNS OF ONE LEVEL, not a level per pixel.
+    # TWO KINDS OF BLOCK, because the drawing has two kinds of pixel in it.
     #
-    # A flat member is most of the drawing -- the body alone is over 40% of the covered
-    # pixels -- and storing a grey for each one made the renderer re-fetch the colour
-    # table and re-derive the channel deltas for every pixel of a solid area. A run
-    # carries its level once and the inner loop hoists all of that out.
+    # Most of the covered area is a flat member: a solid stretch of one level, which
+    # is stored once and drawn with the colour and the channel deltas hoisted out of
+    # the inner loop. That is the cheap path and it carries 80% of the pixels.
     #
-    # Levels are snapped to QUANT first, which is what makes the runs long: a gradient
-    # that wanders by one grey per pixel would otherwise be a run each. At 5 bits per
-    # channel out, steps below about 4 greys cannot be told apart anyway.
+    # The rest is the antialiased edge of a shape, where every pixel is a different
+    # level. Stored as flat blocks those were 78% of all the blocks while carrying
+    # 18% of the pixels -- four bytes of header to deliver one byte of level, and a
+    # header decode is worth several pixels. So a stretch of short runs is stored as
+    # one LITERAL block: one header, then a level per pixel. It pays a table lookup
+    # per pixel and saves the headers, which is the right trade whenever it absorbs
+    # more than about two short runs.
+    #
+    # A block never crosses the background, so it is all-add or all-subtract and the
+    # inner loop needs no test per pixel. Splitting at the crossings turned out to
+    # cost nothing: they already fall on flat-run boundaries.
     for col in range(cols):
         offsets.append(len(stream))
+        field = [sample(col, y) for y in range(PANEL)]
+        cost = 0.0
         y = 0
         while y < PANEL:
-            g = sample(col, y)
-            if abs(g - bg) <= TOL:
+            if abs(field[y] - bg) <= TOL:
                 y += 1
                 continue
-            lvl = bg + int(round((g - bg) / float(QUANT))) * QUANT
-            lvl = max(0, min(255, lvl))
-            y0 = y
-            n = 0
+
+            # Gather one contiguous, one-sided stretch as (level, count) pairs.
+            up = field[y] > bg
+            y_at = y
+            seg = []
             while y < PANEL:
-                g2 = sample(col, y)
-                if abs(g2 - bg) <= TOL:
+                g = field[y]
+                if abs(g - bg) <= TOL or (g > bg) != up:
                     break
-                l2 = bg + int(round((g2 - bg) / float(QUANT))) * QUANT
-                if max(0, min(255, l2)) != lvl:
-                    break
-                n += 1
+                lv = level(g)
+                if seg and seg[-1][0] == lv:
+                    seg[-1][1] += 1
+                else:
+                    seg.append([lv, 1])
                 y += 1
-            stream += bytes([y0 >> 8, y0 & 255, n >> 8, n & 255, lvl])
-            runs += 1
-            used += n
+
+            # Emit it: long runs flat, and everything else batched into literals.
+            def put(y0, n, lit, levels):
+                nonlocal cost, n_flat, n_lit, flat_px, lit_px
+                head = ((0x80 if lit else 0) | (0x00 if up else 0x40)
+                        | ((n >> 8) << 1) | (y0 >> 8))
+                stream.extend([head, y0 & 255, n & 255])
+                stream.extend(levels)
+                if lit:
+                    n_lit += 1
+                    lit_px += n
+                    cost += ITEM_W + LIT_W * n
+                else:
+                    n_flat += 1
+                    flat_px += n
+                    cost += ITEM_W + n
+
+            at = y_at
+            pend = []
+            for lv, n in seg:
+                if MINFLAT and n >= MINFLAT:
+                    if pend:
+                        put(at - len(pend), len(pend), True, pend)
+                        pend = []
+                    put(at, n, False, [lv])
+                else:
+                    pend.extend([lv] * n)
+                at += n
+            if pend:
+                put(at - len(pend), len(pend), True, pend)
+        col_cost.append(cost)
     offsets.append(len(stream))
 
     # WHERE EACH BAND BALANCES.
@@ -115,16 +177,13 @@ def bake(src, out, name="CANOPY"):
     # mostly on one side saved nothing at all. Measured, a midpoint split returned 1.2
     # of the 1.9 ms it should have.
     #
-    # So the split point is computed per band from the real pixel counts. Fifteen bytes.
+    # The weight is COST and not pixel count. A half holding many short edge blocks
+    # costs more per pixel than one holding a few solid members, so counting pixels
+    # balanced the wrong quantity -- see ITEM_W and LIT_W at the top.
     per_col = []
     for col in range(PANEL):
         c = col if not mirror else (col if col < cols else PANEL - 1 - col)
-        n = 0
-        i, end = offsets[c], offsets[c + 1]
-        while i + 5 <= end:
-            n += (stream[i + 2] << 8) | stream[i + 3]
-            i += 5
-        per_col.append(n)
+        per_col.append(col_cost[c])
 
     band_h = 32
     splits = []
@@ -136,7 +195,7 @@ def bake(src, out, name="CANOPY"):
             splits.append(band_h // 2)
             continue
         best, best_at = None, band_h // 2
-        run = 0
+        run = 0.0
         for r in range(1, band_h):
             run += rows[r - 1]
             gap = abs(run - (total - run))
@@ -144,15 +203,25 @@ def bake(src, out, name="CANOPY"):
                 best, best_at = gap, r
         splits.append(best_at)
 
+    items = n_flat + n_lit
+    used = flat_px + lit_px
+    kb = (len(stream) + len(offsets) * 2) / 1024.0
+
     with open(out, "w") as fh:
         fh.write(f"// GENERATED by tools/canopy_bake.py from {src} -- do not edit.\n")
         fh.write("//\n")
-        fh.write(f"// {runs} runs, {used} pixels a half-frame, "
-                 f"{(len(stream) + len(offsets) * 2) / 1024.0:.1f} KB.\n")
+        fh.write(f"// {items} blocks ({n_flat} flat, {n_lit} literal), "
+                 f"{used} pixels a half-frame, {kb:.1f} KB.\n")
         fh.write(f"// Background level {bg}: that value means no change.\n")
         fh.write("//\n")
-        fh.write("// Columns of the picture. Each column is a list of runs, five bytes\n")
-        fh.write("// each: two of start, two of length, one grey level for the whole run.\n")
+        fh.write("// Columns of the picture. Each column is a list of blocks. A block is a\n")
+        fh.write("// three byte header:\n")
+        fh.write("//     byte 0   bit 7 literal, bit 6 subtract, bit 1 length bit 8,\n")
+        fh.write("//              bit 0 start bit 8\n")
+        fh.write("//     byte 1   start, low eight bits\n")
+        fh.write("//     byte 2   length, low eight bits\n")
+        fh.write("// followed by one grey level for the whole block, or by one level per\n")
+        fh.write("// pixel if the literal bit is set.\n")
         if mirror:
             fh.write("//\n// SYMMETRIC: the left half is stored and mirrored at draw time.\n")
         else:
@@ -161,8 +230,12 @@ def bake(src, out, name="CANOPY"):
         fh.write("#pragma once\n#include <stdint.h>\n\n")
         fh.write(f"#define {name}_BG {bg}\n")
         fh.write(f"#define {name}_COLS {cols}\n")
-        fh.write(f"#define {name}_MIRROR {1 if mirror else 0}\n\n")
-        fh.write("// Where each band's pixels balance, so the two cores get equal work.\n")
+        fh.write(f"#define {name}_MIRROR {1 if mirror else 0}\n")
+        fh.write("// What the pass has to get through, for the bench to report against.\n")
+        fh.write(f"#define {name}_BLOCKS {items}\n")
+        fh.write(f"#define {name}_FLAT_PX {flat_px}\n")
+        fh.write(f"#define {name}_LIT_PX {lit_px}\n\n")
+        fh.write("// Where each band's WORK balances, so the two cores finish together.\n")
         fh.write(f"static const uint8_t {name}_SPLIT[{len(splits)}] = {{\n    "
                  + ",".join(str(v) for v in splits) + ",\n};\n\n")
         fh.write(f"static const uint16_t {name}_OFS[{len(offsets)}] = {{\n")
@@ -174,44 +247,75 @@ def bake(src, out, name="CANOPY"):
             fh.write("    " + ",".join(str(v) for v in stream[i:i + 24]) + ",\n")
         fh.write("};\n")
 
-    kb = (len(stream) + len(offsets) * 2) / 1024.0
-    print(f"{src}: background {bg}, {runs} runs, {kb:.1f} KB -> {out}")
+    print(f"{src}: background {bg}, {items} blocks, {kb:.1f} KB -> {out}")
+    print("  symmetric, stored as a half" if mirror
+          else f"  asymmetric ({bad} px differ, worst {worst}), stored whole")
+    print(f"  {n_flat} flat blocks carrying {flat_px} px, "
+          f"{n_lit} literal blocks carrying {lit_px} px")
 
     # WHAT IT COSTS, which is the number to watch while drawing.
     #
-    # Every stored pixel is read, changed and written back, which is about ten times
-    # the work of a plain pixel. The whole frame has 16.7 ms to spend at 60 frames a
-    # second and about 4 ms of that is free, so a frame this size is a real charge
-    # against it. Coverage is the only lever: thinner shapes cost less, and nothing
-    # else about the drawing matters to the budget.
-    print("  symmetric, stored as a half" if mirror
-          else f"  asymmetric ({bad} px differ, worst {worst}), stored whole")
-    # 34-40 cycles a pixel, MEASURED on the device rather than reasoned about: a frame
-    # covering 12.7% of the screen billed 4.5 ms, which is 37 cycles each. The first
-    # version of this estimate guessed 15-25 and was wrong by 1.7x, which is worse than
-    # no estimate -- it would have had the author drawing into a budget that was not
-    # there. A load, a byte swap, three extracts, three saturating adds, a repack, a
-    # swap, a store and a table lookup is just what it costs.
-    whole = used * 2 if mirror else used
-    lo = whole * 34.0 / 240.0              # cycles per pixel, at 240 MHz, in us
-    hi = whole * 40.0 / 240.0
+    # The three constants below are FITTED to a device measurement of this encoding,
+    # not derived. An earlier version of this estimate reasoned about the instruction
+    # count instead and was wrong by 1.7x, which is worse than no estimate at all --
+    # it would have had the author drawing into a budget that was not there.
+    #
+    # Refit them if the encoding or the inner loop changes. Two bakes with different
+    # block-to-pixel ratios, each flown and read off the `can` counter, give three
+    # numbers from two equations well enough for this purpose.
+    scaled = 2 if mirror else 1
+    cyc = (items * A_ITEM + flat_px * A_FLAT + lit_px * A_LIT) * scaled
+    pass_us = cyc / 240.0
+    whole = used * scaled
+    # The pass is halved across the two cores, so the frame does not pay all of it. It
+    # pays two thirds, not one half: measured, 4.72 ms of pass billed the frame 3.15 ms.
+    # The rest goes on the band that finishes late and on the rendezvous. Reporting the
+    # pass as though it were the frame cost would overstate the charge by half.
+    us = pass_us * SPLIT_YIELD
     print(f"  {whole} pixels a frame, {whole * 100.0 / (PANEL * PANEL):.1f}% of the screen")
-    print(f"  costs roughly {lo / 1000.0:.2f}-{hi / 1000.0:.2f} ms a frame")
+    print(f"  {pass_us / 1000.0:.2f} ms of drawing, halved across the cores")
+    print(f"  costs the frame about {us / 1000.0:.2f} ms")
     # About 4 ms of the frame is spare at 60 a second, and the canopy is not the only
     # thing that wants it.
-    if lo > 2500.0:
-        print("  TOO HEAVY: measured at this coverage, the game drops to about 50 a")
-        print("     second. Roughly 6% of the screen is what fits.")
-    elif lo > 1200.0:
+    if us > 2500.0:
+        print("  TOO HEAVY: at this cost the game drops to about 50 a second.")
+        print("     Narrowing the shapes is the lever that matters.")
+    elif us > 1200.0:
         print("  HEAVY: expect to lose 60 in busy fights. Narrowing the shapes is the")
         print("     only lever that matters -- levels and detail are free, area is not.")
-    elif lo > 600.0:
+    elif us > 600.0:
         print("  worth watching, but there is room for it")
     else:
         print("  cheap")
 
 
+# Cycles, at 240 MHz. Fitted to three device measurements of the shipping loop: the
+# normal bake, one with every run stored flat, and one with every pixel storing its
+# own level. Those three give three equations for these three numbers.
+#
+# The shape of them is the useful part. A pixel costs about 37 cycles and a header
+# about 32, so a header is worth less than one pixel and 95% of the bill is pixels.
+# There is nothing left to win in the encoding: AREA is the only lever, which is the
+# author's, not the compiler's.
+A_ITEM = 31.6        # decoding one block header
+A_FLAT = 36.3        # one pixel of a flat block
+A_LIT = 39.3         # one pixel that carries its own level
+
+# How much of the pass the frame actually pays, the two cores having shared it. Measured
+# rather than assumed to be a half: the band waits for its slower side and then for the
+# rendezvous. Re-measure it against the `can` counter after a flight if the split changes.
+SPLIT_YIELD = 0.67
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
+    argv = [a for a in sys.argv[1:] if not a.startswith("--")]
+    for a in sys.argv[1:]:
+        # MINFLAT, for fitting the cost constants above. 1 stores every run as a flat
+        # block and 0 stores every pixel as a literal; those two extremes and the
+        # normal bake give three measurements for the three constants. Not for
+        # ordinary use -- the default is the setting that is actually fast.
+        if a.startswith("--minflat="):
+            MINFLAT = int(a.split("=", 1)[1])
+    if len(argv) < 2:
         sys.exit(__doc__)
-    bake(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "CANOPY")
+    bake(argv[0], argv[1], argv[2] if len(argv) > 2 else "CANOPY")

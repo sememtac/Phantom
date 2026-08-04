@@ -992,25 +992,48 @@ static void canopy_lut(void) {
 //
 // The delta is hoisted out of the loop, which is the other half of the win and the
 // reason the table stores runs of one level rather than a level per pixel.
+// A GUARD BIT FILLS ITS OWN FIELD, which is what makes this branchless without costing
+// more than the branches did.
+//
+// For a field of width w with its guard bit immediately above it, `m - (m >> w)` turns a
+// set guard into a solid field of ones and a clear guard into nothing. Red sits at bits
+// 11..15 under a guard at 16, so 0x10000 - 0x800 is 0xF800: exactly the red field. Blue
+// at 0..4 under bit 5 gives 0x20 - 1 = 0x1F. Both guards at once still work, because the
+// shifted fields do not overlap. Green is width 6 under bit 11, so it shifts by 6.
+//
+// The point is not the two cycles of branch. It is that the branchy form needed seven
+// mask constants -- 0x1F, 0xF800, 0x7E0 and their complements -- and sixteen registers
+// could not hold them alongside two interleaved pixels. The compiler was reloading them
+// from the stack and fetching ~0xF800 out of the literal pool EVERY iteration. Four
+// constants fit; seven did not.
+//
+// The input is not masked to 16 bits: every path below masks with 0xF81F or 0x07E0
+// anyway, so the high bytes the swap leaves behind cannot reach the result.
 static inline uint32_t px_add(uint32_t s, uint32_t drb, uint32_t dg) {
-    const uint32_t v = ((s >> 8) | (s << 8)) & 0xFFFFu;
+    const uint32_t v = (s >> 8) | (s << 8);
     uint32_t rb = (v & 0xF81Fu) + drb;
     uint32_t g  = (v & 0x07E0u) + dg;
-    if (rb & 0x00020u) rb |= 0x0001Fu;          // blue hit the ceiling
-    if (rb & 0x10000u) rb |= 0x0F800u;          // red did
-    if (g  & 0x00800u) g  |= 0x007E0u;          // green did
+    const uint32_t mrb = rb & 0x10020u;         // a set guard means that field overflowed
+    const uint32_t mg  = g  & 0x00800u;
+    rb |= mrb - (mrb >> 5);                     // ...so fill it to the ceiling
+    g  |= mg  - (mg  >> 6);
     const uint32_t o = (rb & 0xF81Fu) | (g & 0x07E0u);
     return ((o >> 8) | (o << 8)) & 0xFFFFu;
 }
 
+// Subtraction is the same trick run backwards: set the guards first, and a field that
+// borrowed through its guard has underflowed. Here a STILL-SET guard is the good case, so
+// the same expression becomes a keep-mask and clears the guard on its way out -- which is
+// why this one needs no final masking at all.
 static inline uint32_t px_sub(uint32_t s, uint32_t drb, uint32_t dg) {
-    const uint32_t v = ((s >> 8) | (s << 8)) & 0xFFFFu;
+    const uint32_t v = (s >> 8) | (s << 8);
     uint32_t rb = ((v & 0xF81Fu) | 0x10020u) - drb;
     uint32_t g  = ((v & 0x07E0u) | 0x00800u) - dg;
-    if (!(rb & 0x00020u)) rb &= ~0x0001Fu;      // blue went below zero
-    if (!(rb & 0x10000u)) rb &= ~0x0F800u;      // red did
-    if (!(g  & 0x00800u)) g  &= ~0x007E0u;      // green did
-    const uint32_t o = (rb & 0xF81Fu) | (g & 0x07E0u);
+    const uint32_t mrb = rb & 0x10020u;          // a guard that survived did not borrow
+    const uint32_t mg  = g  & 0x00800u;
+    rb &= mrb - (mrb >> 5);                      // ...and one that did not, zeroes it
+    g  &= mg  - (mg  >> 6);
+    const uint32_t o = rb | g;
     return ((o >> 8) | (o << 8)) & 0xFFFFu;
 }
 
@@ -1043,6 +1066,49 @@ static inline uint32_t px_sub(uint32_t s, uint32_t drb, uint32_t dg) {
 static inline void span_add(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
 static inline void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
 
+// A PIXEL AT A TIME, for the antialiased edge of a shape.
+//
+// The flat span above is the cheap path and carries most of the area, but it earns that
+// by hoisting the delta, which only works where the level is constant. At the edge of a
+// member every pixel is a different level, and stored as flat spans those were 78% of
+// all the blocks while carrying 18% of the pixels -- four bytes of header to deliver one
+// byte of level, and a header decode is worth several pixels.
+//
+// So a stretch of them is one block with a level per pixel. The delta comes back inside
+// the loop, but the pairing survives: two pixels in one 32-bit access still works when
+// their deltas differ, because the maths is per-pixel either way.
+#define SPAN_LIT_BODY(FN)                                                    \
+    int i = 0;                                                               \
+    if (n > 0 && (((uintptr_t)q & 3u) != 0u)) {                              \
+        const uint32_t d = s_can_lut[lv[0]];                                 \
+        q[0] = (uint16_t)FN(q[0], d & 0xF81Fu, d & 0x07E0u);                 \
+        i = 1;                                                               \
+    }                                                                        \
+    for (; i + 1 < n; i += 2) {                                              \
+        const uint32_t d0 = s_can_lut[lv[i]], d1 = s_can_lut[lv[i + 1]];     \
+        uint32_t* w = (uint32_t*)(void*)(q + i);                             \
+        const uint32_t v = *w;                                               \
+        *w = FN(v & 0xFFFFu, d0 & 0xF81Fu, d0 & 0x07E0u)                     \
+           | (FN(v >> 16, d1 & 0xF81Fu, d1 & 0x07E0u) << 16);                \
+    }                                                                        \
+    for (; i < n; i++) {                                                     \
+        const uint32_t d = s_can_lut[lv[i]];                                 \
+        q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                 \
+    }
+
+// NOT INLINED, and that is the whole point of it.
+//
+// Inlined, all four span variants and the block walk are live in one function at once,
+// and Xtensa has sixteen visible registers. The compiler ran out: the disassembled pair
+// loop was 79 instructions for two pixels, and among them were three stack reloads, two
+// rematerialised constants and a literal-pool fetch -- every iteration. The arithmetic
+// was never the cost; the spilling was.
+//
+// Out of line, this loop gets the register file to itself. A call costs a handful of
+// cycles once per block, and a block averages thirty-odd pixels.
+static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_add) }
+static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_sub) }
+
 // Rows [r0, r1) of the band, so the pass can be halved across the cores. Each panel
 // row is an independent column of the drawing -- nothing carries between them -- which
 // is what makes this splittable at all, and it is by far the biggest of the three
@@ -1062,16 +1128,63 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
         const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
         uint16_t* row = &band[(py - by0) * SCR_W];
 
-        while (p + 5 <= e) {
-            const int     y0  = (p[0] << 8) | p[1];   // the picture's y is panel x
-            const int     len = (p[2] << 8) | p[3];
-            const uint8_t g   = p[4];                 // one level for the whole run
-            p += 5;
-            if (!len) continue;
-            if (g > CANOPY_BG) span_add(&row[y0], len, s_can_lut[g]);
-            else if (g < CANOPY_BG) span_sub(&row[y0], len, s_can_lut[g]);
+        // Three bytes of header, then either one level for the whole block or a level
+        // per pixel. Nine bits each of start and length, so the odd bit of both rides
+        // in the flag byte. The side is in the header too: a block never crosses the
+        // background, so nothing here tests light against shade per pixel.
+        while (p + 3 <= e) {
+            const uint8_t h   = p[0];
+            const int     y0  = ((h & 1) << 8) | p[1];   // the picture's y is panel x
+            const int     len = ((h & 2) << 7) | p[2];
+            p += 3;
+            if (h & 0x80) {                              // a level per pixel
+                if (h & 0x40) span_lit_sub(&row[y0], len, p);
+                else          span_lit_add(&row[y0], len, p);
+                p += len;
+            } else {                                     // one level, delta hoisted
+                const uint16_t d = s_can_lut[*p++];
+                if (h & 0x40) span_sub(&row[y0], len, d);
+                else          span_add(&row[y0], len, d);
+            }
         }
     }
+}
+
+// WHAT THE DRAWING COSTS, on the device and without flying.
+//
+// The canopy only draws inside a match, so reading its cost off the frame counter needs
+// someone at the controls -- and that counter reports one band's worse half plus the
+// rendezvous, which is not a number the baker can predict from a table. This runs the
+// whole pass on one core over a scratch row and reports it straight.
+//
+// Row by row, because a real band buffer is 30 KB and there is not that much heap free
+// at runtime. Each panel row is an independent column of the drawing, so a row at a time
+// is the same work in the same order; internal SRAM is uniform, so a reused row costs
+// what a spread-out band costs.
+//
+// The scratch is refilled between rows, outside the timing. Blending into the same row
+// 480 times would drive every channel to the rail and leave every saturation branch
+// taken, which is not what the pass meets in a frame.
+void vg_canopy_bench(VgCanopyCost* out) {
+    static uint16_t scratch[SCR_W];
+    if (!s_can_ready) canopy_lut();
+
+    uint32_t cyc = 0, cal = 0;
+    for (int py = 0; py < SCR_H; py++) {
+        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;   // mid grey, both ways to go
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        canopy_rows(scratch, py, 0, 1);
+        cyc += esp_cpu_get_cycle_count() - t0;
+
+        // The same two reads around nothing, so the harness pays for itself.
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        asm volatile("" ::: "memory");
+        cal += esp_cpu_get_cycle_count() - t1;
+    }
+    out->us      = (cyc > cal ? cyc - cal : 0) / 240u;
+    out->blocks  = CANOPY_BLOCKS;
+    out->flat_px = CANOPY_FLAT_PX;
+    out->lit_px  = CANOPY_LIT_PX;
 }
 
 static void draw_band(int band_index, uint16_t* band) {
