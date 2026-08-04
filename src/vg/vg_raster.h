@@ -153,6 +153,13 @@ uint32_t vg_rast_over_us(void);
 // much more tractable problem. Valid until the next flush.
 const uint32_t* vg_rast_band_us(void);
 
+// The rest of the flush: closing the primitive list, and everything the four
+// brackets do not cover. `res` is mostly preemption, so it is a load signal
+// rather than a thing to optimise -- but it kept blit from adding up, and a
+// counter that does not add up is not finished.
+uint32_t vg_rast_join_us(void);
+uint32_t vg_rast_res_us(void);
+
 // ...and the raster half split by stage, because the primitive COUNT cannot
 // distinguish a long antialiased span from a triangle fill covering a third of
 // the screen, and neither shows against a fixed backdrop cost.

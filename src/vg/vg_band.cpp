@@ -907,6 +907,8 @@ static uint32_t s_push_us   = 0;
 static int      s_over_n    = 0;
 static uint32_t s_over_us   = 0;
 static uint32_t s_band_us[NUM_BANDS];
+static uint32_t s_join_us   = 0;
+static uint32_t s_res_us    = 0;
 
 // One band's time on the wire, which is the window everything above has to fit
 // inside: 480 x 32 pixels x 16 bits over four QSPI data lines at 80 MHz is
@@ -926,6 +928,8 @@ uint32_t vg_rast_push_us(void)   { return s_push_us; }
 int      vg_rast_over_bands(void){ return s_over_n; }
 uint32_t vg_rast_over_us(void)   { return s_over_us; }
 const uint32_t* vg_rast_band_us(void) { return s_band_us; }
+uint32_t vg_rast_join_us(void)   { return s_join_us; }
+uint32_t vg_rast_res_us(void)    { return s_res_us; }
 
 void vg_rast_flush(void) {
     // CLOSE THE LIST HERE, in the consumer, not at the end of submit.
@@ -935,7 +939,9 @@ void vg_rast_flush(void) {
     // stayed zero and nothing but the backdrop drew. Putting it at the top of the
     // flush makes it unreachable-by-omission: whatever submit did or skipped, the
     // thing that reads the list closes it first.
+    const uint32_t f0 = micros();
     vg_prim_join();
+    s_join_us = micros() - f0;
 
     // Drain the LAST band of the previous frame before touching its buffer
     // again. Waiting here rather than at the end of the loop means that final
@@ -1014,4 +1020,14 @@ void vg_rast_flush(void) {
 
     vg_capture_frame_end();
     s_raster_us = raster;
+
+    // What is left of the flush once the four brackets are subtracted: the
+    // micros() calls themselves, the crumbs, the capture hooks' early returns --
+    // and any time this thread was PREEMPTED between brackets, which is the only
+    // item here that can be large. Named because it measured 416-510 us in
+    // combat against 100-130 in attract, and an unattributed number that moves
+    // with load is a lead, not rounding.
+    const uint32_t all = micros() - f0;
+    const uint32_t acc = s_wait_us + raster + s_push_us + s_join_us;
+    s_res_us = (all > acc) ? all - acc : 0;
 }
