@@ -3,6 +3,7 @@
 #include "vg_font.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 #include <math.h>
 
 // The submit half. Everything here runs ONCE per frame and costs frame time
@@ -117,7 +118,24 @@ void vg_prim_join(void) {
     const int nb = s_sub[1].at - SUB_SPLIT;
     s_join_n = nb;
     const uint32_t t0 = micros();
-    if (nb > 0) memmove(&s_prims[na], &s_prims[SUB_SPLIT], (size_t)nb * sizeof(Prim));
+    // NOT memmove. This toolchain's memmove is a byte-at-a-time loop: measured at
+    // ~1.05 us per 20-byte primitive, dead linear, which is about 19 MB/s and cost
+    // 350-500 us of every combat frame to shift 8 KB around inside internal SRAM.
+    // That was larger than the raster overrun the row split had just removed.
+    //
+    // A word copy is safe here for reasons that are worth stating rather than
+    // rediscovering: sizeof(Prim) is a multiple of 4 and s_prims is word aligned,
+    // so both ends are aligned and the length is a whole number of words; and the
+    // destination is always at or below the source, because group A's cursor
+    // cannot pass SUB_SPLIT. A FORWARD copy is therefore correct even if the two
+    // ranges overlapped, since every word is read before anything writes over it.
+    static_assert(sizeof(Prim) % 4 == 0, "prim copy assumes whole words");
+    if (nb > 0) {
+        uint32_t*       d = (uint32_t*)(void*)&s_prims[na];
+        const uint32_t* s = (const uint32_t*)(const void*)&s_prims[SUB_SPLIT];
+        const int       w = nb * (int)(sizeof(Prim) / 4);
+        for (int i = 0; i < w; i++) d[i] = s[i];
+    }
     s_join_mm_us = micros() - t0;
     s_count = na + nb;
 }
@@ -130,6 +148,16 @@ bool vg_prim_init(void) {
         Serial.println("vg_prim_init: alloc failed");
         return false;
     }
+    // WHERE IT ACTUALLY LANDED. The join's memmove measures ~1.05 us per 20-byte
+    // primitive, which is about 19 MB/s -- ten times too slow for internal SRAM
+    // and about right for PSRAM. The cap above asks for internal; this says
+    // whether it got it. It matters far beyond the copy: this list is swept once
+    // per band, fifteen times a frame.
+    Serial.printf("vg_prim_init: %d prims, %u KB at %p, internal=%d\n",
+                  (int)MAX_PRIMS,
+                  (unsigned)(sizeof(Prim) * MAX_PRIMS / 1024),
+                  (void*)s_prims,
+                  (int)esp_ptr_internal(s_prims));
     return true;
 }
 
