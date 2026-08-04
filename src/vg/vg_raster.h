@@ -47,6 +47,20 @@ void vg_hud_jitter(float dx, float dy);
 // Defaults to on; anything that turns it off must turn it back on.
 void vg_line_aa_mode(bool on);
 
+// ADDITIVE AND SUBTRACTIVE LINES. `mode` is 2 to add and 3 to subtract (LINE_ADD /
+// LINE_SUB); anything else is opaque. While set, a line's colour is a DELTA applied to
+// whatever is already in the band, saturating per channel.
+//
+// This is what lets a panel line be LIT rather than painted: add on the side facing the
+// light, subtract on the side in shade, and the frame holds that relationship over a
+// dark backdrop and a bright one alike. Costs about what an antialiased pixel costs, so
+// it is for structure and instruments and not for the world.
+//
+// Bracketed like the AA mode: 0 to turn it off, and whatever turns it on turns it off.
+void vg_line_blend(int mode);
+#define VG_LINE_ADD 2
+#define VG_LINE_SUB 3
+
 // Master switch over the above, for judging what the smoothing is actually worth.
 // Serial 'q' toggles it. Default on, so nothing changes unless it is asked for.
 void vg_rast_aa_master(bool on);

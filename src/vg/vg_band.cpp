@@ -138,6 +138,64 @@ static void band_line_aa(uint16_t* band, int by0, int by1,
 }
 #endif // VG_LINE_AA
 
+// ADDITIVE AND SUBTRACTIVE PIXELS, which is what lets the canopy be LIT rather than
+// drawn on.
+//
+// An opaque line states a colour; these state a CHANGE to whatever is behind. The
+// difference matters for structure: a frame drawn opaque is a decal that sits at one
+// brightness whatever it crosses, while a frame that adds on its lit side and
+// subtracts on its shaded side reads as a rib catching light -- and it keeps reading
+// that way over a dark nebula and over a bright one, because it is a relationship
+// instead of a value.
+//
+// Saturating per channel in NATIVE order, so the two byte swaps are the same pair the
+// antialiased path already pays. Costs about what a blend costs: an order of magnitude
+// more than a store, which is affordable for a frame of a few dozen lines and would
+// not be for the world.
+static inline void plot_delta(uint16_t* band, int by0, int by1,
+                              int x, int y, uint16_t d_native, bool add) {
+    if (y < by0 || y > by1) return;
+    if ((unsigned)x >= (unsigned)SCR_W) return;
+
+    uint16_t* p = &band[(y - by0) * SCR_W + x];
+    const uint16_t s = (uint16_t)((*p >> 8) | (*p << 8));      // panel order -> native
+
+    uint32_t r = (s >> 11) & 31u, g = (s >> 5) & 63u, b = s & 31u;
+    const uint32_t dr = (d_native >> 11) & 31u,
+                   dg = (d_native >> 5) & 63u,
+                   db =  d_native        & 31u;
+    if (add) {
+        r += dr; if (r > 31u) r = 31u;
+        g += dg; if (g > 63u) g = 63u;
+        b += db; if (b > 31u) b = 31u;
+    } else {
+        r = (r > dr) ? r - dr : 0u;
+        g = (g > dg) ? g - dg : 0u;
+        b = (b > db) ? b - db : 0u;
+    }
+    const uint16_t o = (uint16_t)((r << 11) | (g << 5) | b);
+    *p = (uint16_t)((o >> 8) | (o << 8));                      // and back
+}
+
+static void band_line_delta(uint16_t* band, int by0, int by1,
+                            int x0, int y0, int x1, int y1, uint16_t colour, bool add) {
+    // The delta is carried as an ordinary colour and converted once per line, the same
+    // trick that makes the antialiased path affordable.
+    const uint16_t d = (uint16_t)((colour >> 8) | (colour << 8));
+
+    int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    int x = x0, y = y0;
+    for (;;) {
+        plot_delta(band, by0, by1, x, y, d, add);
+        if (x == x1 && y == y1) break;
+        const int e2 = err << 1;
+        if (e2 >= dy) { err += dy; x += sx; }
+        if (e2 <= dx) { err += dx; y += sy; }
+    }
+}
+
 // Bresenham, but clipped only in y -- the fast path used for trails and other
 // dim one-pixel geometry. Unlike band_line above it cannot assume x stays in
 // range, because a caller that skipped AA still went through the same clip.
@@ -948,11 +1006,18 @@ static void draw_band(int band_index, uint16_t* band) {
             if (iy1 < by0) iy1 = by0; else if (iy1 > by1) iy1 = by1;
             if (ix0 < 0) ix0 = 0; else if (ix0 > SCR_W - 1) ix0 = SCR_W - 1;
             if (ix1 < 0) ix1 = 0; else if (ix1 > SCR_W - 1) ix1 = SCR_W - 1;
+            // `aa` is a MODE, not a flag -- see LINE_* in vg_raster_int.h. It rides in
+            // what was padding, so the extra modes cost no memory and, more to the
+            // point, do not grow Prim past the 20 bytes the join's word copy assumes.
+            if (p->aa == LINE_ADD || p->aa == LINE_SUB) {
+                band_line_delta(band, by0, by1, ix0, iy0, ix1, iy1,
+                                p->color, p->aa == LINE_ADD);
+            }
 #if VG_LINE_AA
-            if (p->aa) band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
-            else       band_line_fast(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+            else if (p->aa == LINE_AA) band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+            else                       band_line_fast(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
 #else
-            band_line(band, by0, ix0, iy0, ix1, iy1, p->color);
+            else band_line(band, by0, ix0, iy0, ix1, iy1, p->color);
 #endif
             break;
         }

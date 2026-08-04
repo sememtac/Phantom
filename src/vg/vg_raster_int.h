@@ -31,10 +31,19 @@ struct Prim {
     int16_t  ymin, ymax;
     uint16_t color;
     uint8_t  type;
-    // PRIM_LINE only: draw antialiased. Rides in what was padding, so per-line
-    // quality selection costs no memory and no extra cache traffic.
+    // PRIM_LINE only, and a MODE rather than a flag -- see LINE_* below. Rides in what
+    // was padding, so per-line quality AND per-line blending cost no memory and no extra
+    // cache traffic. Keeping it one byte also keeps Prim at 20, which the join's word
+    // copy relies on: sizeof(Prim) must stay a multiple of 4.
     uint8_t  aa;
 };
+static_assert(sizeof(Prim) % 4 == 0, "Prim must stay word-sized for vg_prim_join");
+
+// How a line puts itself down. OPAQUE and AA state a colour; ADD and SUB state a
+// CHANGE to what is already there, which is what lets the canopy read as a lit rib
+// instead of a decal -- it holds its relationship to the backdrop over a dark nebula
+// and a bright one alike. For ADD and SUB, `color` is the DELTA, not the result.
+enum : uint8_t { LINE_OPAQUE = 0, LINE_AA = 1, LINE_ADD = 2, LINE_SUB = 3 };
 
 // --- owned by vg_raster.cpp ---
 bool        vg_prim_init(void);

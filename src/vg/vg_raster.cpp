@@ -192,7 +192,15 @@ static bool s_aa_master = false;
 void vg_rast_aa_master(bool on) { s_aa_master = on; }
 bool vg_rast_aa_master_on(void) { return s_aa_master; }
 
-void vg_line_aa_mode(bool on) { sub()->aa = (on && s_aa_master) ? 1 : 0; }
+void vg_line_aa_mode(bool on) { sub()->aa = (on && s_aa_master) ? LINE_AA : LINE_OPAQUE; }
+
+// Bracketed exactly like the antialiasing above, and for the same reason: the drawing
+// functions should not have to know, and whatever turns it on turns it back off. NOT
+// gated on the AA master -- adding light is not smoothing, and the author took the
+// smoothing off precisely because it was not doing anything visible.
+void vg_line_blend(int mode) {
+    sub()->aa = (mode == LINE_ADD || mode == LINE_SUB) ? (uint8_t)mode : LINE_OPAQUE;
+}
 
 int vg_rast_tri_count(void) { return s_sub[0].tri + s_sub[1].tri; }
 

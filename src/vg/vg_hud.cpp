@@ -333,6 +333,140 @@ static void canopy_draw(const Canopy* c) {
     }
 }
 
+// ===========================================================================
+// THE LIT CANOPY -- the author's drawing, applied as light instead of ink
+//
+// From design/Test.png, drawn in Affinity on a grey field. The grey is the point:
+// the background sits at 121 and every stroke is a DELTA from it, so the frame is
+// a change to what is behind rather than a colour of its own. Read off the file:
+//
+//   aperture top edge     +129        the brightest thing in the frame
+//   aperture slant        +110, and -49 on its outboard side BELOW halfway
+//   struts                +77 -> +29 fading outward, -41 outboard, constant
+//   spine                 +107 -> +13, with -48 -> -28 on BOTH sides
+//
+// Three things in that are worth naming, because none of them would have come out
+// of guessing:
+//
+//   THE BRIGHT SIDE FACES INBOARD on every stroke, so the light source is the
+//   cabin rather than the world. Fixed to the cockpit is also the only choice that
+//   works -- a highlight that swung with the stars would read as the frame moving.
+//
+//   THE STRUTS ARE NOT RADIAL. Their slope is dx/dy 0.8625, where a ray from the
+//   centre through the corner would be 0.76. So the strut mechanism above cannot
+//   draw this: the angle is the author's, not a consequence of the corner.
+//
+//   THE DARK COMPANION FADES IN. On the slanted edges it does not start at the
+//   corner, it starts about halfway down. The frame is lit brightest where it
+//   frames the aim point and turns into shaded structure further out.
+//
+// Delta strengths below are the measured greys as a fraction of the hue: bright is
+// (v-121)/134, shade is (121-v)/121. Applied to COL_HUD, so brightness stays the
+// only variable and the palette's one rule is intact.
+// ===========================================================================
+
+#define CAN_SCALE       0.9375f    // the drawing is 512 wide, the panel is 480
+
+#define CAN_TOP_HI      0.96f
+#define CAN_EDGE_HI     0.82f
+#define CAN_EDGE_LO     0.40f
+#define CAN_STRUT_HI0   0.57f
+#define CAN_STRUT_HI1   0.22f
+#define CAN_STRUT_LO    0.34f
+#define CAN_SPINE_HI0   0.80f
+#define CAN_SPINE_HI1   0.10f
+#define CAN_SPINE_LO0   0.40f
+#define CAN_SPINE_LO1   0.23f
+#define CAN_STRUT_SLOPE 0.8625f    // measured off the drawing, dx per dy
+
+// The aperture, in the drawing's own pixels scaled to the panel.
+#define CAN_HX  (122.5f * CAN_SCALE)   // half-width at the top edge
+#define CAN_TY  (-104.5f * CAN_SCALE)  // the top edge
+#define CAN_PY  (134.5f * CAN_SCALE)   // the point
+
+// One stroke, offset along its own normal, toward the centre or away from it. The
+// side is resolved against the screen centre rather than written down per stroke,
+// because "inboard" is the rule the drawing follows and a sign per line is a thing
+// to get wrong.
+static void rib(float x0, float y0, float x1, float y1,
+                bool inboard, bool add, float f) {
+    if (f <= 0.02f) return;
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float m  = sqrtf(dx * dx + dy * dy);
+    if (m < 0.001f) return;
+
+    float nx = -dy / m, ny = dx / m;
+    // does the normal point at the centre?
+    const float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
+    const float toc = (SCR_CX - mx) * nx + (SCR_CY - my) * ny;
+    if ((toc < 0.0f) == inboard) { nx = -nx; ny = -ny; }
+
+    vg_line_blend(add ? VG_LINE_ADD : VG_LINE_SUB);
+    vg_line(x0 + nx, y0 + ny, x1 + nx, y1 + ny, vg_dim(COL_HUD, f));
+    vg_line_blend(0);
+}
+
+// ...and the same stroke fading along its length. Two steps, not eight: every step
+// is a line, and the warp then subdivides each one again at 64px, so this is the
+// knob that decides whether the frame costs thirty primitives or ninety.
+static void rib_fade(float x0, float y0, float x1, float y1,
+                     bool inboard, bool add, float f0, float f1) {
+    const float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
+    const float fm = (f0 + f1) * 0.5f;
+    rib(x0, y0, mx, my, inboard, add, (f0 + fm) * 0.5f);
+    rib(mx, my, x1, y1, inboard, add, (fm + f1) * 0.5f);
+}
+
+static void canopy_lit(void) {
+    const float cx = SCR_CX, cy = SCR_CY;
+    const float lx = cx - CAN_HX, rx = cx + CAN_HX;   // top corners
+    const float ty = cy + CAN_TY;
+    const float px = cx,          py = cy + CAN_PY;   // the point
+
+    // The top edge: bright, and no shade at all. It is the edge the aim point sits
+    // under, so it is the one the eye should find first.
+    rib(lx, ty, rx, ty, true, true, CAN_TOP_HI);
+
+    // The slanted edges. Bright the whole way inboard; shaded outboard only from
+    // halfway down, which is the transition the drawing makes.
+    const float mlx = (lx + px) * 0.5f, mly = (ty + py) * 0.5f;
+    const float mrx = (rx + px) * 0.5f, mry = (ty + py) * 0.5f;
+    rib(lx, ty, px, py, true, true, CAN_EDGE_HI);
+    rib(rx, ty, px, py, true, true, CAN_EDGE_HI);
+    rib(mlx, mly, px, py, false, false, CAN_EDGE_LO);
+    rib(mrx, mry, px, py, false, false, CAN_EDGE_LO);
+
+    // The struts, at the author's own angle. Bright inboard and fading outward,
+    // shade outboard and constant.
+    const float sm = sqrtf(CAN_STRUT_SLOPE * CAN_STRUT_SLOPE + 1.0f);
+    const float ux = CAN_STRUT_SLOPE / sm, uy = 1.0f / sm;
+    const float ex = ux * CANOPY_REACH,    ey = uy * CANOPY_REACH;
+
+    rib_fade(lx, ty, lx - ex, ty - ey, true,  true,  CAN_STRUT_HI0, CAN_STRUT_HI1);
+    rib_fade(rx, ty, rx + ex, ty - ey, true,  true,  CAN_STRUT_HI0, CAN_STRUT_HI1);
+    rib_fade(lx, ty, lx - ex, ty - ey, false, false, CAN_STRUT_LO,  CAN_STRUT_LO);
+    rib_fade(rx, ty, rx + ex, ty - ey, false, false, CAN_STRUT_LO,  CAN_STRUT_LO);
+
+    // The spine, shaded on BOTH sides -- it is the one stroke with nothing inboard
+    // of it, so it reads as a rib standing off the glass rather than an edge.
+    const float sy2 = py + CANOPY_REACH * 0.55f;
+    rib_fade(px, py, px, sy2, true,  true,  CAN_SPINE_HI0, CAN_SPINE_HI1);
+    rib_fade(px, py, px, sy2, true,  false, CAN_SPINE_LO0, CAN_SPINE_LO1);
+    rib_fade(px, py, px, sy2, false, false, CAN_SPINE_LO0, CAN_SPINE_LO1);
+
+    // The lit bits: short bright runs where the drawing puts a tab, on the struts a
+    // third of the way out and on the slanted edges just under halfway. Two lines
+    // each, so the whole set is eight primitives before subdivision.
+    const float t = 0.30f;
+    const float tlx = lx - ex * t, tly = ty - ey * t;
+    const float trx = rx + ex * t, try_ = ty - ey * t;
+    const float run = 7.0f;
+    rib(tlx, tly, tlx + ux * run, tly + uy * run, true, true, 1.0f);
+    rib(trx, try_, trx - ux * run, try_ + uy * run, true, true, 1.0f);
+    rib(mlx, mly, mlx + (px - lx) * 0.03f, mly + (py - ty) * 0.03f, true, true, 1.0f);
+    rib(mrx, mry, mrx + (px - rx) * 0.03f, mry + (py - ty) * 0.03f, true, true, 1.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Radar
 // ---------------------------------------------------------------------------
@@ -723,7 +857,12 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // lines bend and shake with the rest of the assembly. That is the point of
     // putting them here rather than in the flat pass -- a canopy that stayed rigid
     // while the instruments mounted on it moved would read as two separate objects.
-    canopy_draw(&CANOPY[vg.ship < SHIP_CLASSES ? vg.ship : SHIP_AEGIS]);
+    // THE LIT PATTERN, on trial. The opaque table above is still here and still
+    // works; this is the author's drawing applied as light, and it is one line to
+    // put back. All four hulls fly it while it is being judged -- per-ship patterns
+    // come after the language is settled, not before.
+    canopy_lit();
+    (void)canopy_draw;
 
     draw_health();
     draw_comms();
