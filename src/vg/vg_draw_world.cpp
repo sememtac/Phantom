@@ -35,6 +35,29 @@ void vg_draw_starfield(const VgCam& cam) {
 // mote's tail lies further away than its head, and the streaks therefore splay
 // outward from the vanishing point exactly as they should.
 static void draw_motes(const VgCam& cam) {
+    // NO DUST ASTERN, BY THE AUTHOR'S DECISION, and the reasoning it replaces is
+    // worth keeping so nobody tries the third round.
+    //
+    // The field is never turned for the mirror: motes spawn between z 450 and 950
+    // AHEAD and are recycled fifty units after they pass, so there is no dust
+    // behind the ship at all and a turned camera correctly showed an empty mirror.
+    // Drawing the forward field untouched was the trick that filled it -- dust has
+    // no identity, so the field behind is the field ahead and reflecting it is
+    // undetectable.
+    //
+    // What never came out right was WHICH WAY THE STREAK POINTS. A streak is laid
+    // along z, so laying it away puts the tail near the vanishing point and laying
+    // it toward puts the tail at the edge; astern it was drawn outward, longer and
+    // fainter, to read as a wake being left behind. Two rounds of that reasoning
+    // and it still did not read correctly on the panel, and a mirror whose dust
+    // moves the wrong way states something false. The forward view already says
+    // "you are moving", which is the only thing dust is for.
+    //
+    // It also pays: band 1 is where the mirror patch lands and it was the tallest
+    // band in every combat window. A third of 160 motes, one primitive each, was
+    // the mirror's biggest submission after the grid.
+    if (cam.rear) return;
+
     // Not while paused. Motion is the only thing dust communicates, and a
     // frozen field of streaks is 160-320 primitives saying nothing.
     if (vg.state == VG_PAUSE) return;
@@ -53,21 +76,6 @@ static void draw_motes(const VgCam& cam) {
     int            w      = (f > MOTE_THICK_AT) ? 2 : 1;
     float          lvl    = 0.14f + 0.86f * f;
 
-    // ASTERN THE DUST IS LEAVING, not arriving. The geometry already says so --
-    // a streak is laid along +z in the camera's own frame, so looking forward it
-    // runs toward the vanishing point ahead and looking aft it runs toward the
-    // one behind, and motes converge on the middle of the mirror instead of
-    // bursting out of it.
-    //
-    // What the geometry does not say is that this is the wake. Longer and
-    // fainter is the difference between dust coming at you and dust being left
-    // behind, and it is the whole reason to look: at full throttle the mirror
-    // fills with something streaming away from the ship.
-    if (cam.rear) {
-        streak *= 1.7f;
-        lvl    *= 0.72f;
-        w       = 1;
-    }
     const uint16_t col = vg_dim(COL_MOTE, lvl);
 
     // Dust, and only ever drawn at speed -- which makes it part of the exact
@@ -75,46 +83,18 @@ static void draw_motes(const VgCam& cam) {
     // primitives once it thickens, and there is no such thing as a visible
     // stair-step on a two-pixel speck moving at 460 units a second.
     vg_line_aa_mode(false);
-    // THE FIELD IS NOT TURNED, and that is not a shortcut. Motes spawn between
-    // z 450 and 950 ahead and are recycled at MOTE_CULL_Z, fifty units after
-    // they pass -- so there is no dust behind the ship at all, and a turned
-    // camera correctly showed an empty mirror.
-    //
-    // Dust has no identity. It is a uniform random field with nothing in it to
-    // recognise, so the field behind is the field ahead, and reflecting it is
-    // undetectable. Drawing it untouched gives the mirror a full field for no
-    // extra motes, no extra primitives and no change to the forward view.
-    //
-    // The MOTION still comes out right, which is the part worth checking: the
-    // streak runs along +z in this frame, so it always runs to the vanishing
-    // point and the motes converge on the middle of the mirror -- which is what
-    // dust being left behind does.
-    // WHICH WAY THE STREAK POINTS is the whole difference between the two
-    // views, and it is one sign.
-    //
-    // A streak is laid from the mote along z, and z is depth, so laying it
-    // AWAY puts the tail nearer the vanishing point and laying it TOWARD puts
-    // the tail out at the edge. Ahead, the tail belongs inward: dust sweeps out
-    // past you and what it leaves behind points back at the middle. Astern it
-    // belongs outward, and drawn the other way the mirror read as flying INTO
-    // something rather than away from it.
-    const float sdir = cam.rear ? -streak : streak;
-
-    VgCam fwd = cam;
-    fwd.rear = false;
-    // Every third mote in the mirror: dust is a density, not an inventory, and
-    // 160 motes at up to two primitives each was the mirror's single biggest
-    // submission after the grid.
-    const int stride = cam.lite ? 3 : 1;
-    for (int i = 0; i < NUM_MOTES; i += stride) {
+    // The tail is laid AWAY along z, which puts it nearer the vanishing point:
+    // dust sweeps out past you and what it leaves behind points back at the
+    // middle. The aft case that used to invert this is gone -- see the top.
+    for (int i = 0; i < NUM_MOTES; i++) {
         Vec3 p = vg.mote[i];
         if (p.z < NEAR_Z) continue;
         // Toward the camera the tail can cross the near plane, where the
         // projection is meaningless. Stop it short instead of clipping: a
         // shortened streak on the closest motes is invisible, a wild one is not.
-        float tz = p.z + sdir;
+        float tz = p.z + streak;
         if (tz < NEAR_Z) tz = NEAR_Z;
-        vg_edge_w(fwd, p, v3(p.x, p.y, tz), col, w);
+        vg_edge_w(cam, p, v3(p.x, p.y, tz), col, w);
     }
 }
 
