@@ -149,15 +149,19 @@ def main():
     if args.dir:
         os.makedirs(args.dir, exist_ok=True)
 
-    # A comparison renders the frames the baseline holds. Passing --frames as
-    # well is allowed, but the default must come from the file: a run that
-    # rendered the default list against a baseline built from another list
-    # compared nothing at all and still printed "identical".
+    # The frames come from the baseline file, for --against and for --save over a
+    # file that already exists. Passing --frames as well is allowed, but the
+    # default must not be the built-in list: a comparison against a baseline
+    # built from other frames compared nothing at all and still printed
+    # "identical", and RETAKING a baseline would have quietly swapped the corpus
+    # for a different one, which is worse -- every later run would then agree
+    # with a set of frames nobody chose.
     spec = args.frames
-    if spec is None and args.against:
-        with open(args.against) as fh:
+    ref = args.against or (args.save if args.save and os.path.exists(args.save) else None)
+    if spec is None and ref:
+        with open(ref) as fh:
             spec = ",".join(sorted(json.load(fh)["frames"], key=int))
-        print(f"frames from {args.against}: {spec}")
+        print(f"frames from {ref}: {spec}")
     wanted = sorted(int(x) for x in (spec or DEFAULT_FRAMES).split(",") if x.strip())
     got = render(args.port, args.session, wanted, args.dir)
 
