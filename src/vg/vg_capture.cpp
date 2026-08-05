@@ -7,6 +7,7 @@
 #include "vg_raster.h"  // the 'q' antialiasing toggle
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_log.h>
 
 // Off, or streaming. There used to be two capture modes the host could arm
 // directly and both are gone, because neither could hold 60fps and 60fps is the
@@ -47,6 +48,33 @@ bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; 
 // to be on before the first announce: the host waits for "PLAYING", and with
 // writes non-blocking that line was dropped and the render never began.
 void vg_link_blocking(bool on) { Serial.setTxTimeoutMs(on ? 5000 : 0); }
+
+// NOTHING WRITES TO THE PORT WHILE A SESSION OWNS IT -- including the core.
+//
+// Every deliberate print in this firmware is already wrapped in `if (!vg_link_busy())`. The
+// Arduino core's own logging is not, and it goes to the same Serial. That is not theoretical:
+// the I2S driver logs ESP_ERR_TIMEOUT at ESP_LOG_ERROR every 22 ms while the audio ring
+// settles after a reset, and a record starting in that window took one frame and then read
+// `[  2900][E][ESP_I2S.cpp` where a frame record should have been.
+//
+// It survived for a long time by luck. The host scans for the session header before it starts
+// reading frames, so an error burst that arrived BEFORE the header was skipped. Making the
+// game faster moved the header in front of the burst and the luck ran out.
+//
+// A sink rather than a log level, because it needs no knowing when to turn off and it catches
+// every component at once -- a driver added next year is covered without anyone remembering
+// this. The output is dropped, not buffered: it is diagnostic text, the session is not, and a
+// queue that grows while a two minute render runs is a leak with a good excuse.
+static int (*s_log_prev)(const char*, va_list) = nullptr;
+
+static int log_sink(const char* fmt, va_list ap) {
+    if (vg_link_busy()) return 0;
+    return s_log_prev ? s_log_prev(fmt, ap) : 0;
+}
+
+void vg_link_guard_logs(void) {
+    if (!s_log_prev) s_log_prev = esp_log_set_vprintf(log_sink);
+}
 
 // Serial.write RETURNS A COUNT, and it is not always the count you asked for.
 // The USB CDC ring is finite and the call gives up after a timeout, so a busy

@@ -55,6 +55,10 @@ void vg_link_write(const void* p, int n);
 // Let writes block, or not. On for the duration of a session only.
 void vg_link_blocking(bool on);
 
+// Send the core's own log output nowhere while a capture or a replay owns the port. Call once
+// at startup. See the note at its definition -- an I2S error at boot cost a whole recording.
+void vg_link_guard_logs(void);
+
 // Put this frame's audio into the capture stream. Called once per frame with
 // whatever the mixer produced, and does nothing unless a capture is running.
 void vg_capture_audio(const int16_t* samples, int n);

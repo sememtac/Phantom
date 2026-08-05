@@ -42,6 +42,11 @@ void setup(void) {
     // 16K is the knee. Measured: 4K ring 5.1 fps, 16K 21.98 fps, 32K 22.22 fps,
     // at which point 0.74 MB/s is the USB-Serial-JTAG peripheral's own ceiling
     // and more buffer buys nothing but RAM.
+    // The core's own log output goes nowhere while a session owns the port. Installed here,
+    // before anything else can log: an I2S error burst at boot used to land inside the frame
+    // stream and end a recording after one frame. See vg_link_guard_logs.
+    vg_link_guard_logs();
+
     // A HANG THAT DOES NOT RESET LEAVES NO EVIDENCE. The crumb records the
     // frame and the phase into RTC memory every frame, but it is only promoted
     // to a crash record on an abnormal reset -- so a freeze that merely stops
