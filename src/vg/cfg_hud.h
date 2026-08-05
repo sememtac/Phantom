@@ -270,8 +270,11 @@
 // for if the whole thing feels slow.
 //
 // FLASH is how long the region holds SOLID WHITE before it starts giving way. A flash has an
-// instant onset by definition, so there is no ramp into it; this is the plateau only. Keep it
-// short -- it is a flash, and the sequence has four of them.
+// instant onset by definition, so there is no ramp into it; this is the plateau only.
+//
+// Shorter than it looks, and it has to be read together with DISSOLVE. The dissolve begins from
+// a fully held region, so the white persists well past this -- the PERCEIVED flash is this plus
+// the first part of the dissolve, which is why three frames here is plenty.
 //
 // DISSOLVE is how long the world takes to come through that white, as an ordered dither rather
 // than a cross-fade -- see canopy_gate. This is the part that reads as a region resolving, so it
@@ -292,9 +295,21 @@
 // so the instruments arrive into a cockpit that is lit but not yet settled. Earlier and they
 // compete with the flashes; at 1.0 the panel sits finished and empty for a moment first.
 #define CANOPY_INTRO_HUD_AT    0.90f
+
+// AND THE LAST LINK: how long after the instruments are in before the opponent opens the radio.
+//
+// This was two loose numbers, 1.4 s in vg_match_start and 1.6 s in vg_begin_flight, and the
+// difference between them looked incidental rather than designed. It is one number now, because
+// it is one beat -- the pause between a cockpit that is finished and the first voice in it.
+//
+// It used to be measured from the top of the match, when it was competing with the boot; now
+// that vg.ready gates the countdown it is measured from a lit panel, which is what makes it
+// worth having a name. The author asked for it longer once the chain was in place: with the
+// stages no longer overlapping, the silence after the panel settles is doing work.
+#define BOOT_RADIO_WAIT        2.40f
 #define CANOPY_INTRO_LEAD      1.00f
 #define CANOPY_INTRO_STEP      0.30f
-#define CANOPY_INTRO_FLASH     0.09f
+#define CANOPY_INTRO_FLASH     0.05f
 #define CANOPY_INTRO_DISSOLVE  0.32f
 #define CANOPY_INTRO_SETTLE    0.55f
 

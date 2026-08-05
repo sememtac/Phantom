@@ -238,10 +238,14 @@ void vg_match_start(void) {
 
     // They open the match. The first thing you learn about an opponent should
     // be what kind of person they are, not what they are flying.
+    //
+    // The countdown does not start until vg.ready, so this is measured from a LIT PANEL rather
+    // than from the top of the match -- which is why it can afford to be a real pause now
+    // instead of the 1.4 s it was when it had to beat the boot.
     vg.comms.line = nullptr;
     vg.comms.t    = 0;
     vg.comms.pri  = 0;
-    vg.taunt_t    = 1.4f;
+    vg.taunt_t    = BOOT_RADIO_WAIT;
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) vg_spawn_asteroid();
 

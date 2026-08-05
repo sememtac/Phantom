@@ -180,7 +180,7 @@ void vg_begin_flight(void) {
     vg_canopy_intro_begin();
     vg.roll     = 0;
     vg.bank     = 0;
-    vg.taunt_t  = 1.6f;
+    vg.taunt_t  = BOOT_RADIO_WAIT;  // one number for the beat, not 1.6 here and 1.4 there
     vg_input_calibrate();
 }
 
