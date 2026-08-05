@@ -1208,8 +1208,21 @@ static inline uint32_t px_sub(uint32_t s, uint32_t drb, uint32_t dg) {
     }                                                                        \
     for (; i < n; i++) q[i] = (uint16_t)FN(q[i], drb, dg);
 
-static inline void span_add(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
-static inline void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
+// ALWAYS INLINE, and not as a matter of taste.
+//
+// These were inlined by choice of the compiler, and taking them OUT of line was measured at
+// 175 us of loss when it was tried on purpose -- a flat block averages twenty pixels, which is
+// not enough to pay for a call. Then the warp grew canopy_rows_t past whatever size threshold
+// GCC weighs, and it stopped inlining them on its own: the rigid instantiation came out at 234
+// bytes calling span_sub, and the pass went 4065 -> 4190 us.
+//
+// So the decision is stated rather than left to a heuristic that cannot know what it costs
+// here. A measurement that has already been taken should not have to be taken again because an
+// unrelated function got longer.
+static inline __attribute__((always_inline))
+void span_add(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
+static inline __attribute__((always_inline))
+void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
 
 // A PIXEL AT A TIME, for the antialiased edge of a shape.
 //
