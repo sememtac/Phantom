@@ -238,6 +238,34 @@ def bake(src, out, name="CANOPY"):
     stream, offsets, n_flat, n_lit, flat_px, lit_px, col_cost = build(False)
     i_stream, i_offsets, i_flat, i_lit, i_fpx, i_lpx, _ = build(True)
 
+    # THE ZONE MAP, over the whole screen and not just the frame.
+    #
+    # The intro is not a canopy effect. The world stays black until a region comes online, so
+    # every pixel needs a zone -- including the 92% the cockpit does not cover, which the block
+    # table has no way to describe because it stores only what the frame touches.
+    #
+    # Run coded by column, the same shape as everything else here, because the regions are few
+    # and large: three bytes a run, and a column crosses only a handful of them. Nearest
+    # sampled, for the reason gsample gives.
+    zstream = bytearray()
+    zoffs = []
+    zruns = 0
+    for col in range(PANEL):
+        zoffs.append(len(zstream))
+        y = 0
+        while y < PANEL:
+            z = zone_of(gsample(col, y))
+            y0 = y
+            while y < PANEL and zone_of(gsample(col, y)) == z:
+                y += 1
+            n = y - y0
+            # zone in bits 5..2, the odd bits of start and length below them -- the block
+            # header's layout, so one reader understands both.
+            zstream.extend([((z & 15) << 2) | ((n >> 8) << 1) | (y0 >> 8),
+                            y0 & 255, n & 255])
+            zruns += 1
+    zoffs.append(len(zstream))
+
     # WHERE EACH BAND BALANCES.
     #
     # The pass is split across the two cores, and a band costs whichever half is
@@ -324,6 +352,9 @@ def bake(src, out, name="CANOPY"):
     ikb = (len(i_stream) + len(i_offsets) * 2) / 1024.0
     print(f"  flight table {n_flat + n_lit} blocks; intro table {i_flat + i_lit} blocks, "
           f"+{ikb:.1f} KB of flash and no frame time")
+    zkb = (len(zstream) + len(zoffs) * 2) / 1024.0
+    print(f"  zone map {zruns} runs, {zkb:.1f} KB -- every pixel of the screen, "
+          f"{zruns / float(PANEL):.1f} runs a column")
     print(f"  {len(zones)} activation zones from the green channel, in order: "
           + ", ".join(str(v) for v in zones))
     for i, z in enumerate(zones):
