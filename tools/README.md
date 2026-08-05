@@ -30,8 +30,23 @@ the panel gives none of these.
 
 ## PhantomRecorder (the window)
 
-**A record restarts the game.** A session must start at a state that the render
-step can also start from. Play from the menu.
+**A record restarts the game, and it has to.** The render step replays your inputs
+on the device to make the pixels again, so it must begin at a state it can
+reproduce. Mid-flight is not one: the ship, the opponent, the random-number cursor
+and the venue are not in the session header, only your progress is. A session
+recorded from where the game happens to be would render as something you never
+flew.
+
+So every session opens with the taps that got you into a match. To keep those out
+of the video, render a range instead of the whole thing:
+
+```
+python tools/phantom_session.py render --port COM6 run.phr --from 300 --to 1200
+```
+
+The device still simulates the frames before the range -- the state at frame 300 is
+the product of the 299 before it -- so this does not make the render quicker. It
+only stops the menus reaching the file.
 
 Do these steps in order:
 

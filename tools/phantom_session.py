@@ -108,6 +108,8 @@ def render(args):
     # frame while the host encodes the current frame. Two entries are enough:
     # six entries gave the same 19.5 fps, so the remaining cost is the link and
     # the render time of the device, not idle time.
+    first = max(0, getattr(args, "first", 0))
+    last  = getattr(args, "last", -1)
     depth = 2
     for fr in ses.frames[:depth]:
         link.replay_send(fr)
@@ -129,8 +131,16 @@ def render(args):
             chunk = bytes(link.audio)
             link.audio = bytearray()
             secs = (len(chunk) // 2) / AUDIO_RATE if chunk else fr["dt"]
-            writer.write(rgb, secs)
-            writer.add_audio(chunk)
+            # OUTSIDE THE RANGE, SIMULATED BUT NOT KEPT.
+            #
+            # A record has to start where the render can start, which is the menu -- so every
+            # session opens with the taps that got into a match, and footage of the flying part
+            # has menus in front of it. The device still has to simulate the frames before the
+            # range, because the state at frame N is the product of every frame before it, so
+            # this cannot make the render faster. It only stops the frames reaching the video.
+            if i >= first and (last < 0 or i <= last):
+                writer.write(rgb, secs)
+                writer.add_audio(chunk)
             done += 1
             el = time.time() - started
             rate = done / max(0.001, el)
@@ -173,6 +183,12 @@ def main():
     p.add_argument("session")
     p.add_argument("--port", required=True)
     p.add_argument("--dir", default=".")
+    # Which frames reach the video. The whole session is still simulated -- see the note in
+    # the render loop -- so this trims the menus off the front rather than saving any time.
+    p.add_argument("--from", dest="first", type=int, default=0,
+                   help="first frame to keep (default 0)")
+    p.add_argument("--to", dest="last", type=int, default=-1,
+                   help="last frame to keep, -1 for the end")
     p.add_argument("--gamma", type=float, default=1.0,
                    help="1.0 is the default and keeps the values of the "
                         "framebuffer. A larger value makes the dark parts "
