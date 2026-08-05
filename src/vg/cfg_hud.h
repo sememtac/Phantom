@@ -210,7 +210,9 @@
 // what it should be doing at full. The throttle term is 0.35 + 0.65 * sn, so a quarter is 0.51
 // of full -- and that is the factor taken out here, which leaves the RAMP alone and moves the
 // whole range down together.
-#define CANOPY_LAG_DRIVE  0.28f
+// 0.16, not 0.28: the scale now peaks at agility 1.75 where it used to peak at 1.0, so the
+// amplitude the author approved is preserved and only which END of the throttle has it changed.
+#define CANOPY_LAG_DRIVE  0.16f
 #define CANOPY_LAG_SPRING 0.030f
 // Firmer, because "flimsy" is not only amplitude -- a frame that rebounds twice reads as loose
 // however far it moves. 0.28 puts the damping ratio near 0.81: home in about the same time,
@@ -231,11 +233,18 @@
 // dropping the baseline would have taken the three that were already right down with it.
 #define CANOPY_LAG_HULL   0.60f
 
-// AND THE EFFECT GROWS WITH THE THROTTLE, reaching full only at full. A frame that flexed as
-// hard while parked as at top speed had nothing left to give when it mattered.
+// THE EFFECT FOLLOWS AGILITY, NOT THROTTLE, and it took the author to see why.
 //
-// IDLE is the fraction left at a closed throttle -- not zero, because a stationary ship being
-// pushed around still has mass. This runs opposite to the warp, which is at full bulge when
-// idle and flat at speed: so the frame is close and calm at rest, and flat and alive when
-// moving. That was not planned and it is worth keeping.
-#define CANOPY_LAG_IDLE   0.35f
+// It grew with the throttle at first, on the reasoning that speed should feel like something.
+// Backwards: agility_slow_bonus adds 75% to an AEGIS's turn rate at a closed throttle and
+// agility_fast_malus takes 30% off at full, so the ship turns two and a half times faster with
+// the throttle SHUT. The frame answers to angular acceleration, so it should move most where the
+// ship turns hardest -- which is idle, not full.
+//
+// vg.agility is that number, computed each frame from the hull's own bonus and malus, so the
+// spread is per-hull for free rather than a curve guessed here. AGI compresses it toward 1: at
+// 1.0 the coupling is the flight model's own.
+//
+// It also now runs WITH the warp rather than against it -- both are strongest at idle. The frame
+// is close and busy when the ship is nimble, flat and steady when it is committed to a line.
+#define CANOPY_LAG_AGI    1.00f

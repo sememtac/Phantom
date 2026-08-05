@@ -444,8 +444,11 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     {
         const float shake = vg.spec ? vg.spec->shake : 1.0f;
         const float hull  = 1.0f + (shake - 1.0f) * CANOPY_LAG_HULL;
-        const float thr   = CANOPY_LAG_IDLE + (1.0f - CANOPY_LAG_IDLE) * sn;
-        vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f, vg.bank, hull * thr);
+        // Agility, not throttle: the ship turns hardest with the throttle shut, so that is
+        // where the frame should move most. vg.agility already carries the hull's own bonus and
+        // malus, so the spread differs per ship without a second curve.
+        const float agi = 1.0f + (vg.agility - 1.0f) * CANOPY_LAG_AGI;
+        vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f, vg.bank, hull * agi);
     }
 
     // Instruments come up as a hologram catching: mostly absent at first,
