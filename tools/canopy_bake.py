@@ -42,9 +42,16 @@ LIT_W = 1.08         # a pixel that carries its own level
 
 
 def bake(src, out, name="CANOPY"):
-    im = Image.open(src).convert("L")
-    sw, sh = im.size
+    # SWIZZLED, NOT GREY. Red carries the frame, green carries the activation mask.
+    #
+    # It used to open with .convert("L"), which on an RGB file is a luminance blend --
+    # 0.299R + 0.587G + 0.114B, weighting the MASK most heavily of the three. That silently
+    # folded the activation zones into the shape of the cockpit.
+    rgb = Image.open(src).convert("RGB")
+    sw, sh = rgb.size
+    im, gm, _ = rgb.split()
     px = im.load()
+    gp = gm.load()
 
     hist = {}
     for y in range(sh):
@@ -79,6 +86,40 @@ def bake(src, out, name="CANOPY"):
         top = a + (b - a) * fx
         bot = c + (d - c) * fx
         return int(round(top + (bot - top) * fy))
+
+    def gsample(x, y):
+        """The mask at panel resolution, NEAREST.
+
+        A mask must not be interpolated. Bilinear between a zone at 54 and one at 98 invents
+        76, which is not a zone the artist painted and would become one -- a seam of phantom
+        panels along every border between real ones.
+        """
+        return gp[min(int(x * scale), sw - 1), min(int(y * scale), sh - 1)]
+
+    # WHAT ZONES THERE ARE, discovered rather than assumed.
+    #
+    # The artist decides how many panels there are and what order they come online in: the
+    # values are the order, read low to high, and this only has to find them. A value with a
+    # trivial population is a border artefact, not a panel, so it snaps to the nearest real one.
+    zhist = {}
+    for cx in range(PANEL):
+        for cy in range(PANEL):
+            if abs(sample(cx, cy) - bg) > TOL:
+                v = gsample(cx, cy)
+                zhist[v] = zhist.get(v, 0) + 1
+    covered = sum(zhist.values())
+    floor_px = max(64, covered // 200)          # half a per cent of the frame
+    zones = sorted(v for v, c in zhist.items() if c >= floor_px)
+    if not zones:
+        zones = [0]
+
+    def zone_of(v):
+        best, bi = None, 0
+        for i, z in enumerate(zones):
+            d = abs(v - z)
+            if best is None or d < best:
+                best, bi = d, i
+        return bi
 
     def level(g):
         """The stored grey, snapped so that flat areas become one block.
@@ -124,11 +165,16 @@ def bake(src, out, name="CANOPY"):
 
             # Gather one contiguous, one-sided stretch as (level, count) pairs.
             up = field[y] > bg
+            z_at = zone_of(gsample(col, y))
             y_at = y
             seg = []
             while y < PANEL:
                 g = field[y]
                 if abs(g - bg) <= TOL or (g > bg) != up:
+                    break
+                # A block belongs to ONE zone, so a zone border ends the run as surely as a
+                # change of level does -- the intro switches whole blocks on.
+                if zone_of(gsample(col, y)) != z_at:
                     break
                 lv = level(g)
                 if seg and seg[-1][0] == lv:
@@ -140,7 +186,9 @@ def bake(src, out, name="CANOPY"):
             # Emit it: long runs flat, and everything else batched into literals.
             def put(y0, n, lit, levels):
                 nonlocal cost, n_flat, n_lit, flat_px, lit_px
+                # bits 7 literal, 6 subtract, 5..2 zone, 1 length bit 8, 0 start bit 8.
                 head = ((0x80 if lit else 0) | (0x00 if up else 0x40)
+                        | ((z_at & 15) << 2)
                         | ((n >> 8) << 1) | (y0 >> 8))
                 stream.extend([head, y0 & 255, n & 255])
                 stream.extend(levels)
@@ -252,6 +300,10 @@ def bake(src, out, name="CANOPY"):
           else f"  asymmetric ({bad} px differ, worst {worst}), stored whole")
     print(f"  {n_flat} flat blocks carrying {flat_px} px, "
           f"{n_lit} literal blocks carrying {lit_px} px")
+    print(f"  {len(zones)} activation zones from the green channel, in order: "
+          + ", ".join(str(v) for v in zones))
+    for i, z in enumerate(zones):
+        print(f"     {i}: green {z:3d}, {zhist.get(z, 0):6d} px")
 
     # WHAT IT COSTS, which is the number to watch while drawing.
     #
