@@ -43,7 +43,7 @@ PREVIEW = 240        # pixels
 # The title bar shows this version. It is necessary: if a build fails, the old
 # program stays on disk and looks the same. The version in the window is the
 # only proof that the new build runs. This error already cost one cycle.
-VERSION = "2.2"
+VERSION = "2.3"
 
 AMBER  = "#ffae1e"
 GROUND = "#0d0700"
