@@ -190,6 +190,11 @@
 // smoothed copy catches up: smaller lags longer and swings further. MAX clamps it, because a
 // hard reversal can produce a large difference for a frame or two and the frame sliding halfway
 // across the screen is not an interior, it is a fault.
-#define CANOPY_LAG_PX     26.0f
+// Both are multiplied by the airframe's ShipSpec::shake, so these are the AEGIS figures and
+// every other hull is relative to them: CHARIOT 1.70, LANCE 1.30, BALLISTA 0.55. A light frame
+// should be visibly looser than a heavy one, and that ordering was already tuned for the
+// camera, so the canopy borrows it instead of keeping a second table that could drift out of
+// agreement with it.
+#define CANOPY_LAG_PX     48.0f
 #define CANOPY_LAG_EASE   0.10f
-#define CANOPY_LAG_MAX    7.0f
+#define CANOPY_LAG_MAX    14.0f

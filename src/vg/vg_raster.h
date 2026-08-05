@@ -104,7 +104,11 @@ void vg_canopy_warp(float k);
 // it is CHANGING -- so the frame swings during the onset and the release of a turn and sits
 // centred through a steady one. Call once a frame, before the flush. Costs one index add per
 // panel row. See CANOPY_LAG_* in cfg_hud.h.
-void vg_canopy_lag(float turn);
+// `scale` is the airframe's own shake character -- ShipSpec::shake, which is already 1.70 on a
+// CHARIOT and 0.55 on a BALLISTA. The frame of a light hull should be visibly looser than the
+// frame of a heavy one, and that ordering is already tuned, so this rides it rather than
+// keeping a second table that could disagree with it.
+void vg_canopy_lag(float turn, float scale);
 
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //

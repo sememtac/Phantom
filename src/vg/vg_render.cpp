@@ -433,7 +433,7 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // ...and the frame trails the ship. The cosmetic bank is the turn signal the player can
     // see, so it is the one the canopy should be late to. Driven here rather than inside the
     // warp, because it has to keep working when the warp amount is zero.
-    vg_canopy_lag(vg.bank);
+    vg_canopy_lag(vg.bank, vg.spec ? vg.spec->shake : 1.0f);
 
     // Instruments come up as a hologram catching: mostly absent at first,
     // flickering in, solid by the end. Driven by dropping whole frames rather

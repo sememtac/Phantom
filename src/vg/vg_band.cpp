@@ -1384,11 +1384,15 @@ static bool    s_warp_on = false;
 static float   s_lag_s  = 0.0f;    // the smoothed turn
 static int     s_lag_px = 0;       // what the drawing is shifted by, in columns
 
-void vg_canopy_lag(float turn) {
+void vg_canopy_lag(float turn, float scale) {
     s_lag_s += (turn - s_lag_s) * CANOPY_LAG_EASE;
-    float d = (turn - s_lag_s) * CANOPY_LAG_PX;
-    if (d >  CANOPY_LAG_MAX) d =  CANOPY_LAG_MAX;
-    if (d < -CANOPY_LAG_MAX) d = -CANOPY_LAG_MAX;
+    // The CLAMP scales with the airframe too. Scaling only the swing would have every hull
+    // reach the same limit and arrive there at a different speed, which flattens exactly the
+    // difference this is for -- a CHARIOT would clip where a BALLISTA never gets close.
+    const float lim = CANOPY_LAG_MAX * scale;
+    float d = (turn - s_lag_s) * CANOPY_LAG_PX * scale;
+    if (d >  lim) d =  lim;
+    if (d < -lim) d = -lim;
     s_lag_px = (int)(d + (d < 0.0f ? -0.5f : 0.5f));
     // At a warp amount of zero the maps are the identity -- zoom 1, no sphere, no bow -- so
     // running the warped path costs a little and draws exactly the rigid picture. That is what
