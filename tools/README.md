@@ -42,11 +42,25 @@ Do these steps in order:
 5. Set the **Gamma** slider.
 6. Press **2. Render to Video**.
 
-The program writes a session file with the extension `.phr`. It then writes an
-`.mp4` file in the same folder. The window shows each frame during the render
+The program makes a folder for each recording, named for the time it started, and
+writes every file of that recording into it:
+
+```
+<output folder>/20260804-213000/phantom-20260804-213000.phr
+<output folder>/20260804-213000/phantom-20260804-213000.mp4
+```
+
+A recording is one thing. After a few of them, a flat folder cannot say which
+video came from which session.
+
+To render a session again with a different gamma, use **File > Open Session**. The
+new video is written next to that session, in the folder it already lives in. The window shows each frame during the render
 step.
 
-To render a session from an earlier day, use **File > Open Session**.
+The program remembers the output folder, the gamma, and the port. They are kept in
+`.phantom_recorder.json` in your home folder, and written whenever one of them
+changes, so a crash does not lose them. A board that comes back on a different COM
+number falls back to the first port in the list.
 
 Start `tools/dist/PhantomRecorder.exe`. To start the program from the source
 instead:

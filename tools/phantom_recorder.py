@@ -23,6 +23,7 @@ the window this would stop the window for the full record, and a user cannot
 tell that condition from a crash.
 """
 
+import json
 import os
 import queue
 import subprocess
@@ -49,6 +50,39 @@ GROUND = "#0d0700"
 
 
 class Recorder(tk.Tk):
+    # WHERE THE SETTINGS LIVE.
+    #
+    # In the user's home folder, not next to the program: the program is shipped as a single
+    # exe that people run from a download folder, and writing beside it fails on a read-only
+    # path and puts a file in a folder the user did not choose.
+    SETTINGS = os.path.join(os.path.expanduser("~"), ".phantom_recorder.json")
+
+    def _load_settings(self):
+        """Whatever was set last time. A missing or damaged file is not an error."""
+        try:
+            with open(self.SETTINGS, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return {}
+
+    def _save_settings(self):
+        """Written on every change, so a crash does not lose the folder.
+
+        Guarded because the folder variable is traced, and a trace can fire while the window is
+        still being built -- before the gamma slider and the port list exist.
+        """
+        if not hasattr(self, "port") or not hasattr(self, "gamma"):
+            return
+        try:
+            with open(self.SETTINGS, "w", encoding="utf-8") as fh:
+                json.dump({"out_dir": self.out_dir.get(),
+                           "gamma":   round(self.gamma.get(), 2),
+                           "port":    (self._ports[self.port.current()]
+                                      if getattr(self, "_ports", None) and self.port.current() >= 0
+                                      else "")}, fh, indent=1)
+        except Exception:
+            pass          # a settings file that cannot be written is not worth a dialog
+
     def __init__(self):
         super().__init__()
         self.title(f"Phantom Recorder {VERSION}")
@@ -61,11 +95,25 @@ class Recorder(tk.Tk):
         self.last_output = None
         self.session = None          # the session that waits for a render
         self._error = None
-        self.out_dir = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos"))
+        self._cfg = self._load_settings()
+        self.out_dir = tk.StringVar(
+            value=self._cfg.get("out_dir") or os.path.join(os.path.expanduser("~"), "Videos"))
+        # Every asset of one run goes in one folder. Set when a recording is saved, and set to
+        # the session's own folder when an old session is opened, so a re-render lands beside
+        # the recording it came from instead of in a new folder of its own.
+        self.run_dir = None
 
         self._build_menu()
         self._build()
+        # The folder is edited by hand as well as by the browse button, so follow the variable
+        # rather than the button.
+        self.out_dir.trace_add("write", lambda *_: self._save_settings())
         self.after(60, self._pump)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self):
+        self._save_settings()
+        self.destroy()
 
     # -- menus --------------------------------------------------------------
 
@@ -117,6 +165,7 @@ class Recorder(tk.Tk):
         tk.Label(self, text="Port", fg=AMBER, bg=GROUND).grid(row=1, column=0, sticky="e", **pad)
         self.port = ttk.Combobox(self, width=22, state="readonly")
         self.port.grid(row=1, column=1, sticky="ew", **pad)
+        self.port.bind("<<ComboboxSelected>>", lambda _e: self._save_settings())
         ttk.Button(self, text="Refresh", width=8, command=self._refresh).grid(row=1, column=2, **pad)
 
         tk.Label(self, text="Folder", fg=AMBER, bg=GROUND).grid(row=2, column=0, sticky="e", **pad)
@@ -144,7 +193,7 @@ class Recorder(tk.Tk):
         # draws a thumb that the user can see and move. A ttk.Scale ignores bg
         # and fg, so it does not use the amber colours. The ttk buttons above it
         # have the same appearance.
-        self.gamma = tk.DoubleVar(value=1.0)
+        self.gamma = tk.DoubleVar(value=float(self._cfg.get("gamma", 1.0)))
         ttk.Scale(self, from_=1.0, to=2.0, orient="horizontal",
                   variable=self.gamma, command=self._gamma_changed
                   ).grid(row=4, column=1, sticky="ew", padx=8)
@@ -173,9 +222,12 @@ class Recorder(tk.Tk):
     def _refresh(self):
         ports = list_ports()
         self.port["values"] = [f"{d}  ({desc})" for d, desc in ports]
-        if ports:
-            self.port.current(0)
         self._ports = [d for d, _ in ports]
+        if ports:
+            # The port used last time, if it is still plugged in. A board that has moved to a
+            # different COM number falls back to the first, which is what this always did.
+            want = self._cfg.get("port") or ""
+            self.port.current(self._ports.index(want) if want in self._ports else 0)
 
     def _gamma_changed(self, value=None):
         # ttk.Scale is continuous, so snap here. Only write back when the
@@ -186,6 +238,7 @@ class Recorder(tk.Tk):
         if abs(g - self.gamma.get()) > 1e-9:
             self.gamma.set(g)
         self.gamma_lbl.config(text=f"{g:.2f}")
+        self._save_settings()
 
     def _browse(self):
         d = filedialog.askdirectory(initialdir=self.out_dir.get())
@@ -202,6 +255,7 @@ class Recorder(tk.Tk):
         except Exception as e:
             messagebox.showerror("Phantom Recorder", f"The tool could not open the file:\n{e}")
             return
+        self.run_dir = os.path.dirname(os.path.abspath(p))
         self.btn_render.config(state="normal")
         self.status.config(text=f"{os.path.basename(p)}: "
                                 f"{len(self.session.frames)} frames. Ready to render.")
@@ -327,7 +381,8 @@ class Recorder(tk.Tk):
 
         self.worker = threading.Thread(
             target=self._run_render,
-            args=(self._port(), self.out_dir.get(), self.session, g), daemon=True)
+            args=(self._port(), self.run_dir or self.out_dir.get(), self.session, g),
+            daemon=True)
         self.worker.start()
 
     def _run_render(self, port, out_dir, ses, gamma):
@@ -469,9 +524,15 @@ class Recorder(tk.Tk):
             return
 
         self.session = ses
-        path = os.path.join(self.out_dir.get(),
-                            time.strftime("phantom-%Y%m%d-%H%M%S.phr"))
+        # A FOLDER FOR THE RUN, not a pile of files in the output folder. The session, the
+        # video and anything else a render produces belong together -- a recording is one
+        # thing, and after a few of them a flat folder cannot say which video came from which
+        # session.
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        self.run_dir = os.path.join(self.out_dir.get(), stamp)
+        path = os.path.join(self.run_dir, f"phantom-{stamp}.phr")
         try:
+            os.makedirs(self.run_dir, exist_ok=True)
             ses.save(path)
         except Exception as e:
             self.status.config(text=f"The tool could not save the session: {e}")
