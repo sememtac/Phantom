@@ -237,6 +237,18 @@ bool vg_cine_update(float dt, bool skip) {
 
     if (t > INTRO_END || skip) {
         s_shot = 0;
+        // THE VENUE IS ALL THE WAY THERE ONCE THE INTRO IS OVER, however it ended.
+        //
+        // The reveal is set from `t` every frame above, so an intro that runs its course
+        // leaves it past 1 and clamped. A SKIP does not: it returns from here with the
+        // dissolve stopped wherever the player's thumb found it, and the backdrop fill goes on
+        // blacking out every row the reveal had not reached yet -- for the rest of the match.
+        // It reads as heavy banding, because that is what it is: seven rows in eight are the
+        // clear colour.
+        //
+        // Set at the exit rather than at the skip, so it covers both ways out and any third
+        // one added later.
+        vg_sky_set_reveal(1.0f);
         return true;
     }
     return false;
