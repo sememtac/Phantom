@@ -132,6 +132,9 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // all drive. Inferred from a progress value that reads 1.0 when nothing is running, the condition
 // is satisfied by default -- and the cockpit's power-on sound played over the title screen.
 //
+// `lit` is how many regions have come on so far. It is reported rather than acted on because
+// what wants it is a sound, and the rasteriser has no business talking to the mixer.
+//
 // `flex` is the multiplier to apply to BOTH vg_canopy_warp's k and vg_canopy_lag's scale. It is 0
 // while the sequence runs, because the world gate reads the unwarped column and a flexing frame
 // would put the black somewhere other than where the panel ends, then ramps to 1 so the cockpit
@@ -141,6 +144,7 @@ void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);
 bool  vg_canopy_intro_active(void);
 bool  vg_canopy_intro_cued(void);
+int   vg_canopy_intro_lit(void);
 float vg_canopy_intro_flex(void);
 
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.

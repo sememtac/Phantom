@@ -117,9 +117,16 @@ static void enter_course(void) {
     // more, nor is SFX_READY played: the view sits dark, the cockpit arrives a region at a time,
     // and vg_hud_decay cues the instruments off its progress. Starting all three at once is what
     // made them overlap too tightly to read.
-    vg.hud_cued = false;
-    vg.ready    = false;
+    vg.hud_cued    = false;
+    vg.ready       = false;
+    vg.regions_lit = 0;
     vg_canopy_intro_begin();
+    // THE ONLY SOUND THAT PLAYS TO A BLACK SCREEN. It fills the second of dark before the first
+    // region lights, so the wait reads as something spooling up rather than as nothing happening --
+    // which is the difference between a pause and a hang. Fired here and not from the sequence
+    // itself: the sequence lives in the band rasteriser, and a cue triggered from drawing code is
+    // a cue that does not happen when the panel is not drawn.
+    vg_sfx_play(SFX_SPOOL, 1.0f);
     vg_input_calibrate();
 }
 
@@ -175,9 +182,11 @@ void vg_begin_flight(void) {
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
     vg_spawn_opponent();
 
-    vg.hud_cued = false;            // the boot chain again -- see enter_course
-    vg.ready    = false;
+    vg.hud_cued    = false;         // the boot chain again -- see enter_course
+    vg.ready       = false;
+    vg.regions_lit = 0;
     vg_canopy_intro_begin();
+    vg_sfx_play(SFX_SPOOL, 1.0f);
     vg.roll     = 0;
     vg.bank     = 0;
     vg.taunt_t  = BOOT_FIRST_TAUNT; // one number for the beat, not 1.6 here and 1.4 there

@@ -27,6 +27,8 @@ enum SfxId : unsigned char {
     SFX_TV_ON,           // the set finding the signal
     SFX_TV_OFF,          // ...and losing it
     SFX_READY,           // the cockpit coming up: systems online
+    SFX_PANEL_ON,        // one region of the cockpit latching on
+    SFX_SPOOL,           // the wind-up in the dark, before any of it
     SFX_IFT,             // the broadcast, about to say something
     SFX_IFT_SHORT,       // ...and continuing to
     SFX_DEATH_STATIC,    // the signal going, before the flatline settles

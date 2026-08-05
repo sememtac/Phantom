@@ -608,6 +608,7 @@ struct VgGame {
     // panel that is not lit yet is talking to nobody.
     bool     hud_cued;     // the cockpit sequence has called for the instruments
     float    radio_t;      // >0 while the radio is still held shut after SFX_READY
+    uint8_t  regions_lit;  // how many cockpit regions have already been beeped for
     bool     ready;        // the radio may open -- BOTH the broadcast and the opponent wait on it
     // >0 while the systems are visibly hurt. Same failure language as the death
     // screen, briefly and at lower severity -- damage and destruction are the

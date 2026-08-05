@@ -115,13 +115,56 @@ static const SynthLayer L_READY[] = {
     // SEQUENCE rather than a sound, because it is not reporting an event -- it is
     // a machine finishing something, and finishing takes steps.
     //
-    // Held back 0.45s. Entering the course sets the panel booting inside the
-    // transition's join, one frame before the set strikes; without the delay both
-    // land together and neither is heard.
-    { SW_SQUARE,   62,    44,   0.55f,  0.006f,  0,     0.40f,  500,  0.45f,   0,  0 },
-    { SW_SQUARE,  392,   392,   0.12f,  0.004f,  0,     0.26f, 4200,  0.47f,   0,  0 },
-    { SW_SQUARE,  523,   523,   0.12f,  0.004f,  0,     0.26f, 4200,  0.60f,   0,  0 },
-    { SW_SQUARE,  784,   784,   0.26f,  0.004f,  0,     0.26f, 4200,  0.73f,   0,  0 },
+    // IT USED TO BE HELD BACK 0.45s, and that delay is gone. The reason for it was
+    // that entering the course set the panel booting inside the transition's join,
+    // one frame before the set struck, so without a delay both landed together and
+    // neither was heard. The cockpit sequence moved this cue a second and a half
+    // into the match -- the set has long since struck by the time it fires, and the
+    // delay had stopped being a fix and become a lie: the radio gate is measured
+    // from the moment this is PLAYED, so half a second of silent head made the
+    // author's "one second after the ready sound" into 0.55 in the ear.
+    //
+    // The internal spacing is unchanged, only the offset.
+    { SW_SQUARE,   62,    44,   0.55f,  0.006f,  0,     0.40f,  500,  0,       0,  0 },
+    { SW_SQUARE,  392,   392,   0.12f,  0.004f,  0,     0.26f, 4200,  0.02f,   0,  0 },
+    { SW_SQUARE,  523,   523,   0.12f,  0.004f,  0,     0.26f, 4200,  0.15f,   0,  0 },
+    { SW_SQUARE,  784,   784,   0.26f,  0.004f,  0,     0.26f, 4200,  0.28f,   0,  0 },
+};
+
+static const SynthLayer L_PANEL_ON[] = {
+    // ONE REGION LATCHING. Forty milliseconds, so it is a tick that happens to have
+    // a pitch rather than a note -- four of these land inside a second at the
+    // current rate, and anything longer runs them together into a chirp.
+    //
+    // Swept up a little across its own life, which is most of the character: a blip
+    // that rises reads as something switching ON. Flat, it is a counter ticking.
+    //
+    // Quieter than the radio blip, and deliberately the quietest cue in the file.
+    // It fires four times in quick succession and it is the panel talking to
+    // itself, not to the player. The caller pitches each one higher than the last,
+    // so the four are a rising figure rather than four of the same tick.
+    { SW_SQUARE, 1240,  1480,   0.040f, 0.0012f, 0,     0.15f, 7000,  0,       0,  0 },
+};
+
+static const SynthLayer L_SPOOL[] = {
+    // THE WIND-UP IN THE DARK, and the brief was "faint" -- it should be findable
+    // rather than heard. It fills CANOPY_INTRO_LEAD, the second before the first
+    // region lights, and it is the only thing in the game that plays to a black
+    // screen.
+    //
+    // A slow attack because it has to arrive by SWELLING. Any transient at the
+    // front would be an event, and the point of that second is that nothing has
+    // happened yet.
+    //
+    // Swept up to 540 rather than down low where a wind-up "should" sit: the note
+    // at the top of this file is that the driver reproduces very little below a few
+    // hundred Hz, so a rise that stays under it is a rise nobody hears. 26 Hz of
+    // tremolo is what makes it a machine instead of a tone -- past 15 it stops
+    // juddering, and it has not yet fused into timbre at 30.
+    { SW_SQUARE,   88,   540,   0.94f,  0.26f,   0.06f, 0.14f, 1900,  0,      26,  0.5f },
+    // ...and something turning under it. Noise this quiet is not heard as noise; it
+    // is heard as the tone having a mechanism.
+    { SW_NOISE,     0,     0,   0.86f,  0.42f,   0,     0.05f, 1300,  0.05f,   0,  0 },
 };
 
 static const SynthLayer L_IFT[] = {
@@ -171,6 +214,8 @@ static const SfxDef SFX[SFX_COUNT] = {
     CUE(L_TV_ON),
     CUE(L_TV_OFF),
     CUE(L_READY),
+    CUE(L_PANEL_ON),
+    CUE(L_SPOOL),
     CUE(L_IFT),
     CUE(L_IFT_SHORT),
     CUE(L_DEATH_STATIC),

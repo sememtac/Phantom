@@ -201,6 +201,7 @@ void vg_match_start(void) {
     vg.hud_cued    = false;
     vg.ready       = false;
     vg.radio_t     = 0;
+    vg.regions_lit = 0;
     vg_canopy_intro_reset();
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;

@@ -77,6 +77,24 @@ void vg_hud_decay(float dt) {
     // as well, so it has to be called past the end of it -- which is why the return is ignored.
     vg_canopy_intro_update(dt);
 
+    // A BEEP PER REGION, one for each that has latched since the last frame.
+    //
+    // A while loop rather than a test, so two regions coming up in one frame produce two beeps
+    // rather than one. At the current rate they are 0.24 s apart and it cannot happen -- but the
+    // rate is a dial now, and a dial that silently eats a beep when it is turned up is worse than
+    // a loop that costs nothing.
+    //
+    // Pitched up per region, so the four read as a rising figure rather than four identical ticks.
+    // The count is what rises, not the region index, which keeps it right if a drawing ever has a
+    // different number of them.
+    {
+        const int lit = vg_canopy_intro_lit();
+        while ((int)vg.regions_lit < lit) {
+            vg_sfx_play(SFX_PANEL_ON, 1.0f + 0.10f * (float)vg.regions_lit);
+            vg.regions_lit++;
+        }
+    }
+
     // THE BOOT CHAIN. Three things used to start together and read as one muddle; each now waits
     // for the one before it.
     //

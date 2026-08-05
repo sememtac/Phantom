@@ -1896,6 +1896,26 @@ bool vg_canopy_intro_active(void) { return s_intro_on; }
 // cued while a match is being built, and nothing is cued twice.
 bool vg_canopy_intro_cued(void) { return s_icued; }
 
+// HOW MANY REGIONS HAVE LIT IN THE RUNNING SEQUENCE, 0..CANOPY_ZONES.
+//
+// Reported rather than acted on, because the thing that wants it is a SOUND and this file is
+// the band rasteriser -- it has no business talking to the mixer, and a cue fired from here
+// would be a cue that does not happen when the panel is not being drawn. The caller watches
+// this for a change and beeps, which also lets it pitch each one.
+//
+// ZERO WHEN NOTHING IS RUNNING, and that is not a detail. `reset` leaves every region live so
+// the flight path draws the whole frame, so counting s_ilive unconditionally reports four the
+// entire time a match is not booting -- and the caller, whose own counter was just zeroed,
+// would have fired four beeps over the cutscene. That is the same trap the instruments' cue
+// fell into: a query that answers for a state it is not in. The answer has to be scoped to the
+// sequence, because that is the only thing the question means.
+int vg_canopy_intro_lit(void) {
+    if (!s_intro_on) return 0;
+    int n = 0;
+    for (int z = 0; z < CANOPY_ZONES; z++) if (s_ilive[z]) n++;
+    return n;
+}
+
 // Nothing running and nothing cued -- for when a match is BUILT, which happens at the top of the
 // cutscene and is a long way from the player taking the seat.
 void vg_canopy_intro_reset(void) {
