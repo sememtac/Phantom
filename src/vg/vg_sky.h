@@ -95,4 +95,9 @@ void vg_sky_fill_band(uint16_t* band, int band_y0);
 // touches only the rows it is given. r0 and r1 MUST BE EVEN or the row pairing
 // straddles the boundary and the split stops being bit-identical.
 void vg_sky_band_prep(int band_y0);
+
+// Pin the sampled view, for vg_sky_bench only. The attract camera never stops turning, so
+// without this two checksums a second apart describe two different pieces of sky and cannot
+// be compared. See the note at sky_sample.
+void vg_sky_bench_pin(bool on);
 void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1);

@@ -1150,6 +1150,56 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     }
 }
 
+// WHAT THE BACKDROP COSTS, on the same terms as the canopy.
+//
+// `sky` on the telemetry line is the second largest item in the frame and it has never been
+// looked at. It also brackets three different things -- the per-band chart prep, the fill
+// itself, and the rendezvous -- so the line cannot say which of them is expensive.
+//
+// This runs prep and a whole-band fill on one core, band by band, over a real band buffer.
+// The buffers are idle outside a flush and there is not 30 KB of heap free to allocate
+// another, so it borrows one.
+//
+// THE CHECKSUM IS THE POINT, as much as the timing. The backdrop must come out bit-identical
+// after any change to this loop -- a replay renders frame for frame, and the fill's own
+// comments record two places where an optimisation was chosen specifically because it could
+// not alter a rounding. Fold the whole band in and compare before and after.
+//
+// Which means the bench has to be reproducible across two FLASHES, not just two calls, and
+// that takes more pinning than it first appears. The view drifts, so it is pinned; and the
+// attract loop regenerates the backdrop, so the texture is regenerated here from a fixed kind
+// and seed. Both were found by watching the checksum move while nothing else did.
+//
+// It therefore has a visible side effect: the sky on screen changes to this one. That is a
+// fair price for a number that means something, and it only happens when asked.
+void vg_sky_bench(VgSkyCost* out) {
+    uint32_t pc = 0, fc = 0, sum = 2166136261u;
+    if (!s_band[0]) { *out = VgSkyCost{}; return; }
+
+    vg_sky_generate(SKY_NEBULA, 0x5EED1234u);
+    if (!vg_sky_ready()) { *out = VgSkyCost{}; return; }
+    vg_sky_bench_pin(true);
+    for (int b = 0; b < NUM_BANDS; b++) {
+        const int by0 = b * BAND_H;
+
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        vg_sky_band_prep(by0);
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
+        const uint32_t t2 = esp_cpu_get_cycle_count();
+        pc += t1 - t0;
+        fc += t2 - t1;
+
+        // Outside the timing: what the band came out as, folded in a word at a time.
+        const uint32_t* w = (const uint32_t*)(const void*)s_band[0];
+        for (int i = 0; i < SCR_W * BAND_H / 2; i++) sum = (sum ^ w[i]) * 16777619u;
+    }
+    vg_sky_bench_pin(false);
+    out->prep_us = pc / 240u;
+    out->fill_us = fc / 240u;
+    out->sum     = sum;
+}
+
 // WHAT THE DRAWING COSTS, on the device and without flying.
 //
 // The canopy only draws inside a match, so reading its cost off the frame counter needs

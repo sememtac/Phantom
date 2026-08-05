@@ -945,6 +945,42 @@ struct SkyBand {
 };
 static SkyBand s_bd;
 
+// A FIXED VIEW, for the bench and nothing else.
+//
+// The backdrop has to come out bit-identical through any change to the fill, and the only way
+// to establish that is a checksum taken twice. But the attract camera never stops turning, so
+// two runs a second apart describe two different pieces of sky and the checksums cannot be
+// compared at all.
+//
+// The pinned view is off-axis in all three angles on purpose. At zero the bank trig is 1 and
+// 0, the cross-derivatives collapse and half the arithmetic drops out -- a rounding change
+// would have nowhere to show, and the check would pass while proving nothing. `s_reveal` is
+// pinned too, because below 1 the fill memsets most rows and stops walking them.
+static bool  s_pinned = false;
+static float s_sv_acc[2][3], s_sv_bank, s_sv_u, s_sv_v, s_sv_reveal;
+static bool  s_sv_rear;
+
+void vg_sky_bench_pin(bool on) {
+    if (on == s_pinned) return;
+    if (on) {
+        memcpy(s_sv_acc, s_eff_acc, sizeof(s_eff_acc));
+        s_sv_bank = s_bank; s_sv_u = s_u; s_sv_v = s_v;
+        s_sv_reveal = s_reveal; s_sv_rear = s_rear;
+        for (int i = 0; i < 2; i++) {
+            s_eff_acc[i][0] =  0.6143f;   // lon
+            s_eff_acc[i][1] = -0.3517f;   // lat
+            s_eff_acc[i][2] =  0.3701f;   // roll
+        }
+        s_bank = 0.2113f; s_u = 137.25f; s_v = -41.5f;
+        s_reveal = 1.0f;  s_rear = false;
+    } else {
+        memcpy(s_eff_acc, s_sv_acc, sizeof(s_eff_acc));
+        s_bank = s_sv_bank; s_u = s_sv_u; s_v = s_sv_v;
+        s_reveal = s_sv_reveal; s_rear = s_sv_rear;
+    }
+    s_pinned = on;
+}
+
 void vg_sky_band_prep(int band_y0) {
     if (!s_ready) return;
 
@@ -1035,28 +1071,121 @@ void vg_sky_band_prep(int band_y0) {
     s_bd.row_step = (s_reveal < 1.0f) ? 1 : 2;
 }
 
-void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
-    if (!s_ready) return;
-
+// ONE ROW, and the tint decided by the type rather than by a flag in a register.
+//
+// This was inside vg_sky_fill_rows and it did not fit. Xtensa has sixteen visible registers;
+// the walk needs four chart pointers, two carried floats, two fixed-point positions, two
+// steps, the texture, the dither row and the destination, and the tint case adds a
+// thirteen-entry limit array, a carried ring index and two calls out of the unit. The
+// compiler spilled: the disassembled chunk loop was 39 instructions to write 16 pixels, and
+// six of them were reloads from the stack -- the texture pointer, the dither row, both steps
+// and the tint flag, fetched again for every chunk.
+//
+// The flag was the worst of them, because it is constant for the whole frame and was being
+// loaded and branched on 7,200 times. As a template argument the untinted instantiation
+// carries none of the tint machinery at all, which is what frees the registers.
+//
+// EVERY ARITHMETIC OPERATION IS IN THE SAME ORDER AS BEFORE. That is not a matter of taste
+// here: the backdrop has to come out bit-identical or a replay stops matching, and two of the
+// optimisations above this one were chosen specifically because they could not move a
+// rounding. Serial 's' checksums the whole screen; it read 3a36e585 before this change and it
+// has to read 3a36e585 after it.
+// PAIR writes the second row of the pair as it goes instead of copying it afterwards.
+//
+// The copy was 45% of the fill: 240 calls a frame, each moving 960 bytes through ROM memcpy,
+// which is 240 words read and 240 written for a value the chunk loop already had in a
+// register. Writing both rows is eight more stores a chunk and no read pass at all -- 480
+// accesses a row pair against 720 -- and it is trivially the same pixels in the same places.
+template <bool TINT, bool PAIR>
+static __attribute__((noinline))
+void sky_row(uint16_t* dst, int sy, int dr, float w) {
+    // The pair's partner row, in 32-bit words. BAND_H is 32 and band_y0 a multiple of it, so
+    // a pair never straddles a band boundary and this is always inside the buffer.
+    constexpr int PAIR_OFF = SCR_W / 2;
     const float* Au = s_bd.Au;
     const float* Av = s_bd.Av;
     const float* Du = s_bd.Du;
     const float* Dv = s_bd.Dv;
-    const int    row_step = s_bd.row_step;
+    const uint16_t* tex = s_tex;
+    const int seg_px = SCR_H / SEGS;
+    const float step_k = ((float)SPLASH / (float)seg_px) * 65536.0f;
+
+    int lim[VG_TINT_RINGS + 1];
+    int ring = -1;                    // carried across the row's chunks
+    if (TINT) vg_tint_row_limits(sy, lim);
+
+    // A segment's END endpoint is the next segment's START endpoint, the same
+    // expression to the bit, so the walk carries it instead of computing it twice.
+    float su = Au[0] + Du[0] * w;
+    float sv = Av[0] + Dv[0] * w;
+
+    for (int k = 0; k < SEGS; k++) {
+        // Endpoint values for THIS row: centre-column sample plus the
+        // cross-derivative carried dxl columns over. The step between the
+        // endpoints is the segment's own slope, so the walk is bilinear.
+        const float eu = Au[k + 1] + Du[k + 1] * w;
+        const float ev = Av[k + 1] + Dv[k + 1] * w;
+
+        int32_t u   = (int32_t)(su * 65536.0f);
+        int32_t v   = (int32_t)(sv * 65536.0f);
+        const int32_t du8 = (int32_t)((eu - su) * step_k);
+        const int32_t dv8 = (int32_t)((ev - sv) * step_k);
+
+        uint32_t* d32 = (uint32_t*)(dst + k * seg_px);
+        // The dither column counts chunks ALONG THE WHOLE ROW, not within the
+        // segment -- see the note in vg_sky_fill_rows.
+        const int chunk0 = k * (seg_px / SPLASH);
+        for (int i = 0; i < seg_px / SPLASH; i++) {
+            // One cell of the 8x8, and the transpose for v -- see the table.
+            const int      dc  = (chunk0 + i) & 7;
+            const int32_t  ou  = s_dither[(dr << 3) | dc];
+            const int32_t  ov  = s_dither[(dc << 3) | dr];
+            const uint32_t idx = (uint32_t)(((((v + ov) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
+                                             (((u + ou) >> 16) & SKY_TEX_MASK));
+            const uint32_t c  = tex[idx];
+            uint32_t cc = (c << 16) | c;
+            if (TINT) {
+                // The ring index walks WITH x instead of restarting at every
+                // chunk -- restarting was thirteen compares a chunk, three
+                // milliseconds a frame parked against a wall.
+                const int adx = abs(k * seg_px + i * SPLASH + SPLASH / 2 - SCR_W / 2);
+                while (ring >= 0 && adx < lim[ring]) ring--;
+                while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
+                if (ring >= 0)
+                    cc = vg_tint_word(cc, ring >= VG_TINT_RINGS ? VG_TINT_RINGS - 1 : ring);
+            }
+            for (int q = 0; q < SPLASH / 2; q += 4) {
+                d32[q] = cc; d32[q + 1] = cc; d32[q + 2] = cc; d32[q + 3] = cc;
+            }
+            if (PAIR) {
+                for (int q = 0; q < SPLASH / 2; q += 4) {
+                    d32[q + PAIR_OFF]     = cc; d32[q + PAIR_OFF + 1] = cc;
+                    d32[q + PAIR_OFF + 2] = cc; d32[q + PAIR_OFF + 3] = cc;
+                }
+            }
+            d32 += SPLASH / 2;
+            u += du8;
+            v += dv8;
+        }
+        su = eu; sv = ev;
+    }
+}
+
+void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
+    if (!s_ready) return;
+
+    const int row_step = s_bd.row_step;
 
     static const uint8_t ORDER[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
-    const int seg_px = SCR_H / SEGS;
 #if VG_ROTATE == 1
     const float lx_c = (float)(SCR_H - 1 - (band_y0 + BAND_H / 2));
 #else
     const float lx_c = (float)(SCR_W / 2);
 #endif
-    // One constant for the step: the 8-pixel splash over the segment length,
-    // into 16.16. Folding the two multiplies into one is bit-exact rather than
-    // merely close, because 65536 is a power of two -- scaling by it moves the
-    // exponent and leaves the mantissa alone, so it cannot change a rounding.
-    // That matters: a replay must render frame for frame.
-    const float step_k = ((float)SPLASH / (float)seg_px) * 65536.0f;
+    // THE TINT DECIDED ONCE, not per row. It is set for the whole frame by the render
+    // layer, and vg_tint_active is a call into another unit -- so asking per row was 240
+    // calls the compiler had to assume could change anything it was holding.
+    const bool tint = vg_tint_active();
 
     // ROWS IN PAIRS. A splash of 16 across and 1 down is a ribbon, and the eye
     // reads the anisotropy before it reads the coarseness -- 16x2 costs the same
@@ -1086,83 +1215,21 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
         // resolution -- which is half of why the backdrop started banding.
         const int dr = ((row_step == 2) ? (sy >> 1) : sy) & 7;
         uint16_t* dst = &band[row * SCR_W];
-        const uint16_t* tex = s_tex;
-
-        // Boundary tint, applied to the chunk colour as it is written -- one
-        // word op per chunk against the dead pass's two hundred and forty per
-        // row. Ring boundaries are half-widths from the row's own geometry;
-        // walking x, the ring index just steps at each crossing.
-        int lim[VG_TINT_RINGS + 1];
-        const bool tint = vg_tint_active();
-        int ring = -1;                    // carried across the row's chunks
-        if (tint) vg_tint_row_limits(sy, lim);
 
         // dxl/8 is exact -- 8 is a power of two -- so the reciprocal form is
         // bit-identical, and it leaves the division out of the segment loop.
         const float w = dxl * 0.125f;
-        // A segment's END endpoint is the next segment's START endpoint, the
-        // same expression to the bit, so the walk carries it instead of
-        // computing it twice. Worth 170us of the fill, measured: the compiler
-        // had already found most of what looked like a much larger saving.
-        float su = Au[0] + Du[0] * w;
-        float sv = Av[0] + Dv[0] * w;
 
-        for (int k = 0; k < SEGS; k++) {
-            // Endpoint values for THIS row: centre-column sample plus the
-            // cross-derivative carried dxl columns over. The step between the
-            // endpoints is the segment's own slope, so the walk is bilinear.
-            const float eu = Au[k + 1] + Du[k + 1] * w;
-            const float ev = Av[k + 1] + Dv[k + 1] * w;
-
-            int32_t u   = (int32_t)(su * 65536.0f);
-            int32_t v   = (int32_t)(sv * 65536.0f);
-            const int32_t du8 = (int32_t)((eu - su) * step_k);
-            const int32_t dv8 = (int32_t)((ev - sv) * step_k);
-
-            uint32_t* d32 = (uint32_t*)(dst + k * seg_px);
-            // The dither column counts chunks ALONG THE WHOLE ROW, not within the
-            // segment. At a splash of 8 there were six chunks a segment and
-            // (i & 3) happened to walk the pattern; at 16 there are three, so it
-            // used phases 0,1,2 and never 3, and reset every 48 pixels. A
-            // three-phase pattern repeating on a 48-pixel pitch is not a dither,
-            // it is a stripe -- the other half of why the backdrop started
-            // banding after the fill was widened.
-            const int chunk0 = k * (seg_px / SPLASH);
-            for (int i = 0; i < seg_px / SPLASH; i++) {
-                // One cell of the 8x8, and the transpose for v -- see the table.
-                const int      dc  = (chunk0 + i) & 7;
-                const int32_t  ou  = s_dither[(dr << 3) | dc];
-                const int32_t  ov  = s_dither[(dc << 3) | dr];
-                const uint32_t idx = (uint32_t)(((((v + ov) >> 16) & SKY_TEX_MASK) << SKY_TEX_BITS) |
-                                                 (((u + ou) >> 16) & SKY_TEX_MASK));
-                const uint32_t c  = tex[idx];
-                uint32_t cc = (c << 16) | c;
-                if (tint) {
-                    // The ring index walks WITH x instead of restarting at
-                    // every chunk -- restarting was thirteen compares a chunk,
-                    // three milliseconds a frame parked against a wall.
-                    // |dx| falls to the screen centre then rises, so the index
-                    // steps at ring crossings and is amortised constant.
-                    const int adx = abs(k * seg_px + i * SPLASH + SPLASH / 2 - SCR_W / 2);
-                    while (ring >= 0 && adx < lim[ring]) ring--;
-                    while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
-                    if (ring >= 0)
-                        cc = vg_tint_word(cc, ring >= VG_TINT_RINGS ? VG_TINT_RINGS - 1 : ring);
-                }
-                for (int q = 0; q < SPLASH / 2; q += 4) {
-                    d32[q] = cc; d32[q + 1] = cc; d32[q + 2] = cc; d32[q + 3] = cc;
-                }
-                d32 += SPLASH / 2;
-                u += du8;
-                v += dv8;
-            }
-            su = eu; sv = ev;
+        // The walk itself, and which of the two it is settled at compile time. See the
+        // note above sky_row for why the flag could not simply live in a register.
+        if (row_step == 2) {
+            if (tint) sky_row<true, true>(dst, sy, dr, w);
+            else      sky_row<false, true>(dst, sy, dr, w);
+        } else {
+            if (tint) sky_row<true, false>(dst, sy, dr, w);
+            else      sky_row<false, false>(dst, sy, dr, w);
         }
 
-        // The pair's second row. BAND_H is 32 and band_y0 is a multiple of it,
-        // so pairs never straddle a band boundary and the phase is the same in
-        // every band.
-        if (row_step == 2) memcpy(&band[(row + 1) * SCR_W], dst, SCR_W * 2);
     }
 }
 

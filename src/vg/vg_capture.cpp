@@ -240,6 +240,20 @@ void vg_capture_poll(void) {
                 Serial.printf("canopy: %lu us for %d blocks, %d flat px, %d literal px\n",
                               (unsigned long)k.us, k.blocks, k.flat_px, k.lit_px);
             }
+        } else if (c == 's') {
+            // THE BACKDROP, split into prep and fill, with a checksum.
+            //
+            // The checksum is what makes this safe to optimise against: the fill must come
+            // out bit-identical, and its own comments record two changes that were chosen
+            // because they could not move a rounding. A number that has to match is worth
+            // more than a careful reading of the diff.
+            VgSkyCost s;
+            vg_sky_bench(&s);
+            if (!vg_link_busy()) {
+                Serial.printf("sky: prep %lu us, fill %lu us, sum %08lx\n",
+                              (unsigned long)s.prep_us, (unsigned long)s.fill_us,
+                              (unsigned long)s.sum);
+            }
         } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an

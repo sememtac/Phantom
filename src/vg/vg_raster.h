@@ -102,6 +102,15 @@ void vg_canopy_prim(void);
 struct VgCanopyCost { uint32_t us; int blocks, flat_px, lit_px; };
 void vg_canopy_bench(VgCanopyCost* out);
 
+// THE BACKDROP, on the same terms. Serial 's'.
+//
+// `sky` brackets the per-band chart prep, the fill and the rendezvous together, so the
+// telemetry cannot say which is expensive. This separates prep from fill and reports a
+// checksum of the pixels, because the backdrop has to stay bit-identical through any change
+// to that loop -- a replay renders frame for frame.
+struct VgSkyCost { uint32_t prep_us, fill_us, sum; };
+void vg_sky_bench(VgSkyCost* out);
+
 // Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
 // which KIND of primitive the band raster is spending its time on.
 uint32_t vg_rast_aa_us(void);
