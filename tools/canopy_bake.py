@@ -304,7 +304,11 @@ A_LIT = 39.3         # one pixel that carries its own level
 # How much of the pass the frame actually pays, the two cores having shared it. Measured
 # rather than assumed to be a half: the band waits for its slower side and then for the
 # rendezvous. Re-measure it against the `can` counter after a flight if the split changes.
-SPLIT_YIELD = 0.67
+#
+# 0.59 read in a match on 2026-08-04: 4028 us on the bench billed the frame 2361. The
+# earlier 0.67 came from the old encoding and overstated the charge -- fewer blocks means
+# less per-band overhead outside the split, so more of the pass halves cleanly.
+SPLIT_YIELD = 0.59
 
 
 if __name__ == "__main__":

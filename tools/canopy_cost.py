@@ -7,7 +7,7 @@ The board draws the canopy only inside a match, and the frame counter reports on
 band's slower half rather than the whole pass. This runs the pass on one core and
 reports it flat, so a new drawing can be judged from the menu.
 
-The number is the drawing time on one core. The frame pays about two thirds of it,
+The number is the drawing time on one core. The frame pays about three fifths of it,
 because the two cores share the pass and one of them finishes late.
 
 Close every other program that uses the port first.
@@ -46,11 +46,11 @@ def main(port):
     steady = got[1:] or got
     us = sum(steady) / float(len(steady))
     print(f"\n{us:.0f} us of drawing on one core")
-    print(f"the frame pays about {us * 0.67 / 1000.0:.2f} ms of it")
-    if us * 0.67 > 2500.0:
+    print(f"the frame pays about {us * 0.59 / 1000.0:.2f} ms of it")
+    if us * 0.59 > 2500.0:
         print("TOO HEAVY: at this cost the game drops to about 50 frames a second.")
         print("   Narrowing the shapes is the lever that matters.")
-    elif us * 0.67 > 1200.0:
+    elif us * 0.59 > 1200.0:
         print("HEAVY: expect to lose 60 in busy fights.")
     else:
         print("there is room for it")
