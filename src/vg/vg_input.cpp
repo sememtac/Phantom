@@ -472,12 +472,30 @@ void vg_input_update(float dt, VgInput* out) {
     // It reuses the shaped, smoothed yaw axis rather than reading the raw finger,
     // so roll gets the same deadzone and the same ramp as every other control and
     // does not need its own feel.
+    // AND STEERING IS HANDED BACK GRADUALLY, not in one frame.
+    //
+    // yaw is zeroed while the button is held, so releasing it with the finger still deflected
+    // returned full deflection instantly -- a violent yaw the moment a roll ended, which is
+    // exactly when a pilot is least expecting the ship to bite. The finger has not moved; only
+    // the meaning of where it is has changed, and a change of meaning should not read as a
+    // change of command.
+    //
+    // Only yaw needs it. Pitch is live throughout a roll by design -- see the note above -- so
+    // it never steps, and gating it would take away the pull-through that the roll exists to
+    // set up.
+    static float s_yaw_gate = 1.0f;
     out->roll_btn = alt_btn;
     if (alt_btn) {
-        out->roll = out->yaw;
-        out->yaw  = 0.0f;
+        out->roll  = out->yaw;
+        out->yaw   = 0.0f;
+        s_yaw_gate = 0.0f;
     } else {
         out->roll = 0.0f;
+        if (s_yaw_gate < 1.0f) {
+            s_yaw_gate += ROLL_HANDBACK;
+            if (s_yaw_gate > 1.0f) s_yaw_gate = 1.0f;
+            out->yaw *= s_yaw_gate;
+        }
     }
 
     out->tap_edge  = steer_contact && !s_prev_steer_contact;

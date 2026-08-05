@@ -255,3 +255,12 @@
 // and those stay untouched. This is the game's one vocabulary for the ship
 // working hard, and a roll is the ship working hard.
 #define ROLL_BUZZ            0.055f
+
+// How fast steering comes back after a roll ends, as a fraction per frame.
+//
+// yaw is zeroed while the roll button is held, so letting go with the finger still deflected
+// handed back full deflection in a single frame -- the ship snapping into a hard turn at the end
+// of every roll. 0.11 is about nine frames, a sixth of a second: long enough that the hand-back
+// is a movement rather than a jolt, short enough that a pilot who MEANT to turn out of the roll
+// is not left waiting for the controls.
+#define ROLL_HANDBACK   0.11f
