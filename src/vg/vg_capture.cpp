@@ -265,6 +265,14 @@ void vg_capture_poll(void) {
                               (unsigned long)k.ref_us, (unsigned long)k.now_us, k.glyphs,
                               (int)NUM_BANDS, k.same ? "IDENTICAL" : "DIFFERENT");
             }
+        } else if (c == 'l') {
+            VgLineCost k{};
+            vg_line_bench(&k);
+            if (!vg_link_busy()) {
+                Serial.printf("line: ref %lu us, now %lu us, %d lines, %ld px, %s\n",
+                              (unsigned long)k.ref_us, (unsigned long)k.now_us,
+                              k.lines, k.px, k.same ? "IDENTICAL" : "DIFFERENT");
+            }
         } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an

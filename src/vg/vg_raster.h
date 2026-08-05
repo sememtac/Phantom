@@ -120,6 +120,14 @@ void vg_sky_bench(VgSkyCost* out);
 struct VgGlyphCost { uint32_t ref_us, now_us; int glyphs; bool same; };
 void vg_glyph_bench(VgGlyphCost* out);
 
+// THE LINE WALK, both ways, over a fixed fan covering every slope. Serial 'l'.
+//
+// `ln` is a per-frame total over whatever the scene contained, so two captures are two
+// workloads rather than two measurements. `same` false means the walk put a pixel somewhere
+// the old one did not, and the timing is irrelevant.
+struct VgLineCost { uint32_t ref_us, now_us; int lines; long px; bool same; };
+void vg_line_bench(VgLineCost* out);
+
 // Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
 // which KIND of primitive the band raster is spending its time on.
 uint32_t vg_rast_aa_us(void);
@@ -132,6 +140,10 @@ uint32_t vg_rast_oth_us(void);
 uint32_t vg_rast_pt_us(void);
 uint32_t vg_rast_gl_us(void);
 uint32_t vg_rast_fl_us(void);
+// The line WORKLOAD, so `ln` can be split into per-line setup and the per-pixel walk. A
+// bench cannot pick a representative line length without knowing this one.
+uint32_t vg_rast_ln_px(void);
+uint32_t vg_rast_ln_n(void);
 // The baked canopy alone. Split out of `oth`, which is a bucket that also holds glyphs
 // and fills and therefore moves with how busy the fight is.
 uint32_t vg_rast_can_us(void);

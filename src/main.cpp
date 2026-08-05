@@ -152,6 +152,7 @@ void loop(void) {
     // -- points with speed, glyphs with what the HUD is saying, fills with the instruments on
     // screen. Optimising a bucket is how four rounds of canopy work came out unattributable.
     static uint32_t acc_pt = 0, acc_gl = 0, acc_fl = 0;
+    static uint32_t acc_lnpx = 0, acc_lnn = 0;
     static uint32_t acc_tint = 0, acc_mir = 0;
     static uint32_t frames    = 0;
 
@@ -406,6 +407,8 @@ void loop(void) {
     acc_ln     += vg_rast_ln_us();
     acc_tri2   += vg_rast_tri_us();
     acc_oth    += vg_rast_oth_us();
+    acc_lnpx   += vg_rast_ln_px();
+    acc_lnn    += vg_rast_ln_n();
     acc_pt     += vg_rast_pt_us();
     acc_gl     += vg_rast_gl_us();
     acc_fl     += vg_rast_fl_us();
@@ -456,7 +459,7 @@ void loop(void) {
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
-                      "| aa %lu ln %lu tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
+                      "| aa %lu ln %lu(%lupx %lun) tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
@@ -482,6 +485,8 @@ void loop(void) {
                       (unsigned long)(acc_over_us / frames),
                       (unsigned long)(acc_aa   / frames),
                       (unsigned long)(acc_ln   / frames),
+                      (unsigned long)(acc_lnpx / frames),
+                      (unsigned long)(acc_lnn  / frames),
                       (unsigned long)(acc_tri2 / frames),
                       (unsigned long)(acc_pt   / frames),
                       (unsigned long)(acc_gl   / frames),
@@ -614,6 +619,7 @@ void loop(void) {
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
         acc_pt = acc_gl = acc_fl = 0;
+        acc_lnpx = acc_lnn = 0;
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
         acc_hud_radar = acc_hud_thr = 0;
         frames = 0;

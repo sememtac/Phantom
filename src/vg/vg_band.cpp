@@ -60,21 +60,59 @@ static inline bool clip_band_y(float* ax, float* ay, float* bx, float* by,
     return true;
 }
 
+// A POINTER AND A STEP COUNT, rather than coordinates and a destination test.
+//
+// The address was rebuilt for every pixel -- a subtract, a multiply by 480 and an add -- when
+// each step moves it by exactly sx or by sy rows. And x and y were tracked solely to ask
+// "am I there yet", which Bresenham already knows: it visits max(dx, |dy|) + 1 pixels and no
+// other number, so a counter answers it in one compare instead of two.
+//
+// Same pixels in the same order with the same colour. The endpoints are clamped to the band
+// by the caller, so the walk cannot leave it and the pointer cannot leave the buffer.
+// How much line there actually IS, per frame. Two adds per LINE, not per pixel.
+//
+// Without this, `ln` cannot be divided into the per-line setup -- clipping, rounding,
+// dispatch -- and the per-pixel walk, and a bench cannot know what line length to use. The
+// first line bench averaged 176 pixels a line, which is nothing like a hull edge or a trail.
+static uint32_t s_ln_px = 0, s_ln_n = 0;
+
 static inline void band_line(uint16_t* band, int band_y0,
                              int x0, int y0, int x1, int y1, uint16_t color) {
-    // Endpoints are clamped to the band, so Bresenham cannot leave it: every
-    // pixel it visits lies within the endpoints' bounding box.
-    int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    const int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
-    int x = x0, y = y0;
-    for (;;) {
-        band[(y - band_y0) * SCR_W + x] = color;
-        if (x == x1 && y == y1) break;
-        int e2 = err << 1;
-        if (e2 >= dy) { err += dy; x += sx; }
-        if (e2 <= dx) { err += dx; y += sy; }
+    uint16_t* p = &band[(y0 - band_y0) * SCR_W + x0];
+    const int ystep = sy * SCR_W;
+    s_ln_px += (uint32_t)((dx > -dy ? dx : -dy) + 1);
+    s_ln_n++;
+
+    // AND THE MAJOR AXIS STEPS EVERY TIME, so its test is not a test.
+    //
+    // Three conditional branches a pixel, on a core with no branch predictor, was most of
+    // what was left. For a line at least as wide as it is tall the x step fires on every
+    // iteration without exception, so its compare can go -- and the same the other way for a
+    // steep line. Both `e2` tests read the error from BEFORE either update, which is why the
+    // unconditional half can be applied first without disturbing the second.
+    //
+    // Two loops instead of one, each shorter. If the "always" is ever not always, the bench
+    // says DIFFERENT rather than the frame quietly changing.
+    if (dx >= -dy) {
+        for (int n = dx; ; ) {
+            *p = color;
+            if (--n < 0) break;
+            const int e2 = err << 1;
+            err += dy; p += sx;
+            if (e2 <= dx) { err += dx; p += ystep; }
+        }
+    } else {
+        for (int n = -dy; ; ) {
+            *p = color;
+            if (--n < 0) break;
+            const int e2 = err << 1;
+            err += dx; p += ystep;
+            if (e2 >= dy) { err += dy; p += sx; }
+        }
     }
 }
 
@@ -220,11 +258,33 @@ static void band_line_delta(uint16_t* band, int by0, int by1,
     }
 }
 
-// Bresenham, but clipped only in y -- the fast path used for trails and other
-// dim one-pixel geometry. Unlike band_line above it cannot assume x stays in
-// range, because a caller that skipped AA still went through the same clip.
+// THE OPAQUE PATH, and it was carrying a guard that could not fire.
+//
+// This is what draws trails, hulls and arena structure -- `ln` on the telemetry line, and one
+// of the largest items in a course run. It tested every pixel against the band and the screen
+// width, three compares on top of an address rebuilt from scratch, and the comment above it
+// said it could not assume x was in range.
+//
+// That stopped being true. The dispatch in draw_band clamps BOTH endpoints into the band and
+// into [0, SCR_W) before it picks a mode -- unconditionally, for every line -- and Bresenham
+// never leaves its endpoints' bounding box. So the guard was protecting against a caller that
+// no longer exists.
+//
+// Clamped once here rather than not at all, because "the caller does it" is a claim that
+// outlives the caller who did. Eight compares a LINE against three a PIXEL, then the walk in
+// band_line does the rest.
 static inline void band_line_fast(uint16_t* band, int by0, int by1,
                                   int x0, int y0, int x1, int y1, uint16_t color) {
+    if (y0 < by0) y0 = by0; else if (y0 > by1) y0 = by1;
+    if (y1 < by0) y1 = by0; else if (y1 > by1) y1 = by1;
+    if (x0 < 0) x0 = 0; else if (x0 > SCR_W - 1) x0 = SCR_W - 1;
+    if (x1 < 0) x1 = 0; else if (x1 > SCR_W - 1) x1 = SCR_W - 1;
+    band_line(band, by0, x0, y0, x1, y1, color);
+}
+
+// AS IT WAS, for the bench to prove the above against.
+static void band_line_fast_ref(uint16_t* band, int by0, int by1,
+                               int x0, int y0, int x1, int y1, uint16_t color) {
     int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
@@ -904,6 +964,8 @@ uint32_t vg_rast_can_us(void)  { return s_cyc_can / 240u; }
 uint32_t vg_rast_pt_us(void)   { return s_cyc_pt  / 240u; }
 uint32_t vg_rast_gl_us(void)   { return s_cyc_gl  / 240u; }
 uint32_t vg_rast_fl_us(void)   { return s_cyc_fl  / 240u; }
+uint32_t vg_rast_ln_px(void)   { return s_ln_px; }
+uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
 uint32_t vg_rast_tint_us(void) { return s_tint_us; }
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
@@ -1197,6 +1259,62 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
             }
         }
     }
+}
+
+// A FAN OF LINES, both ways, over every slope.
+//
+// Endpoints are generated inside one band and across the full width, from a fixed sequence,
+// so the set covers shallow, steep and diagonal alike and is the same set every run. Both
+// banks are compared: a faster walk that puts a pixel in a different place is not faster.
+void vg_line_bench(VgLineCost* out) {
+    if (!s_band[0] || !s_band[1]) { *out = VgLineCost{}; return; }
+
+    struct Seg { int16_t x0, y0, x1, y1; };
+    static Seg seg[256];
+    static int nseg = 0;
+    if (!nseg) {
+        uint32_t r = 12345u;
+        const int H = BAND_H - 1;
+        for (int i = 0; i < 256; i++) {
+            r = r * 1664525u + 1013904223u;
+            seg[i].x0 = (int16_t)((r >> 16) % SCR_W);
+            r = r * 1664525u + 1013904223u;
+            seg[i].y0 = (int16_t)((r >> 16) % (H + 1));
+            r = r * 1664525u + 1013904223u;
+            seg[i].x1 = (int16_t)((r >> 16) % SCR_W);
+            r = r * 1664525u + 1013904223u;
+            seg[i].y1 = (int16_t)((r >> 16) % (H + 1));
+        }
+        nseg = 256;
+    }
+
+    uint32_t ca = 0, cb = 0;
+    long px = 0;
+    memset(s_band[0], 0, SCR_W * BAND_H * 2);
+    memset(s_band[1], 0, SCR_W * BAND_H * 2);
+
+    for (int rep = 0; rep < 4; rep++) {
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < nseg; i++)
+            band_line_fast_ref(s_band[0], 0, BAND_H - 1,
+                               seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1, 0x17CD);
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < nseg; i++)
+            band_line_fast(s_band[1], 0, BAND_H - 1,
+                           seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1, 0x17CD);
+        const uint32_t t2 = esp_cpu_get_cycle_count();
+        ca += t1 - t0;
+        cb += t2 - t1;
+    }
+    for (int i = 0; i < nseg; i++) {
+        const int a = abs(seg[i].x1 - seg[i].x0), b = abs(seg[i].y1 - seg[i].y0);
+        px += (a > b ? a : b) + 1;
+    }
+    out->ref_us = ca / 240u;
+    out->now_us = cb / 240u;
+    out->lines  = nseg * 4;
+    out->px     = px * 4;
+    out->same   = memcmp(s_band[0], s_band[1], SCR_W * BAND_H * 2) == 0;
 }
 
 // THE GLYPH NEST, AS IT WAS, kept only so the bench has something to be faster than.
@@ -1616,6 +1734,7 @@ void vg_rast_flush(void) {
     s_sky_us = s_prim_us = s_scan_us = 0;
     s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = s_cyc_can = 0;
     s_cyc_pt = s_cyc_gl = s_cyc_fl = 0;
+    s_ln_px = s_ln_n = 0;
     s_tint_us = 0;
 
     const float tint_k = s_tint_k;
