@@ -158,7 +158,21 @@
 // SPHERE multiplies HUD_WARP_K, so at 1.0 the frame sits on exactly the surface the
 // instruments are drawn on and the two agree. Raise it to bulge the frame more than the panel
 // mounted on it; drop it to 0 for a flat zoom.
-#define CANOPY_WARP_SPHERE   1.0f
-#define CANOPY_WARP_ZOOM     0.13f
+// SPHERE HAS A CEILING, and it is about 2.27.
+//
+// The y map's slope is 1 + K*SPHERE*a*(dx^2 + 3dy^2)/R^2. R^2 is CX^2+CY^2 and |dy| is at most
+// CY, so the bracket reaches 2.0 -- meaning |K*SPHERE| must stay under 0.5 or the map stops
+// being monotone, a run's end lands before its start, and the frame grows holes where it
+// folds. HUD_WARP_K is -0.22, so anything past ~2.27 folds. The renderer drops a block whose
+// length comes out negative, so the failure is holes rather than corruption, but it is still a
+// failure.
+//
+// ZOOM is the expensive half and SPHERE is nearly free: magnifying makes some columns get read
+// twice, while the bulge only moves runs about. Measured, 4086 us rigid, 4922 with zoom 0.13
+// and no sphere, 4664 with both -- the sphere REDUCED it, because K is negative and pulls the
+// frame inward at the edges. So bulge is the cheap way to get the effect and magnification is
+// the dear one.
+#define CANOPY_WARP_SPHERE   2.0f
+#define CANOPY_WARP_ZOOM     0.06f
 #define CANOPY_WARP_BOW      11.0f
 #define CANOPY_WARP_STEPS    12
