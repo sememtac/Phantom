@@ -298,3 +298,30 @@
 // cannot clip, which is the point: the previous version reached white by lerping the panel's
 // orange in an additive table, passed through a hot salmon on the way, and blew out the hue.
 #define CANOPY_INTRO_WHITE     0xFFFFu
+
+// THE MEMBERS LIGHT UP, and this one is a bug the author kept.
+//
+// The first version flashed the frame's members instead of the region and blew the hue out doing
+// it. Wrong area -- but the blow-out itself looked good, so it is deliberate now and it runs on
+// the DISSOLVE, where there is something behind the members for it to clip against.
+//
+// LIT is how long a region's members take to cool from white-hot to their authored level, timed
+// from the end of its DISSOLVE. They hold full heat until then, and the timing is the whole
+// trick: a member is invisible against its own region's white fill, so cooling them from the
+// moment the region lit meant the glow peaked with nothing behind it to clip against and was
+// already gone by the time world cells came through. The heat has to outlast the dissolve,
+// because the world is what it saturates against. The frame is the LAST thing to settle.
+//
+// PEAK is how crazy it gets, and it is the interesting dial. The colour comes from SATURATION:
+// red has five bits and clips first, green has six and holds longer, so a rising white delta over
+// a lit world passes through magenta and amber on its way out. At 1.0 the members start fully
+// white -- which is the one part of the ramp with no colour in it at all -- so pulling this DOWN
+// gives more hue, not less. Below about 0.5 it stops reading as heat.
+#define CANOPY_INTRO_LIT       0.45f
+#define CANOPY_INTRO_LIT_PEAK  0.85f
+
+// Quantised, for the reason everything else here is: the per-zone colour table is rebuilt when a
+// glow changes, and a float would rebuild all four every frame. At 24 steps over LIT's 0.45 s a
+// step lasts about a frame, and the ramp is a colour sweep rather than a brightness,
+// so nothing reads as stepped.
+#define CANOPY_INTRO_QSTEP     24

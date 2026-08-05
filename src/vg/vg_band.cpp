@@ -1634,11 +1634,51 @@ void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, f
 // have both read the same unwarped column. CANOPY_INTRO_SETTLE then ramps the flex in at the
 // end, because the resting warp is a long way from flat and the cockpit would otherwise jump
 // the moment the sequence released.
+// THE MEMBERS LIGHT UP TOO, and this part started as a bug the author liked.
+//
+// The first version flashed the frame's BLOCKS instead of the region, by lerping the panel's
+// orange toward white in a per-zone table. That was the wrong AREA -- and it also blew the hue
+// out, because a near-white delta added onto an already-bright view clips the three channels at
+// different points and the colour swings on the way. The author saw both, and asked for the
+// second one back on top of the corrected first one.
+//
+// So it is deliberate now, and it has somewhere to live: not the white hold, where a member
+// drawn additively onto white is invisible, but the DISSOLVE. As world cells come through, the
+// members over them are hot and cooling, so the frame lights up as its region resolves and
+// settles to its authored level afterwards.
+//
+// The saturation IS the effect. Nothing here reaches for a hue sweep, because the clip does it
+// for free: red is five bits and saturates first, green has six and holds longer, so a rising
+// white delta over a lit world passes through magenta and amber before it whites out. Note that
+// CANOPY_INTRO_LIT_PEAK below is what governs how much of that is seen -- at 1.0 the members
+// spend their first moments fully white, which is the part with no colour in it at all.
 static bool    s_intro_on   = false;
 static float   s_intro_t    = 0.0f;
 static uint8_t s_izon[CANOPY_ZONES];      // 0 held, 255 fully dissolved to the world
 static uint8_t s_ilive[CANOPY_ZONES];     // whether this zone's blocks are drawn at all
 static uint16_t s_ifill[CANOPY_ZONES];    // what a held pixel is: black before the flash, white after
+static uint8_t s_iglow[CANOPY_ZONES];     // 255 white-hot members, 0 their authored level
+static uint8_t s_iq[CANOPY_ZONES];        // the quantised glow each table was built for
+static uint16_t s_ilut[CANOPY_ZONES][256];
+
+// A zone's member colours, from white-hot down to the authored level.
+//
+// Quantised by the caller, so this runs a couple of dozen times across a region's cool-down
+// rather than once a frame per zone.
+static void canopy_ilut(int z) {
+    const uint32_t t = (uint32_t)s_iglow[z];        // 0..255 toward white
+    for (int g = 0; g < 256; g++) {
+        const uint32_t v = s_can_lut[g];            // panel order
+        const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
+        const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
+        const uint32_t R = r  + (((31u - r)  * t) >> 8);
+        const uint32_t G = gg + (((63u - gg) * t) >> 8);
+        const uint32_t B = b  + (((31u - b)  * t) >> 8);
+        const uint32_t o = (R << 11) | (G << 5) | B;
+        s_ilut[z][g] = (uint16_t)(((o >> 8) | (o << 8)) & 0xFFFFu);
+    }
+    s_iq[z] = s_iglow[z];
+}
 
 // A DITHER, NOT A FADE, and it is both cheaper and a better fit.
 //
@@ -1762,8 +1802,9 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             // WHOSE TURN IT IS. The zone is only meaningful in the intro table, where a block
             // never spans two of them, so a zone that has not come up yet skips whole blocks.
             //
-            // The level is the AUTHORED one either way. The flash belongs to the region, not to
-            // the block -- see the note at the intro state.
+            // The region's own flash is a flat fill and is already down by the time this runs;
+            // what the zone picks here is how hot its MEMBERS still are. Two separate things, and
+            // conflating them is what went wrong the first time -- see the note at the intro state.
             const uint16_t* lut = s_can_lut;
             if (INTRO) {
                 const int z = (h >> 2) & 15;
@@ -1771,6 +1812,7 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                     p += (h & 0x80) ? len : 1;
                     continue;
                 }
+                lut = s_ilut[z];
             }
 
             int at = y0, n = len, skip = 0, n0 = len;
@@ -1824,6 +1866,8 @@ void vg_canopy_intro_begin(void) {
     if (!s_can_ready) canopy_lut();
     for (int z = 0; z < CANOPY_ZONES; z++) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
+        s_iglow[z] = 255;                                // and white-hot the moment it lights
+        canopy_ilut(z);
     }
     // Nothing left over on the spring, or the frame would start the sequence already leaning.
     for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
@@ -1870,16 +1914,37 @@ bool vg_canopy_intro_update(float dt) {
         if (r < 0.0f) r = 0.0f;
         if (r > 1.0f) r = 1.0f;
         s_izon[z] = (uint8_t)(r * 255.0f + 0.5f);
+
+        // The members HOLD at full heat through the dissolve and cool only afterwards.
+        //
+        // Cooling them from the moment the region lit was the obvious reading and it wasted the
+        // effect: a member is invisible against the region's own white fill, so at the instant the
+        // glow peaked there was nothing behind it to clip against, and by the time world cells
+        // came through the colour had already gone. The heat has to still be there when the world
+        // arrives, because the world is what it saturates against.
+        //
+        // So the frame is the LAST thing to settle, cooling over LIT after its region is fully in.
+        float f = 1.0f - (e - CANOPY_INTRO_FLASH - CANOPY_INTRO_DISSOLVE) / CANOPY_INTRO_LIT;
+        if (f < 0.0f) f = 0.0f;
+        if (f > 1.0f) f = 1.0f;
+        f *= CANOPY_INTRO_LIT_PEAK;
+        const int q = (int)(f * CANOPY_INTRO_QSTEP + 0.5f);
+        const uint8_t want = (uint8_t)((q * 255) / CANOPY_INTRO_QSTEP);
+        if (want != s_iq[z]) { s_iglow[z] = want; canopy_ilut(z); }
     }
 
-    // Over when the last zone has dissolved through. The settle that follows is not part of it:
-    // the view is fully in by then and the frame is merely taking up its flex.
+    // Over when the last zone's members have finished cooling, which is now the last thing to
+    // happen anywhere in the sequence. The settle that follows is not part of it: the view is
+    // fully in well before this and the frame is merely taking up its flex.
     const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
-                    + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE;
+                    + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
     if (s_intro_t >= end) {
         s_intro_on = false;
         s_settle_t = 0.0f;
-        for (int z = 0; z < CANOPY_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; }
+        for (int z = 0; z < CANOPY_ZONES; z++) {
+            s_izon[z] = 255; s_ilive[z] = 1;
+            if (s_iglow[z]) { s_iglow[z] = 0; canopy_ilut(z); }
+        }
         return false;
     }
     return true;
@@ -2125,7 +2190,10 @@ void vg_canopy_bench(VgCanopyCost* out) {
     // and believed. Measured on purpose in the third pass below.
     const bool  save_in = s_intro_on;
     uint8_t     save_live[CANOPY_ZONES], save_rev[CANOPY_ZONES];
-    for (int z = 0; z < CANOPY_ZONES; z++) { save_live[z] = s_ilive[z]; save_rev[z] = s_izon[z]; }
+    uint16_t    save_fill[CANOPY_ZONES];
+    for (int z = 0; z < CANOPY_ZONES; z++) {
+        save_live[z] = s_ilive[z]; save_rev[z] = s_izon[z]; save_fill[z] = s_ifill[z];
+    }
     s_intro_on = false;
 
     uint32_t cyc = 0, cal = 0, wcyc = 0, icyc = 0;
@@ -2160,7 +2228,9 @@ void vg_canopy_bench(VgCanopyCost* out) {
     // dips" is a number rather than an impression, and so the next person to widen the zones
     // knows what they are spending.
     s_intro_on = true;
-    for (int z = 0; z < CANOPY_ZONES; z++) { s_ilive[z] = 1; s_izon[z] = 128; }
+    for (int z = 0; z < CANOPY_ZONES; z++) {
+        s_ilive[z] = 1; s_izon[z] = 128; s_ifill[z] = CANOPY_INTRO_WHITE;
+    }
     vg_canopy_warp(0.0f);
     for (int py = 0; py < SCR_H; py++) {
         for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;
@@ -2171,7 +2241,9 @@ void vg_canopy_bench(VgCanopyCost* out) {
 
     s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
     s_intro_on = save_in;
-    for (int z = 0; z < CANOPY_ZONES; z++) { s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; }
+    for (int z = 0; z < CANOPY_ZONES; z++) {
+        s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; s_ifill[z] = save_fill[z];
+    }
 
     out->us       = (cyc  > cal ? cyc  - cal : 0) / 240u;
     out->warp_us  = (wcyc > cal ? wcyc - cal : 0) / 240u;
