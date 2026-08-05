@@ -417,11 +417,19 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     float warp = HUD_WARP_SPEED_MIN + (1.0f - HUD_WARP_SPEED_MIN) * sn;
     warp = floorf(warp * HUD_WARP_STEPS + 0.5f) / HUD_WARP_STEPS;
 
-    // The canopy flexes on the same throttle, so the frame and the instruments mounted on it
-    // move together. It takes the RAW normalised throttle rather than `warp`: the instruments'
-    // bend starts at HUD_WARP_SPEED_MIN and is never zero, while the frame should be rigid at
-    // rest and only give under thrust. It quantises itself -- its offsets are whole pixels.
-    vg_canopy_warp(sn);
+    // THE CANOPY RELAXES AS THE SHIP ACCELERATES -- inverted against the instruments, and
+    // deliberately. At rest the frame is at full bulge and sits close; opening the throttle
+    // flattens it out, which reads as being pressed back into the seat rather than pulled
+    // toward the glass.
+    //
+    // It also puts the cost in the right place. The warp is at its most expensive at amount 1,
+    // and that is now IDLE -- where the scene is quiet -- while full throttle, when the trails
+    // are longest and the bands are closest to overrunning, pays nothing at all. The two worst
+    // cases no longer land on the same frame.
+    //
+    // Raw normalised throttle rather than `warp`, which starts at HUD_WARP_SPEED_MIN and is
+    // never zero. This one has to reach both ends.
+    vg_canopy_warp(1.0f - sn);
 
     // Instruments come up as a hologram catching: mostly absent at first,
     // flickering in, solid by the end. Driven by dropping whole frames rather

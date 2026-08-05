@@ -261,6 +261,27 @@ would move the simulation off the sequence the recording was made from.
 | `canopy_bake.py` | turns a canopy drawing into a table the firmware draws |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
 
+## Serial commands
+
+Single bytes, typed at the board while nothing else holds the port.
+
+| byte | does |
+|---|---|
+| `q` | antialiasing on the instruments, on and off |
+| `k` | what the canopy costs, rigid and warped |
+| `y` | what the backdrop costs, prep and fill, with a checksum |
+| `g` | the glyph nest, old against new, over fixed text |
+| `l` | the line walk, old against new, over a fan of every slope |
+| `x` `X` | fire an explosion, and cycle the preset |
+| `b` | link throughput, no rendering |
+| `!` | reboot |
+
+`s`, `R`, `E`, `P`, `H` and `A` belong to the capture and replay protocol. Do not
+take one for anything else: `s` stops a capture, and a bench that shadowed it
+broke recording down to a single frame. Every bench also refuses to run while a
+capture or a replay owns the link, because they all draw into the band buffers the
+frame being streamed is built in.
+
 Both front ends use `phantom_link`, so there is one copy of the protocol code.
 The first version had two bugs of the type that one copy prevents. It looked for
 the frame magic inside binary data, and it copied the rotation of the firmware

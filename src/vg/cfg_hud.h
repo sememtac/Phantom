@@ -142,16 +142,19 @@
 // A run can be moved by moving its endpoints, so this costs two table reads and an add per
 // BLOCK and nothing at all per pixel. See the note above vg_canopy_warp.
 //
-// ZOOM is how much BIGGER the frame gets at full throttle, as a fraction, in both axes -- the
-// player being pulled up against the canopy rather than the frame merely stretching. One axis
-// alone made it taller, not nearer. BOW is how many pixels the outermost columns shift
-// relative to the middle, so the frame bends as well as grows. STEPS quantises the amount so
-// the maps are rebuilt a handful of times rather than every frame; the offsets are whole
-// pixels regardless, so nothing shimmers between steps.
+// These describe the warp AT REST, because the canopy is inverted against the instruments:
+// full bulge with the throttle closed, flattening to nothing as the ship accelerates. See the
+// note at the vg_canopy_warp call in vg_render.cpp.
 //
-// The cost rises with ZOOM, because magnifying reads some columns twice -- and it peaks at
-// full throttle, which is also when the trails are longest. Watch `can` in a fast run, not
-// at rest.
+// ZOOM is how much BIGGER the frame is at rest, as a fraction, in both axes -- the frame
+// sitting close rather than merely stretched. One axis alone made it taller, not nearer.
+// SPHERE multiplies HUD_WARP_K so the frame lies on the instruments' own surface. BOW is how
+// many pixels the outermost columns shift relative to the middle, on top of the sphere. STEPS
+// quantises the amount so the maps are rebuilt a handful of times across a throttle sweep; the
+// offsets are whole pixels regardless, so nothing shimmers between steps.
+//
+// The cost rises with ZOOM, because magnifying reads some columns twice. Being inverted, that
+// cost now falls at IDLE, where there is room for it, and full throttle pays nothing.
 // SPHERE multiplies HUD_WARP_K, so at 1.0 the frame sits on exactly the surface the
 // instruments are drawn on and the two agree. Raise it to bulge the frame more than the panel
 // mounted on it; drop it to 0 for a flat zoom.

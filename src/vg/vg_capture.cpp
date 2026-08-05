@@ -227,7 +227,7 @@ void vg_capture_poll(void) {
             const bool on = !vg_rast_aa_master_on();
             vg_rast_aa_master(on);
             if (!vg_link_busy()) Serial.println(on ? "hud aa: on" : "hud aa: off");
-        } else if (c == 'k') {
+        } else if (c == 'k' && !vg_link_busy()) {
             // WHAT THE CANOPY COSTS, from anywhere -- the attract loop included.
             //
             // The drawing only appears in a match, so the frame counter needs a pilot,
@@ -242,7 +242,14 @@ void vg_capture_poll(void) {
                               (unsigned long)k.us, (unsigned long)k.warp_us,
                               k.blocks, k.flat_px, k.lit_px);
             }
-        } else if (c == 's') {
+        } else if (c == 'y' && !vg_link_busy()) {
+            // 'y', NOT 's'. The host sends 's' to stop a capture -- phantom_link.close does
+            // it unconditionally -- and there is an `else if (c == 's' && s_mode)` further
+            // down that has done that since long before these benches existed. Claiming 's'
+            // here shadowed it: a recording could no longer be stopped, and the byte meant to
+            // stop it regenerated the backdrop and refilled a live band buffer instead. One
+            // frame came back.
+            //
             // THE BACKDROP, split into prep and fill, with a checksum.
             //
             // The checksum is what makes this safe to optimise against: the fill must come
@@ -256,7 +263,7 @@ void vg_capture_poll(void) {
                               (unsigned long)s.prep_us, (unsigned long)s.fill_us,
                               (unsigned long)s.sum);
             }
-        } else if (c == 'g') {
+        } else if (c == 'g' && !vg_link_busy()) {
             // The glyph nest, plain against hoisted, over identical text. `same` is the
             // part that matters: a faster loop that draws different pixels is not faster.
             VgGlyphCost k{};
@@ -267,7 +274,7 @@ void vg_capture_poll(void) {
                               (unsigned long)k.ref_us, (unsigned long)k.now_us, k.glyphs,
                               (int)NUM_BANDS, k.same ? "IDENTICAL" : "DIFFERENT");
             }
-        } else if (c == 'l') {
+        } else if (c == 'l' && !vg_link_busy()) {
             VgLineCost k{};
             vg_line_bench(&k);
             if (!vg_link_busy()) {
