@@ -314,10 +314,24 @@
 // is one -- a course briefing is information and a taunt is flavour -- so this trails the gate
 // rather than sitting on it.
 #define BOOT_FIRST_TAUNT       0.80f
+// ONE DIAL FOR THE WHOLE SEQUENCE'S SPEED, because it has been retuned three times and four
+// separate edits would eventually disagree with each other. Above 1 is faster: 1.25 runs the
+// regions through a quarter quicker than the authored numbers below.
+//
+// It scales the REGIONS -- the gap between them, the flash, the dissolve and the members cooling.
+// It deliberately does NOT scale LEAD, because the second of dark at the start is not pacing, it
+// is the thing the sequence is for and the author set it by hand. Nor SETTLE, which is the frame
+// taking up its flex after everything else is done.
+//
+// The authored numbers stay visible underneath, so what the sequence was designed at is still
+// legible after the rate has been moved. And CANOPY_INTRO_HUD_AT is a FRACTION, so the
+// instruments' cue rides this automatically rather than needing its own correction.
+#define CANOPY_INTRO_RATE      1.25f
+
 #define CANOPY_INTRO_LEAD      1.00f
-#define CANOPY_INTRO_STEP      0.30f
-#define CANOPY_INTRO_FLASH     0.03f
-#define CANOPY_INTRO_DISSOLVE  0.32f
+#define CANOPY_INTRO_STEP      (0.30f / CANOPY_INTRO_RATE)
+#define CANOPY_INTRO_FLASH     (0.03f / CANOPY_INTRO_RATE)
+#define CANOPY_INTRO_DISSOLVE  (0.32f / CANOPY_INTRO_RATE)
 #define CANOPY_INTRO_SETTLE    0.55f
 
 // THE FLASH COLOUR, as RGB565 in PANEL byte order -- it is stored straight into the band buffer,
@@ -348,11 +362,11 @@
 // a lit world passes through magenta and amber on its way out. At 1.0 the members start fully
 // white -- which is the one part of the ramp with no colour in it at all -- so pulling this DOWN
 // gives more hue, not less. Below about 0.5 it stops reading as heat.
-#define CANOPY_INTRO_LIT       0.45f
+#define CANOPY_INTRO_LIT       (0.45f / CANOPY_INTRO_RATE)
 #define CANOPY_INTRO_LIT_PEAK  0.85f
 
 // Quantised, for the reason everything else here is: the per-zone colour table is rebuilt when a
-// glow changes, and a float would rebuild all four every frame. At 24 steps over LIT's 0.45 s a
-// step lasts about a frame, and the ramp is a colour sweep rather than a brightness,
+// glow changes, and a float would rebuild all four every frame. At 24 steps over LIT's third of
+// a second a step lasts about a frame, and the ramp is a colour sweep rather than a brightness,
 // so nothing reads as stepped.
 #define CANOPY_INTRO_QSTEP     24
