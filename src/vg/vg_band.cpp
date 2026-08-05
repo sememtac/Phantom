@@ -1251,6 +1251,25 @@ static inline void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) 
 //
 // Out of line, this loop gets the register file to itself. A call costs a handful of
 // cycles once per block, and a block averages thirty-odd pixels.
+// A STRETCHED literal block, resampled rather than over-read.
+//
+// A literal block carries one level byte per DRAWING pixel. Magnified, its panel length is
+// longer than its data, and the plain span above would read past the end of its own levels
+// into the next block's -- which are frequently much brighter. That is the bright pixels
+// bleeding through the frame at full zoom: not a blend fault, an array read one block too far.
+//
+// Fixed point, 16.16: `step` is drawing pixels per panel pixel and `i0` is where the clipped
+// front starts. Only the graded edges take this path and only while the warp is on, so it
+// stays a plain per-pixel walk -- pairing it would save little and this is 4,792 pixels.
+#define SPAN_LIT_RS_BODY(FN)                                                     uint32_t idx = i0;                                                           for (int i = 0; i < n; i++) {                                                    const uint32_t d = s_can_lut[lv[idx >> 16]];                                 q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                         idx += step;                                                             }
+
+static __attribute__((noinline))
+void span_lit_add_rs(uint16_t* q, int n, const uint8_t* lv, uint32_t i0, uint32_t step)
+{ SPAN_LIT_RS_BODY(px_add) }
+static __attribute__((noinline))
+void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, uint32_t i0, uint32_t step)
+{ SPAN_LIT_RS_BODY(px_sub) }
+
 static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_add) }
 static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_sub) }
 
@@ -1358,12 +1377,13 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             const int     len = ((h & 2) << 7) | p[2];
             p += 3;
 
-            int at = y0, n = len, skip = 0;
+            int at = y0, n = len, skip = 0, n0 = len;
             if (WARP) {
                 // Both ends through the same map, and the length is the difference -- so the
                 // run still ends exactly where the next one starts.
                 at = s_wy[y0] + wofs;
                 n  = s_wy[y0 + len] + wofs - at;
+                n0 = n;                       // before clipping: what the step is measured on
                 // THE TABLE'S OWN BOUNDS NO LONGER APPLY. Baked, every block was inside the
                 // row by construction and the baker verifies it; moved at runtime, that
                 // guarantee is gone and a block can hang off either edge. Trimming the FRONT
@@ -1375,8 +1395,17 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             }
 
             if (h & 0x80) {                              // a level per pixel
-                if (h & 0x40) span_lit_sub(&row[at], n, p + skip);
-                else          span_lit_add(&row[at], n, p + skip);
+                if (WARP && n0 != len) {
+                    // Stretched or squeezed: walk the levels at the ratio rather than one
+                    // for one, or the block reads past its own data. See span_lit_add_rs.
+                    const uint32_t step = ((uint32_t)len << 16) / (uint32_t)n0;
+                    const uint32_t i0   = (uint32_t)skip * step;
+                    if (h & 0x40) span_lit_sub_rs(&row[at], n, p, i0, step);
+                    else          span_lit_add_rs(&row[at], n, p, i0, step);
+                } else {
+                    if (h & 0x40) span_lit_sub(&row[at], n, p + skip);
+                    else          span_lit_add(&row[at], n, p + skip);
+                }
                 p += len;
             } else {                                     // one level, delta hoisted
                 const uint16_t d = s_can_lut[*p++];
