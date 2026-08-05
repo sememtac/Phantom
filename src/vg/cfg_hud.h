@@ -152,6 +152,10 @@
 // The cost rises with ZOOM, because magnifying reads some columns twice -- and it peaks at
 // full throttle, which is also when the trails are longest. Watch `can` in a fast run, not
 // at rest.
+// SPHERE multiplies HUD_WARP_K, so at 1.0 the frame sits on exactly the surface the
+// instruments are drawn on and the two agree. Raise it to bulge the frame more than the panel
+// mounted on it; drop it to 0 for a flat zoom.
+#define CANOPY_WARP_SPHERE   1.0f
 #define CANOPY_WARP_ZOOM     0.13f
 #define CANOPY_WARP_BOW      11.0f
 #define CANOPY_WARP_STEPS    12

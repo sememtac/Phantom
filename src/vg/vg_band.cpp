@@ -1298,6 +1298,30 @@ static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uin
 // quantised deliberately -- a fractional shift moves every instrument line by part of a pixel
 // and reads as shimmer -- and this one quantises itself, because a table of pixel offsets has
 // nowhere to put a fraction.
+// THE SPHERE, the same one the instruments are drawn on.
+//
+// A radial warp is NOT separable: k = 1 + K*scale*r2 scales both axes by an amount that
+// depends on both coordinates, so a y-map plus a column offset -- which is what this was --
+// can only ever produce a shear and a zoom. It read as the frame growing and bending rather
+// than bulging.
+//
+// Done properly in two halves, because the renderer iterates panel ROWS and can only lay runs
+// along panel x within one:
+//
+//   the y axis is EXACT. dx is fixed for the whole column, so dx*dx hoists and each block
+//   endpoint costs a subtract, two multiplies, two adds and a round -- about seven operations.
+//   Both endpoints go through it and the length is the difference, so runs still touch.
+//
+//   the x axis is an inverse. For each output row, which drawing column lands here -- built by
+//   walking the forward map, which is monotone for any |K| the panel uses. Evaluated at the
+//   screen's own centre line, so a point's sideways displacement is taken as constant down its
+//   column. That is the one approximation, and it is the same one the rear-view patch makes.
+//
+// Rebuilt only when the quantised amount changes, so the 480 forward evaluations and the
+// inversion are paid a handful of times across a throttle sweep, not per frame.
+static float   s_w_zk   = 0.0f;    // zoom * K * scale / R2
+static float   s_w_zoom = 1.0f;
+static float   s_w_zbase[SCR_H];   // zoom + zoom*K*scale*dx^2/R2, per SOURCE column
 static int16_t s_wy[SCR_W + 1];
 static int16_t s_wc[SCR_H];
 // WHICH DRAWING COLUMN A PANEL ROW SAMPLES, which is the other half of coming closer.
@@ -1323,23 +1347,35 @@ void vg_canopy_warp(float k) {
     if (q == s_wq) return;
     s_wq = q;
 
-    const float a  = (float)q / (float)CANOPY_WARP_STEPS;
-    const float cy = (float)(SCR_W - 1) * 0.5f;
-    const float s  = 1.0f + CANOPY_WARP_ZOOM * a;
-    for (int y = 0; y <= SCR_W; y++) {
-        int v = (int)(cy + ((float)y - cy) * s + 0.5f);
-        if (v < 0) v = 0; else if (v > SCR_W) v = SCR_W;
-        s_wy[y] = (int16_t)v;
+    const float a    = (float)q / (float)CANOPY_WARP_STEPS;
+    const float zoom = 1.0f + CANOPY_WARP_ZOOM * a;
+    const float R2   = (float)SCR_CX * SCR_CX + (float)SCR_CY * SCR_CY;
+    const float krn  = HUD_WARP_K * CANOPY_WARP_SPHERE * a / R2;
+    s_w_zoom = zoom;
+    s_w_zk   = zoom * krn;
+
+    // The forward map along x at the centre line, then inverted. Monotone, so one walk.
+    static int16_t fwd[SCR_H];
+    for (int x = 0; x < SCR_H; x++) {
+        const float dx = (float)x - (float)SCR_CX;
+        fwd[x] = (int16_t)(int)((float)SCR_CX + dx * zoom * (1.0f + krn * dx * dx) + 0.5f);
+        // ...and what a block endpoint in this column will need, less its dy terms.
+        s_w_zbase[x] = zoom + s_w_zk * dx * dx;
     }
-    // The bow, per column, measured from the middle of the frame outward.
+    {
+        int x = 0;
+        for (int xp = 0; xp < SCR_H; xp++) {
+            while (x < SCR_H - 1 && fwd[x] < xp) x++;
+            int best = x;
+            if (x > 0 && (xp - fwd[x - 1]) < (fwd[x] - xp)) best = x - 1;
+            s_wcol[xp] = (int16_t)best;
+        }
+    }
+    // The bow, on top of the sphere, for an author who wants more bend than the panel has.
     const float cx = (float)(SCR_H - 1) * 0.5f;
-    const float inv = 1.0f / s;
     for (int c = 0; c < SCR_H; c++) {
         const float t = ((float)c - cx) / cx;          // -1 .. 1
         s_wc[c] = (int16_t)(int)(CANOPY_WARP_BOW * a * t * t * (t < 0.0f ? -1.0f : 1.0f));
-        // The same magnification in the column axis, sampled.
-        const int d = (int)(cx + ((float)c - cx) * inv + 0.5f);
-        s_wcol[c] = (int16_t)((d >= 0 && d < SCR_H) ? d : -1);
     }
 }
 
@@ -1348,6 +1384,12 @@ void vg_canopy_warp(float k) {
 // Asked per block, the flag cost 83 us of a 4042 us pass for a question whose answer is the
 // same for the whole frame -- the same shape of waste the sky fill's tint flag was. Two
 // instantiations, and the rigid one carries no warp code at all.
+// One endpoint onto the sphere. `zbase` carries the column's dx term; only dy is left.
+static inline int warp_y(int y, float zbase) {
+    const float dy = (float)y - (float)SCR_CY;
+    return (int)((float)SCR_CY + dy * (zbase + s_w_zk * dy * dy) + 0.5f);
+}
+
 template <bool WARP>
 static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
@@ -1369,7 +1411,9 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
         // in the flag byte. The side is in the header too: a block never crosses the
         // background, so nothing here tests light against shade per pixel.
-        const int wofs = WARP ? s_wc[c] : 0;
+        const int   wofs  = WARP ? s_wc[c] : 0;
+        // dx is the same for every block in this column, so its share of the sphere hoists.
+        const float zbase = WARP ? s_w_zbase[c] : 0.0f;
 
         while (p + 3 <= e) {
             const uint8_t h   = p[0];
@@ -1381,8 +1425,8 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             if (WARP) {
                 // Both ends through the same map, and the length is the difference -- so the
                 // run still ends exactly where the next one starts.
-                at = s_wy[y0] + wofs;
-                n  = s_wy[y0 + len] + wofs - at;
+                at = warp_y(y0,       zbase) + wofs;
+                n  = warp_y(y0 + len, zbase) + wofs - at;
                 n0 = n;                       // before clipping: what the step is measured on
                 // THE TABLE'S OWN BOUNDS NO LONGER APPLY. Baked, every block was inside the
                 // row by construction and the baker verifies it; moved at runtime, that
