@@ -1336,6 +1336,38 @@ static int16_t s_wc[SCR_H];
 // twice. On a cockpit frame that reads as the members thickening slightly, which is what
 // something approaching does anyway. -1 means this row is off the drawing entirely.
 static int16_t s_wcol[SCR_H];
+
+// WHERE A WARPED BAND BALANCES, which the baked table cannot know.
+//
+// CANOPY_SPLIT is computed by the baker from where the drawing's work falls, and it is right
+// only while each panel row reads its own column. Warping breaks that: the inverse column map
+// duplicates some columns and skips others, so the work slides along the band and the baked
+// balance point stops being the middle of it. A band costs whichever half is slower, so the
+// error is paid in full and it grows with ZOOM -- which is the setting the look depends on.
+//
+// Rebuilt with the maps, from the same per-column costs the baker used. s_colcost is walked
+// out of the table once, on the first warp.
+static uint8_t  s_wsplit[NUM_BANDS];
+static uint16_t s_colcost[SCR_H];
+static bool     s_colcost_ready = false;
+
+static void canopy_colcost(void) {
+    for (int c = 0; c < SCR_H; c++) {
+        uint32_t cost = 0;
+        if (c < CANOPY_COLS) {
+            const uint8_t* p = &CANOPY_DATA[CANOPY_OFS[c]];
+            const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
+            while (p + 3 <= e) {
+                const uint8_t h = p[0];
+                const int len = ((h & 2) << 7) | p[2];
+                p += 3 + ((h & 0x80) ? len : 1);
+                cost += (uint32_t)len + 1;      // a header is worth about one pixel
+            }
+        }
+        s_colcost[c] = (uint16_t)(cost > 0xFFFFu ? 0xFFFFu : cost);
+    }
+    s_colcost_ready = true;
+}
 static int     s_wq = -1;                 // the quantised amount the maps were built for
 static bool    s_warp_on = false;
 
@@ -1371,6 +1403,29 @@ void vg_canopy_warp(float k) {
             s_wcol[xp] = (int16_t)best;
         }
     }
+    // And where each band now balances, from the columns the rows actually read.
+    if (!s_colcost_ready) canopy_colcost();
+    for (int b = 0; b < NUM_BANDS; b++) {
+        uint32_t rowc[BAND_H], total = 0;
+        for (int r = 0; r < BAND_H; r++) {
+            const int lx = SCR_H - 1 - (b * BAND_H + r);
+            const int sc = (lx >= 0 && lx < SCR_H) ? s_wcol[lx] : -1;
+            rowc[r] = (sc >= 0) ? s_colcost[sc] : 0u;
+            total  += rowc[r];
+        }
+        int at = ROW_SPLIT;
+        if (total) {
+            uint32_t run = 0, best = 0xFFFFFFFFu;
+            for (int r = 1; r < BAND_H; r++) {
+                run += rowc[r - 1];
+                const uint32_t gap = (run > total - run) ? run - (total - run)
+                                                        : (total - run) - run;
+                if (gap < best) { best = gap; at = r; }
+            }
+        }
+        s_wsplit[b] = (uint8_t)at;
+    }
+
     // The bow, on top of the sphere, for an author who wants more bend than the panel has.
     const float cx = (float)(SCR_H - 1) * 0.5f;
     for (int c = 0; c < SCR_H; c++) {
@@ -1826,7 +1881,8 @@ static void draw_band(int band_index, uint16_t* band) {
             // band costs the SLOWER half, so an even-looking split of uneven work
             // returns almost nothing -- measured, the midpoint gave 1.2 of the 1.9 ms
             // it should have. The baker computes the point; it is fifteen bytes.
-            const int at = CANOPY_SPLIT[band_index];
+            // Warped, the baked balance point is for a distribution that no longer applies.
+            const int at = s_warp_on ? s_wsplit[band_index] : CANOPY_SPLIT[band_index];
             const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
             canopy_rows(band, by0, 0, split ? at : BAND_H);
             if (split) rowsplit_wait();

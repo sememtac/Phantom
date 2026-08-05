@@ -172,7 +172,14 @@
 // and no sphere, 4664 with both -- the sphere REDUCED it, because K is negative and pulls the
 // frame inward at the edges. So bulge is the cheap way to get the effect and magnification is
 // the dear one.
-#define CANOPY_WARP_SPHERE   2.0f
-#define CANOPY_WARP_ZOOM     0.06f
+// TRIED AND REVERTED: sphere 2.0 with zoom 0.06. It measured 316 us CHEAPER than rigid and
+// looked worse, which is the whole argument for looking. r^2 concentrates the displacement at
+// the EDGES and leaves the middle alone, so a frame dominated by it pinches at the corners
+// while the centre of the drawing barely moves. ZOOM shifts everything by the same
+// proportion. What reads as the whole canopy warping is mostly ZOOM, with the sphere adding
+// curvature on top -- so the balance below is the look, and the cost has to come from
+// somewhere else.
+#define CANOPY_WARP_SPHERE   1.0f
+#define CANOPY_WARP_ZOOM     0.13f
 #define CANOPY_WARP_BOW      11.0f
 #define CANOPY_WARP_STEPS    12
