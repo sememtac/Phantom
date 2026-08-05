@@ -438,8 +438,15 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     //
     // Driven here rather than inside the warp, because it has to keep working when the warp
     // amount is zero.
-    vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f, vg.bank,
-                  vg.spec ? vg.spec->shake : 1.0f);
+    // The hull's character, compressed toward 1, times how open the throttle is. sn is the
+    // same normalised throttle the warp uses -- and the warp runs the other way, so the frame
+    // trades being close and still for being flat and alive as the ship gets moving.
+    {
+        const float shake = vg.spec ? vg.spec->shake : 1.0f;
+        const float hull  = 1.0f + (shake - 1.0f) * CANOPY_LAG_HULL;
+        const float thr   = CANOPY_LAG_IDLE + (1.0f - CANOPY_LAG_IDLE) * sn;
+        vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f, vg.bank, hull * thr);
+    }
 
     // Instruments come up as a hologram catching: mostly absent at first,
     // flickering in, solid by the end. Driven by dropping whole frames rather

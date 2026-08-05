@@ -202,3 +202,21 @@
 // Roll relative to the other two. A shear of the same pixel amount reads much stronger than a
 // translation of it -- the corners move while the middle does not -- so it is pulled back.
 #define CANOPY_LAG_ROLL   0.55f
+
+// HOW MUCH OF THE HULL'S CHARACTER TO USE. ShipSpec::shake spans 0.55 to 1.70, which is the
+// right ORDER and too wide a spread for this: a CHARIOT at the full 1.70 was too much while
+// the others were right. This compresses toward 1 without disturbing the ranking --
+// 1 + (shake - 1) * HULL -- so at 0.6 a CHARIOT is 1.42 and a BALLISTA 0.73.
+//
+// Compressed rather than lowering CANOPY_LAG_PX, because the complaint was about one hull, and
+// dropping the baseline would have taken the three that were already right down with it.
+#define CANOPY_LAG_HULL   0.60f
+
+// AND THE EFFECT GROWS WITH THE THROTTLE, reaching full only at full. A frame that flexed as
+// hard while parked as at top speed had nothing left to give when it mattered.
+//
+// IDLE is the fraction left at a closed throttle -- not zero, because a stationary ship being
+// pushed around still has mass. This runs opposite to the warp, which is at full bulge when
+// idle and flat at speed: so the frame is close and calm at rest, and flat and alive when
+// moving. That was not planned and it is worth keeping.
+#define CANOPY_LAG_IDLE   0.35f

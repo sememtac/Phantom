@@ -1511,16 +1511,25 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     for (int py = by0 + r0; py < by0 + r1; py++) {
         int lx = SCR_H - 1 - py;                       // this panel row IS a column
         if (WARP) {
+            // CLAMPED TO THE EDGE, NOT DROPPED.
+            //
+            // Shifting or magnifying moves the frame, and a row that lands off the drawing used
+            // to be skipped -- which leaves the screen edge empty on the side the frame moved
+            // away from, so the cockpit appears to slide and tear rather than to move. Clamping
+            // repeats the edge column instead, which is what a texture sampler does at its
+            // border and reads as the frame continuing past the screen. Where that column is
+            // background, nothing is drawn and nothing is smeared.
             lx += s_lag_px;                       // the frame trailing the turn
-            if (lx < 0 || lx >= SCR_H) continue;
+            if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
             lx = s_wcol[lx];
-            if (lx < 0) continue;
+            if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
         }
         // Mirrored only when the drawing is symmetric, which the baker decides and
         // records. An asymmetric frame stores every column and is read straight
         // through -- a cockpit is allowed to be lopsided.
-        const int c  = (CANOPY_MIRROR && lx >= CANOPY_COLS) ? (SCR_W - 1 - lx) : lx;
-        if (c < 0 || c >= CANOPY_COLS) continue;
+        int c = (CANOPY_MIRROR && lx >= CANOPY_COLS) ? (SCR_W - 1 - lx) : lx;
+        // Clamped for the same reason, and it also covers a drawing narrower than the screen.
+        if (c < 0) c = 0; else if (c >= CANOPY_COLS) c = CANOPY_COLS - 1;
 
         const uint8_t* p = &CANOPY_DATA[CANOPY_OFS[c]];
         const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
