@@ -196,9 +196,19 @@
 // camera, so the canopy borrows it instead of keeping a second table that could drift out of
 // agreement with it.
 #define CANOPY_LAG_PX     48.0f
-// Lower eases for longer: the smoothed copy takes more frames to catch up, so the swing both
-// grows further and takes longer to settle. 0.10 read as a flick; this is closer to weight.
-#define CANOPY_LAG_EASE   0.045f
+// The spring the frame hangs on. See the note above vg_canopy_lag.
+//
+// DRIVE is how hard a change in the stick kicks it -- the amplitude dial. SPRING is how long
+// the return takes, and it is the one that decides whether the ship feels heavy: 0.030 is a
+// period near 36 frames, about six tenths of a second. DAMP decides the overshoot; with this
+// SPRING it is a damping ratio around 0.64, so the frame comes home with one soft rebound
+// instead of ringing or arriving dead.
+//
+// Nothing here can move the frame in a single frame, which is the whole point -- the previous
+// first-order form snapped back the instant a finger left the glass.
+#define CANOPY_LAG_DRIVE  0.55f
+#define CANOPY_LAG_SPRING 0.030f
+#define CANOPY_LAG_DAMP   0.22f
 #define CANOPY_LAG_MAX    14.0f
 
 // Roll relative to the other two. A shear of the same pixel amount reads much stronger than a

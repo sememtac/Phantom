@@ -1395,25 +1395,52 @@ static bool    s_warp_on = false;
 // Each rides the difference between the command and a smoothed copy of it, so the frame swings
 // as a movement starts and stops and sits still through a held one. A canopy that stayed
 // displaced through a sustained roll would be a canopy coming loose from the ship.
-static float s_lag_sy = 0.0f, s_lag_sp = 0.0f, s_lag_sr = 0.0f;   // smoothed yaw, pitch, roll
+// A MASS ON A SPRING, not a difference.
+//
+// It used to be (command - smoothed) * gain. That eases on the way IN and cannot ease on the
+// way out: lifting a finger drops the command to zero in one frame, the smoothed copy has not
+// moved, so the difference -- and the frame with it -- jumps to its extreme instantly. Reported
+// as the canopy snapping back and the ship losing its weight, which is exactly what a
+// first-order difference does. The offset was a function of the instantaneous command, so any
+// step in the command was a step in the picture.
+//
+// Now the displacement is STATE. The command's rate of change drives it, a spring pulls it
+// home and damping settles it, so nothing the player does moves the frame in one frame -- only
+// its acceleration changes. Releasing the stick gives an equal and opposite kick and the frame
+// coasts back at the spring's own pace, overshooting slightly, which is what weight looks like.
+//
+// SPRING sets how long the return takes -- 0.030 is a period of about 36 frames, six tenths of
+// a second. DAMP sets how much it overshoots: this pair is a damping ratio near 0.64, so it
+// comes back with one soft rebound rather than ringing or arriving dead.
+static float s_lag_q[3]  = { 0.0f, 0.0f, 0.0f };   // last command, per axis
+static float s_lag_v[3]  = { 0.0f, 0.0f, 0.0f };   // velocity
+static float s_lag_x[3]  = { 0.0f, 0.0f, 0.0f };   // displacement
 static int   s_lag_px = 0;         // columns, from yaw
 static int   s_lag_py = 0;         // pixels along the drawing's y, from pitch
 static float s_lag_sh = 0.0f;      // pixels of y per column, from roll
 
 void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
+    const float cmd[3] = { yaw, pitch, roll };
+    float out[3];
+    for (int i = 0; i < 3; i++) {
+        const float a = cmd[i] - s_lag_q[i];       // the ship's angular acceleration, near enough
+        s_lag_q[i] = cmd[i];
+        s_lag_v[i] += a * CANOPY_LAG_DRIVE
+                    - s_lag_x[i] * CANOPY_LAG_SPRING
+                    - s_lag_v[i] * CANOPY_LAG_DAMP;
+        s_lag_x[i] += s_lag_v[i];
+        out[i] = s_lag_x[i];
+    }
+
     // The CLAMP scales with the airframe too. Scaling only the swing would have every hull
     // reach the same limit and arrive there at a different speed, which flattens exactly the
     // difference this is for -- a CHARIOT would clip where a BALLISTA never gets close.
-    const float lim = CANOPY_LAG_MAX * scale;
+    const float lim  = CANOPY_LAG_MAX * scale;
     const float gain = CANOPY_LAG_PX * scale;
 
-    s_lag_sy += (yaw   - s_lag_sy) * CANOPY_LAG_EASE;
-    s_lag_sp += (pitch - s_lag_sp) * CANOPY_LAG_EASE;
-    s_lag_sr += (roll  - s_lag_sr) * CANOPY_LAG_EASE;
-
-    float dx = (yaw   - s_lag_sy) * gain;
-    float dy = (pitch - s_lag_sp) * gain;
-    float dr = (roll  - s_lag_sr) * gain * CANOPY_LAG_ROLL;
+    float dx = out[0] * gain;
+    float dy = out[1] * gain;
+    float dr = out[2] * gain * CANOPY_LAG_ROLL;
     if (dx >  lim) dx =  lim; else if (dx < -lim) dx = -lim;
     if (dy >  lim) dy =  lim; else if (dy < -lim) dy = -lim;
     if (dr >  lim) dr =  lim; else if (dr < -lim) dr = -lim;
@@ -1422,12 +1449,7 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
     s_lag_py = (int)(dy + (dy < 0.0f ? -0.5f : 0.5f));
     // Pixels of y at the frame's edge, spread linearly across the columns.
     s_lag_sh = dr / (float)(SCR_H / 2);
-    const float d = dx;
-    // At a warp amount of zero the maps are the identity -- zoom 1, no sphere, no bow -- so
-    // running the warped path costs a little and draws exactly the rigid picture. That is what
-    // lets the lag work on its own, without a second code path for "shifted but not warped".
     if (s_lag_px || s_lag_py || s_lag_sh != 0.0f) s_warp_on = true;
-    (void)d;
 }
 
 void vg_canopy_warp(float k) {
