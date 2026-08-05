@@ -142,11 +142,16 @@
 // A run can be moved by moving its endpoints, so this costs two table reads and an add per
 // BLOCK and nothing at all per pixel. See the note above vg_canopy_warp.
 //
-// STRETCH is how much the frame spreads along the drawing's y at full throttle, as a
-// fraction. BOW is how many pixels the outermost columns shift relative to the middle, which
-// is what stops the stretch reading as the whole frame sliding. STEPS quantises the amount so
+// ZOOM is how much BIGGER the frame gets at full throttle, as a fraction, in both axes -- the
+// player being pulled up against the canopy rather than the frame merely stretching. One axis
+// alone made it taller, not nearer. BOW is how many pixels the outermost columns shift
+// relative to the middle, so the frame bends as well as grows. STEPS quantises the amount so
 // the maps are rebuilt a handful of times rather than every frame; the offsets are whole
 // pixels regardless, so nothing shimmers between steps.
-#define CANOPY_WARP_STRETCH  0.045f
-#define CANOPY_WARP_BOW      7.0f
+//
+// The cost rises with ZOOM, because magnifying reads some columns twice -- and it peaks at
+// full throttle, which is also when the trails are longest. Watch `can` in a fast run, not
+// at rest.
+#define CANOPY_WARP_ZOOM     0.13f
+#define CANOPY_WARP_BOW      11.0f
 #define CANOPY_WARP_STEPS    12

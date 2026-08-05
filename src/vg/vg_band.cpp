@@ -1281,6 +1281,18 @@ static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uin
 // nowhere to put a fraction.
 static int16_t s_wy[SCR_W + 1];
 static int16_t s_wc[SCR_H];
+// WHICH DRAWING COLUMN A PANEL ROW SAMPLES, which is the other half of coming closer.
+//
+// Stretching the drawing's y alone made the frame taller, not nearer. A magnification needs
+// both axes, and the other axis IS the column index -- so it is a lookup per panel row, 480 a
+// frame, and free. Inverse-mapped because this samples rather than places: a frame magnified
+// by s puts drawing column d at panel position cx + (d-cx)*s, so the panel row at p wants
+// cx + (p-cx)/s.
+//
+// Nearest neighbour, so at a magnification of a tenth roughly every tenth column is read
+// twice. On a cockpit frame that reads as the members thickening slightly, which is what
+// something approaching does anyway. -1 means this row is off the drawing entirely.
+static int16_t s_wcol[SCR_H];
 static int     s_wq = -1;                 // the quantised amount the maps were built for
 static bool    s_warp_on = false;
 
@@ -1294,7 +1306,7 @@ void vg_canopy_warp(float k) {
 
     const float a  = (float)q / (float)CANOPY_WARP_STEPS;
     const float cy = (float)(SCR_W - 1) * 0.5f;
-    const float s  = 1.0f + CANOPY_WARP_STRETCH * a;
+    const float s  = 1.0f + CANOPY_WARP_ZOOM * a;
     for (int y = 0; y <= SCR_W; y++) {
         int v = (int)(cy + ((float)y - cy) * s + 0.5f);
         if (v < 0) v = 0; else if (v > SCR_W) v = SCR_W;
@@ -1302,9 +1314,13 @@ void vg_canopy_warp(float k) {
     }
     // The bow, per column, measured from the middle of the frame outward.
     const float cx = (float)(SCR_H - 1) * 0.5f;
+    const float inv = 1.0f / s;
     for (int c = 0; c < SCR_H; c++) {
         const float t = ((float)c - cx) / cx;          // -1 .. 1
         s_wc[c] = (int16_t)(int)(CANOPY_WARP_BOW * a * t * t * (t < 0.0f ? -1.0f : 1.0f));
+        // The same magnification in the column axis, sampled.
+        const int d = (int)(cx + ((float)c - cx) * inv + 0.5f);
+        s_wcol[c] = (int16_t)((d >= 0 && d < SCR_H) ? d : -1);
     }
 }
 
@@ -1318,7 +1334,8 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
 
     for (int py = by0 + r0; py < by0 + r1; py++) {
-        const int lx = SCR_H - 1 - py;                 // this panel row IS a column
+        int lx = SCR_H - 1 - py;                       // this panel row IS a column
+        if (WARP) { lx = s_wcol[lx]; if (lx < 0) continue; }
         // Mirrored only when the drawing is symmetric, which the baker decides and
         // records. An asymmetric frame stores every column and is read straight
         // through -- a cockpit is allowed to be lopsided.
