@@ -9,6 +9,7 @@
 #include "vg_ift.h"
 #include "vg_course.h"
 #include "vg_sfx.h"
+#include "vg_raster.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -194,8 +195,12 @@ void vg_match_start(void) {
     vg.bank        = 0;
     vg.cine.on     = false;
     vg.hud_boot    = 0;
-    vg.hud_cued    = false;      // the boot chain starts at the cockpit, not here
+    // THE BOOT CHAIN, disarmed. This runs from enter_intro, at the top of the CUTSCENE, so it is
+    // seconds ahead of the player taking the seat -- and the raster side has to be disarmed with
+    // the game side or the cue stays latched from the previous match and fires over the cutscene.
+    vg.hud_cued    = false;
     vg.ready       = false;
+    vg_canopy_intro_reset();
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
     vg.trail_n     = 0;

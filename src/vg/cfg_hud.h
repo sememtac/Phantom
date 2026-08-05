@@ -291,10 +291,11 @@
 // words, overlapping too tightly. Cued off the cockpit's own progress rather than off a timer, so
 // retuning the pacing above moves the cue with it instead of quietly sliding it out of step.
 //
-// 0.90 puts it after every region has flashed and while the last one's members are still cooling,
-// so the instruments arrive into a cockpit that is lit but not yet settled. Earlier and they
-// compete with the flashes; at 1.0 the panel sits finished and empty for a moment first.
-#define CANOPY_INTRO_HUD_AT    0.90f
+// 0.75 puts it just after the LAST region has flashed, while that region is still dissolving and
+// every member on the panel is still hot -- so the instruments arrive into a cockpit that is lit
+// and visibly still coming up, rather than one that has finished and is waiting. At 1.0 the panel
+// sits done and empty for a moment first, which reads as a hang.
+#define CANOPY_INTRO_HUD_AT    0.75f
 
 // AND THE LAST LINK: how long after the instruments are in before the opponent opens the radio.
 //
@@ -309,7 +310,7 @@
 #define BOOT_RADIO_WAIT        2.40f
 #define CANOPY_INTRO_LEAD      1.00f
 #define CANOPY_INTRO_STEP      0.30f
-#define CANOPY_INTRO_FLASH     0.05f
+#define CANOPY_INTRO_FLASH     0.03f
 #define CANOPY_INTRO_DISSOLVE  0.32f
 #define CANOPY_INTRO_SETTLE    0.55f
 

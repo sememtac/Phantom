@@ -1658,6 +1658,7 @@ static uint8_t s_izon[CANOPY_ZONES];      // 0 held, 255 fully dissolved to the 
 static uint8_t s_ilive[CANOPY_ZONES];     // whether this zone's blocks are drawn at all
 static uint16_t s_ifill[CANOPY_ZONES];    // what a held pixel is: black before the flash, white after
 static uint8_t s_iglow[CANOPY_ZONES];     // 255 white-hot members, 0 their authored level
+static bool    s_icued     = false;       // the instruments' cue, latched -- see vg_canopy_intro_cued
 static uint8_t s_iq[CANOPY_ZONES];        // the quantised glow each table was built for
 static uint16_t s_ilut[CANOPY_ZONES][256];
 
@@ -1863,6 +1864,7 @@ void vg_canopy_intro_begin(void) {
     s_intro_on = true;
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
+    s_icued    = false;
     if (!s_can_ready) canopy_lut();
     for (int z = 0; z < CANOPY_ZONES; z++) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
@@ -1877,18 +1879,30 @@ void vg_canopy_intro_begin(void) {
 
 bool vg_canopy_intro_active(void) { return s_intro_on; }
 
-// HOW FAR THROUGH, 0..1, and 1 once it is over.
+// HAS THE SEQUENCE CALLED FOR THE INSTRUMENTS YET.
 //
-// Exists so the instruments can be cued off the cockpit rather than off the clock. The whole
-// sequence's length is derived from the pacing constants in one place -- here -- so moving STEP
-// or DISSOLVE moves the cue with it instead of silently sliding it out of step.
-float vg_canopy_intro_progress(void) {
-    if (!s_intro_on) return 1.0f;
-    const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
-                    + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
-    if (end <= 0.0f) return 1.0f;
-    const float a = s_intro_t / end;
-    return (a > 1.0f) ? 1.0f : a;
+// A LATCH, and it is a latch because the obvious version was a bug. This started as a
+// `progress() >= CANOPY_INTRO_HUD_AT` test against a progress function that returned 1.0 when
+// nothing was running -- so the condition was satisfied by DEFAULT, and vg_hud_decay is reached
+// from vg_world_step, which runs in the attract loop, the title and the cutscene. The cockpit's
+// power-on sound played on the title screen.
+//
+// Worse, it was not idempotent across matches: vg_match_start is called from enter_intro, at the
+// top of the CUTSCENE, so the game-side flag was cleared several seconds before the player ever
+// took the seat -- and the cutscene then ran thousands of world steps with the cue armed.
+//
+// So the state cannot be inferred. Only the running sequence sets this, and only `reset` and
+// `begin` clear it, which makes every ordering safe: nothing is cued at power-on, nothing is
+// cued while a match is being built, and nothing is cued twice.
+bool vg_canopy_intro_cued(void) { return s_icued; }
+
+// Nothing running and nothing cued -- for when a match is BUILT, which happens at the top of the
+// cutscene and is a long way from the player taking the seat.
+void vg_canopy_intro_reset(void) {
+    s_intro_on = false;
+    s_icued    = false;
+    s_settle_t = -1.0f;
+    for (int z = 0; z < CANOPY_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
 
 // HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
@@ -1914,6 +1928,13 @@ bool vg_canopy_intro_update(float dt) {
         return false;
     }
     s_intro_t += dt;
+
+    // THE INSTRUMENTS' CUE, latched from inside the running sequence -- which is the only place
+    // that can know the sequence is actually running. The length is derived here from the pacing
+    // constants, so retuning them moves the cue with them rather than sliding it out of step.
+    const float span = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
+                     + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
+    if (!s_icued && span > 0.0f && s_intro_t >= span * CANOPY_INTRO_HUD_AT) s_icued = true;
 
     for (int z = 0; z < CANOPY_ZONES; z++) {
         const float e = s_intro_t - (CANOPY_INTRO_LEAD + (float)z * CANOPY_INTRO_STEP);

@@ -112,28 +112,36 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 
 // THE COCKPIT COMING ONLINE, at the top of a match.
 //
-// The view opens black with the instruments already lit, and the frame arrives a region at a
-// time: each flashes white, falls to its authored level, and the world behind it dissolves in.
-// The order is the artist's, painted into the green channel of the drawing and baked as a zone
-// per block -- see tools/canopy_bake.py and CANOPY_INTRO_* in cfg_hud.h.
+// The view opens black, and it arrives a REGION at a time: the whole region flashes white, the
+// world dissolves out of that white, and the frame's members in it run hot and cool to their
+// authored level. The order is the artist's, painted into the green channel of the drawing and
+// baked as a zone per block -- see tools/canopy_bake.py and CANOPY_INTRO_* in cfg_hud.h.
 //
-// `begin` at the moment control would otherwise pass to the player. `update` once a frame with
-// the frame's dt, before the flush; it returns true while the sequence is still running, so the
-// caller can hold whatever it wants held. It runs on its own clock and does not need the world
-// stopped -- and it looks better if the world is live behind it.
+// `reset` when a match is BUILT and `begin` when the player takes the seat. Those are NOT the
+// same moment and the distinction is load-bearing: a match is built from enter_intro, at the top
+// of the cutscene, seconds before there is a cockpit at all.
 //
-// `flex` is the multiplier to apply to BOTH vg_canopy_warp's k and vg_canopy_lag's scale. It is
-// 0 while the sequence runs, because the world gate reads the unwarped column and a flexing
-// frame would put the black somewhere other than where the panel ends, then ramps to 1 so the
-// cockpit takes up its resting bulge instead of snapping into it.
-// `progress` is 0..1 through the sequence and 1 once it is over. It is what the instruments are
-// cued off, so the boot chain follows the cockpit rather than a clock of its own: the length is
-// derived from the pacing constants in one place, and moving them moves the cue with them.
+// `update` once a frame with the frame's dt, before the flush. It returns true while the sequence
+// is still running, so a caller can hold whatever it wants held; it runs on its own clock and does
+// not need the world stopped -- and it looks better if the world is live behind it.
+//
+// `cued` is a LATCH, set once the RUNNING sequence reaches CANOPY_INTRO_HUD_AT, and it is what the
+// instruments hang off so the boot chain follows the cockpit rather than a clock of its own. It has
+// to be a latch and not a progress comparison, because the state cannot be inferred from a timer:
+// vg_hud_decay is reached from vg_world_step, which the attract loop, the title and the cutscene
+// all drive. Inferred from a progress value that reads 1.0 when nothing is running, the condition
+// is satisfied by default -- and the cockpit's power-on sound played over the title screen.
+//
+// `flex` is the multiplier to apply to BOTH vg_canopy_warp's k and vg_canopy_lag's scale. It is 0
+// while the sequence runs, because the world gate reads the unwarped column and a flexing frame
+// would put the black somewhere other than where the panel ends, then ramps to 1 so the cockpit
+// takes up its resting bulge instead of snapping into it.
+void  vg_canopy_intro_reset(void);
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);
 bool  vg_canopy_intro_active(void);
+bool  vg_canopy_intro_cued(void);
 float vg_canopy_intro_flex(void);
-float vg_canopy_intro_progress(void);
 
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //

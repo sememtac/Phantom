@@ -80,11 +80,16 @@ void vg_hud_decay(float dt) {
     // THE BOOT CHAIN. Three things used to start together and read as one muddle; each now waits
     // for the one before it.
     //
-    // The instruments are cued off the COCKPIT's own progress rather than off a timer, so the two
-    // cannot drift apart when the pacing is retuned. SFX_READY moves here with them: it is the
-    // panel finishing, and it was previously playing at the moment the match began, which is a
-    // second and a half before anything was lit.
-    if (!vg.hud_cued && vg_canopy_intro_progress() >= CANOPY_INTRO_HUD_AT) {
+    // The instruments are cued off the COCKPIT rather than off a timer, so the two cannot drift
+    // apart when the pacing is retuned. SFX_READY moves here with them: it is the panel finishing,
+    // and it was previously playing at the moment the match began, a second and a half before
+    // anything was lit.
+    //
+    // vg_canopy_intro_cued is a latch and not a progress test, because THIS FUNCTION RUNS IN THE
+    // TITLE SCREEN -- it is reached from vg_world_step, which the attract loop and the cutscene
+    // both drive. A comparison against a progress value that reads 1.0 when nothing is running is
+    // satisfied by default, and the cockpit's power-on sound played over the menu.
+    if (!vg.hud_cued && vg_canopy_intro_cued()) {
         vg.hud_cued = true;
         vg.hud_boot = HUD_BOOT_TIME;
         vg_sfx_play(SFX_READY, 1.0f);
