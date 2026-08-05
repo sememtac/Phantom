@@ -38,6 +38,23 @@ bool vg_band_init(void) {
 // Primitives
 // ---------------------------------------------------------------------------
 
+// ROUND TO NEAREST, IN ONE INSTRUCTION.
+//
+// `lrintf` is not an instruction here. It links to newlib's sf_lrint.c -- 138 bytes of
+// soft-float bit manipulation, reached by a call -- and the line dispatch used four of them
+// per line per band. The FPU has ROUND.S, which converts single to signed integer rounding to
+// nearest with ties to even, which is precisely what lrintf does in the default rounding
+// mode. So this is the same answer, in one instruction instead of a function call.
+//
+// Safe because the inputs are clipped screen coordinates: finite, and inside a few hundred.
+// ROUND.S on an out-of-range or NaN input saturates rather than raising, where lrintf's
+// result would be undefined anyway.
+static inline int fast_lrintf(float f) {
+    int r;
+    asm ("round.s %0, %1, 0" : "=a"(r) : "f"(f));
+    return r;
+}
+
 // Clip a line to a y-range. x is already inside the screen, so only y needs
 // trimming; a parametric clip on y alone is cheaper and exact.
 static inline bool clip_band_y(float* ax, float* ay, float* bx, float* by,
@@ -45,16 +62,33 @@ static inline bool clip_band_y(float* ax, float* ay, float* bx, float* by,
     float y0 = *ay, y1 = *by;
     if (y0 == y1) return (y0 >= ymin && y0 <= ymax);
 
-    float dy = y1 - y0;
-    float ta = (ymin - y0) / dy;
-    float tb = (ymax - y0) / dy;
-    if (ta > tb) { float t = ta; ta = tb; tb = t; }
+    const float dy = y1 - y0;
 
-    float t0 = ta > 0.0f ? ta : 0.0f;
-    float t1 = tb < 1.0f ? tb : 1.0f;
+    // ONLY THE END THAT IS ACTUALLY OUTSIDE NEEDS ITS PARAMETER.
+    //
+    // Both were computed every time, and each is a float divide -- which the S3 has no single
+    // instruction for. This runs once per line per band and a line is 19 pixels, so most of
+    // them sit inside their band entirely and needed neither.
+    //
+    // The conditions are the clamps rewritten, not new logic. For dy > 0, t0 is ta only when
+    // ta > 0, which is exactly y0 < ymin; and t1 is tb only when tb < 1, which rearranges to
+    // y1 > ymax. For dy < 0 the two swap, so the tests read the other way and each takes the
+    // other numerator. Same expressions, evaluated only where they can change the answer, so
+    // the result is identical to the bit.
+    float t0 = 0.0f, t1 = 1.0f;
+    if (dy > 0.0f) {
+        if (y0 < ymin) t0 = (ymin - y0) / dy;
+        if (y1 > ymax) t1 = (ymax - y0) / dy;
+    } else {
+        if (y0 > ymax) t0 = (ymax - y0) / dy;
+        if (y1 < ymin) t1 = (ymin - y0) / dy;
+    }
     if (t0 > t1) return false;
+    // Nothing was trimmed, so the endpoints are already the answer. The old form still spent
+    // four multiplies and four adds arriving back at them.
+    if (t0 == 0.0f && t1 == 1.0f) return true;
 
-    float x0 = *ax, dx = *bx - x0;
+    const float x0 = *ax, dx = *bx - x0;
     *ax = x0 + dx * t0;  *ay = y0 + dy * t0;
     *bx = x0 + dx * t1;  *by = y0 + dy * t1;
     return true;
@@ -1620,8 +1654,8 @@ static void draw_band(int band_index, uint16_t* band) {
             float ax = p->x0, ay = p->y0, bx = p->x1, by = p->y1;
             if (!clip_band_y(&ax, &ay, &bx, &by, (float)by0, (float)by1)) break;
 
-            int ix0 = (int)lrintf(ax), iy0 = (int)lrintf(ay);
-            int ix1 = (int)lrintf(bx), iy1 = (int)lrintf(by);
+            int ix0 = fast_lrintf(ax), iy0 = fast_lrintf(ay);
+            int ix1 = fast_lrintf(bx), iy1 = fast_lrintf(by);
             // Guard against float rounding pushing an endpoint one row out.
             if (iy0 < by0) iy0 = by0; else if (iy0 > by1) iy0 = by1;
             if (iy1 < by0) iy1 = by0; else if (iy1 > by1) iy1 = by1;
