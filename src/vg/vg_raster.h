@@ -110,6 +110,27 @@ void vg_canopy_warp(float k);
 // keeping a second table that could disagree with it.
 void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 
+// THE COCKPIT COMING ONLINE, at the top of a match.
+//
+// The view opens black with the instruments already lit, and the frame arrives a region at a
+// time: each flashes white, falls to its authored level, and the world behind it dissolves in.
+// The order is the artist's, painted into the green channel of the drawing and baked as a zone
+// per block -- see tools/canopy_bake.py and CANOPY_INTRO_* in cfg_hud.h.
+//
+// `begin` at the moment control would otherwise pass to the player. `update` once a frame with
+// the frame's dt, before the flush; it returns true while the sequence is still running, so the
+// caller can hold whatever it wants held. It runs on its own clock and does not need the world
+// stopped -- and it looks better if the world is live behind it.
+//
+// `flex` is the multiplier to apply to BOTH vg_canopy_warp's k and vg_canopy_lag's scale. It is
+// 0 while the sequence runs, because the world gate reads the unwarped column and a flexing
+// frame would put the black somewhere other than where the panel ends, then ramps to 1 so the
+// cockpit takes up its resting bulge instead of snapping into it.
+void  vg_canopy_intro_begin(void);
+bool  vg_canopy_intro_update(float dt);
+bool  vg_canopy_intro_active(void);
+float vg_canopy_intro_flex(void);
+
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //
 // The canopy only draws inside a match, so the frame counter cannot be read without
@@ -117,7 +138,9 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // rendezvous, which no table can be judged against. This runs the whole pass on one core
 // and reports it flat, with the counts it got through, so the baker's estimate has
 // something to be right or wrong about. See the note at its definition.
-struct VgCanopyCost { uint32_t us, warp_us; int blocks, flat_px, lit_px; };
+// `intro_us` is the cockpit intro's CEILING, with every zone mid-dissolve at once -- which the
+// staggered sequence never reaches. It is here so that the intro's dip is a number.
+struct VgCanopyCost { uint32_t us, warp_us, intro_us; int blocks, flat_px, lit_px; };
 void vg_canopy_bench(VgCanopyCost* out);
 
 // THE BACKDROP, on the same terms. Serial 's'.

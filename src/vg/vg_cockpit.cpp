@@ -1,5 +1,6 @@
 ﻿#include "vg_sim.h"
 #include "vg_sfx.h"
+#include "vg_raster.h"
 
 // What the cockpit does about things that have already happened: the caution
 // annunciators, and the panel's own decay timers.
@@ -71,4 +72,8 @@ void vg_hud_decay(float dt) {
     if (vg.hit_flash     > 0) vg.hit_flash     -= dt;
     if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
     if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
+    // The cockpit arriving, which belongs here for the same reason the rest does: it is what the
+    // panel is doing, not what the ship is doing. It carries the ramp that follows the sequence
+    // as well, so it has to be called past the end of it -- which is why the return is ignored.
+    vg_canopy_intro_update(dt);
 }

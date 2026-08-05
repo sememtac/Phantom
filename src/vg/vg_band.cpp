@@ -1238,19 +1238,19 @@ void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
 #define SPAN_LIT_BODY(FN)                                                    \
     int i = 0;                                                               \
     if (n > 0 && (((uintptr_t)q & 3u) != 0u)) {                              \
-        const uint32_t d = s_can_lut[lv[0]];                                 \
+        const uint32_t d = lut[lv[0]];                                       \
         q[0] = (uint16_t)FN(q[0], d & 0xF81Fu, d & 0x07E0u);                 \
         i = 1;                                                               \
     }                                                                        \
     for (; i + 1 < n; i += 2) {                                              \
-        const uint32_t d0 = s_can_lut[lv[i]], d1 = s_can_lut[lv[i + 1]];     \
+        const uint32_t d0 = lut[lv[i]], d1 = lut[lv[i + 1]];                 \
         uint32_t* w = (uint32_t*)(void*)(q + i);                             \
         const uint32_t v = *w;                                               \
         *w = FN(v & 0xFFFFu, d0 & 0xF81Fu, d0 & 0x07E0u)                     \
            | (FN(v >> 16, d1 & 0xF81Fu, d1 & 0x07E0u) << 16);                \
     }                                                                        \
     for (; i < n; i++) {                                                     \
-        const uint32_t d = s_can_lut[lv[i]];                                 \
+        const uint32_t d = lut[lv[i]];                                       \
         q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                 \
     }
 
@@ -1274,17 +1274,24 @@ void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
 // Fixed point, 16.16: `step` is drawing pixels per panel pixel and `i0` is where the clipped
 // front starts. Only the graded edges take this path and only while the warp is on, so it
 // stays a plain per-pixel walk -- pairing it would save little and this is 4,792 pixels.
-#define SPAN_LIT_RS_BODY(FN)                                                     uint32_t idx = i0;                                                           for (int i = 0; i < n; i++) {                                                    const uint32_t d = s_can_lut[lv[idx >> 16]];                                 q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                         idx += step;                                                             }
+#define SPAN_LIT_RS_BODY(FN)                                                     uint32_t idx = i0;                                                           for (int i = 0; i < n; i++) {                                                    const uint32_t d = lut[lv[idx >> 16]];                                       q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                         idx += step;                                                             }
 
+// THE TABLE COMES IN AS AN ARGUMENT, because the intro needs a different one per zone.
+//
+// It was a file static, read straight from the macro bodies. The intro flashes a region white
+// by giving that region its own colour table, so the table has to vary per BLOCK -- and these
+// are shared with the flight path, which must not pay for it. As an argument it does not: the
+// call already passes three registers and the loop reads through a register base rather than a
+// literal address, which on Xtensa is no worse. Measured on the canopy bench before and after.
 static __attribute__((noinline))
-void span_lit_add_rs(uint16_t* q, int n, const uint8_t* lv, uint32_t i0, uint32_t step)
+void span_lit_add_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut, uint32_t i0, uint32_t step)
 { SPAN_LIT_RS_BODY(px_add) }
 static __attribute__((noinline))
-void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, uint32_t i0, uint32_t step)
+void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut, uint32_t i0, uint32_t step)
 { SPAN_LIT_RS_BODY(px_sub) }
 
-static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_add) }
-static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv) { SPAN_LIT_BODY(px_sub) }
+static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_add) }
+static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_sub) }
 
 // Rows [r0, r1) of the band, so the pass can be halved across the cores. Each panel
 // row is an independent column of the drawing -- nothing carries between them -- which
@@ -1465,6 +1472,10 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
     if (s_lag_px || s_lag_py || s_lag_sh != 0.0f) s_warp_on = true;
 }
 
+// The sequence's own clock. Declared here because vg_canopy_warp is where the flex it
+// suppresses is set, and defined below with the rest of the intro.
+static float s_settle_t = -1.0f;          // < 0 means not settling
+
 void vg_canopy_warp(float k) {
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
@@ -1592,9 +1603,112 @@ void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, f
     else          span_add(&row[end], SCR_W - end, d);
 }
 
-template <bool WARP>
+// ===========================================================================
+// THE CANOPY COMING ONLINE
+//
+// The match opens black with the instruments already lit, and the cockpit arrives a region at
+// a time. Three things happen per region, all keyed off the ZONE the artist painted into the
+// green channel of the drawing:
+//
+//   the frame's blocks in that zone start being drawn at all,
+//   they are drawn WHITE and fall to their authored level over CANOPY_INTRO_FLASH,
+//   and the world behind them dissolves in from black over CANOPY_INTRO_DISSOLVE.
+//
+// It runs off the intro block table, whose runs are cut at zone borders so that switching a
+// zone on is switching a set of whole blocks on. The flight table is not cut that way and its
+// zone tags do not mean anything -- see the generated header.
+//
+// The frame is held RIGID throughout. The world gate and the frame have to agree pixel for
+// pixel or the black would not end where the panel does, and the cheapest way to guarantee
+// that is to have both read the same unwarped column. CANOPY_INTRO_SETTLE then ramps the flex
+// in at the end, because the resting warp is a long way from flat and the cockpit would
+// otherwise jump the moment the sequence released.
+static bool    s_intro_on   = false;
+static float   s_intro_t    = 0.0f;
+static uint8_t s_izon[CANOPY_ZONES];      // 0 dark, 255 fully revealed -- the WORLD behind
+static uint8_t s_ilive[CANOPY_ZONES];     // whether this zone's blocks are drawn at all
+static uint8_t s_iflash[CANOPY_ZONES];    // 255 solid white, 0 the authored level
+static uint8_t s_iq[CANOPY_ZONES];        // the quantised flash each table was built for
+static uint16_t s_ilut[CANOPY_ZONES][256];
+
+// A zone's colours, from white at the flash's peak to the authored level once it has fallen.
+//
+// At full flash EVERY level maps to white, so the region reads as a solid silhouette lighting
+// up rather than as its own drawing getting brighter -- which is the difference between a panel
+// switching on and a panel being dimmed.
+static void canopy_ilut(int z) {
+    const uint32_t t = (uint32_t)s_iflash[z];       // 0..255 toward white
+    for (int g = 0; g < 256; g++) {
+        const uint32_t v = s_can_lut[g];            // panel order
+        const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
+        const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
+        const uint32_t R = r  + (((31u - r)  * t) >> 8);
+        const uint32_t G = gg + (((63u - gg) * t) >> 8);
+        const uint32_t B = b  + (((31u - b)  * t) >> 8);
+        const uint32_t o = (R << 11) | (G << 5) | B;
+        s_ilut[z][g] = (uint16_t)(((o >> 8) | (o << 8)) & 0xFFFFu);
+    }
+    s_iq[z] = s_iflash[z];
+}
+
+// A DITHER, NOT A FADE, and it is both cheaper and a better fit.
+//
+// Blacking a region is a store per pixel. Fading one in would be three multiplies per pixel to
+// scale toward black -- about 15 cycles against 4 -- and across a 77,000-pixel zone that is
+// nearly 5 ms for a transition that is mostly hidden anyway, because the panel above it is at
+// its brightest exactly while the world is arriving.
+//
+// So the reveal is an ordered 4x4 threshold: a pixel survives once its cell's value is under
+// the zone's reveal. Pixels light up in a fixed scatter instead of the whole region brightening
+// together, which reads as a picture being acquired rather than a lamp being turned up -- and
+// it is the same language the backdrop's own reveal already speaks.
+static const uint8_t BAYER4[16] = {
+     0,  8,  2, 10,
+    12,  4, 14,  6,
+     3, 11,  1,  9,
+    15,  7, 13,  5,
+};
+
+// One panel row of the world gate. `lx` is the true screen column, never a warped one.
+//
+// Runs cover the whole column with no gap, so this walks them all and does nothing for a zone
+// that is already fully in. Three bytes a run and about three runs a column, so the walk itself
+// is free and the cost is entirely in the pixels it blacks out.
+static __attribute__((noinline))
+void canopy_gate(uint16_t* row, int lx, int py) {
+    const uint8_t* p = &CANOPY_ZDATA[CANOPY_ZOFS[lx]];
+    const uint8_t* e = &CANOPY_ZDATA[CANOPY_ZOFS[lx + 1]];
+    const uint8_t* bay = &BAYER4[(py & 3) << 2];
+    while (p + 3 <= e) {
+        const uint8_t h  = p[0];
+        const int     y0 = ((h & 1) << 8) | p[1];
+        const int     n  = ((h & 2) << 7) | p[2];
+        const int     z  = (h >> 2) & 15;
+        p += 3;
+        const uint32_t rev = (z < CANOPY_ZONES) ? s_izon[z] : 255u;
+        if (rev >= 255u) continue;                  // this region is all the way in
+        uint16_t* q = &row[y0];
+        if (rev == 0u) {
+            for (int i = 0; i < n; i++) q[i] = 0;    // not online at all
+        } else {
+            // 0..16, not 0..15. `rev >> 4` tops out at 15, which leaves one cell of the
+            // sixteen still black at the very end of the dissolve -- a sixteenth of the region
+            // popping off in one frame. *17>>8 reaches 16, which is past every cell.
+            const uint32_t th = (rev * 17u) >> 8;
+            for (int i = 0; i < n; i++)
+                if ((uint32_t)bay[(y0 + i) & 3] >= th) q[i] = 0;
+        }
+    }
+}
+
+template <bool WARP, bool INTRO>
 static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
+
+    // Compile-time, so each instantiation holds a constant address and the choice costs
+    // nothing. This is also the parameterisation a per-hull canopy wants.
+    const uint16_t* T_OFS  = INTRO ? CANOPY_IOFS  : CANOPY_OFS;
+    const uint8_t*  T_DATA = INTRO ? CANOPY_IDATA : CANOPY_DATA;
 
     for (int py = by0 + r0; py < by0 + r1; py++) {
         int lx = SCR_H - 1 - py;                       // this panel row IS a column
@@ -1619,9 +1733,15 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // Clamped for the same reason, and it also covers a drawing narrower than the screen.
         if (c < 0) c = 0; else if (c >= CANOPY_COLS) c = CANOPY_COLS - 1;
 
-        const uint8_t* p = &CANOPY_DATA[CANOPY_OFS[c]];
-        const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
+        const uint8_t* p = &T_DATA[T_OFS[c]];
+        const uint8_t* e = &T_DATA[T_OFS[c + 1]];
         uint16_t* row = &band[(py - by0) * SCR_W];
+
+        // THE WORLD FIRST, then the frame on top of it. Everything behind the cockpit is
+        // already drawn by the time this primitive runs and the instruments come after it, so
+        // this is the one point in the band where blacking the view hides the world without
+        // touching the panel. Rigid, so it uses the raw column and lands where the frame does.
+        if (INTRO) canopy_gate(row, SCR_H - 1 - py, py);
 
         // Three bytes of header, then either one level for the whole block or a level
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
@@ -1644,6 +1764,18 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             const int     y0  = ((h & 1) << 8) | p[1];   // the picture's y is panel x
             const int     len = ((h & 2) << 7) | p[2];
             p += 3;
+
+            // WHOSE TURN IT IS. The zone is only meaningful in the intro table, where a block
+            // never spans two of them, so a zone that has not come up yet skips whole blocks.
+            const uint16_t* lut = s_can_lut;
+            if (INTRO) {
+                const int z = (h >> 2) & 15;
+                if (z >= CANOPY_ZONES || !s_ilive[z]) {
+                    p += (h & 0x80) ? len : 1;
+                    continue;
+                }
+                lut = s_ilut[z];
+            }
 
             int at = y0, n = len, skip = 0, n0 = len;
             if (WARP) {
@@ -1668,15 +1800,15 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                     // for one, or the block reads past its own data. See span_lit_add_rs.
                     const uint32_t step = ((uint32_t)len << 16) / (uint32_t)n0;
                     const uint32_t i0   = (uint32_t)skip * step;
-                    if (h & 0x40) span_lit_sub_rs(&row[at], n, p, i0, step);
-                    else          span_lit_add_rs(&row[at], n, p, i0, step);
+                    if (h & 0x40) span_lit_sub_rs(&row[at], n, p, lut, i0, step);
+                    else          span_lit_add_rs(&row[at], n, p, lut, i0, step);
                 } else {
-                    if (h & 0x40) span_lit_sub(&row[at], n, p + skip);
-                    else          span_lit_add(&row[at], n, p + skip);
+                    if (h & 0x40) span_lit_sub(&row[at], n, p + skip, lut);
+                    else          span_lit_add(&row[at], n, p + skip, lut);
                 }
                 p += len;
             } else {                                     // one level, delta hoisted
-                const uint16_t d = s_can_lut[*p++];
+                const uint16_t d = lut[*p++];
                 if (h & 0x40) span_sub(&row[at], n, d);
                 else          span_add(&row[at], n, d);
             }
@@ -1684,9 +1816,93 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     }
 }
 
+// WHERE THE SEQUENCE IS UP TO.
+//
+// The zones come up in the order the artist painted, which is already the zone INDEX: the baker
+// sorts the green values it found and stores each block's position in that order, so zone 0 is
+// simply first and this needs no table of its own.
+void vg_canopy_intro_begin(void) {
+    s_intro_on = true;
+    s_intro_t  = 0.0f;
+    s_settle_t = -1.0f;
+    if (!s_can_ready) canopy_lut();
+    for (int z = 0; z < CANOPY_ZONES; z++) {
+        s_izon[z] = 0; s_ilive[z] = 0; s_iflash[z] = 255;
+        canopy_ilut(z);
+    }
+    // Nothing left over on the spring, or the frame would start the sequence already leaning.
+    for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
+    s_lag_px = s_lag_py = 0;
+    s_lag_sh = 0.0f;
+}
+
+bool vg_canopy_intro_active(void) { return s_intro_on; }
+
+// HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
+//
+// The caller multiplies both the warp and the lag by this. It is not an optimisation: the world
+// gate reads the unwarped column, so a warped frame during the sequence would put the black
+// somewhere other than where the panel ends. The ramp afterwards exists because the resting
+// warp is full bulge -- releasing straight into it would pop.
+float vg_canopy_intro_flex(void) {
+    if (s_intro_on) return 0.0f;
+    if (s_settle_t < 0.0f) return 1.0f;
+    float a = s_settle_t / CANOPY_INTRO_SETTLE;
+    if (a >= 1.0f) return 1.0f;
+    return a * a * (3.0f - 2.0f * a);          // smoothstep, so it arrives without a corner
+}
+
+bool vg_canopy_intro_update(float dt) {
+    if (!s_intro_on) {
+        if (s_settle_t >= 0.0f) {
+            s_settle_t += dt;
+            if (s_settle_t >= CANOPY_INTRO_SETTLE) s_settle_t = -1.0f;
+        }
+        return false;
+    }
+    s_intro_t += dt;
+
+    for (int z = 0; z < CANOPY_ZONES; z++) {
+        const float e = s_intro_t - (CANOPY_INTRO_LEAD + (float)z * CANOPY_INTRO_STEP);
+        if (e < 0.0f) continue;                  // this one's turn has not come
+        s_ilive[z] = 1;
+
+        // The flash falls from white to the authored level. Quantised, so the zone's colour
+        // table is rebuilt a couple of dozen times across the fall rather than every frame.
+        float f = 1.0f - e / CANOPY_INTRO_FLASH;
+        if (f < 0.0f) f = 0.0f;
+        const int q = (int)(f * CANOPY_INTRO_QSTEP + 0.5f);
+        const uint8_t want = (uint8_t)((q * 255) / CANOPY_INTRO_QSTEP);
+        if (want != s_iq[z]) { s_iflash[z] = want; canopy_ilut(z); }
+
+        // ...and the world dissolves in behind it, faster than the flash falls.
+        float r = e / CANOPY_INTRO_DISSOLVE;
+        if (r > 1.0f) r = 1.0f;
+        s_izon[z] = (uint8_t)(r * 255.0f + 0.5f);
+    }
+
+    // Over when the last zone's flash has fallen. The settle that follows is not part of it:
+    // the world is fully in by then and the frame is merely taking up its flex.
+    const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
+                    + CANOPY_INTRO_FLASH;
+    if (s_intro_t >= end) {
+        s_intro_on = false;
+        s_settle_t = 0.0f;
+        for (int z = 0; z < CANOPY_ZONES; z++) {
+            s_izon[z] = 255; s_ilive[z] = 1;
+            if (s_iflash[z]) { s_iflash[z] = 0; canopy_ilut(z); }
+        }
+        return false;
+    }
+    return true;
+}
+
+// Three instantiations, not four. The intro is always rigid -- see the note above the intro
+// state -- so there is no warped intro path to build.
 static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
-    if (s_warp_on) canopy_rows_t<true>(band, by0, r0, r1);
-    else           canopy_rows_t<false>(band, by0, r0, r1);
+    if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
+    else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
+    else                canopy_rows_t<false, false>(band, by0, r0, r1);
 }
 
 // A FAN OF LINES, both ways, over every slope.
@@ -1915,7 +2131,16 @@ void vg_canopy_bench(VgCanopyCost* out) {
     const int   save_q  = s_wq;
     const bool  save_on = s_warp_on;
 
-    uint32_t cyc = 0, cal = 0, wcyc = 0;
+    // AND THE INTRO IS PINNED OFF for the first two passes, because canopy_rows now dispatches
+    // on it. Left alone, a bench run during the sequence would time the intro path and report
+    // it as the flight cost -- the same failure the glyph bench had, where the number is wrong
+    // and believed. Measured on purpose in the third pass below.
+    const bool  save_in = s_intro_on;
+    uint8_t     save_live[CANOPY_ZONES], save_rev[CANOPY_ZONES];
+    for (int z = 0; z < CANOPY_ZONES; z++) { save_live[z] = s_ilive[z]; save_rev[z] = s_izon[z]; }
+    s_intro_on = false;
+
+    uint32_t cyc = 0, cal = 0, wcyc = 0, icyc = 0;
     vg_canopy_warp(0.0f);
     for (int py = 0; py < SCR_H; py++) {
         for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;   // mid grey, both ways to go
@@ -1935,13 +2160,37 @@ void vg_canopy_bench(VgCanopyCost* out) {
         canopy_rows(scratch, py, 0, 1);
         wcyc += esp_cpu_get_cycle_count() - t0;
     }
-    s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
+    // THE INTRO, AT ITS WORST, which is the only figure worth having.
+    //
+    // Its cost is not constant: a zone that has not come up is a full-screen black fill, one
+    // mid-dissolve is a threshold test per pixel, and one that is all the way in is skipped
+    // entirely. The dear case is every zone dissolving at once -- which the sequence never
+    // actually reaches, since the zones are staggered -- so this is a ceiling and not a
+    // measurement of the sequence.
+    //
+    // Perf is not the point of the intro and the author has said so. This exists so that "it
+    // dips" is a number rather than an impression, and so the next person to widen the zones
+    // knows what they are spending.
+    s_intro_on = true;
+    for (int z = 0; z < CANOPY_ZONES; z++) { s_ilive[z] = 1; s_izon[z] = 128; }
+    vg_canopy_warp(0.0f);
+    for (int py = 0; py < SCR_H; py++) {
+        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        canopy_rows(scratch, py, 0, 1);
+        icyc += esp_cpu_get_cycle_count() - t0;
+    }
 
-    out->us      = (cyc > cal ? cyc - cal : 0) / 240u;
-    out->warp_us = (wcyc > cal ? wcyc - cal : 0) / 240u;
-    out->blocks  = CANOPY_BLOCKS;
-    out->flat_px = CANOPY_FLAT_PX;
-    out->lit_px  = CANOPY_LIT_PX;
+    s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
+    s_intro_on = save_in;
+    for (int z = 0; z < CANOPY_ZONES; z++) { s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; }
+
+    out->us       = (cyc  > cal ? cyc  - cal : 0) / 240u;
+    out->warp_us  = (wcyc > cal ? wcyc - cal : 0) / 240u;
+    out->intro_us = (icyc > cal ? icyc - cal : 0) / 240u;
+    out->blocks   = CANOPY_BLOCKS;
+    out->flat_px  = CANOPY_FLAT_PX;
+    out->lit_px   = CANOPY_LIT_PX;
 }
 
 static void draw_band(int band_index, uint16_t* band) {
@@ -2051,7 +2300,12 @@ static void draw_band(int band_index, uint16_t* band) {
             // returns almost nothing -- measured, the midpoint gave 1.2 of the 1.9 ms
             // it should have. The baker computes the point; it is fifteen bytes.
             // Warped, the baked balance point is for a distribution that no longer applies.
-            const int at = s_warp_on ? s_wsplit[band_index] : CANOPY_SPLIT[band_index];
+            // During the intro neither applies: the world gate blacks out whole columns of
+            // screen and dwarfs the frame, and its work is spread evenly enough across a band
+            // that the midpoint is the right guess.
+            const int at = s_intro_on ? ROW_SPLIT
+                         : s_warp_on  ? s_wsplit[band_index]
+                                      : CANOPY_SPLIT[band_index];
             const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
             canopy_rows(band, by0, 0, split ? at : BAND_H);
             if (split) rowsplit_wait();

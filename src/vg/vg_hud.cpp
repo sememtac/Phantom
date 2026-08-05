@@ -921,28 +921,22 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     (void)cam; (void)in;
     char buf[40];
 
-    // FIRST, so every instrument draws on top of it. The canopy is structure and the
-    // instruments are mounted ON that structure, which is the reading this order
-    // produces -- drawn last it would lay faint lines across the readouts instead.
+    // THE FRAME IS SUBMITTED BY THE CALLER, and it used to be submitted here.
     //
-    // Inside the warp bracket, because vg_draw_hud is called inside it: the panel
-    // lines bend and shake with the rest of the assembly. That is the point of
-    // putting them here rather than in the flat pass -- a canopy that stayed rigid
-    // while the instruments mounted on it moved would read as two separate objects.
-    // THE LIT PATTERN, on trial. The opaque table above is still here and still
-    // works; this is the author's drawing applied as light, and it is one line to
-    // put back. All four hulls fly it while it is being judged -- per-ship patterns
-    // come after the language is settled, not before.
-    // THE BAKED FRAME, from the author's own drawing. It is applied by the band raster
-    // from a table rather than built out of lines here, because at 7% coverage the
-    // shapes are broad members and the drawing is the most accurate description of
-    // them there is -- see vg_band.cpp. Submitted here so it lands in the right place
-    // in the order: over the world, under everything below.
+    // It was the first thing this function did, so that every instrument drew on top of it --
+    // the canopy is structure and the instruments are mounted on it. The order is unchanged;
+    // only the place it is asked for moved, to immediately before the call to this function.
     //
-    // NOT warped, and that is inherent: the table is panel-space pixels. So the frame
-    // is rigid while the instruments bend and shake against it, which for structure is
-    // arguably the truer reading.
-    vg_canopy_prim();
+    // It had to move because this function is not called every frame. The instruments come up
+    // as a hologram catching and that is done by DROPPING WHOLE FRAMES of them, so for the
+    // first second of a match vg_draw_hud runs on a fraction of frames -- and the frame was
+    // flickering along with the projection it is supposed to be bolted to. Nothing about the
+    // warp or the jitter bracket applied to it either: the table is panel-space pixels and
+    // carries no coordinates, so rot_pt and the warp never touched it.
+    //
+    // With the cockpit intro that stopped being a wrong reading and became a fault. The intro
+    // holds the world black FROM the canopy primitive, so a frame that skipped it showed the
+    // whole world at full brightness for one frame in the middle of the sequence.
     (void)canopy_draw; (void)canopy_lit;
 
     draw_health();

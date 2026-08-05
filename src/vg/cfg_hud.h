@@ -248,3 +248,40 @@
 // It also now runs WITH the warp rather than against it -- both are strongest at idle. The frame
 // is close and busy when the ship is nimble, flat and steady when it is committed to a line.
 #define CANOPY_LAG_AGI    1.00f
+
+// --- the canopy coming online ---------------------------------------------
+//
+// The match opens with the view black and the instruments already lit, and the cockpit
+// arrives a panel at a time: a region flashes white, falls to its authored level, and the
+// world behind it dissolves in. The ORDER is the artist's, read out of the green channel of
+// the drawing, so this file decides only the pacing.
+//
+// LEAD is how long the black holds before the first panel lights. It has to be long enough to
+// read as deliberate rather than as a dropped frame.
+//
+// STEP is the gap between one panel and the next. The drawing has four, so the sequence is
+// LEAD + 4*STEP long before the last flash has even started to fall -- which is why STEP is
+// the constant to reach for if the whole thing feels slow, not FLASH.
+//
+// FLASH is how long a panel takes to fall from white to its authored level. Longer overlaps
+// the panels' flashes and reads as a cockpit filling with light; shorter makes each one a
+// distinct event. It wants to be a little longer than STEP so two are always falling at once.
+//
+// DISSOLVE is how long the world takes to come in behind a panel, as an ordered dither
+// rather than a fade -- see canopy_gate. Deliberately SHORTER than FLASH, so the world is
+// arriving while the panel above it is still bright and the dither is hidden inside the glare.
+//
+// SETTLE is the flex ramping in at the end. The frame is held rigid through the sequence
+// because the world gate and the frame have to agree pixel for pixel, and the resting warp is
+// a long way from flat -- so without this the cockpit would jump the moment the intro
+// released. Over half a second it reads as the frame taking up its load.
+#define CANOPY_INTRO_LEAD      0.30f
+#define CANOPY_INTRO_STEP      0.30f
+#define CANOPY_INTRO_FLASH     0.40f
+#define CANOPY_INTRO_DISSOLVE  0.22f
+#define CANOPY_INTRO_SETTLE    0.55f
+
+// Quantised, for the same reason everything else here is: the per-zone colour tables are
+// rebuilt when a flash changes, and a float would rebuild all of them every frame. At 24 steps
+// over FLASH's 0.4 s a step lasts about one frame, so nothing is visibly stepped.
+#define CANOPY_INTRO_QSTEP     24

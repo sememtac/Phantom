@@ -429,7 +429,14 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     //
     // Raw normalised throttle rather than `warp`, which starts at HUD_WARP_SPEED_MIN and is
     // never zero. This one has to reach both ends.
-    vg_canopy_warp(1.0f - sn);
+    //
+    // HELD FLAT WHILE THE COCKPIT IS COMING ONLINE. The intro blacks the world out by region
+    // and the regions are screen columns, so the frame has to be where the gate thinks it is --
+    // and the resting warp is full bulge, which is the furthest it ever gets from flat. The flex
+    // is zero through the sequence and ramps in after it, so the cockpit takes up its bulge
+    // instead of appearing in it.
+    const float flex = vg_canopy_intro_flex();
+    vg_canopy_warp((1.0f - sn) * flex);
     // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
     // what the frame should be late to -- the ship is already late to it itself, and lagging a
     // lag reads as sludge.
@@ -453,8 +460,10 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         // where the frame should move most. vg.agility already carries the hull's own bonus and
         // malus, so the spread differs per ship without a second curve.
         const float agi = 1.0f + (vg.agility - 1.0f) * CANOPY_LAG_AGI;
+        // Same gate as the warp, and for the same reason -- a frame that is trailing the ship is
+        // not where the world gate expects it either.
         vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f,
-                      in ? in->roll : 0.0f, hull * agi);
+                      in ? in->roll : 0.0f, hull * agi * flex);
     }
 
     // Instruments come up as a hologram catching: mostly absent at first,
@@ -527,6 +536,20 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         jx += kx;
         jy += ky;
     }
+
+    // THE FRAME, BEFORE THE INSTRUMENTS AND WHETHER OR NOT THEY DRAW.
+    //
+    // Here rather than at the top of vg_draw_hud, which is where it was, because vg_draw_hud is
+    // skipped on most frames while the instruments are catching -- and the cockpit is structure,
+    // not projection. It has no business flickering with them.
+    //
+    // The intro makes it load-bearing: the world is held black by the canopy primitive, so a
+    // frame without it is a frame of the whole world at full brightness in the middle of the
+    // sequence. Outside the warp and jitter brackets because the table is panel-space pixels
+    // and carries no coordinates -- neither ever applied to it.
+    //
+    // Submitted first, so every instrument still draws on top of it.
+    vg_canopy_prim();
 
     if (draw_instruments) {
         vg_hud_jitter(jx, jy);

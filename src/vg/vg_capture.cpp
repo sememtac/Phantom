@@ -265,9 +265,10 @@ void vg_capture_poll(void) {
             VgCanopyCost k;
             vg_canopy_bench(&k);
             if (!vg_link_busy()) {
-                Serial.printf("canopy: %lu us rigid, %lu us warped, %d blocks, "
+                Serial.printf("canopy: %lu us rigid, %lu us warped, %lu us intro, %d blocks, "
                               "%d flat px, %d literal px\n",
                               (unsigned long)k.us, (unsigned long)k.warp_us,
+                              (unsigned long)k.intro_us,
                               k.blocks, k.flat_px, k.lit_px);
             }
         } else if (c == 'y' && !vg_link_busy()) {

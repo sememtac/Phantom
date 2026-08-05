@@ -9,6 +9,7 @@
 #include "vg_sfx.h"
 #include "vg_shake.h"
 #include "vg_replay.h"
+#include "vg_raster.h"
 #include <math.h>
 
 // The state machine: the table, what arriving at each state sets up, the three
@@ -113,6 +114,10 @@ static void enter_course(void) {
     vg.roll_rate = 0;
     vg.bank      = 0;
     vg.hud_boot = HUD_BOOT_TIME;
+    // The cockpit comes online with the instruments, not before them: the panels arrive over
+    // about the same 1.5 s the HUD spends catching, so the last region lands as the instruments
+    // stop flickering and the two read as one system booting rather than two.
+    vg_canopy_intro_begin();
     vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
     vg_input_calibrate();
 }
@@ -170,6 +175,7 @@ void vg_begin_flight(void) {
     vg_spawn_opponent();
 
     vg.hud_boot = HUD_BOOT_TIME;
+    vg_canopy_intro_begin();        // and the cockpit with them -- see enter_course
     vg_sfx_play(SFX_READY, 1.0f);   // the panel finishing, not an event
     vg.roll     = 0;
     vg.bank     = 0;
