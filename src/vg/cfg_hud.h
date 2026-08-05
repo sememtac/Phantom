@@ -206,9 +206,16 @@
 //
 // Nothing here can move the frame in a single frame, which is the whole point -- the previous
 // first-order form snapped back the instant a finger left the glass.
-#define CANOPY_LAG_DRIVE  0.55f
+// 0.55 was too loose, on a CHARIOT most of all: what the frame did at a quarter throttle was
+// what it should be doing at full. The throttle term is 0.35 + 0.65 * sn, so a quarter is 0.51
+// of full -- and that is the factor taken out here, which leaves the RAMP alone and moves the
+// whole range down together.
+#define CANOPY_LAG_DRIVE  0.28f
 #define CANOPY_LAG_SPRING 0.030f
-#define CANOPY_LAG_DAMP   0.22f
+// Firmer, because "flimsy" is not only amplitude -- a frame that rebounds twice reads as loose
+// however far it moves. 0.28 puts the damping ratio near 0.81: home in about the same time,
+// with the overshoot mostly gone rather than a visible bounce.
+#define CANOPY_LAG_DAMP   0.28f
 #define CANOPY_LAG_MAX    14.0f
 
 // Roll relative to the other two. A shear of the same pixel amount reads much stronger than a
