@@ -76,4 +76,20 @@ void vg_hud_decay(float dt) {
     // panel is doing, not what the ship is doing. It carries the ramp that follows the sequence
     // as well, so it has to be called past the end of it -- which is why the return is ignored.
     vg_canopy_intro_update(dt);
+
+    // THE BOOT CHAIN. Three things used to start together and read as one muddle; each now waits
+    // for the one before it.
+    //
+    // The instruments are cued off the COCKPIT's own progress rather than off a timer, so the two
+    // cannot drift apart when the pacing is retuned. SFX_READY moves here with them: it is the
+    // panel finishing, and it was previously playing at the moment the match began, which is a
+    // second and a half before anything was lit.
+    if (!vg.hud_cued && vg_canopy_intro_progress() >= CANOPY_INTRO_HUD_AT) {
+        vg.hud_cued = true;
+        vg.hud_boot = HUD_BOOT_TIME;
+        vg_sfx_play(SFX_READY, 1.0f);
+    }
+    // ...and the player is in the seat once the instruments are actually in. The radio waits on
+    // this, so an opponent cannot open on a panel that is not lit yet.
+    if (vg.hud_cued && !vg.ready && vg.hud_boot <= 0.0f) vg.ready = true;
 }

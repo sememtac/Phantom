@@ -126,10 +126,14 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // 0 while the sequence runs, because the world gate reads the unwarped column and a flexing
 // frame would put the black somewhere other than where the panel ends, then ramps to 1 so the
 // cockpit takes up its resting bulge instead of snapping into it.
+// `progress` is 0..1 through the sequence and 1 once it is over. It is what the instruments are
+// cued off, so the boot chain follows the cockpit rather than a clock of its own: the length is
+// derived from the pacing constants in one place, and moving them moves the cue with them.
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);
 bool  vg_canopy_intro_active(void);
 float vg_canopy_intro_flex(void);
+float vg_canopy_intro_progress(void);
 
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //

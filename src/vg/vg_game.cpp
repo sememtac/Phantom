@@ -194,6 +194,8 @@ void vg_match_start(void) {
     vg.bank        = 0;
     vg.cine.on     = false;
     vg.hud_boot    = 0;
+    vg.hud_cued    = false;      // the boot chain starts at the cockpit, not here
+    vg.ready       = false;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
     vg.trail_n     = 0;
@@ -646,12 +648,20 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     // Unprompted chatter, on a long timer and only when the radio is idle.
     // Taunts are flavour; letting one interrupt a hit or a kill would turn
     // the most informative channel on the HUD into noise.
-    vg.taunt_t -= dt;
-    if (vg.taunt_t <= 0.0f) {
-        vg.taunt_t = vg_frand(12.0f, 21.0f);
-        if (vg.comms.t <= 0.0f) {
-            for (int i = 0; i < MAX_ENEMIES; i++)
-                if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
+    //
+    // AND NOT UNTIL THE PANEL IS LIT. The countdown is held, not merely suppressed: an
+    // opponent's opening line is the first thing you learn about them, and it was landing
+    // while the cockpit was still coming online -- so it played to a dark screen and the
+    // timer had already moved on by the time there was a panel to read it on. Held, the
+    // opening remark arrives on a lit panel however long the boot took.
+    if (vg.ready) {
+        vg.taunt_t -= dt;
+        if (vg.taunt_t <= 0.0f) {
+            vg.taunt_t = vg_frand(12.0f, 21.0f);
+            if (vg.comms.t <= 0.0f) {
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                    if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
+            }
         }
     }
 

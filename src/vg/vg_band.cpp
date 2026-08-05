@@ -1877,6 +1877,20 @@ void vg_canopy_intro_begin(void) {
 
 bool vg_canopy_intro_active(void) { return s_intro_on; }
 
+// HOW FAR THROUGH, 0..1, and 1 once it is over.
+//
+// Exists so the instruments can be cued off the cockpit rather than off the clock. The whole
+// sequence's length is derived from the pacing constants in one place -- here -- so moving STEP
+// or DISSOLVE moves the cue with it instead of silently sliding it out of step.
+float vg_canopy_intro_progress(void) {
+    if (!s_intro_on) return 1.0f;
+    const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
+                    + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
+    if (end <= 0.0f) return 1.0f;
+    const float a = s_intro_t / end;
+    return (a > 1.0f) ? 1.0f : a;
+}
+
 // HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
 //
 // The caller multiplies both the warp and the lag by this. It is not an optimisation: the world

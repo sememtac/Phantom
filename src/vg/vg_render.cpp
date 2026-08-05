@@ -470,8 +470,13 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // flickering in, solid by the end. Driven by dropping whole frames rather
     // than by dimming, because a projector that is not holding sync loses the
     // image outright and a fade just looks like a brightness slider.
-    bool draw_instruments = true;
-    if (vg.hud_boot > 0.0f) {
+    //
+    // AND NOT AT ALL until the cockpit calls for them. hud_boot is no longer set at the top of a
+    // match -- the boot is a chain, and the instruments are the third link -- so a bare
+    // `hud_boot > 0` test would have read as "already booted" through the whole dark phase and
+    // drawn the panel solid from the first frame. Which is the opposite of the sequence.
+    bool draw_instruments = vg.hud_cued;
+    if (vg.hud_cued && vg.hud_boot > 0.0f) {
         const float p = 1.0f - vg.hud_boot / HUD_BOOT_TIME;   // 0..1 settled
         // Bucketed so the flicker has a rate of its own instead of strobing at
         // whatever the frame rate happens to be.

@@ -260,8 +260,10 @@
 // other way round and it read as a few struts brightening rather than as a piece of the view
 // coming on -- the author's word for the green shapes is "mask", and a mask is the area.
 //
-// LEAD is how long the black holds before the first region lights. It has to be long enough to
-// read as deliberate rather than as a dropped frame.
+// LEAD is how long the black holds before the first region lights, and a full second of it is
+// deliberate. The author asked for the wait: arriving in the seat with nothing lit is the moment
+// the sequence is FOR, and at a third of a second it read as a dropped frame rather than as a
+// system that has not come up yet. Long enough to be uncomfortable is the target.
 //
 // STEP is the gap between one region and the next. The drawing has four, so the sequence runs
 // LEAD + 3*STEP before the last one even starts -- which is why STEP is the constant to reach
@@ -280,10 +282,17 @@
 // flat -- so without this the cockpit would jump the moment the intro released. Over half a
 // second it reads as the frame taking up its load.
 //
-// The total is LEAD + 3*STEP + FLASH + DISSOLVE. Check it against HUD_BOOT_TIME after any
-// change: the instruments spend 1.5 s catching, and the two reading as one system booting rather
-// than two events depends on the last region landing as the flicker stops.
-#define CANOPY_INTRO_LEAD      0.30f
+// HUD_AT is where in the sequence the INSTRUMENTS are cued, as a fraction of the whole. The boot
+// is a chain -- dark, then the cockpit, then the instruments, then the player is in the seat and
+// the radio may open -- and before this the three ran concurrently and were, in the author's
+// words, overlapping too tightly. Cued off the cockpit's own progress rather than off a timer, so
+// retuning the pacing above moves the cue with it instead of quietly sliding it out of step.
+//
+// 0.90 puts it after every region has flashed and while the last one's members are still cooling,
+// so the instruments arrive into a cockpit that is lit but not yet settled. Earlier and they
+// compete with the flashes; at 1.0 the panel sits finished and empty for a moment first.
+#define CANOPY_INTRO_HUD_AT    0.90f
+#define CANOPY_INTRO_LEAD      1.00f
 #define CANOPY_INTRO_STEP      0.30f
 #define CANOPY_INTRO_FLASH     0.09f
 #define CANOPY_INTRO_DISSOLVE  0.32f

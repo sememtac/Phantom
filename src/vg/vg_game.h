@@ -595,6 +595,19 @@ struct VgGame {
     } cine;
 
     float    hud_boot;     // >0 while the instruments are coming up
+    // THE BOOT IS A CHAIN NOW, and these two are the links.
+    //
+    // A match used to start everything at once: the instruments caught, the cockpit came
+    // online and the opponent opened the radio, all inside the same second and a half. The
+    // author's word for it was that the three "overlap too tightly", and the fix is to make
+    // each one wait for the one before it.
+    //
+    // So: the view sits dark, the cockpit arrives a region at a time, and only when that is
+    // nearly done does `hud_cued` fire and start hud_boot. `ready` follows once the
+    // instruments are actually in, and the radio waits for it -- an opponent talking over a
+    // panel that is not lit yet is talking to nobody.
+    bool     hud_cued;     // the cockpit sequence has called for the instruments
+    bool     ready;        // instruments in: the player is in the seat and the radio may open
     // >0 while the systems are visibly hurt. Same failure language as the death
     // screen, briefly and at lower severity -- damage and destruction are the
     // same event at different scales, so they read as the same thing happening.
