@@ -426,6 +426,20 @@ bool vg_sky_ready(void) { return s_ready; }
 #define SKY_MENU_SEED 256u
 static bool s_is_menu = false;
 
+// THE MENU'S NEBULA RUNS COOL, and only the menu's.
+//
+// The system text is amber, and amber over a warm nebula is two oranges arguing. Cooling the
+// backdrop gives the type something to sit against.
+//
+// Applied as a PASS OVER THE FINISHED TEXTURE rather than inside gen_nebula, which is the
+// whole point: a venue's sky is generated exactly as it always was, and this touches nothing
+// but the one texture the menu builds for itself. 16,384 texels, once, when the menu comes up.
+//
+// Luminance is preserved and the hue is pulled toward the target, rather than the channels
+// being scaled -- a warm nebula has almost no blue in it, so scaling blue up would have
+// nothing to work with and would only darken the rest.
+static void tint_menu(void);   // defined below, with the pack helpers it needs
+
 void vg_sky_menu(void) {
     // Already up. Menu to menu is free; only a venue displaces it.
     //
@@ -442,6 +456,7 @@ void vg_sky_menu(void) {
         return;
     }
     vg_sky_generate(SKY_NEBULA, SKY_MENU_SEED);
+    tint_menu();
     s_is_menu = true;
 }
 
@@ -479,6 +494,19 @@ static inline void unpack565_swapped(uint16_t c, float* r, float* g, float* b) {
     *r = (float)((v >> 11) & 0x1F) * (1.0f / 31.0f);
     *g = (float)((v >>  5) & 0x3F) * (1.0f / 63.0f);
     *b = (float)( v        & 0x1F) * (1.0f / 31.0f);
+}
+
+static void tint_menu(void) {
+    if (!s_tex) return;
+    for (int i = 0; i < SKY_TEX_SIZE * SKY_TEX_SIZE; i++) {
+        float r, g, b;
+        unpack565_swapped(s_tex[i], &r, &g, &b);
+        const float lum = 0.30f * r + 0.59f * g + 0.11f * b;
+        const float t   = SKY_MENU_COOL;
+        s_tex[i] = pack565_swapped(r * (1.0f - t) + lum * SKY_MENU_TINT_R * t,
+                                   g * (1.0f - t) + lum * SKY_MENU_TINT_G * t,
+                                   b * (1.0f - t) + lum * SKY_MENU_TINT_B * t);
+    }
 }
 
 // Shortest distance across the wrap. Everything positional in here uses it, so

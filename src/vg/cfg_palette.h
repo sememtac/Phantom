@@ -130,3 +130,18 @@ static inline uint16_t vg_hue_col(float h) {
                              (int)(b * 31.0f + 0.5f));
     return VGC(c);
 }
+
+// --- the menu's backdrop, and only the menu's -----------------------------
+//
+// The system text is amber; a warm nebula behind it is two oranges arguing. The menu cools its
+// own copy of the texture so the type has something to sit against. A venue's sky is generated
+// exactly as it always was -- see tint_menu in vg_sky.cpp.
+//
+// COOL is how far the hue is pulled, 0 leaving it alone and 1 discarding the original colour
+// entirely. TINT is the direction, applied at the texel's own luminance so the nebula keeps
+// its shape and its brightness range. Above 1 on a channel is allowed and useful: the blue has
+// to exceed the luminance to read as blue at all.
+#define SKY_MENU_COOL     0.80f
+#define SKY_MENU_TINT_R   0.42f
+#define SKY_MENU_TINT_G   0.72f
+#define SKY_MENU_TINT_B   1.55f
