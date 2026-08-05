@@ -1258,7 +1258,63 @@ static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uin
 // row is an independent column of the drawing -- nothing carries between them -- which
 // is what makes this splittable at all, and it is by far the biggest of the three
 // row-split jobs: measured at ~4 ms against the backdrop's 2.5 and the scanlines' 1.8.
-static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
+// ===========================================================================
+// THE WARP
+//
+// The frame flexes with the throttle, and it costs almost nothing, because the table is
+// already a list of RUNS and a run can be moved by moving its endpoints. Two tables:
+//
+//   s_wy[y]   where the drawing's y goes. A stretch about the centre, so the members spread
+//             as the throttle opens. Applied to a block's START and END and the length taken
+//             as the difference, which is what makes it gap-free -- one run's end is the next
+//             run's start, so mapping both through the same table keeps them touching.
+//   s_wc[col] a shift for the whole column. Larger toward the edges, so the stretch bows
+//             rather than sliding, which is the difference between a frame flexing and a
+//             frame being dragged.
+//
+// Two table reads, a subtract and an add per block: 2,492 blocks, about 60 us. Nothing here
+// touches the per-PIXEL loop, which is where the 37 cycles live.
+//
+// The maps are rebuilt only when the QUANTISED amount changes. The HUD's warp has to be
+// quantised deliberately -- a fractional shift moves every instrument line by part of a pixel
+// and reads as shimmer -- and this one quantises itself, because a table of pixel offsets has
+// nowhere to put a fraction.
+static int16_t s_wy[SCR_W + 1];
+static int16_t s_wc[SCR_H];
+static int     s_wq = -1;                 // the quantised amount the maps were built for
+static bool    s_warp_on = false;
+
+void vg_canopy_warp(float k) {
+    if (k < 0.0f) k = 0.0f;
+    if (k > 1.0f) k = 1.0f;
+    const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
+    s_warp_on = (q != 0);
+    if (q == s_wq) return;
+    s_wq = q;
+
+    const float a  = (float)q / (float)CANOPY_WARP_STEPS;
+    const float cy = (float)(SCR_W - 1) * 0.5f;
+    const float s  = 1.0f + CANOPY_WARP_STRETCH * a;
+    for (int y = 0; y <= SCR_W; y++) {
+        int v = (int)(cy + ((float)y - cy) * s + 0.5f);
+        if (v < 0) v = 0; else if (v > SCR_W) v = SCR_W;
+        s_wy[y] = (int16_t)v;
+    }
+    // The bow, per column, measured from the middle of the frame outward.
+    const float cx = (float)(SCR_H - 1) * 0.5f;
+    for (int c = 0; c < SCR_H; c++) {
+        const float t = ((float)c - cx) / cx;          // -1 .. 1
+        s_wc[c] = (int16_t)(int)(CANOPY_WARP_BOW * a * t * t * (t < 0.0f ? -1.0f : 1.0f));
+    }
+}
+
+// WARP OR NO WARP, settled at compile time.
+//
+// Asked per block, the flag cost 83 us of a 4042 us pass for a question whose answer is the
+// same for the whole frame -- the same shape of waste the sky fill's tint flag was. Two
+// instantiations, and the rigid one carries no warp code at all.
+template <bool WARP>
+static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
 
     for (int py = by0 + r0; py < by0 + r1; py++) {
@@ -1277,22 +1333,46 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
         // in the flag byte. The side is in the header too: a block never crosses the
         // background, so nothing here tests light against shade per pixel.
+        const int wofs = WARP ? s_wc[c] : 0;
+
         while (p + 3 <= e) {
             const uint8_t h   = p[0];
             const int     y0  = ((h & 1) << 8) | p[1];   // the picture's y is panel x
             const int     len = ((h & 2) << 7) | p[2];
             p += 3;
+
+            int at = y0, n = len, skip = 0;
+            if (WARP) {
+                // Both ends through the same map, and the length is the difference -- so the
+                // run still ends exactly where the next one starts.
+                at = s_wy[y0] + wofs;
+                n  = s_wy[y0 + len] + wofs - at;
+                // THE TABLE'S OWN BOUNDS NO LONGER APPLY. Baked, every block was inside the
+                // row by construction and the baker verifies it; moved at runtime, that
+                // guarantee is gone and a block can hang off either edge. Trimming the FRONT
+                // also has to advance the level array, or a literal block would paint its
+                // remaining pixels with the colours of the ones that were clipped.
+                if (at < 0)            { skip = -at; n -= skip; at = 0; }
+                if (at + n > SCR_W)    { n = SCR_W - at; }
+                if (n <= 0) { if (h & 0x80) p += len; else p++; continue; }
+            }
+
             if (h & 0x80) {                              // a level per pixel
-                if (h & 0x40) span_lit_sub(&row[y0], len, p);
-                else          span_lit_add(&row[y0], len, p);
+                if (h & 0x40) span_lit_sub(&row[at], n, p + skip);
+                else          span_lit_add(&row[at], n, p + skip);
                 p += len;
             } else {                                     // one level, delta hoisted
                 const uint16_t d = s_can_lut[*p++];
-                if (h & 0x40) span_sub(&row[y0], len, d);
-                else          span_add(&row[y0], len, d);
+                if (h & 0x40) span_sub(&row[at], n, d);
+                else          span_add(&row[at], n, d);
             }
         }
     }
+}
+
+static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
+    if (s_warp_on) canopy_rows_t<true>(band, by0, r0, r1);
+    else           canopy_rows_t<false>(band, by0, r0, r1);
 }
 
 // A FAN OF LINES, both ways, over every slope.
@@ -1515,7 +1595,14 @@ void vg_canopy_bench(VgCanopyCost* out) {
     static uint16_t scratch[SCR_W];
     if (!s_can_ready) canopy_lut();
 
-    uint32_t cyc = 0, cal = 0;
+    // BOTH STATES, because the warp is the thing most likely to be changed next and its cost
+    // is the question. The game's own setting is saved and put back, so running the bench does
+    // not leave the frame flexing at whatever the bench used last.
+    const int   save_q  = s_wq;
+    const bool  save_on = s_warp_on;
+
+    uint32_t cyc = 0, cal = 0, wcyc = 0;
+    vg_canopy_warp(0.0f);
     for (int py = 0; py < SCR_H; py++) {
         for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;   // mid grey, both ways to go
         const uint32_t t0 = esp_cpu_get_cycle_count();
@@ -1527,7 +1614,17 @@ void vg_canopy_bench(VgCanopyCost* out) {
         asm volatile("" ::: "memory");
         cal += esp_cpu_get_cycle_count() - t1;
     }
+    vg_canopy_warp(1.0f);
+    for (int py = 0; py < SCR_H; py++) {
+        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        canopy_rows(scratch, py, 0, 1);
+        wcyc += esp_cpu_get_cycle_count() - t0;
+    }
+    s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
+
     out->us      = (cyc > cal ? cyc - cal : 0) / 240u;
+    out->warp_us = (wcyc > cal ? wcyc - cal : 0) / 240u;
     out->blocks  = CANOPY_BLOCKS;
     out->flat_px = CANOPY_FLAT_PX;
     out->lit_px  = CANOPY_LIT_PX;

@@ -92,6 +92,14 @@ void vg_sky_patch_prim(int x, int y, int w, int h);
 // picture, so the frame lights what is behind it rather than painting over it.
 void vg_canopy_prim(void);
 
+// THE FRAME FLEXING WITH THE THROTTLE. `k` is 0..1; 0 is rigid.
+//
+// Cheap because the table is runs, and a run moves by moving its endpoints -- two table reads
+// and an add per block, nothing per pixel. Set it once per frame before the flush, from the
+// same throttle the instruments' warp uses, so the frame and the panel mounted on it move
+// together. See CANOPY_WARP_* in cfg_hud.h and the note at its definition.
+void vg_canopy_warp(float k);
+
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //
 // The canopy only draws inside a match, so the frame counter cannot be read without
@@ -99,7 +107,7 @@ void vg_canopy_prim(void);
 // rendezvous, which no table can be judged against. This runs the whole pass on one core
 // and reports it flat, with the counts it got through, so the baker's estimate has
 // something to be right or wrong about. See the note at its definition.
-struct VgCanopyCost { uint32_t us; int blocks, flat_px, lit_px; };
+struct VgCanopyCost { uint32_t us, warp_us; int blocks, flat_px, lit_px; };
 void vg_canopy_bench(VgCanopyCost* out);
 
 // THE BACKDROP, on the same terms. Serial 's'.

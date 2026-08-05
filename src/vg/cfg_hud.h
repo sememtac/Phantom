@@ -132,3 +132,21 @@
 #define REAR_ZONE_Y0         (REAR_Y - 30)
 #define REAR_ZONE_X1         (REAR_X + REAR_W + 24)
 #define REAR_ZONE_Y1         (REAR_Y + REAR_H + 30)
+
+// --- the canopy's own flex ------------------------------------------------
+//
+// The baked frame is panel-space pixels, so it cannot ride the spherical warp the
+// instruments do -- and for a while that was written up as a virtue, the frame staying rigid
+// while the panel mounted on it moved. It reads better flexing.
+//
+// A run can be moved by moving its endpoints, so this costs two table reads and an add per
+// BLOCK and nothing at all per pixel. See the note above vg_canopy_warp.
+//
+// STRETCH is how much the frame spreads along the drawing's y at full throttle, as a
+// fraction. BOW is how many pixels the outermost columns shift relative to the middle, which
+// is what stops the stretch reading as the whole frame sliding. STEPS quantises the amount so
+// the maps are rebuilt a handful of times rather than every frame; the offsets are whole
+// pixels regardless, so nothing shimmers between steps.
+#define CANOPY_WARP_STRETCH  0.045f
+#define CANOPY_WARP_BOW      7.0f
+#define CANOPY_WARP_STEPS    12

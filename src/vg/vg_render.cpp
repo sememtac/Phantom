@@ -417,6 +417,12 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     float warp = HUD_WARP_SPEED_MIN + (1.0f - HUD_WARP_SPEED_MIN) * sn;
     warp = floorf(warp * HUD_WARP_STEPS + 0.5f) / HUD_WARP_STEPS;
 
+    // The canopy flexes on the same throttle, so the frame and the instruments mounted on it
+    // move together. It takes the RAW normalised throttle rather than `warp`: the instruments'
+    // bend starts at HUD_WARP_SPEED_MIN and is never zero, while the frame should be rigid at
+    // rest and only give under thrust. It quantises itself -- its offsets are whole pixels.
+    vg_canopy_warp(sn);
+
     // Instruments come up as a hologram catching: mostly absent at first,
     // flickering in, solid by the end. Driven by dropping whole frames rather
     // than by dimming, because a projector that is not holding sync loses the
