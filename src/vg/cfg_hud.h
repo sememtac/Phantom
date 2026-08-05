@@ -251,37 +251,50 @@
 
 // --- the canopy coming online ---------------------------------------------
 //
-// The match opens with the view black and the instruments already lit, and the cockpit
-// arrives a panel at a time: a region flashes white, falls to its authored level, and the
-// world behind it dissolves in. The ORDER is the artist's, read out of the green channel of
-// the drawing, so this file decides only the pacing.
+// The match opens with the view black and the instruments already lit, and the view arrives a
+// REGION at a time: the whole region flashes white, the world dissolves out of that white, and
+// the frame's members in it start drawing. The ORDER is the artist's, read out of the green
+// channel of the drawing, so this file decides only the pacing.
 //
-// LEAD is how long the black holds before the first panel lights. It has to be long enough to
+// THE FLASH IS THE WHOLE REGION, not the frame's members inside it. The first version had it the
+// other way round and it read as a few struts brightening rather than as a piece of the view
+// coming on -- the author's word for the green shapes is "mask", and a mask is the area.
+//
+// LEAD is how long the black holds before the first region lights. It has to be long enough to
 // read as deliberate rather than as a dropped frame.
 //
-// STEP is the gap between one panel and the next. The drawing has four, so the sequence is
-// LEAD + 4*STEP long before the last flash has even started to fall -- which is why STEP is
-// the constant to reach for if the whole thing feels slow, not FLASH.
+// STEP is the gap between one region and the next. The drawing has four, so the sequence runs
+// LEAD + 3*STEP before the last one even starts -- which is why STEP is the constant to reach
+// for if the whole thing feels slow.
 //
-// FLASH is how long a panel takes to fall from white to its authored level. Longer overlaps
-// the panels' flashes and reads as a cockpit filling with light; shorter makes each one a
-// distinct event. It wants to be a little longer than STEP so two are always falling at once.
+// FLASH is how long the region holds SOLID WHITE before it starts giving way. A flash has an
+// instant onset by definition, so there is no ramp into it; this is the plateau only. Keep it
+// short -- it is a flash, and the sequence has four of them.
 //
-// DISSOLVE is how long the world takes to come in behind a panel, as an ordered dither
-// rather than a fade -- see canopy_gate. Deliberately SHORTER than FLASH, so the world is
-// arriving while the panel above it is still bright and the dither is hidden inside the glare.
+// DISSOLVE is how long the world takes to come through that white, as an ordered dither rather
+// than a cross-fade -- see canopy_gate. This is the part that reads as a region resolving, so it
+// wants to be several times FLASH.
 //
-// SETTLE is the flex ramping in at the end. The frame is held rigid through the sequence
-// because the world gate and the frame have to agree pixel for pixel, and the resting warp is
-// a long way from flat -- so without this the cockpit would jump the moment the intro
-// released. Over half a second it reads as the frame taking up its load.
+// SETTLE is the flex ramping in at the end. The frame is held rigid through the sequence because
+// the gate and the frame have to agree pixel for pixel, and the resting warp is a long way from
+// flat -- so without this the cockpit would jump the moment the intro released. Over half a
+// second it reads as the frame taking up its load.
+//
+// The total is LEAD + 3*STEP + FLASH + DISSOLVE. Check it against HUD_BOOT_TIME after any
+// change: the instruments spend 1.5 s catching, and the two reading as one system booting rather
+// than two events depends on the last region landing as the flicker stops.
 #define CANOPY_INTRO_LEAD      0.30f
 #define CANOPY_INTRO_STEP      0.30f
-#define CANOPY_INTRO_FLASH     0.40f
-#define CANOPY_INTRO_DISSOLVE  0.22f
+#define CANOPY_INTRO_FLASH     0.09f
+#define CANOPY_INTRO_DISSOLVE  0.32f
 #define CANOPY_INTRO_SETTLE    0.55f
 
-// Quantised, for the same reason everything else here is: the per-zone colour tables are
-// rebuilt when a flash changes, and a float would rebuild all of them every frame. At 24 steps
-// over FLASH's 0.4 s a step lasts about one frame, so nothing is visibly stepped.
-#define CANOPY_INTRO_QSTEP     24
+// THE FLASH COLOUR, as RGB565 in PANEL byte order -- it is stored straight into the band buffer,
+// which is what the wire reads. Full white is symmetric, so 0xFFFF needs no swap.
+//
+// Turn it down here if the flash blows out on the panel. The five bits of red and blue and six of
+// green are 0..31 and 0..63, so a restrained white is something like (28, 58, 28) -- and being a
+// flat fill rather than an additive blend, whatever is put here is exactly what appears. It
+// cannot clip, which is the point: the previous version reached white by lerping the panel's
+// orange in an additive table, passed through a hot salmon on the way, and blew out the hue.
+#define CANOPY_INTRO_WHITE     0xFFFFu

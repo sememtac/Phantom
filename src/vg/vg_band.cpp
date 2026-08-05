@@ -1606,62 +1606,50 @@ void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, f
 // ===========================================================================
 // THE CANOPY COMING ONLINE
 //
-// The match opens black with the instruments already lit, and the cockpit arrives a region at
-// a time. Three things happen per region, all keyed off the ZONE the artist painted into the
-// green channel of the drawing:
+// The match opens black with the instruments already lit, and the view arrives a region at a
+// time. Per region, keyed off the ZONE the artist painted into the green channel:
 //
-//   the frame's blocks in that zone start being drawn at all,
-//   they are drawn WHITE and fall to their authored level over CANOPY_INTRO_FLASH,
-//   and the world behind them dissolves in from black over CANOPY_INTRO_DISSOLVE.
+//   the whole region flashes WHITE -- every pixel of it, not just the frame's members,
+//   the world then dissolves in out of that white,
+//   and the frame's blocks in that zone begin drawing at their authored level.
 //
-// It runs off the intro block table, whose runs are cut at zone borders so that switching a
-// zone on is switching a set of whole blocks on. The flight table is not cut that way and its
-// zone tags do not mean anything -- see the generated header.
+// THE GREEN SHAPE IS THE FLASH. That is the author's own word for it -- "the shapes act as
+// mask" -- and the first version got it wrong: it flashed the frame's BLOCKS, which is the
+// tenth of the region the cockpit actually covers, so a region lighting up read as a few
+// members brightening instead of a piece of the view coming on.
 //
-// The frame is held RIGID throughout. The world gate and the frame have to agree pixel for
-// pixel or the black would not end where the panel does, and the cheapest way to guarantee
-// that is to have both read the same unwarped column. CANOPY_INTRO_SETTLE then ramps the flex
-// in at the end, because the resting warp is a long way from flat and the cockpit would
-// otherwise jump the moment the sequence released.
+// It also produced the overblown colour the author saw. Flashing the blocks meant lerping the
+// panel's orange toward white in a per-zone table, which passes through a hot salmon at half
+// flash -- and that was being ADDED to an already-bright view, so the channels clipped at
+// different points and the hue swung. There is no per-zone colour table any more. The region
+// flash is a flat fill and the frame draws its authored level throughout, which cannot clip.
+//
+// The blocks still have to be withheld until their zone comes up: the gate runs BEFORE them in
+// the row, so a block drawn early would sit glowing on the black. That is what the intro table
+// is for -- its runs are cut at zone borders, so switching a zone on switches whole blocks on.
+// The flight table is not cut that way and its zone tags mean nothing; see the generated header.
+//
+// The frame is held RIGID throughout. The gate and the frame have to agree pixel for pixel or
+// the black would not end where the panel does, and the cheapest way to guarantee that is to
+// have both read the same unwarped column. CANOPY_INTRO_SETTLE then ramps the flex in at the
+// end, because the resting warp is a long way from flat and the cockpit would otherwise jump
+// the moment the sequence released.
 static bool    s_intro_on   = false;
 static float   s_intro_t    = 0.0f;
-static uint8_t s_izon[CANOPY_ZONES];      // 0 dark, 255 fully revealed -- the WORLD behind
+static uint8_t s_izon[CANOPY_ZONES];      // 0 held, 255 fully dissolved to the world
 static uint8_t s_ilive[CANOPY_ZONES];     // whether this zone's blocks are drawn at all
-static uint8_t s_iflash[CANOPY_ZONES];    // 255 solid white, 0 the authored level
-static uint8_t s_iq[CANOPY_ZONES];        // the quantised flash each table was built for
-static uint16_t s_ilut[CANOPY_ZONES][256];
-
-// A zone's colours, from white at the flash's peak to the authored level once it has fallen.
-//
-// At full flash EVERY level maps to white, so the region reads as a solid silhouette lighting
-// up rather than as its own drawing getting brighter -- which is the difference between a panel
-// switching on and a panel being dimmed.
-static void canopy_ilut(int z) {
-    const uint32_t t = (uint32_t)s_iflash[z];       // 0..255 toward white
-    for (int g = 0; g < 256; g++) {
-        const uint32_t v = s_can_lut[g];            // panel order
-        const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
-        const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
-        const uint32_t R = r  + (((31u - r)  * t) >> 8);
-        const uint32_t G = gg + (((63u - gg) * t) >> 8);
-        const uint32_t B = b  + (((31u - b)  * t) >> 8);
-        const uint32_t o = (R << 11) | (G << 5) | B;
-        s_ilut[z][g] = (uint16_t)(((o >> 8) | (o << 8)) & 0xFFFFu);
-    }
-    s_iq[z] = s_iflash[z];
-}
+static uint16_t s_ifill[CANOPY_ZONES];    // what a held pixel is: black before the flash, white after
 
 // A DITHER, NOT A FADE, and it is both cheaper and a better fit.
 //
-// Blacking a region is a store per pixel. Fading one in would be three multiplies per pixel to
-// scale toward black -- about 15 cycles against 4 -- and across a 77,000-pixel zone that is
-// nearly 5 ms for a transition that is mostly hidden anyway, because the panel above it is at
-// its brightest exactly while the world is arriving.
+// Holding a region is a store per pixel. Cross-fading one would be three multiplies per pixel,
+// about 15 cycles against a handful, and across a 77,000-pixel zone that is milliseconds for a
+// transition that lasts a third of a second.
 //
-// So the reveal is an ordered 4x4 threshold: a pixel survives once its cell's value is under
-// the zone's reveal. Pixels light up in a fixed scatter instead of the whole region brightening
-// together, which reads as a picture being acquired rather than a lamp being turned up -- and
-// it is the same language the backdrop's own reveal already speaks.
+// So the reveal is an ordered 4x4 threshold: a pixel gives up its hold once its cell's value is
+// under the zone's reveal. Pixels come through in a fixed scatter instead of the whole region
+// changing together, which reads as a picture being acquired rather than a lamp being turned
+// down -- and it is the same language the backdrop's own reveal already speaks.
 static const uint8_t BAYER4[16] = {
      0,  8,  2, 10,
     12,  4, 14,  6,
@@ -1669,11 +1657,15 @@ static const uint8_t BAYER4[16] = {
     15,  7, 13,  5,
 };
 
-// One panel row of the world gate. `lx` is the true screen column, never a warped one.
+// One panel row of the gate. `lx` is the true screen column, never a warped one.
 //
 // Runs cover the whole column with no gap, so this walks them all and does nothing for a zone
 // that is already fully in. Three bytes a run and about three runs a column, so the walk itself
-// is free and the cost is entirely in the pixels it blacks out.
+// is free and the cost is entirely in the pixels it holds.
+//
+// A held pixel takes the zone's fill -- black before its flash, white during it -- so the same
+// loop serves both. That is the whole reason the flash is affordable across a region rather than
+// only across the frame: a flat fill is the cheapest thing this file does.
 static __attribute__((noinline))
 void canopy_gate(uint16_t* row, int lx, int py) {
     const uint8_t* p = &CANOPY_ZDATA[CANOPY_ZOFS[lx]];
@@ -1685,18 +1677,20 @@ void canopy_gate(uint16_t* row, int lx, int py) {
         const int     n  = ((h & 2) << 7) | p[2];
         const int     z  = (h >> 2) & 15;
         p += 3;
-        const uint32_t rev = (z < CANOPY_ZONES) ? s_izon[z] : 255u;
+        if (z >= CANOPY_ZONES) continue;
+        const uint32_t rev  = s_izon[z];
         if (rev >= 255u) continue;                  // this region is all the way in
+        const uint16_t fill = s_ifill[z];
         uint16_t* q = &row[y0];
         if (rev == 0u) {
-            for (int i = 0; i < n; i++) q[i] = 0;    // not online at all
+            for (int i = 0; i < n; i++) q[i] = fill;  // held: black, or the flash
         } else {
             // 0..16, not 0..15. `rev >> 4` tops out at 15, which leaves one cell of the
-            // sixteen still black at the very end of the dissolve -- a sixteenth of the region
-            // popping off in one frame. *17>>8 reaches 16, which is past every cell.
+            // sixteen still held at the very end of the dissolve -- a sixteenth of the region
+            // popping through in one frame. *17>>8 reaches 16, which is past every cell.
             const uint32_t th = (rev * 17u) >> 8;
             for (int i = 0; i < n; i++)
-                if ((uint32_t)bay[(y0 + i) & 3] >= th) q[i] = 0;
+                if ((uint32_t)bay[(y0 + i) & 3] >= th) q[i] = fill;
         }
     }
 }
@@ -1767,6 +1761,9 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
 
             // WHOSE TURN IT IS. The zone is only meaningful in the intro table, where a block
             // never spans two of them, so a zone that has not come up yet skips whole blocks.
+            //
+            // The level is the AUTHORED one either way. The flash belongs to the region, not to
+            // the block -- see the note at the intro state.
             const uint16_t* lut = s_can_lut;
             if (INTRO) {
                 const int z = (h >> 2) & 15;
@@ -1774,7 +1771,6 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                     p += (h & 0x80) ? len : 1;
                     continue;
                 }
-                lut = s_ilut[z];
             }
 
             int at = y0, n = len, skip = 0, n0 = len;
@@ -1827,8 +1823,7 @@ void vg_canopy_intro_begin(void) {
     s_settle_t = -1.0f;
     if (!s_can_ready) canopy_lut();
     for (int z = 0; z < CANOPY_ZONES; z++) {
-        s_izon[z] = 0; s_ilive[z] = 0; s_iflash[z] = 255;
-        canopy_ilut(z);
+        s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
     }
     // Nothing left over on the spring, or the frame would start the sequence already leaning.
     for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
@@ -1865,33 +1860,26 @@ bool vg_canopy_intro_update(float dt) {
     for (int z = 0; z < CANOPY_ZONES; z++) {
         const float e = s_intro_t - (CANOPY_INTRO_LEAD + (float)z * CANOPY_INTRO_STEP);
         if (e < 0.0f) continue;                  // this one's turn has not come
-        s_ilive[z] = 1;
+        s_ilive[z]  = 1;
+        s_ifill[z]  = CANOPY_INTRO_WHITE;        // it has flashed, so a held pixel is white now
 
-        // The flash falls from white to the authored level. Quantised, so the zone's colour
-        // table is rebuilt a couple of dozen times across the fall rather than every frame.
-        float f = 1.0f - e / CANOPY_INTRO_FLASH;
-        if (f < 0.0f) f = 0.0f;
-        const int q = (int)(f * CANOPY_INTRO_QSTEP + 0.5f);
-        const uint8_t want = (uint8_t)((q * 255) / CANOPY_INTRO_QSTEP);
-        if (want != s_iq[z]) { s_iflash[z] = want; canopy_ilut(z); }
-
-        // ...and the world dissolves in behind it, faster than the flash falls.
-        float r = e / CANOPY_INTRO_DISSOLVE;
+        // The region holds solid white for FLASH, then the world dissolves out of it. A flash
+        // has an instant onset by definition, so there is no ramp up -- the fill switches from
+        // black to white on the frame the zone's turn arrives.
+        float r = (e - CANOPY_INTRO_FLASH) / CANOPY_INTRO_DISSOLVE;
+        if (r < 0.0f) r = 0.0f;
         if (r > 1.0f) r = 1.0f;
         s_izon[z] = (uint8_t)(r * 255.0f + 0.5f);
     }
 
-    // Over when the last zone's flash has fallen. The settle that follows is not part of it:
-    // the world is fully in by then and the frame is merely taking up its flex.
+    // Over when the last zone has dissolved through. The settle that follows is not part of it:
+    // the view is fully in by then and the frame is merely taking up its flex.
     const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
-                    + CANOPY_INTRO_FLASH;
+                    + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE;
     if (s_intro_t >= end) {
         s_intro_on = false;
         s_settle_t = 0.0f;
-        for (int z = 0; z < CANOPY_ZONES; z++) {
-            s_izon[z] = 255; s_ilive[z] = 1;
-            if (s_iflash[z]) { s_iflash[z] = 0; canopy_ilut(z); }
-        }
+        for (int z = 0; z < CANOPY_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; }
         return false;
     }
     return true;
