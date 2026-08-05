@@ -196,7 +196,9 @@
 // camera, so the canopy borrows it instead of keeping a second table that could drift out of
 // agreement with it.
 #define CANOPY_LAG_PX     48.0f
-#define CANOPY_LAG_EASE   0.10f
+// Lower eases for longer: the smoothed copy takes more frames to catch up, so the swing both
+// grows further and takes longer to settle. 0.10 read as a flick; this is closer to weight.
+#define CANOPY_LAG_EASE   0.045f
 #define CANOPY_LAG_MAX    14.0f
 
 // Roll relative to the other two. A shear of the same pixel amount reads much stronger than a

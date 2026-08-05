@@ -1539,6 +1539,19 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
         // in the flag byte. The side is in the header too: a block never crosses the
         // background, so nothing here tests light against shade per pixel.
+        // CLAMPING THE OTHER AXIS. The column clamp above covers movement along logical x; this
+        // covers logical y, which is a panel row's x -- and the two need different treatment,
+        // because a column is SAMPLED while the runs along a row are a sparse list. Trimming a
+        // run that leaves the screen is right; a run PULLED AWAY from the screen edge has to be
+        // extended to it, or the frame ends in mid-air and reads as clipped.
+        //
+        // Extended only where the drawing's own content reached the border. A frame whose
+        // members stop at y 400 with background beyond has nothing to clamp -- background is
+        // background, and stretching it would invent a member nobody drew.
+        int      tail_at  = -1;           // where the last block ended, mapped
+        uint16_t tail_d   = 0;
+        bool     tail_sub = false, tail_edge = false, first_blk = true;
+
         const int   wofs  = WARP ? (s_wc[c] + s_lag_py
                                     + (int)((float)(c - SCR_H / 2) * s_lag_sh)) : 0;
         // dx is the same for every block in this column, so its share of the sphere hoists.
@@ -1567,6 +1580,24 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                 if (n <= 0) { if (h & 0x80) p += len; else p++; continue; }
             }
 
+            // The deltas at this block's two ends, for the edge extension. Taken here, while
+            // p still points at the levels.
+            uint16_t d_lo = 0, d_hi = 0;
+            if (WARP) {
+                d_lo = s_can_lut[p[0]];
+                d_hi = s_can_lut[(h & 0x80) ? p[len - 1] : p[0]];
+                if (first_blk && y0 == 0 && at > 0) {
+                    // The drawing starts hard against the top, and the frame has moved down.
+                    if (h & 0x40) span_sub(&row[0], at, d_lo);
+                    else          span_add(&row[0], at, d_lo);
+                }
+                first_blk = false;
+                tail_at   = at + n;
+                tail_d    = d_hi;
+                tail_sub  = (h & 0x40) != 0;
+                tail_edge = (y0 + len >= SCR_W);
+            }
+
             if (h & 0x80) {                              // a level per pixel
                 if (WARP && n0 != len) {
                     // Stretched or squeezed: walk the levels at the ratio rather than one
@@ -1585,6 +1616,13 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                 if (h & 0x40) span_sub(&row[at], n, d);
                 else          span_add(&row[at], n, d);
             }
+        }
+
+        // ...and the far edge, once the column's blocks are done.
+        if (WARP && tail_edge && tail_at >= 0 && tail_at < SCR_W) {
+            const int n = SCR_W - tail_at;
+            if (tail_sub) span_sub(&row[tail_at], n, tail_d);
+            else          span_add(&row[tail_at], n, tail_d);
         }
     }
 }
