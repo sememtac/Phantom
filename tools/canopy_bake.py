@@ -107,8 +107,15 @@ def bake(src, out, name="CANOPY"):
             if abs(sample(cx, cy) - bg) > TOL:
                 v = gsample(cx, cy)
                 zhist[v] = zhist.get(v, 0) + 1
+    # ONE PER CENT OF THE COVERED FRAME. At half a per cent a 186-pixel fringe between two
+    # real panels was promoted to a panel of its own, and would have flashed as an invisible
+    # sliver in the middle of the sequence. The smallest deliberate panel in the reference
+    # drawing is 746 px, three per cent, so there is room between the two.
+    #
+    # Anything rejected snaps to its nearest real zone, so a fringe joins the panel it borders
+    # rather than disappearing.
     covered = sum(zhist.values())
-    floor_px = max(64, covered // 200)          # half a per cent of the frame
+    floor_px = max(64, covered // 100)
     zones = sorted(v for v, c in zhist.items() if c >= floor_px)
     if not zones:
         zones = [0]
@@ -131,10 +138,6 @@ def bake(src, out, name="CANOPY"):
         return max(0, min(255, bg + int(round((g - bg) / float(QUANT))) * QUANT))
 
     cols = PANEL // 2 if mirror else PANEL
-    stream = bytearray()
-    offsets = []
-    n_flat = n_lit = flat_px = lit_px = 0
-    col_cost = []                # per stored column, for the band split
 
     # TWO KINDS OF BLOCK, because the drawing has two kinds of pixel in it.
     #
@@ -153,7 +156,12 @@ def bake(src, out, name="CANOPY"):
     # A block never crosses the background, so it is all-add or all-subtract and the
     # inner loop needs no test per pixel. Splitting at the crossings turned out to
     # cost nothing: they already fall on flat-run boundaries.
-    for col in range(cols):
+    def build(zone_split):
+      stream = bytearray()
+      offsets = []
+      n_flat = n_lit = flat_px = lit_px = 0
+      col_cost = []
+      for col in range(cols):
         offsets.append(len(stream))
         field = [sample(col, y) for y in range(PANEL)]
         cost = 0.0
@@ -174,7 +182,7 @@ def bake(src, out, name="CANOPY"):
                     break
                 # A block belongs to ONE zone, so a zone border ends the run as surely as a
                 # change of level does -- the intro switches whole blocks on.
-                if zone_of(gsample(col, y)) != z_at:
+                if zone_split and zone_of(gsample(col, y)) != z_at:
                     break
                 lv = level(g)
                 if seg and seg[-1][0] == lv:
@@ -215,7 +223,20 @@ def bake(src, out, name="CANOPY"):
             if pend:
                 put(at - len(pend), len(pend), True, pend)
         col_cost.append(cost)
-    offsets.append(len(stream))
+      offsets.append(len(stream))
+      return stream, offsets, n_flat, n_lit, flat_px, lit_px, col_cost
+
+    # TWO TABLES, and the reason is that the intro must cost nothing once it is over.
+    #
+    # A block belongs to one zone, so tagging them splits every run that crosses a zone border:
+    # 2,492 blocks became 3,563 and the pass grew 140 us. That is a standing charge on every
+    # frame of every flight, for a sequence that plays once.
+    #
+    # So the flight table is built WITHOUT zone splits -- byte for byte what it always was --
+    # and a second one with them serves the intro alone. 17 KB of flash against 90 us of frame,
+    # for ever, which is not a close call on a part with 2.6 MB spare.
+    stream, offsets, n_flat, n_lit, flat_px, lit_px, col_cost = build(False)
+    i_stream, i_offsets, i_flat, i_lit, i_fpx, i_lpx, _ = build(True)
 
     # WHERE EACH BAND BALANCES.
     #
@@ -300,6 +321,9 @@ def bake(src, out, name="CANOPY"):
           else f"  asymmetric ({bad} px differ, worst {worst}), stored whole")
     print(f"  {n_flat} flat blocks carrying {flat_px} px, "
           f"{n_lit} literal blocks carrying {lit_px} px")
+    ikb = (len(i_stream) + len(i_offsets) * 2) / 1024.0
+    print(f"  flight table {n_flat + n_lit} blocks; intro table {i_flat + i_lit} blocks, "
+          f"+{ikb:.1f} KB of flash and no frame time")
     print(f"  {len(zones)} activation zones from the green channel, in order: "
           + ", ".join(str(v) for v in zones))
     for i, z in enumerate(zones):
