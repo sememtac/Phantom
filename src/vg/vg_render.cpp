@@ -430,11 +430,16 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // Raw normalised throttle rather than `warp`, which starts at HUD_WARP_SPEED_MIN and is
     // never zero. This one has to reach both ends.
     vg_canopy_warp(1.0f - sn);
-    // ...and the frame trails the ship, on all three axes. The two stick axes are the
-    // COMMAND, which is what the frame should be late to -- the ship is already late to it
-    // itself, and lagging a lag reads as sludge. Roll comes from the bank, because there is no
-    // roll axis: the steering swipe rolls while the modifier is held, so the command arrives on
-    // the yaw axis and only the resulting bank says which it was.
+    // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
+    // what the frame should be late to -- the ship is already late to it itself, and lagging a
+    // lag reads as sludge.
+    //
+    // ROLL COMES FROM in->roll, and reading vg.bank instead was simply wrong. Bank is the
+    // COSMETIC lean a turn produces, driven from -yaw_in, and vg_flight drives it to ZERO while
+    // the roll key is held -- so the one moment the shear was meant to fire was the one moment
+    // its input was being cancelled. It was also an angle in radians against two sticks in
+    // -1..1, so its per-frame change was an order of magnitude smaller even when it did move.
+    // The shear was built and connected to nothing.
     //
     // Driven here rather than inside the warp, because it has to keep working when the warp
     // amount is zero.
@@ -448,7 +453,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         // where the frame should move most. vg.agility already carries the hull's own bonus and
         // malus, so the spread differs per ship without a second curve.
         const float agi = 1.0f + (vg.agility - 1.0f) * CANOPY_LAG_AGI;
-        vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f, vg.bank, hull * agi);
+        vg_canopy_lag(in ? in->yaw : 0.0f, in ? in->pitch : 0.0f,
+                      in ? in->roll : 0.0f, hull * agi);
     }
 
     // Instruments come up as a hologram catching: mostly absent at first,
