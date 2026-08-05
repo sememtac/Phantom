@@ -295,19 +295,25 @@
 // every member on the panel is still hot -- so the instruments arrive into a cockpit that is lit
 // and visibly still coming up, rather than one that has finished and is waiting. At 1.0 the panel
 // sits done and empty for a moment first, which reads as a hang.
-#define CANOPY_INTRO_HUD_AT    0.75f
+#define CANOPY_INTRO_HUD_AT    0.65f
 
-// AND THE LAST LINK: how long after the instruments are in before the opponent opens the radio.
+// AND THE LAST LINK: how long after SFX_READY before the radio may open at all.
 //
-// This was two loose numbers, 1.4 s in vg_match_start and 1.6 s in vg_begin_flight, and the
-// difference between them looked incidental rather than designed. It is one number now, because
-// it is one beat -- the pause between a cockpit that is finished and the first voice in it.
+// Measured from the SOUND, not from the end of the instruments' flicker, and that is the author's
+// specification: one second after the panel's power-on cue, comms may begin. It is a single gate
+// -- vg.ready -- and BOTH channels wait on it, the broadcast and the opponent alike.
 //
-// It used to be measured from the top of the match, when it was competing with the boot; now
-// that vg.ready gates the countdown it is measured from a lit panel, which is what makes it
-// worth having a name. The author asked for it longer once the chain was in place: with the
-// stages no longer overlapping, the silence after the panel settles is doing work.
-#define BOOT_RADIO_WAIT        2.40f
+// That last part is the fix. The opponent's taunt was gated and the broadcast was not: the course
+// briefing ran off a fixed 2.2 s countdown from the top of the match, so it landed wherever it
+// landed and moving the HUD cue only moved the collision. Ordering that depends on two timers
+// agreeing is not ordering, it is coincidence -- so the briefing waits on the gate too and the
+// sequence holds however the pacing above is retuned.
+#define BOOT_RADIO_WAIT        1.00f
+
+// The opponent's OPENING line, after the radio has opened. The broadcast speaks first where there
+// is one -- a course briefing is information and a taunt is flavour -- so this trails the gate
+// rather than sitting on it.
+#define BOOT_FIRST_TAUNT       0.80f
 #define CANOPY_INTRO_LEAD      1.00f
 #define CANOPY_INTRO_STEP      0.30f
 #define CANOPY_INTRO_FLASH     0.03f

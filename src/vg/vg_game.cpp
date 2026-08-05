@@ -200,6 +200,7 @@ void vg_match_start(void) {
     // the game side or the cue stays latched from the previous match and fires over the cutscene.
     vg.hud_cued    = false;
     vg.ready       = false;
+    vg.radio_t     = 0;
     vg_canopy_intro_reset();
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
@@ -250,7 +251,7 @@ void vg_match_start(void) {
     vg.comms.line = nullptr;
     vg.comms.t    = 0;
     vg.comms.pri  = 0;
-    vg.taunt_t    = BOOT_RADIO_WAIT;
+    vg.taunt_t    = BOOT_FIRST_TAUNT;
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) vg_spawn_asteroid();
 

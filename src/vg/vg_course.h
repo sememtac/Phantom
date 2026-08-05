@@ -35,12 +35,20 @@
 // course is a motor test, and the first thing to learn is what the stick does.
 #define COURSE_SETTLE      2.5f
 
-// Quiet between arriving and being spoken to. The transition, the panel coming
-// up and the broadcast's opening line all landed together -- three things asking
-// for attention in the same second, and no way to attend to any of them. Long
-// enough for the set to finish striking and the instruments to settle, so the
-// greeting arrives at somebody who is already sitting down.
-#define COURSE_GREET       2.2f
+// Quiet between the RADIO OPENING and the broadcast's first word. Not between
+// arriving and being spoken to -- that job moved.
+//
+// It was 2.2 s from the top of the match, and the reasoning was sound at the
+// time: the transition, the panel coming up and the opening line all landed
+// together, so the line was pushed out past them by hand. What made it wrong was
+// the cockpit sequence arriving with its own pacing constants -- this number
+// could no longer know when the panel had finished, so it opened over the
+// power-on cue and every retune of the sequence moved the collision somewhere
+// new.
+//
+// vg.ready is the gate now, one second after that cue, and this is only the beat
+// after it. Short, because the waiting has already been done.
+#define COURSE_GREET       0.35f
 
 void vg_course_begin(void);
 // Streak back to zero and a fresh gate, without restarting the run. Used after a

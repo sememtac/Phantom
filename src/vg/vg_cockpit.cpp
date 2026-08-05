@@ -92,9 +92,15 @@ void vg_hud_decay(float dt) {
     if (!vg.hud_cued && vg_canopy_intro_cued()) {
         vg.hud_cued = true;
         vg.hud_boot = HUD_BOOT_TIME;
+        vg.radio_t  = BOOT_RADIO_WAIT;
         vg_sfx_play(SFX_READY, 1.0f);
     }
-    // ...and the player is in the seat once the instruments are actually in. The radio waits on
-    // this, so an opponent cannot open on a panel that is not lit yet.
-    if (vg.hud_cued && !vg.ready && vg.hud_boot <= 0.0f) vg.ready = true;
+    // ...and the radio opens BOOT_RADIO_WAIT after that sound -- from the cue, not from the end of
+    // the flicker. The author's specification is one second after the panel's power-on cue, and
+    // measuring it from the sound is what makes that true no matter how long HUD_BOOT_TIME is or
+    // where in the cockpit sequence the cue falls.
+    if (vg.hud_cued && !vg.ready) {
+        vg.radio_t -= dt;
+        if (vg.radio_t <= 0.0f) { vg.radio_t = 0.0f; vg.ready = true; }
+    }
 }

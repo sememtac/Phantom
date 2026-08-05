@@ -607,7 +607,8 @@ struct VgGame {
     // instruments are actually in, and the radio waits for it -- an opponent talking over a
     // panel that is not lit yet is talking to nobody.
     bool     hud_cued;     // the cockpit sequence has called for the instruments
-    bool     ready;        // instruments in: the player is in the seat and the radio may open
+    float    radio_t;      // >0 while the radio is still held shut after SFX_READY
+    bool     ready;        // the radio may open -- BOTH the broadcast and the opponent wait on it
     // >0 while the systems are visibly hurt. Same failure language as the death
     // screen, briefly and at lower severity -- damage and destruction are the
     // same event at different scales, so they read as the same thing happening.

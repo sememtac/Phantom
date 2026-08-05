@@ -76,8 +76,17 @@ void vg_course_reset_streak(void) {
 }
 
 void vg_course_update(float dt) {
-    // The briefing, once the arriving has finished happening.
-    if (vg.course.greet > 0.0f) {
+    // THE BRIEFING, and it waits on the RADIO GATE rather than on a countdown of its own.
+    //
+    // This was a fixed 2.2 s from the top of the match, chosen to clear a cockpit that was
+    // arriving at the same time. Then the boot became a chain and the cockpit sequence got its own
+    // pacing constants -- so the briefing kept landing wherever 2.2 s put it, and it opened over
+    // the panel's power-on cue. Moving the HUD cue only moved the collision: two independent timers
+    // agreeing is coincidence, not ordering.
+    //
+    // vg.ready is the gate, one second after that cue, and the opponent's taunts already waited on
+    // it. The broadcast does now too, so the order holds however the sequence above is retuned.
+    if (vg.ready && vg.course.greet > 0.0f) {
         vg.course.greet -= dt;
         if (vg.course.greet <= 0.0f) vg_ift_line(IFT_COURSE_START);
     }
