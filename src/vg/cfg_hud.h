@@ -183,3 +183,13 @@
 #define CANOPY_WARP_ZOOM     0.13f
 #define CANOPY_WARP_BOW      11.0f
 #define CANOPY_WARP_STEPS    12
+
+// --- the canopy trailing the ship -----------------------------------------
+//
+// PX is how far the frame swings, in pixels, per unit of turn CHANGE. EASE is how quickly the
+// smoothed copy catches up: smaller lags longer and swings further. MAX clamps it, because a
+// hard reversal can produce a large difference for a frame or two and the frame sliding halfway
+// across the screen is not an interior, it is a fault.
+#define CANOPY_LAG_PX     26.0f
+#define CANOPY_LAG_EASE   0.10f
+#define CANOPY_LAG_MAX    7.0f

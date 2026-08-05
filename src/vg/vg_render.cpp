@@ -430,6 +430,10 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // Raw normalised throttle rather than `warp`, which starts at HUD_WARP_SPEED_MIN and is
     // never zero. This one has to reach both ends.
     vg_canopy_warp(1.0f - sn);
+    // ...and the frame trails the ship. The cosmetic bank is the turn signal the player can
+    // see, so it is the one the canopy should be late to. Driven here rather than inside the
+    // warp, because it has to keep working when the warp amount is zero.
+    vg_canopy_lag(vg.bank);
 
     // Instruments come up as a hologram catching: mostly absent at first,
     // flickering in, solid by the end. Driven by dropping whole frames rather

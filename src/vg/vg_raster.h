@@ -100,6 +100,12 @@ void vg_canopy_prim(void);
 // together. See CANOPY_WARP_* in cfg_hud.h and the note at its definition.
 void vg_canopy_warp(float k);
 
+// THE FRAME TRAILING THE SHIP. `turn` is the cosmetic bank, and the offset comes from how fast
+// it is CHANGING -- so the frame swings during the onset and the release of a turn and sits
+// centred through a steady one. Call once a frame, before the flush. Costs one index add per
+// panel row. See CANOPY_LAG_* in cfg_hud.h.
+void vg_canopy_lag(float turn);
+
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //
 // The canopy only draws inside a match, so the frame counter cannot be read without

@@ -1371,11 +1371,36 @@ static void canopy_colcost(void) {
 static int     s_wq = -1;                 // the quantised amount the maps were built for
 static bool    s_warp_on = false;
 
+// THE FRAME LAGS THE SHIP, which is what makes it read as being inside something.
+//
+// A pixel offset from the DIFFERENCE between the turn now and a smoothed copy of it, not from
+// the turn itself. Displacement then appears while the turn is starting and stopping and
+// settles back to nothing through a steady one -- inertia rather than a permanent lean, which
+// would just look like the drawing is off centre.
+//
+// Whole pixels, so it quantises itself like everything else here, and it moves the COLUMN the
+// row samples: under the quarter turn a bank is movement along logical x, and logical x is the
+// drawing's column. One index add per row.
+static float   s_lag_s  = 0.0f;    // the smoothed turn
+static int     s_lag_px = 0;       // what the drawing is shifted by, in columns
+
+void vg_canopy_lag(float turn) {
+    s_lag_s += (turn - s_lag_s) * CANOPY_LAG_EASE;
+    float d = (turn - s_lag_s) * CANOPY_LAG_PX;
+    if (d >  CANOPY_LAG_MAX) d =  CANOPY_LAG_MAX;
+    if (d < -CANOPY_LAG_MAX) d = -CANOPY_LAG_MAX;
+    s_lag_px = (int)(d + (d < 0.0f ? -0.5f : 0.5f));
+    // At a warp amount of zero the maps are the identity -- zoom 1, no sphere, no bow -- so
+    // running the warped path costs a little and draws exactly the rigid picture. That is what
+    // lets the lag work on its own, without a second code path for "shifted but not warped".
+    if (s_lag_px != 0) s_warp_on = true;
+}
+
 void vg_canopy_warp(float k) {
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
-    s_warp_on = (q != 0);
+    s_warp_on = (q != 0) || (s_lag_px != 0);
     if (q == s_wq) return;
     s_wq = q;
 
@@ -1451,7 +1476,12 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
 
     for (int py = by0 + r0; py < by0 + r1; py++) {
         int lx = SCR_H - 1 - py;                       // this panel row IS a column
-        if (WARP) { lx = s_wcol[lx]; if (lx < 0) continue; }
+        if (WARP) {
+            lx += s_lag_px;                       // the frame trailing the turn
+            if (lx < 0 || lx >= SCR_H) continue;
+            lx = s_wcol[lx];
+            if (lx < 0) continue;
+        }
         // Mirrored only when the drawing is symmetric, which the baker decides and
         // records. An asymmetric frame stores every column and is read straight
         // through -- a cockpit is allowed to be lopsided.
