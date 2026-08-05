@@ -96,6 +96,15 @@ void vg_sky_fill_band(uint16_t* band, int band_y0);
 // straddles the boundary and the split stops being bit-identical.
 void vg_sky_band_prep(int band_y0);
 
+// The chart, for a RANGE of bands, so the two cores can share it. [b0, b1).
+//
+// The bands do not depend on each other -- each re-chains its lift from the frame
+// accumulator -- so this is safe to call concurrently on disjoint ranges. Call
+// vg_sky_prep_begin once first, on one core: it does the frame's shared bank trig, which
+// every band reads and neither should be writing.
+void vg_sky_prep_begin(void);
+void vg_sky_prep_bands(int b0, int b1);
+
 // Pin the sampled view, for vg_sky_bench only. The attract camera never stops turning, so
 // without this two checksums a second apart describe two different pieces of sky and cannot
 // be compared. See the note at sky_sample.

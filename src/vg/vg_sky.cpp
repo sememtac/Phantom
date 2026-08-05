@@ -943,7 +943,16 @@ struct SkyBand {
     float Du[SEGS + 1], Dv[SEGS + 1];
     int   row_step;
 };
-static SkyBand s_bd;
+// ONE PER BAND, because the bands' preps do not depend on each other.
+//
+// Each band re-chains its lift from the frame accumulator rather than from the band before
+// it -- see the note in vg_sky_band_prep -- so all fifteen are independent and can be built
+// in any order, on either core. That is what lets prep come off the per-band critical path:
+// it used to run on the calling core before the fill was handed to the helper, so all 660 us
+// of it was billed to the frame with nothing overlapping it.
+//
+// 15 x 180 bytes. The row walk is handed the one it needs, so nothing looks this up per row.
+static SkyBand s_bda[NUM_BANDS];
 
 // A FIXED VIEW, for the bench and nothing else.
 //
@@ -984,6 +993,11 @@ void vg_sky_bench_pin(bool on) {
 void vg_sky_band_prep(int band_y0) {
     if (!s_ready) return;
 
+    // This band's slot. The bank trig is NOT set here: it is one value for the whole frame
+    // and two cores prepping at once would both be writing it. vg_sky_prep_begin does it
+    // once, before either of them starts.
+    SkyBand& bd = s_bda[band_y0 / BAND_H];
+
     // THE SPHERE, PIECEWISE. The old fill mapped the whole frame as one rigid
     // sheet -- centre angles plus a rotation -- which is exact at the centre
     // and up to 115 PIXELS wrong at the edges with the nose 30 degrees up in a
@@ -1009,16 +1023,14 @@ void vg_sky_band_prep(int band_y0) {
     const float lx_c = (float)(SCR_W / 2);   // other rotations: centre column
 #endif
 
-    float* Au = s_bd.Au;
-    float* Av = s_bd.Av;
+    float* Au = bd.Au;
+    float* Av = bd.Av;
     float  Cu[SEGS + 1], Cv[SEGS + 1];
     // Chained lift: the first sample references the frame accumulator, each
     // later one references its predecessor, and each cross sample references
     // its own column sample. In ANGLE space, then scaled to texels once.
     // Bank trig once per band, not once per sample: cosf twice against
     // twenty-two times, and it was two milliseconds of the flight profile.
-    s_cb = cosf(s_bank); s_sb = sinf(s_bank);
-
     float rl = s_eff_acc[li][0], rt = s_eff_acc[li][1];
     for (int k = 0; k <= SEGS; k++) {
         const float ly = (float)(k * (SCR_H / SEGS));
@@ -1056,8 +1068,8 @@ void vg_sky_band_prep(int band_y0) {
     // The cross OFFSET per endpoint, banked once for the whole band. The row
     // loop used to rebuild (A - C) for four endpoints of every segment, which
     // is the same eleven subtractions repeated thirty-two times.
-    float* Du = s_bd.Du;
-    float* Dv = s_bd.Dv;
+    float* Du = bd.Du;
+    float* Dv = bd.Dv;
     for (int k = 0; k <= SEGS; k++) {
         Du[k] = Au[k] - Cu[k];
         Dv[k] = Av[k] - Cv[k];
@@ -1068,7 +1080,23 @@ void vg_sky_band_prep(int band_y0) {
     // always on the same side of the threshold and copying one onto the other
     // would coarsen the dissolve to 2px steps. It runs for under a second at a
     // screen change.
-    s_bd.row_step = (s_reveal < 1.0f) ? 1 : 2;
+    bd.row_step = (s_reveal < 1.0f) ? 1 : 2;
+}
+
+// THE FRAME'S ONE PIECE OF SHARED SETUP, before either core preps a band.
+//
+// cosf and sinf of the bank, which every chart sample in every band reads. It was inside
+// vg_sky_band_prep, which was correct while one core called it fifteen times in a row and a
+// race the moment two cores did.
+void vg_sky_prep_begin(void) {
+    s_cb = cosf(s_bank);
+    s_sb = sinf(s_bank);
+}
+
+// A RANGE OF BANDS, so the work can be halved. [b0, b1).
+void vg_sky_prep_bands(int b0, int b1) {
+    if (!s_ready) return;
+    for (int b = b0; b < b1; b++) vg_sky_band_prep(b * BAND_H);
 }
 
 // ONE ROW, and the tint decided by the type rather than by a flag in a register.
@@ -1098,14 +1126,14 @@ void vg_sky_band_prep(int band_y0) {
 // accesses a row pair against 720 -- and it is trivially the same pixels in the same places.
 template <bool TINT, bool PAIR>
 static __attribute__((noinline))
-void sky_row(uint16_t* dst, int sy, int dr, float w) {
+void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
     // The pair's partner row, in 32-bit words. BAND_H is 32 and band_y0 a multiple of it, so
     // a pair never straddles a band boundary and this is always inside the buffer.
     constexpr int PAIR_OFF = SCR_W / 2;
-    const float* Au = s_bd.Au;
-    const float* Av = s_bd.Av;
-    const float* Du = s_bd.Du;
-    const float* Dv = s_bd.Dv;
+    const float* Au = bd.Au;
+    const float* Av = bd.Av;
+    const float* Du = bd.Du;
+    const float* Dv = bd.Dv;
     const uint16_t* tex = s_tex;
     const int seg_px = SCR_H / SEGS;
     const float step_k = ((float)SPLASH / (float)seg_px) * 65536.0f;
@@ -1174,7 +1202,8 @@ void sky_row(uint16_t* dst, int sy, int dr, float w) {
 void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
     if (!s_ready) return;
 
-    const int row_step = s_bd.row_step;
+    const SkyBand& bd = s_bda[band_y0 / BAND_H];
+    const int row_step = bd.row_step;
 
     static const uint8_t ORDER[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
 #if VG_ROTATE == 1
@@ -1223,11 +1252,11 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
         // The walk itself, and which of the two it is settled at compile time. See the
         // note above sky_row for why the flag could not simply live in a register.
         if (row_step == 2) {
-            if (tint) sky_row<true, true>(dst, sy, dr, w);
-            else      sky_row<false, true>(dst, sy, dr, w);
+            if (tint) sky_row<true, true>(bd, dst, sy, dr, w);
+            else      sky_row<false, true>(bd, dst, sy, dr, w);
         } else {
-            if (tint) sky_row<true, false>(dst, sy, dr, w);
-            else      sky_row<false, false>(dst, sy, dr, w);
+            if (tint) sky_row<true, false>(bd, dst, sy, dr, w);
+            else      sky_row<false, false>(bd, dst, sy, dr, w);
         }
 
     }
@@ -1236,6 +1265,7 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
 // The whole band, for every caller that is not splitting it.
 void vg_sky_fill_band(uint16_t* band, int band_y0) {
     if (!s_ready) return;
+    vg_sky_prep_begin();
     vg_sky_band_prep(band_y0);
     vg_sky_fill_rows(band, band_y0, 0, BAND_H);
 }

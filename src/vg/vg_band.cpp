@@ -889,7 +889,10 @@ uint32_t vg_rast_scan_us(void) { return s_scan_us; }
 enum { ROW_SPLIT = BAND_H / 2 };
 static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair");
 
-enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2 };
+// RS_PREP is not a row split at all -- it is a range of BANDS, and it reuses this
+// machinery because the handshake and the helper task are exactly what it needs. r0 and r1
+// carry the band range instead of a row range.
+enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2, RS_PREP = 3 };
 
 // Forward: the canopy pass is a third row-splittable job, and it is the largest of
 // them. Declared here because the helper task below dispatches to it.
@@ -908,6 +911,7 @@ static void rowsplit_task(void*) {
         xSemaphoreTake(s_rs_go, portMAX_DELAY);
         if      (s_rs.op == RS_SKY)    vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_CANOPY) canopy_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
+        else if (s_rs.op == RS_PREP)   vg_sky_prep_bands(s_rs.r0, s_rs.r1);
         else                           band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         xSemaphoreGive(s_rs_done);
     }
@@ -1179,11 +1183,15 @@ void vg_sky_bench(VgSkyCost* out) {
     vg_sky_generate(SKY_NEBULA, 0x5EED1234u);
     if (!vg_sky_ready()) { *out = VgSkyCost{}; return; }
     vg_sky_bench_pin(true);
+    vg_sky_prep_begin();
     for (int b = 0; b < NUM_BANDS; b++) {
         const int by0 = b * BAND_H;
 
+        // Prep on ONE core here, deliberately. The frame splits it across both, so the
+        // frame pays about half of what this reports -- the same relationship the fill has.
+        // What the bench is for is the cost of the work, not the schedule.
         const uint32_t t0 = esp_cpu_get_cycle_count();
-        vg_sky_band_prep(by0);
+        vg_sky_prep_bands(b, b + 1);
         const uint32_t t1 = esp_cpu_get_cycle_count();
         vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
         const uint32_t t2 = esp_cpu_get_cycle_count();
@@ -1246,9 +1254,9 @@ static void draw_band(int band_index, uint16_t* band) {
     // The backdrop fill REPLACES the clear rather than adding to it, so its net
     // cost is only what it exceeds a memset by.
     if (vg_sky_ready()) {
-        // Prep first and once: the chart work is per band, and both halves read
-        // what it leaves behind.
-        vg_sky_band_prep(by0);
+        // The chart is already built, for every band, by vg_sky_prep_all before the band
+        // loop began -- see the note there. This used to prep the band right here, on this
+        // core, with the helper idle and nothing overlapping it.
         const bool split = rowsplit_start(RS_SKY, band, by0, ROW_SPLIT, BAND_H);
         vg_sky_fill_rows(band, by0, 0, split ? ROW_SPLIT : BAND_H);
         if (split) rowsplit_wait();
@@ -1471,6 +1479,33 @@ void vg_rast_flush(void) {
     s_tint_us = 0;
 
     const float tint_k = s_tint_k;
+
+    // THE WHOLE FRAME'S CHART, BOTH CORES, BEFORE ANY BAND IS DRAWN.
+    //
+    // This used to be fifteen separate calls, one at the top of each band, on the drawing
+    // core with the helper idle and nothing overlapping it -- 660 us of trig billed to the
+    // frame in full. Every chart sample costs two divides and a square root to normalise a
+    // ray plus an arctangent and an arcsine on top, and the ESP32-S3 has no single
+    // instruction for a divide or a root.
+    //
+    // The bands are independent: each re-chains its lift from the frame accumulator rather
+    // than from the band before it, so there is no order to preserve and the set can simply
+    // be cut in half. Bit for bit the same charts, because each band's own samples are
+    // still built in the same sequence.
+    if (vg_sky_ready()) {
+        const uint32_t p0 = micros();
+        vg_sky_prep_begin();          // the frame's shared bank trig, once, before the fork
+        const bool split = rowsplit_start(RS_PREP, nullptr, 0, NUM_BANDS / 2, NUM_BANDS);
+        vg_sky_prep_bands(0, split ? NUM_BANDS / 2 : NUM_BANDS);
+        if (split) rowsplit_wait();
+        // Charged to `sky`, which is where a reader looks for the cost of the backdrop --
+        // AND to `raster`, because it is CPU spent drawing and the telemetry's invariant is
+        // that rast is sky plus prim plus scan. Adding it to one and not the other put it in
+        // `res` as well, which read as 455 us of new preemption that did not exist.
+        const uint32_t pd = micros() - p0;
+        s_sky_us += pd;
+        raster   += pd;
+    }
 
     for (int b = 0; b < NUM_BANDS; b++) {
         uint16_t* buf = s_band[b & 1];
