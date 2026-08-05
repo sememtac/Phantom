@@ -1381,30 +1381,60 @@ static bool    s_warp_on = false;
 // Whole pixels, so it quantises itself like everything else here, and it moves the COLUMN the
 // row samples: under the quarter turn a bank is movement along logical x, and logical x is the
 // drawing's column. One index add per row.
-static float   s_lag_s  = 0.0f;    // the smoothed turn
-static int     s_lag_px = 0;       // what the drawing is shifted by, in columns
+// ALL THREE AXES, and each is a different shape of offset.
+//
+// Under the quarter turn the drawing's x is a panel COLUMN and its y is a panel row's x, so:
+//
+//   yaw   moves the frame along logical x  -> the column each row samples. One index add.
+//   pitch moves it along logical y         -> every block's start. One add, per column.
+//   roll  is a rotation, which no single offset can be -- but a small rotation about the
+//         centre is a SHEAR, and a shear is a per-column offset that grows with the column.
+//         So it is the same add as pitch with a term in c. One multiply per column, none per
+//         block and none per pixel.
+//
+// Each rides the difference between the command and a smoothed copy of it, so the frame swings
+// as a movement starts and stops and sits still through a held one. A canopy that stayed
+// displaced through a sustained roll would be a canopy coming loose from the ship.
+static float s_lag_sy = 0.0f, s_lag_sp = 0.0f, s_lag_sr = 0.0f;   // smoothed yaw, pitch, roll
+static int   s_lag_px = 0;         // columns, from yaw
+static int   s_lag_py = 0;         // pixels along the drawing's y, from pitch
+static float s_lag_sh = 0.0f;      // pixels of y per column, from roll
 
-void vg_canopy_lag(float turn, float scale) {
-    s_lag_s += (turn - s_lag_s) * CANOPY_LAG_EASE;
+void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
     // The CLAMP scales with the airframe too. Scaling only the swing would have every hull
     // reach the same limit and arrive there at a different speed, which flattens exactly the
     // difference this is for -- a CHARIOT would clip where a BALLISTA never gets close.
     const float lim = CANOPY_LAG_MAX * scale;
-    float d = (turn - s_lag_s) * CANOPY_LAG_PX * scale;
-    if (d >  lim) d =  lim;
-    if (d < -lim) d = -lim;
-    s_lag_px = (int)(d + (d < 0.0f ? -0.5f : 0.5f));
+    const float gain = CANOPY_LAG_PX * scale;
+
+    s_lag_sy += (yaw   - s_lag_sy) * CANOPY_LAG_EASE;
+    s_lag_sp += (pitch - s_lag_sp) * CANOPY_LAG_EASE;
+    s_lag_sr += (roll  - s_lag_sr) * CANOPY_LAG_EASE;
+
+    float dx = (yaw   - s_lag_sy) * gain;
+    float dy = (pitch - s_lag_sp) * gain;
+    float dr = (roll  - s_lag_sr) * gain * CANOPY_LAG_ROLL;
+    if (dx >  lim) dx =  lim; else if (dx < -lim) dx = -lim;
+    if (dy >  lim) dy =  lim; else if (dy < -lim) dy = -lim;
+    if (dr >  lim) dr =  lim; else if (dr < -lim) dr = -lim;
+
+    s_lag_px = (int)(dx + (dx < 0.0f ? -0.5f : 0.5f));
+    s_lag_py = (int)(dy + (dy < 0.0f ? -0.5f : 0.5f));
+    // Pixels of y at the frame's edge, spread linearly across the columns.
+    s_lag_sh = dr / (float)(SCR_H / 2);
+    const float d = dx;
     // At a warp amount of zero the maps are the identity -- zoom 1, no sphere, no bow -- so
     // running the warped path costs a little and draws exactly the rigid picture. That is what
     // lets the lag work on its own, without a second code path for "shifted but not warped".
-    if (s_lag_px != 0) s_warp_on = true;
+    if (s_lag_px || s_lag_py || s_lag_sh != 0.0f) s_warp_on = true;
+    (void)d;
 }
 
 void vg_canopy_warp(float k) {
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
-    s_warp_on = (q != 0) || (s_lag_px != 0);
+    s_warp_on = (q != 0) || s_lag_px || s_lag_py || (s_lag_sh != 0.0f);
     if (q == s_wq) return;
     s_wq = q;
 
@@ -1500,7 +1530,8 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
         // in the flag byte. The side is in the header too: a block never crosses the
         // background, so nothing here tests light against shade per pixel.
-        const int   wofs  = WARP ? s_wc[c] : 0;
+        const int   wofs  = WARP ? (s_wc[c] + s_lag_py
+                                    + (int)((float)(c - SCR_H / 2) * s_lag_sh)) : 0;
         // dx is the same for every block in this column, so its share of the sphere hoists.
         const float zbase = WARP ? s_w_zbase[c] : 0.0f;
 

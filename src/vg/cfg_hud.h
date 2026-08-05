@@ -198,3 +198,7 @@
 #define CANOPY_LAG_PX     48.0f
 #define CANOPY_LAG_EASE   0.10f
 #define CANOPY_LAG_MAX    14.0f
+
+// Roll relative to the other two. A shear of the same pixel amount reads much stronger than a
+// translation of it -- the corners move while the middle does not -- so it is pulled back.
+#define CANOPY_LAG_ROLL   0.55f

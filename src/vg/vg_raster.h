@@ -108,7 +108,7 @@ void vg_canopy_warp(float k);
 // CHARIOT and 0.55 on a BALLISTA. The frame of a light hull should be visibly looser than the
 // frame of a heavy one, and that ordering is already tuned, so this rides it rather than
 // keeping a second table that could disagree with it.
-void vg_canopy_lag(float turn, float scale);
+void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 
 // WHAT THE DRAWING COSTS, measured rather than predicted. Serial 'k'.
 //
