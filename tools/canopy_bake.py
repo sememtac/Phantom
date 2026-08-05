@@ -313,12 +313,18 @@ def bake(src, out, name="CANOPY"):
         fh.write("//\n")
         fh.write("// Columns of the picture. Each column is a list of blocks. A block is a\n")
         fh.write("// three byte header:\n")
-        fh.write("//     byte 0   bit 7 literal, bit 6 subtract, bit 1 length bit 8,\n")
-        fh.write("//              bit 0 start bit 8\n")
+        fh.write("//     byte 0   bit 7 literal, bit 6 subtract, bits 5..2 zone,\n")
+        fh.write("//              bit 1 length bit 8, bit 0 start bit 8\n")
         fh.write("//     byte 1   start, low eight bits\n")
         fh.write("//     byte 2   length, low eight bits\n")
         fh.write("// followed by one grey level for the whole block, or by one level per\n")
         fh.write("// pixel if the literal bit is set.\n")
+        fh.write("//\n")
+        fh.write("// The zone is the activation order from the green channel, and the FLIGHT\n")
+        fh.write("// table carries it only because it is free to store -- its runs are not\n")
+        fh.write("// split at zone borders, so a block there may span two zones and the\n")
+        fh.write("// renderer masks the field off. Use the INTRO table where it has to mean\n")
+        fh.write("// something.\n")
         if mirror:
             fh.write("//\n// SYMMETRIC: the left half is stored and mirrored at draw time.\n")
         else:
@@ -342,6 +348,43 @@ def bake(src, out, name="CANOPY"):
         fh.write(f"static const uint8_t {name}_DATA[{len(stream)}] = {{\n")
         for i in range(0, len(stream), 24):
             fh.write("    " + ",".join(str(v) for v in stream[i:i + 24]) + ",\n")
+        fh.write("};\n")
+
+        # THE INTRO'S OWN TABLE, in the same format and read by the same walk.
+        #
+        # Identical to the one above except that a run stops at a zone border, so every
+        # block belongs to exactly one zone and switching a zone on is switching a set of
+        # whole blocks on. That costs blocks -- which is why the flight table does not pay
+        # for it.
+        fh.write(f"\n#define {name}_ZONES {len(zones)}\n")
+        fh.write(f"#define {name}_IBLOCKS {i_flat + i_lit}\n")
+        fh.write("// The same drawing, with every run cut at its zone border.\n")
+        fh.write(f"static const uint16_t {name}_IOFS[{len(i_offsets)}] = {{\n")
+        for i in range(0, len(i_offsets), 16):
+            fh.write("    " + ",".join(str(v) for v in i_offsets[i:i + 16]) + ",\n")
+        fh.write("};\n\n")
+        fh.write(f"static const uint8_t {name}_IDATA[{len(i_stream)}] = {{\n")
+        for i in range(0, len(i_stream), 24):
+            fh.write("    " + ",".join(str(v) for v in i_stream[i:i + 24]) + ",\n")
+        fh.write("};\n")
+
+        # THE ZONE MAP, which is about the WORLD and not about the frame.
+        #
+        # Every pixel of the screen has a zone, including the 90% the cockpit does not
+        # cover. That is what the intro holds black and releases a region at a time, and
+        # the block table cannot answer it: the block table only knows where the drawing is.
+        #
+        # Three bytes a run, no payload, same header layout so one reader serves both.
+        fh.write(f"\n#define {name}_ZRUNS {zruns}\n")
+        fh.write("// Every pixel of the screen, by activation zone. Runs down a column,\n")
+        fh.write("// three bytes each: zone in bits 5..2, then start and length.\n")
+        fh.write(f"static const uint16_t {name}_ZOFS[{len(zoffs)}] = {{\n")
+        for i in range(0, len(zoffs), 16):
+            fh.write("    " + ",".join(str(v) for v in zoffs[i:i + 16]) + ",\n")
+        fh.write("};\n\n")
+        fh.write(f"static const uint8_t {name}_ZDATA[{len(zstream)}] = {{\n")
+        for i in range(0, len(zstream), 24):
+            fh.write("    " + ",".join(str(v) for v in zstream[i:i + 24]) + ",\n")
         fh.write("};\n")
 
     print(f"{src}: background {bg}, {items} blocks, {kb:.1f} KB -> {out}")
