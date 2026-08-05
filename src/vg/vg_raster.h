@@ -111,12 +111,27 @@ void vg_canopy_bench(VgCanopyCost* out);
 struct VgSkyCost { uint32_t prep_us, fill_us, sum; };
 void vg_sky_bench(VgSkyCost* out);
 
+// THE GLYPH NEST, both ways, over the same fixed page. Serial 'g'.
+//
+// `gl` cannot answer this on its own: it is a per-frame total and the amount of text on
+// screen changes frame to frame, so two captures are two different workloads. This runs the
+// plain nest and the hoisted one over identical text in the same build, and compares the
+// pixels -- `same` false means they diverged and the change is wrong, whatever it timed.
+struct VgGlyphCost { uint32_t ref_us, now_us; int glyphs; bool same; };
+void vg_glyph_bench(VgGlyphCost* out);
+
 // Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
 // which KIND of primitive the band raster is spending its time on.
 uint32_t vg_rast_aa_us(void);
 uint32_t vg_rast_ln_us(void);
 uint32_t vg_rast_tri_us(void);
 uint32_t vg_rast_oth_us(void);
+// ...and `oth` split into its three, because it is a bucket and the three move for entirely
+// different reasons: points with speed, glyphs with what the HUD has to say, fills with the
+// instruments on screen. Anything left in `oth` after these is a type nobody has claimed.
+uint32_t vg_rast_pt_us(void);
+uint32_t vg_rast_gl_us(void);
+uint32_t vg_rast_fl_us(void);
 // The baked canopy alone. Split out of `oth`, which is a bucket that also holds glyphs
 // and fills and therefore moves with how busy the fight is.
 uint32_t vg_rast_can_us(void);

@@ -298,6 +298,40 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
     // The font bitmap is authored in the LOGICAL frame, so each set pixel's
     // offset is mapped into panel space here. Without this the text would stay
     // aligned to the panel while the rest of the world turned.
+#if VG_ROTATE == 1
+    // THE BAND TEST BELONGS OUTSIDE, and under this rotation it can be.
+    //
+    // A glyph's panel row is p->y0 - dx, and dx comes from the COLUMN loops alone -- so
+    // every pixel of a column lands on one panel row. The test was in the innermost loop
+    // being asked 7*scale times per column for an answer that cannot change, and a glyph is
+    // walked in full once for every band it touches, so most of those asks were rejections.
+    //
+    // Hoisted, a column costs one test and one row pointer, and the inner loop is a walk
+    // along panel x with a bounds check and a store. The pixels written are the same pixels
+    // in the same colour -- only the order changed, and they are plain stores.
+    const int x0 = p->x0, y0 = p->y0;
+    const uint16_t colour = p->color;
+    for (int col = 0; col < 5; col++) {
+        const uint8_t bits = glyph[col];
+        if (!bits) continue;
+        for (int jx = 0; jx < scale; jx++) {
+            const int yy = y0 - (col * scale + jx);
+            if (yy < by0 || yy > by1) continue;
+            uint16_t* prow = &band[(yy - by0) * SCR_W];
+            for (int row = 0; row < 7; row++) {
+                if (!(bits & (1 << row))) continue;
+                const int xb = x0 + row * scale;
+                for (int jy = 0; jy < scale; jy++) {
+                    const int xx = xb + jy;
+                    if ((unsigned)xx >= (unsigned)SCR_W) continue;
+                    prow[xx] = colour;
+                }
+            }
+        }
+    }
+#else
+    // The other rotations put the panel row on the dy axis instead, so the hoist would want
+    // the loops the other way round. They are not built, so they keep the plain form.
     for (int col = 0; col < 5; col++) {
         uint8_t bits = glyph[col];
         if (!bits) continue;
@@ -307,9 +341,7 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
                 for (int jx = 0; jx < scale; jx++) {
                     const int dx = col * scale + jx;
                     const int dy = row * scale + jy;
-#if VG_ROTATE == 1
-                    const int xx = p->x0 + dy, yy = p->y0 - dx;
-#elif VG_ROTATE == 2
+#if VG_ROTATE == 2
                     const int xx = p->x0 - dx, yy = p->y0 - dy;
 #elif VG_ROTATE == 3
                     const int xx = p->x0 - dy, yy = p->y0 + dx;
@@ -323,6 +355,7 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
             }
         }
     }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -853,12 +886,24 @@ static uint32_t s_cyc_aa = 0, s_cyc_ln = 0, s_cyc_tri = 0, s_cyc_oth = 0;
 // getting longer. A number that moves for reasons other than the thing being measured
 // is not a measurement.
 static uint32_t s_cyc_can = 0;
+
+// AND `oth` SPLIT INTO ITS THREE, for the same reason the canopy got its own counter.
+//
+// `oth` is a bucket -- points, glyphs and rectangle fills -- and it is the largest item in
+// `prim` during a course run. Optimising against a bucket is how four rounds of canopy work
+// came out unattributable: any of the three can move for a reason that has nothing to do
+// with the change being measured. Points scale with speed, glyphs with how much the HUD has
+// to say, fills with the instruments drawn.
+static uint32_t s_cyc_pt = 0, s_cyc_gl = 0, s_cyc_fl = 0;
 static uint32_t s_tint_us = 0;
 uint32_t vg_rast_aa_us(void)   { return s_cyc_aa  / 240u; }
 uint32_t vg_rast_ln_us(void)   { return s_cyc_ln  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return s_cyc_tri / 240u; }
 uint32_t vg_rast_oth_us(void)  { return s_cyc_oth / 240u; }
 uint32_t vg_rast_can_us(void)  { return s_cyc_can / 240u; }
+uint32_t vg_rast_pt_us(void)   { return s_cyc_pt  / 240u; }
+uint32_t vg_rast_gl_us(void)   { return s_cyc_gl  / 240u; }
+uint32_t vg_rast_fl_us(void)   { return s_cyc_fl  / 240u; }
 uint32_t vg_rast_tint_us(void) { return s_tint_us; }
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
@@ -1154,6 +1199,97 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     }
 }
 
+// THE GLYPH NEST, AS IT WAS, kept only so the bench has something to be faster than.
+//
+// `gl` on the telemetry line cannot answer this on its own: it is a per-frame total and the
+// amount of text on screen changes frame to frame, so two captures describe two different
+// workloads. The same bucket problem the canopy had, one level down. This is the plain nest,
+// benched against the hoisted one over the same fixed text, in the same build.
+static void band_glyph_ref(uint16_t* band, int by0, int by1, const Prim* p) {
+    const int      scale = p->x1;
+    const uint8_t* glyph = VG_FONT5X7[p->y1 - VG_FONT_FIRST];
+    for (int col = 0; col < 5; col++) {
+        uint8_t bits = glyph[col];
+        if (!bits) continue;
+        for (int row = 0; row < 7; row++) {
+            if (!(bits & (1 << row))) continue;
+            for (int jy = 0; jy < scale; jy++) {
+                for (int jx = 0; jx < scale; jx++) {
+                    const int dx = col * scale + jx;
+                    const int dy = row * scale + jy;
+                    const int xx = p->x0 + dy, yy = p->y0 - dx;
+                    if (yy < by0 || yy > by1) continue;
+                    if ((unsigned)xx >= (unsigned)SCR_W) continue;
+                    band[(yy - by0) * SCR_W + xx] = p->color;
+                }
+            }
+        }
+    }
+}
+
+// A PAGE OF TEXT, benched both ways, over every band it touches.
+//
+// The workload is fixed and deliberately spread: three scales, the whole printable range,
+// and glyph rows placed so plenty of them straddle a band boundary -- which is the case the
+// hoist is meant to help, because a glyph is re-walked in full for every band it touches and
+// most of those walks are rejections.
+//
+// Both banks are checksummed and compared. The claim is that the pixels are identical and
+// only the order changed, and an assertion beats a claim.
+void vg_glyph_bench(VgGlyphCost* out) {
+    if (!s_band[0] || !s_band[1]) { *out = VgGlyphCost{}; return; }
+
+    Prim g[96];
+    int n = 0;
+    for (int scale = 1; scale <= 3 && n < 96; scale++) {
+        for (int c = 0; c < 32 && n < 96; c++) {
+            Prim& q = g[n++];
+            q.type  = PRIM_GLYPH;
+            q.x1    = (int16_t)scale;
+            q.y1    = (int16_t)(VG_FONT_FIRST + (c % (VG_FONT_LAST - VG_FONT_FIRST + 1)));
+            q.x0    = (int16_t)(11 + (c * 13) % 400);
+            q.y0    = (int16_t)(30 + (c * 29 + scale * 7) % 420);
+            q.color = 0x17CD;
+            q.aa    = 0;
+            // The row range the active list would bucket it by -- see vg_text.
+            q.ymin  = (int16_t)(q.y0 - (5 * scale - 1));
+            q.ymax  = q.y0;
+        }
+    }
+
+    // ONLY THE BANDS A GLYPH ACTUALLY TOUCHES, because that is all the renderer visits.
+    //
+    // The active list buckets each primitive by its row range, and a glyph spans 5*scale
+    // panel rows -- fifteen at the largest scale, against a band height of 32. So it lands
+    // in one band or two, never fifteen. An earlier version of this bench called every band
+    // for every glyph and reported the hoist as 4x; almost all of that was rejection work
+    // the renderer never does. A bench measuring a workload the program does not have is
+    // worse than no bench, because it is believed.
+    uint32_t ca = 0, cb = 0;
+    for (int b = 0; b < NUM_BANDS; b++) {
+        const int by0 = b * BAND_H, by1 = by0 + BAND_H - 1;
+        memset(s_band[0], 0, SCR_W * BAND_H * 2);
+        memset(s_band[1], 0, SCR_W * BAND_H * 2);
+
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < n; i++)
+            if (g[i].ymax >= by0 && g[i].ymin <= by1)
+                band_glyph_ref(s_band[0], by0, by1, &g[i]);
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < n; i++)
+            if (g[i].ymax >= by0 && g[i].ymin <= by1)
+                band_glyph(s_band[1], by0, by1, &g[i]);
+        const uint32_t t2 = esp_cpu_get_cycle_count();
+        ca += t1 - t0;
+        cb += t2 - t1;
+
+        if (memcmp(s_band[0], s_band[1], SCR_W * BAND_H * 2) != 0) out->same = false;
+    }
+    out->ref_us = ca / 240u;
+    out->now_us = cb / 240u;
+    out->glyphs = n;
+}
+
 // WHAT THE BACKDROP COSTS, on the same terms as the canopy.
 //
 // `sky` on the telemetry line is the second largest item in the frame and it has never been
@@ -1414,6 +1550,9 @@ static void draw_band(int band_index, uint16_t* band) {
         else if (p->type == PRIM_LINE)          s_cyc_ln  += dc;
         else if (p->type == PRIM_TRI)           s_cyc_tri += dc;
         else if (p->type == PRIM_CANOPY)        s_cyc_can += dc;
+        else if (p->type == PRIM_POINT)         s_cyc_pt  += dc;
+        else if (p->type == PRIM_GLYPH)         s_cyc_gl  += dc;
+        else if (p->type == PRIM_FILL)          s_cyc_fl  += dc;
         else                                    s_cyc_oth += dc;
     }
 
@@ -1476,6 +1615,7 @@ void vg_rast_flush(void) {
     s_over_n  = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
     s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = s_cyc_can = 0;
+    s_cyc_pt = s_cyc_gl = s_cyc_fl = 0;
     s_tint_us = 0;
 
     const float tint_k = s_tint_k;

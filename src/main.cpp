@@ -148,6 +148,10 @@ void loop(void) {
     static uint32_t acc_join_mm = 0, acc_join_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
+    // `oth` split three ways, because it is a bucket and each part moves for its own reason
+    // -- points with speed, glyphs with what the HUD is saying, fills with the instruments on
+    // screen. Optimising a bucket is how four rounds of canopy work came out unattributable.
+    static uint32_t acc_pt = 0, acc_gl = 0, acc_fl = 0;
     static uint32_t acc_tint = 0, acc_mir = 0;
     static uint32_t frames    = 0;
 
@@ -402,6 +406,9 @@ void loop(void) {
     acc_ln     += vg_rast_ln_us();
     acc_tri2   += vg_rast_tri_us();
     acc_oth    += vg_rast_oth_us();
+    acc_pt     += vg_rast_pt_us();
+    acc_gl     += vg_rast_gl_us();
+    acc_fl     += vg_rast_fl_us();
     acc_can    += vg_rast_can_us();
     acc_tint   += vg_rast_tint_us();
     acc_mir    += vg_render_mirror_us();
@@ -449,7 +456,7 @@ void loop(void) {
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
-                      "| aa %lu ln %lu tri %lu oth %lu can %lu tnt %lu mir %lu "
+                      "| aa %lu ln %lu tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
@@ -476,6 +483,9 @@ void loop(void) {
                       (unsigned long)(acc_aa   / frames),
                       (unsigned long)(acc_ln   / frames),
                       (unsigned long)(acc_tri2 / frames),
+                      (unsigned long)(acc_pt   / frames),
+                      (unsigned long)(acc_gl   / frames),
+                      (unsigned long)(acc_fl   / frames),
                       (unsigned long)(acc_oth  / frames),
                       (unsigned long)(acc_can  / frames),
                       (unsigned long)(acc_tint / frames),
@@ -603,6 +613,7 @@ void loop(void) {
         for (int i = 0; i < NUM_BANDS; i++) acc_band[i] = 0;
         acc_sky   = acc_prim = acc_scan = 0;
         acc_aa = acc_ln = acc_tri2 = acc_oth = acc_tint = acc_mir = 0;
+        acc_pt = acc_gl = acc_fl = 0;
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
         acc_hud_radar = acc_hud_thr = 0;
         frames = 0;

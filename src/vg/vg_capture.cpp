@@ -254,6 +254,17 @@ void vg_capture_poll(void) {
                               (unsigned long)s.prep_us, (unsigned long)s.fill_us,
                               (unsigned long)s.sum);
             }
+        } else if (c == 'g') {
+            // The glyph nest, plain against hoisted, over identical text. `same` is the
+            // part that matters: a faster loop that draws different pixels is not faster.
+            VgGlyphCost k{};
+            k.same = true;
+            vg_glyph_bench(&k);
+            if (!vg_link_busy()) {
+                Serial.printf("glyph: ref %lu us, now %lu us, %d glyphs x %d bands, %s\n",
+                              (unsigned long)k.ref_us, (unsigned long)k.now_us, k.glyphs,
+                              (int)NUM_BANDS, k.same ? "IDENTICAL" : "DIFFERENT");
+            }
         } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an
