@@ -70,10 +70,51 @@ struct Sub {
     int     tri;
 };
 
-// Half each. 1700 against a measured peak of 920 for BOTH halves together.
-#define SUB_SPLIT (MAX_PRIMS / 2)
+// FOUR SLICES, AND THE REASON IS DRAW ORDER, not memory.
+//
+// Two slices could not be balanced. A core's slice decides WHERE its primitives land
+// in the final list, so with the instruments in the second slice everything core 0
+// draws lands last -- and the only work that may legitimately draw last is the work
+// already there. Submit measured 2390 us on core 1 against 1180 on core 0, and the
+// 1200 us difference could not move, because the arena grid has to draw BEHIND the
+// ships and moving it to the other core would have drawn it in front of them.
+//
+// So the slices interleave the two cores instead:
+//
+//   0  starfield, hoops        core 1
+//   1  rails                   core 0
+//   2  world objects, gate     core 1
+//   3  instruments             core 0
+//
+// Joined in index order, which is draw order, so the grid still lies under the hulls
+// while half of it was built on the other core.
+//
+// Sized individually, see SUB_AT: an even split would have handed the busiest block a
+// quarter of what it had. It IS four ceilings now instead of two, and an overflow shows
+// on the telemetry line.
+#define NSUB 4
 
-static Sub  s_sub[2];
+// NOT EQUAL QUARTERS. Each slice is its own ceiling now, so an even split would have
+// given the busiest block a quarter of what it had before -- and MAX_PRIMS was sized
+// for the shard burst, which lands in the world.
+//
+// Sized from the geometry rather than guessed. nhoop is 10, so the grid is at most
+// 21 hoops of ARENA_HOOP_SEGS (294 segments) and ARENA_RAILS of nhoop*2 (160), which
+// the measured 846:426 us ratio agrees with. The instruments carry the rear-view
+// patch, and that re-submits the whole grid at half density -- another ~234 -- on top
+// of the HUD's own.
+//
+// Slice 0 ends where slice 1 begins, and so on; the last bound is MAX_PRIMS.
+static constexpr int SUB_AT[NSUB + 1] = {
+    0,        // 0: starfield + hoops   -- 294 segments of grid, plus the stars
+    800,      // 1: rails               -- 160 segments
+    1100,     // 2: world objects, gate -- the shard burst's 160 lives here
+    2600,     // 3: instruments         -- HUD, overlays, and the mirror's own grid
+    3400,     // == MAX_PRIMS
+};
+static_assert(SUB_AT[NSUB] == MAX_PRIMS, "slice bounds must cover the list exactly");
+
+static Sub  s_sub[NSUB];
 static Sub* s_cur[2] = { &s_sub[0], &s_sub[0] };
 
 static inline Sub* sub(void) { return s_cur[xPortGetCoreID()]; }
@@ -81,7 +122,9 @@ static inline Sub* sub(void) { return s_cur[xPortGetCoreID()]; }
 // Which half the calling core is building. Called by vg_render_frame around the
 // two groups; the mapping is per core, so both cores can be inside submit at once.
 void vg_prim_select(int group) {
-    s_cur[xPortGetCoreID()] = &s_sub[group ? 1 : 0];
+    if (group < 0) group = 0;
+    if (group >= NSUB) group = NSUB - 1;
+    s_cur[xPortGetCoreID()] = &s_sub[group];
 }
 
 // THE LIVE TOTAL, straight off the cursors, and it has to be live rather than a
@@ -96,7 +139,9 @@ void vg_prim_select(int group) {
 //
 // Equal to s_count once join has run, since join does not move the cursors.
 static inline int live_count(void) {
-    return s_sub[0].at + (s_sub[1].at - SUB_SPLIT);
+    int n = 0;
+    for (int i = 0; i < NSUB; i++) n += s_sub[i].at - SUB_AT[i];
+    return n;
 }
 
 // Close the frame: bring the second block down against the first so the list is
@@ -114,9 +159,8 @@ uint32_t vg_rast_join_mm_us(void) { return s_join_mm_us; }
 int      vg_rast_join_n(void)     { return s_join_n; }
 
 void vg_prim_join(void) {
-    const int na = s_sub[0].at;
-    const int nb = s_sub[1].at - SUB_SPLIT;
-    s_join_n = nb;
+    int at = s_sub[0].at;          // slice 0 is already in place
+    int moved = 0;
     const uint32_t t0 = micros();
     // NOT memmove. This toolchain's memmove is a byte-at-a-time loop: measured at
     // ~1.05 us per 20-byte primitive, dead linear, which is about 19 MB/s and cost
@@ -127,17 +171,28 @@ void vg_prim_join(void) {
     // rediscovering: sizeof(Prim) is a multiple of 4 and s_prims is word aligned,
     // so both ends are aligned and the length is a whole number of words; and the
     // destination is always at or below the source, because group A's cursor
-    // cannot pass SUB_SPLIT. A FORWARD copy is therefore correct even if the two
+    // cannot pass its own slice end. A FORWARD copy is therefore correct even if the two
     // ranges overlapped, since every word is read before anything writes over it.
+    // The destination-below-source argument still holds with four blocks, and it is
+    // worth restating because it is what makes a forward copy safe. Block i starts at
+    // SUB_AT[i], and every block before it contributed at most its own capacity, so the
+    // running cursor cannot have passed SUB_AT[i] by the time block i is
+    // copied. Destination <= source for every block, so every word is read before
+    // anything writes over it.
     static_assert(sizeof(Prim) % 4 == 0, "prim copy assumes whole words");
-    if (nb > 0) {
-        uint32_t*       d = (uint32_t*)(void*)&s_prims[na];
-        const uint32_t* s = (const uint32_t*)(const void*)&s_prims[SUB_SPLIT];
-        const int       w = nb * (int)(sizeof(Prim) / 4);
-        for (int i = 0; i < w; i++) d[i] = s[i];
+    for (int i = 1; i < NSUB; i++) {
+        const int n = s_sub[i].at - SUB_AT[i];
+        if (n <= 0) continue;
+        uint32_t*       d = (uint32_t*)(void*)&s_prims[at];
+        const uint32_t* s2 = (const uint32_t*)(const void*)&s_prims[SUB_AT[i]];
+        const int       w = n * (int)(sizeof(Prim) / 4);
+        for (int k = 0; k < w; k++) d[k] = s2[k];
+        at    += n;
+        moved += n;
     }
+    s_join_n     = moved;
     s_join_mm_us = micros() - t0;
-    s_count = na + nb;
+    s_count      = at;
 }
 
 bool vg_prim_init(void) {
@@ -202,7 +257,11 @@ void vg_line_blend(int mode) {
     sub()->aa = (mode == LINE_ADD || mode == LINE_SUB) ? (uint8_t)mode : LINE_OPAQUE;
 }
 
-int vg_rast_tri_count(void) { return s_sub[0].tri + s_sub[1].tri; }
+int vg_rast_tri_count(void) {
+    int n = 0;
+    for (int i = 0; i < NSUB; i++) n += s_sub[i].tri;
+    return n;
+}
 
 bool vg_rast_init(void) {
     if (!vg_prim_init()) return false;
@@ -242,10 +301,10 @@ void vg_rast_begin_frame(void) {
     s_count = 0;
     // Both submitters, to the same defaults the globals used to hold: AA on, fills
     // on, clipping to the whole panel. vg_render overrides what it needs per half.
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < NSUB; i++) {
         Sub* u = &s_sub[i];
-        u->at    = i ? SUB_SPLIT : 0;
-        u->end   = i ? MAX_PRIMS : SUB_SPLIT;
+        u->at    = SUB_AT[i];
+        u->end   = SUB_AT[i + 1];
         u->aa    = 1;
         u->fills = true;
         u->cx0 = 0; u->cy0 = 0; u->cx1 = SCR_W - 1; u->cy1 = SCR_H - 1;
@@ -260,7 +319,10 @@ void vg_rast_begin_frame(void) {
 }
 int  vg_rast_prim_count(void)  { return live_count(); }
 int  vg_rast_prim_peak(void)   { return s_peak; }
-bool vg_rast_overflowed(void)  { return s_sub[0].overflow || s_sub[1].overflow; }
+bool vg_rast_overflowed(void)  {
+    for (int i = 0; i < NSUB; i++) if (s_sub[i].overflow) return true;
+    return false;
+}
 
 static inline Prim* push(void) {
     Sub* u = sub();

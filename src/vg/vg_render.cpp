@@ -106,7 +106,7 @@ static void draw_rear_patch(const VgCam& base, float warp) {
     // The patch is world content, and it is drawn after the main view has already
     // switched AA back on for the instruments -- so it has to say so again.
     vg_line_aa_mode(false);
-    vg_draw_arena_grid(rc);
+    vg_draw_arena_grid(rc, ARENA_GRID_ALL);
     vg_draw_world(rc);
     if (vg.state == VG_COURSE) vg_course_draw(rc);
     // The diamonds below are an instrument, and so is the bezel after them.
@@ -319,8 +319,19 @@ void vg_render_frame(const VgInput* in, float fps) {
     uint32_t t_sub = micros();
     vg_draw_starfield(cam);
     g_sub_star = micros() - t_sub;  t_sub = micros();
-    vg_draw_arena_grid(cam);
+    // HOOPS ONLY. The rails are core 0's, and they go into their own slice so that
+    // both halves of the grid still join ahead of the world -- see SUB_AT.
+    vg_draw_arena_grid(cam, ARENA_GRID_HOOPS);
     g_sub_arena = micros() - t_sub; t_sub = micros();
+    // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to
+    // land between the grid and the hulls rather than on top of them.
+    vg_prim_select(2);
+    // AND AA OFF AGAIN, because the setting lives in the SLICE. vg_line_aa_mode(false)
+    // above applied to slice 0; slice 2 starts from begin_frame's default, which is ON.
+    // Without this the hulls would be antialiased -- against the author's explicit call
+    // above, and at a cost that scales with span length exactly where the spans are
+    // longest.
+    vg_line_aa_mode(false);
     vg_draw_world(cam);
     g_sub_world = micros() - t_sub;
     // Gated on the state, not just on ring_alive. A stale gate drawn into a match
@@ -344,7 +355,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     // was. And gated on the same condition as group B's early return, so a menu
     // frame still does not get one.
     if (!vg_state_is_menu(vg.state)) {
-        vg_prim_select(1);
+        vg_prim_select(3);
         draw_fps(fps);
     }
 }
@@ -383,7 +394,21 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // GROUP B FROM HERE, and the AA boundary and the group boundary being the same
     // line is not a coincidence -- the reason the halves are separable is the same
     // reason they want different settings.
+    // THE RAILS FIRST, and they are not instruments at all.
+    //
+    // They are here because this is the function core 0 runs, and they are ahead of
+    // the menu return below because the world is drawn in menus too -- the attract
+    // loop flies the scene. A grid missing half its lines on the title card would be
+    // the obvious symptom of putting this in the wrong place.
+    //
+    // Slice 1, with antialiasing OFF: these are world geometry and the world layer
+    // does not smooth. Both settings live in the slice, so selecting it is what makes
+    // that true rather than a flag someone has to remember to restore.
     vg_prim_select(1);
+    vg_line_aa_mode(false);
+    vg_draw_arena_grid(cam, ARENA_GRID_RAILS);
+
+    vg_prim_select(3);
     vg_line_aa_mode(true);
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on

@@ -67,3 +67,23 @@ extern uint32_t g_synth_knee;        // samples the soft rail shaped
 // is left over after these two is everything else in vg_draw_hud, and the
 // telemetry works it out by subtraction rather than timing it a third time.
 extern uint32_t g_hud_radar, g_hud_throttle;
+
+// THE GRID'S TWO HALVES, AND THEY NOW RUN ON DIFFERENT CORES.
+//
+// Added to choose the split point and kept because it is what judges it. The arena
+// grid was the largest single item on submit's critical path, and its two loops are
+// independent -- hoops around the tube, rails along it -- so they were separated:
+// hoops on core 1 with the world, rails on core 0 with the instruments.
+//
+// So these two are no longer parts of one total. They are the two cores' shares, and
+// the useful reading is whether they BALANCE against what else each core carries:
+//
+//   core 1   starfield + hoops + world objects
+//   core 0   rails + instruments
+//
+// `sub` on the telemetry line is the slower of the two, so the gap between them is
+// what is still recoverable. Measured after the split at hoops 812 and rails 595 --
+// note the rails got slower moving cores, from 426, most likely flash-cache
+// contention with the audio task, which also lives on core 0. A finer split therefore
+// pays less than the arithmetic suggests.
+extern uint32_t g_arena_hoop, g_arena_rail;

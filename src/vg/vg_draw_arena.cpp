@@ -1,4 +1,8 @@
 ﻿#include "vg_draw.h"
+#include "vg_prof.h"
+// Declared rather than pulled in with Arduino.h, which has a macro that collides with
+// a name in this file.
+extern "C" unsigned long micros(void);
 #include "vg_game.h"
 #include "vg_arena.h"
 #include <math.h>
@@ -102,7 +106,7 @@ static void arena_line(const VgCam& cam, bool along_v,
 // A single structural grid over the whole boundary. Proximity is conveyed by
 // arena_seg's distance fade -- the wall you are closing on simply gets brighter
 // and redder -- rather than by overlaying extra geometry near it.
-void vg_draw_arena_grid(const VgCam& cam) {
+void vg_draw_arena_grid(const VgCam& cam, int part) {
     const float PI  = 3.14159265f;
     const float TAU = 6.28318531f;
 
@@ -134,16 +138,33 @@ void vg_draw_arena_grid(const VgCam& cam) {
         const int hs = cam.lite ? 2 : 1;
         const int b0 = cam.lite ? (base - (base & 1)) : base;
 
-        for (int i = -nhoop; i <= nhoop; i += hs) {
-            float u = (float)(b0 + i) * du_hoop;
-            arena_line(cam, true, u, 0.0f, TAU, ARENA_HOOP_SEGS, col_struct);
+        const uint32_t th0 = micros();
+        if (part != ARENA_GRID_RAILS) {
+            for (int i = -nhoop; i <= nhoop; i += hs) {
+                float u = (float)(b0 + i) * du_hoop;
+                arena_line(cam, true, u, 0.0f, TAU, ARENA_HOOP_SEGS, col_struct);
+            }
         }
-        for (int j = 0; j < ARENA_RAILS; j += hs) {
-            float v = TAU * (float)j / (float)ARENA_RAILS;
-            arena_line(cam, false, v, u0 - du_hoop * nhoop, u0 + du_hoop * nhoop,
-                       nhoop * 2, col_struct);
+        const uint32_t th1 = micros();
+        if (part != ARENA_GRID_HOOPS) {
+            for (int j = 0; j < ARENA_RAILS; j += hs) {
+                float v = TAU * (float)j / (float)ARENA_RAILS;
+                arena_line(cam, false, v, u0 - du_hoop * nhoop, u0 + du_hoop * nhoop,
+                           nhoop * 2, col_struct);
+            }
         }
-    } else {
+        // Only the main view. The mirror runs this a second time at half density and
+        // would fold its numbers into the same counters. See cam.lite.
+        if (!cam.lite) {
+            g_arena_hoop += th1 - th0;
+            g_arena_rail += micros() - th1;
+        }
+    } else if (part != ARENA_GRID_RAILS) {
+        // ONE CORE FOR THE SPHERE. Its meridians and parallels are not the same
+        // division as the torus's hoops and rails -- splitting them would want its
+        // own measurement, and the sphere is not the arena the game is played in.
+        // Drawn whole by whichever core asks for the hoops.
+        //
         // Sphere: meridians and parallels at ~20 degrees. That is the density
         // needed for a few grid lines to sit in a 62-degree FOV whichever way you
         // look -- at 36 degrees you could face a gap and see nothing at all.

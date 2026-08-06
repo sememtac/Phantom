@@ -111,7 +111,20 @@ static inline float vg_fade(float z, float bias, float over, float floor_) {
 // Draw order matters and is set by vg_render_frame: starfield, then the arena
 // grid over it, then everything solid, whose hidden-line fills occlude both.
 void vg_draw_starfield(const VgCam& cam);
-void vg_draw_arena_grid(const VgCam& cam);
+// THE BOUNDARY WIREFRAME, IN TWO HALVES, because it is the largest single item on
+// submit's critical path and its two loops are independent.
+//
+// Hoops run around the tube, rails run along it. Measured at 846 us and 426 us, and
+// they share nothing: each arena_line carries its own incremental rotation. So the
+// two can be built on different cores, which is the only reason this argument exists.
+//
+// The halves land in DIFFERENT primitive slices -- see SUB_AT in vg_raster.cpp -- and
+// both slices are joined ahead of the world's, so the grid still lies under the hulls.
+// ARENA_GRID_ALL is for the rear-view patch, which submits its own copy on one core.
+#define ARENA_GRID_ALL   0
+#define ARENA_GRID_HOOPS 1
+#define ARENA_GRID_RAILS 2
+void vg_draw_arena_grid(const VgCam& cam, int part);
 void vg_draw_world(const VgCam& cam);
 void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps);
 void vg_draw_overlays(void);
