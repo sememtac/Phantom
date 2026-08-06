@@ -180,6 +180,41 @@ void vg_tournament_begin(ShipClass c) {
     vg_save_store();
 }
 
+// THE CHAMPION DIED. See the declaration in vg_sim.h for why this exists.
+void vg_title_lost(void) {
+    // WHO TAKES IT. The round's opponent, and it has to be read BEFORE the reset,
+    // because vg_tourney_opponent indexes the bracket the reset is about to abandon.
+    //
+    // Guarded rather than assumed: a champion can die outside a tournament match once
+    // there is any other way to fly, and an inherited name of three NULs would print
+    // as nothing and seed a nameless legend. No opponent means the name simply goes
+    // back to being a rumour, which is where the crawl has it anyway.
+    const Entrant* opp = vg_tourney_opponent();
+    if (opp && opp->tag[0]) {
+        for (int i = 0; i < 3; i++) vg.phantom_tag[i] = opp->tag[i];
+        vg.phantom_tag[3] = 0;
+    }
+
+    // AND THE PLAYER IS NOBODY AGAIN. Everything attained goes: the bank, the name,
+    // the hull, the title. Not the volumes -- those are the room's, not the pilot's.
+    //
+    // The same values vg_game_init starts a fresh install with, because that is
+    // exactly what this is. Written out here rather than left to the entry screen, so
+    // that a power cycle between the death and the next tournament cannot restore a
+    // champion who is dead.
+    vg.champion    = false;
+    vg.credits     = CREDIT_START;
+    vg.callsign[0] = 'A'; vg.callsign[1] = 'C'; vg.callsign[2] = 'E';
+    vg.callsign[3] = 0;
+    vg.trail_hue   = 0.52f;
+    vg.ship        = SHIP_AEGIS;
+    vg.spec        = vg_spec(vg.ship);
+    vg.health_max  = vg.spec->hull;
+    vg.health      = vg.health_max;
+    vg.wpn.rounds  = vg.spec->magazine;
+    vg_save_store();
+}
+
 void vg_match_start(void) {
     for (int i = 0; i < MAX_ENEMIES;   i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
@@ -710,6 +745,20 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
         // opponent went down in the same frame.
         if (vg_player_was_hit()) {
             vg_state_go((vg.health > 0.0f) ? VG_HIT : VG_OVER);
+            // THE TITLE CHANGES HANDS, and the player stops being anybody.
+            //
+            // Dying as the champion is not a lost round, it is the end of a legend.
+            // The narrative has no room for a PHANTOM who is still flying around
+            // having been killed, so the run does not resume from a worse position --
+            // it starts again as somebody else, with nothing.
+            //
+            // WHOEVER KILLED YOU TAKES THE NAME. Attributed to the round's opponent
+            // rather than to the specific round or collision that did it, because a
+            // tournament match is one pilot against one pilot: if you did not come out
+            // of it, they did, and the reason is between you and the wall. That also
+            // means a kamikaze, a stray missile and a boundary hit all settle the same
+            // way, which is the same rule the bracket already uses.
+            if (vg.state == VG_OVER && vg.champion) vg_title_lost();
             if (vg.state == VG_OVER) {
                 // Your own ship, left drifting just ahead of the camera.
                 // There is no third-person view in a renderer where the

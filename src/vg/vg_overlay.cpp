@@ -432,8 +432,16 @@ void vg_draw_overlays(void) {
                 if (out < a) a = out;
             }
             if (a > 0.01f) {
-                centred(214, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK_FAINT, a), 1);
-                centred(238, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 2);
+                // SCALE 2 AND MID INK, up from scale 1 and INK_FAINT -- the smallest
+                // size the font has AND the dimmest ink on the ramp, on the one line
+                // of the game that explains what winning meant. It was unreadable.
+                //
+                // 32 characters at 6px an advance is 382px at this scale, so it fits
+                // 480 with room either side. The payoff line goes UP a step with it,
+                // to 3, because the hierarchy here is brightness and size and the
+                // setup must not arrive as loud as the thing it sets up.
+                centred(204, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK, a), 2);
+                centred(232, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 3);
             }
         }
 

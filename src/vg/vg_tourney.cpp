@@ -156,7 +156,26 @@ void vg_tourney_begin(ShipClass player_class) {
     // therefore in the final -- but only until the name is yours.
     if (!vg.champion) {
         Entrant* ph = &vt.entrant[seed_to_entrant[2]];
-        ph->tag[0]     = 'P'; ph->tag[1] = 'H'; ph->tag[2] = 'M'; ph->tag[3] = 0;
+        // THE NAME IS INHERITED once the title has changed hands. vg.phantom_tag holds
+        // the callsign of whoever killed the last champion, and that pilot is now the
+        // one seeded to the final -- so beating the game and then losing it puts a
+        // specific person in your way rather than the anonymous rumour again.
+        //
+        // Only the NAME is theirs. The red trail, the archetype and the top rating stay
+        // the legend's, because those are what the legend IS -- an unseen pilot with a
+        // signature nobody mistakes. Inheriting the killer's hull and voice as well
+        // would need more than the three bytes the save has room for, and it would
+        // make the legend a different thing every cycle instead of the same one wearing
+        // a new name.
+        //
+        // The bracket and the overlay still print PHANTOM for anyone with is_phantom
+        // set, which is deliberate: the player reading it has been reset and has never
+        // met this pilot. The name is carried, not revealed.
+        if (vg.phantom_tag[0]) {
+            for (int i = 0; i < 4; i++) ph->tag[i] = vg.phantom_tag[i];
+        } else {
+            ph->tag[0] = 'P'; ph->tag[1] = 'H'; ph->tag[2] = 'M'; ph->tag[3] = 0;
+        }
         ph->voice      = (uint8_t)vg_voice_phantom();
         ph->rating     = 1.0f;
         // Hue 0 is pure red -- the one colour the rest of the roster's

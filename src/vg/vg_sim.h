@@ -174,6 +174,16 @@ void vg_tv_update(float dt);
 // after every hit the player takes. See the note on VgStateDef::leave.
 void vg_begin_flight(void);
 
+// THE CHAMPION DIED. Hand the name to whoever did it and wipe the profile.
+//
+// Called once, at the transition into VG_OVER, and only while vg.champion. It
+// persists immediately: the whole point is that this survives, and a player who
+// pulls the power out after losing the title has still lost it.
+//
+// The volumes are NOT reset. They are settings, not something attained -- a new
+// pilot inherits the room's mixer, not the last one's bank.
+void vg_title_lost(void);
+
 // --- vg_cockpit.cpp --------------------------------------------------------
 
 // The caution annunciators. Here rather than in the HUD because the phase has to

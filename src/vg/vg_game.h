@@ -405,6 +405,16 @@ struct VgGame {
     // the hangar bays is about YOU from then on -- the intro crawl changes to
     // match, which is the whole point of the name.
     bool     champion;
+    // THE NAME, IF IT IS NOT YOURS ANY MORE.
+    //
+    // Empty until the title changes hands. The legend in the opening crawl has no
+    // callsign of its own -- it is a rumour -- but once the player has held the title
+    // and lost it, the pilot who took it has a name, and that name is who the next
+    // run has to get past. Persisted, so the lineage outlives a power cycle.
+    //
+    // Three characters and a NUL, like every other callsign. Empty means nobody has
+    // inherited it and the legend is the anonymous one from the crawl.
+    char     phantom_tag[4];
 
     float    health;       // absolute hull points remaining
     float    health_max;   // ...out of this, from the chosen class
