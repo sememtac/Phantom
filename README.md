@@ -514,19 +514,70 @@ How it got there:
 | + CRT scanlines, warped HUD, speed motes | 12.2 ms | 68 |
 | **+ procedural nebula backdrop** | **12.65 ms** | **67.5** |
 | + generated audio, mixed on core 0 | 12.65 ms | 67 |
-| **+ the baked canopy, flexing** | **~14 ms** | **58-62** |
+| + the baked canopy, flexing | ~14 ms | 56-59 |
+| + the arena grid split across the cores | | 60-61 |
+| **+ a band queued behind the one on the wire** | **10.9 ms** | **60-61 fight, 71 idle** |
 
-12.2 ms against a hard floor of 11.52 ms of wire time (460,800 bytes at 80 MHz
-quad). The remaining ~0.7 ms is the first band's rasterisation plus 30 small
-window-command transactions. **The panel is saturated** and that part is done.
+Where it stands, all flown rather than modelled:
 
-**The raster is no longer what the frame is waiting on**, which took a while to
-believe. Roughly 3.5 ms was cut out of the canopy, the backdrop and the line walk
-over one pass, and the frame rate barely moved: `rast` had already fallen below
-the wire's own total, so the savings went into `push` — the CPU sitting idle
-waiting on DMA. The deficit now lives in the pre-flush phase, and most of it is
-the instruments' own spherical warp subdividing every line it draws. That is where
-the next millisecond is, and it has never been profiled.
+| | frame rate |
+|---|---|
+| attract loop | 71 |
+| a fight | 60-61 |
+| encroaching on the boundary | 57 |
+
+11.52 ms of that is wire time and cannot move: 460,800 bytes at 80 MHz quad.
+
+**`blit` now reads BELOW that floor, and it is not a fault.** Two bands are still
+transferring when the flush loop exits, so about 1.5 ms of the transfer overlaps
+the *next* frame's input, update and submit. The panel still receives every byte —
+it simply no longer idles at the frame boundary, which is what the last row of the
+table is.
+
+### What the frame is actually waiting on
+
+This section used to claim the raster was no longer the constraint. **That was
+measured in the attract loop and is false in a fight**, which is worth recording
+because the mistake is easy to repeat: the two regimes disagree, and averaging
+across them hides it completely.
+
+```
+attract   rast  5.6 ms   push 6.8 ms   0 bands over their window
+fight     rast 10.8 ms   push 2.3 ms   2.6-4.3 bands over
+```
+
+`push` is the CPU standing idle on DMA. Idle, there is 6.8 ms of it and raster
+work is nearly free; in a fight there is 2.3 ms and bands overrun the 768 µs each
+gets, so raster work costs frame time directly. **Both halves of that sentence are
+true, and which one applies depends on the scene.**
+
+The pre-flush phase is 3.8 ms of it — input, update and submit — and every
+microsecond there is serial, so it comes straight off the frame. That is where the
+grid split and the queued band both came from.
+
+### Three memory budgets, and only one of them is tight
+
+Worth knowing before adding anything, because they behave nothing alike.
+
+| pool | free | what belongs there |
+|---|---|---|
+| internal SRAM | ~10 KB | the prim list, the band buffers, the backdrop texture |
+| PSRAM | 8.1 MB | anything read once per frame or sequentially |
+| flash | 2.6 MB | dialogue, ship tables, models, canopy drawings |
+
+**Internal SRAM is the only pressed one, and it is entirely the renderer's.** It has
+to be: the band buffers and the backdrop's 32 KB texture are written and sampled in
+scattered patterns every frame, which is the finding the two-stage design rests on.
+
+Nothing a writer or an artist adds goes there. Dialogue and ship tables are `const`
+and live in flash — a pilot archetype is about 400 bytes, so hundreds fit in the
+2.6 MB spare. What behaviour work costs is CPU in `upd`, currently 746 µs, not memory.
+
+**TOTAL FREE IS NOT THE NUMBER.** The backdrop needs 32 KB *contiguous*, and a third
+band buffer once left 41 KB free with a largest block of 21 — so the allocation
+failed and the nebula switched off entirely while the sum said there was room. The
+backdrop therefore claims its texture *before* the rasteriser, so the one allocation
+with a hard contiguous minimum takes it from an unfragmented heap.
 
 ### Line quality
 
