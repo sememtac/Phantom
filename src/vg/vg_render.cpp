@@ -435,8 +435,23 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // and the resting warp is full bulge, which is the furthest it ever gets from flat. The flex
     // is zero through the sequence and ramps in after it, so the cockpit takes up its bulge
     // instead of appearing in it.
+    //
+    // AND FROZEN WHILE PAUSED, which is why `live` is read up here rather than where the shake
+    // reads it thirty lines down.
+    //
+    // The canopy's flex and lag are the only cockpit state driven from the RENDERER. Everything
+    // else that moves is stepped from vg_world_step, which vg_upd_pause deliberately does not
+    // call -- so everything else stopped for free and these two did not. vg_canopy_lag advances
+    // its spring once per CALL, with no dt, so a paused player leaning on the stick was still
+    // feeding it: the frame kept swinging over a stopped world.
+    //
+    // Skipped rather than zeroed. The spring's state is left exactly as it was, so the frame HOLDS
+    // its displacement instead of relaxing to centre while the picture is frozen -- a cockpit that
+    // slid back to true during a pause would be the one thing in the shot still moving.
+    const bool live = (vg.state != VG_PAUSE);
+
     const float flex = vg_canopy_intro_flex();
-    vg_canopy_warp((1.0f - sn) * flex);
+    if (live) vg_canopy_warp((1.0f - sn) * flex);
     // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
     // what the frame should be late to -- the ship is already late to it itself, and lagging a
     // lag reads as sludge.
@@ -453,7 +468,7 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // The hull's character, compressed toward 1, times how open the throttle is. sn is the
     // same normalised throttle the warp uses -- and the warp runs the other way, so the frame
     // trades being close and still for being flat and alive as the ship gets moving.
-    {
+    if (live) {
         const float shake = vg.spec ? vg.spec->shake : 1.0f;
         const float hull  = 1.0f + (shake - 1.0f) * CANOPY_LAG_HULL;
         // Agility, not throttle: the ship turns hardest with the throttle shut, so that is
@@ -475,8 +490,14 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // match -- the boot is a chain, and the instruments are the third link -- so a bare
     // `hud_boot > 0` test would have read as "already booted" through the whole dark phase and
     // drawn the panel solid from the first frame. Which is the opposite of the sequence.
+    //
+    // ...and the flicker holds while PAUSED. hud_boot does not decay during a pause -- it is
+    // stepped from vg_world_step, which vg_upd_pause does not call -- but the flicker's own bucket
+    // comes off vg.state_t, which RESETS on every state change and then runs. So pausing mid-boot
+    // left the instruments strobing through a fresh pattern over a stopped world, forever. Held
+    // solid instead: a paused picture should be a still.
     bool draw_instruments = vg.hud_cued;
-    if (vg.hud_cued && vg.hud_boot > 0.0f) {
+    if (vg.hud_cued && vg.hud_boot > 0.0f && live) {
         const float p = 1.0f - vg.hud_boot / HUD_BOOT_TIME;   // 0..1 settled
         // Bucketed so the flicker has a rate of its own instead of strobing at
         // whatever the frame rate happens to be.
@@ -490,7 +511,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // too, but smaller than the world does and on its own clock -- what sells it
     // is the two disagreeing. Shaking in lockstep would read as one bigger
     // shake; out of step, it reads as a rack that is not quite bolted down.
-    const bool  live = (vg.state != VG_PAUSE);
+    //
+    // `live` is declared above now, because the canopy needs it first.
 
     // Strain, from what the airframe is actually doing. The same number the camera
     // shake uses, so the panel and the world agree about how hard the ship is
@@ -604,7 +626,9 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // A scan bar running down the screen while it settles. One rectangle, and
     // it is what makes the flicker read as a projector finding its picture
     // rather than as a rendering fault.
-    if (vg.hud_boot > 0.0f) {
+    // Not while paused, for the reason the flicker above is not: hud_boot is frozen but state_t
+    // is not, so the bar would go on sweeping a panel that has stopped booting.
+    if (vg.hud_boot > 0.0f && live) {
         const float p  = 1.0f - vg.hud_boot / HUD_BOOT_TIME;
         const int   sy = (int)(fmodf(vg.state_t * 620.0f, (float)SCR_H));
         vg_fill_rect(0, sy, SCR_W, 2, vg_dim(INK_BRIGHT, 1.0f - p));
