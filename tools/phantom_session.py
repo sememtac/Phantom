@@ -3,6 +3,7 @@
 Record a Phantom session, then render the session to video at 60 fps.
 
     python tools/phantom_session.py record --port COM6 --out run.phr
+    python tools/phantom_session.py record --port COM6 --out run.phr --seconds 60
     python tools/phantom_session.py render --port COM6 run.phr --dir .
 
 A record restarts the game. A session must start at a state that the render step
@@ -40,11 +41,23 @@ def record(args):
     link.open()
     hdr = link.session_start()
     ses = Session(hdr)
-    print(f"Recording. Play now. Press Ctrl+C to stop.  "
-          f"(input structure {hdr['blob']} B, {len(hdr['seeds'])//4} seeds)")
+    if args.seconds:
+        print(f"Recording for {args.seconds:.0f} s. Play now.  "
+              f"(input structure {hdr['blob']} B, {len(hdr['seeds'])//4} seeds)")
+    else:
+        print(f"Recording. Play now. Press Ctrl+C to stop.  "
+              f"(input structure {hdr['blob']} B, {len(hdr['seeds'])//4} seeds)")
     started = time.time()
     try:
         while True:
+            # A TIME LIMIT, so a record can run without a hand on the keyboard.
+            #
+            # Ctrl+C is the only other way to stop, and it cannot be sent to a process that
+            # was started in the background -- killing one instead skips the save and loses
+            # the whole take. With a limit the tool stops itself and still writes the file.
+            if args.seconds and time.time() - started >= args.seconds:
+                print("\nTime is up.")
+                break
             ses.frames.append(link.session_frame())
             if len(ses.frames) % 30 == 0:
                 print(f"\r  {len(ses.frames)} frames  {ses.seconds:6.1f} s of play"
@@ -176,6 +189,8 @@ def main():
                        help="save a session while the game runs at full speed")
     r.add_argument("--port", required=True)
     r.add_argument("--out", default="session.phr")
+    r.add_argument("--seconds", type=float, default=0.0,
+                   help="stop after this many seconds instead of waiting for Ctrl+C")
     r.set_defaults(fn=record)
 
     p = sub.add_parser("render",

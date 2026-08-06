@@ -320,9 +320,25 @@ void vg_render_frame(const VgInput* in, float fps) {
     uint32_t t_sub = micros();
     vg_draw_starfield(cam);
     g_sub_star = micros() - t_sub;  t_sub = micros();
-    // HOOPS ONLY. The rails are core 0's, and they go into their own slice so that
-    // both halves of the grid still join ahead of the world -- see SUB_AT.
-    vg_draw_arena_grid(cam, ARENA_GRID_HOOPS);
+    // THE WHOLE GRID, back on this core, and the reason is a measurement rather than a
+    // preference.
+    //
+    // The rails were moved to core 0 to balance submit, on figures that turned out to be the
+    // wrong ones: g_sub_hud was read as group B's total when it only brackets vg_draw_hud, and
+    // group B also carries the rear-view patch, the markers and the overlays. Timing both
+    // halves end to end says core 0 is the HEAVIER one in combat --
+    //
+    //   A 1942 (starfield, hoops, world)      B 2895 (rails, instruments)
+    //
+    // -- so moving 570 us of rails onto it made the gate worse, not better. Back here the two
+    // come out 2512 against 2325, which is within 100 us of the best a two-way split can do.
+    //
+    // THIS PICKS A REGIME, and combat is the right one to pick: the attract loop is the other
+    // way round, A gating with B nearly empty, and it runs at 66-71 fps where nothing needs
+    // help. If a future scene flips it again, the fix is not another static guess -- it is to
+    // choose the rails' owner per frame from g_sub_a and g_sub_b, which the slices already
+    // allow because a slice's position in the join does not depend on which core filled it.
+    vg_draw_arena_grid(cam, ARENA_GRID_ALL);
     g_sub_arena = micros() - t_sub; t_sub = micros();
     // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to
     // land between the grid and the hulls rather than on top of them.
@@ -405,20 +421,12 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     struct HalfB { uint32_t t0; ~HalfB() { g_sub_b = micros() - t0; } } half_b{t_half};
     (void)half_b;
 
-    // THE RAILS FIRST, and they are not instruments at all.
+    // THE RAILS ARE NOT DRAWN HERE ANY MORE -- see the note beside the grid call in group A.
+    // This half is the heavier of the two in combat, so giving it more was the wrong direction.
     //
-    // They are here because this is the function core 0 runs, and they are ahead of
-    // the menu return below because the world is drawn in menus too -- the attract
-    // loop flies the scene. A grid missing half its lines on the title card would be
-    // the obvious symptom of putting this in the wrong place.
-    //
-    // Slice 1, with antialiasing OFF: these are world geometry and the world layer
-    // does not smooth. Both settings live in the slice, so selecting it is what makes
-    // that true rather than a flag someone has to remember to restore.
-    vg_prim_select(1);
-    vg_line_aa_mode(false);
-    vg_draw_arena_grid(cam, ARENA_GRID_RAILS);
-
+    // Slice 1 is left empty rather than removed. The join skips an empty block, so it costs a
+    // compare a frame, and keeping it is what makes the rails' owner a one-line decision again
+    // if the balance ever wants revisiting.
     vg_prim_select(3);
     vg_line_aa_mode(true);
 
