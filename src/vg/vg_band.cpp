@@ -17,19 +17,30 @@
 // starts costing frame time directly. That threshold is the whole reason the
 // backdrop fill and the scanline pass are written the way they are.
 
-// Two band buffers, alternating: one is drawn into while the other is on the wire.
-static uint16_t* s_band[2] = { nullptr, nullptr };
+// THREE BAND BUFFERS, and the third one is what lets the wire stay fed.
+//
+// Two was one drawn into while one was on the wire, and it forced the driver to drain
+// before every band -- so the wire went dark for a task wakeup fifteen times a frame.
+// Keeping a band QUEUED behind the one in flight closes those gaps, and that needs
+// three: two are outstanding and the rasteriser needs a third to work in.
+//
+// 30 KB of internal SRAM, which is the scarce memory on this part. Bought against 590
+// us of measured wire idle, on every frame, whatever the scene is doing.
+#define BAND_BUFS 3
+static uint16_t* s_band[BAND_BUFS] = { nullptr, nullptr, nullptr };
+
+int vg_band_bufs(void) { return BAND_BUFS; }
 
 bool vg_band_init(void) {
     // Must be internal and DMA-capable: written pixel-by-pixel, then handed
     // straight to the SPI engine.
-    s_band[0] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
-                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    s_band[1] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
-                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    if (!s_band[0] || !s_band[1]) {
-        Serial.printf("vg_band_init: alloc failed (b0=%p b1=%p)\n", s_band[0], s_band[1]);
-        return false;
+    for (int i = 0; i < BAND_BUFS; i++) {
+        s_band[i] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
+                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        if (!s_band[i]) {
+            Serial.printf("vg_band_init: alloc failed (buffer %d of %d)\n", i, BAND_BUFS);
+            return false;
+        }
     }
     return true;
 }
@@ -2629,7 +2640,9 @@ void vg_rast_flush(void) {
     }
 
     for (int b = 0; b < NUM_BANDS; b++) {
-        uint16_t* buf = s_band[b & 1];
+        // Rotating over THREE now. Bands b-1 and b-2 may both still be on the wire, so
+        // b needs a buffer neither of them is using -- see BAND_BUFS.
+        uint16_t* buf = s_band[b % BAND_BUFS];
 
         // Timed WITHOUT the push: vg_panel_push_band blocks on the previous
         // transfer, so folding it in here would charge us for the DMA we are

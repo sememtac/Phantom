@@ -56,3 +56,6 @@ int         vg_prim_live(void);
 
 // --- owned by vg_band.cpp ---
 bool        vg_band_init(void);
+
+// How many band buffers there are, for the init report. See BAND_BUFS.
+int vg_band_bufs(void);

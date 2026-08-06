@@ -143,14 +143,34 @@ static void co_window(int x0, int y0, int x1, int y1) {
 static_assert(SCR_W * BAND_H * 2 <= 32768,
               "band exceeds the ESP32-S3 SPI max transaction size; lower BAND_H");
 
-// Two transaction descriptors, alternating, because a queued transaction's
-// descriptor must stay valid until its result is reaped.
-static spi_transaction_t s_tx[2];
-static int  s_tx_slot    = 0;
-static bool s_tx_pending = false;
+// ONE BAND ON THE WIRE AND ONE ALREADY QUEUED BEHIND IT.
+//
+// This used to drain the queue before every band, which left the wire dark for a
+// whole round trip fifteen times a frame: DMA completes, ISR runs, the render task
+// wakes, returns into push_band, and only then is the next band handed over.
+// Measured as blit 12588 against a wire floor of 11520 -- 590 us of that gap was the
+// gaps, with nothing overrunning its window.
+//
+// Keeping one transaction queued behind the one in flight removes the CPU from the
+// path entirely: the SPI engine starts the next band the instant the current one
+// ends, because it already has it.
+//
+// TWO IS THE CEILING, and it is devcfg.queue_size that sets it. Going deeper would
+// need a fourth band buffer for no further gain -- one queued is already enough to
+// keep the engine fed.
+#define PANEL_QUEUE_MAX 2
 
-void vg_panel_wait(void) {
-    if (!s_tx_pending) return;
+// THREE DESCRIPTORS, ONE PER BAND BUFFER, and they rotate in lockstep with them. Two
+// would provably do -- the slot two pushes back cannot still be outstanding when at
+// most two are -- but pairing a descriptor with the buffer it describes removes the
+// need to make that argument every time this is read.
+static spi_transaction_t s_tx[3];
+static int s_tx_slot    = 0;
+static int s_outstanding = 0;
+
+// Reap exactly one. The driver returns them in the order they were queued.
+static void panel_reap(void) {
+    if (s_outstanding <= 0) return;
     spi_transaction_t* done = nullptr;
     // BOUNDED. This waited forever, and a transfer that never completes --
     // whatever wedged it -- then took the whole game with it: watchdog reset,
@@ -163,31 +183,44 @@ void vg_panel_wait(void) {
         Serial.printf("vg_panel: DMA wait timed out (%lu)\n",
                       (unsigned long)++s_wedges);
     }
-    s_tx_pending = false;
+    s_outstanding--;
+}
+
+// Drain everything. Called at the top of a flush, before the window command, and
+// wherever a caller is about to take a band buffer away.
+void vg_panel_wait(void) {
+    while (s_outstanding > 0) panel_reap();
 }
 
 void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     if (!s_spi) return;
-
-    // The address-window commands are polled transactions, and IDF forbids
-    // those while anything is queued -- and in any case the window must not
-    // move until the previous band's pixels have finished landing. So drain
-    // first; this is also what makes the caller's buffer ping-pong safe.
-    vg_panel_wait();
 
 #if LCD_STREAM_FRAME
     // One window for the whole screen, then fourteen continuations. The
     // controller keeps its own write pointer, so each band simply carries on
     // from where the last one stopped.
     const bool first = (y == 0);
-    if (first) co_window(0, 0, SCR_W - 1, SCR_H - 1);
 #else
     const bool first = true;
+#endif
+
+    // DRAINED ONLY FOR THE WINDOW COMMAND. It is a polled transaction and IDF
+    // forbids one while anything is queued -- but with LCD_STREAM_FRAME on, only the
+    // first band issues one. Bands 1..14 used to drain for a reason that did not
+    // apply to them, and that drain was the wire's idle time.
+    //
+    // Otherwise: make room for one, keeping the queue as deep as it is allowed to be.
+    if (first) vg_panel_wait();
+    else       while (s_outstanding >= PANEL_QUEUE_MAX) panel_reap();
+
+#if LCD_STREAM_FRAME
+    if (first) co_window(0, 0, SCR_W - 1, SCR_H - 1);
+#else
     co_window(0, y, SCR_W - 1, y + h - 1);
 #endif
 
     spi_transaction_t* t = &s_tx[s_tx_slot];
-    s_tx_slot ^= 1;
+    s_tx_slot = (s_tx_slot + 1) % 3;
 
     memset(t, 0, sizeof(*t));
     t->flags     = SPI_TRANS_MODE_QIO;   // data on 4 lines; cmd/addr single
@@ -199,14 +232,21 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     // Queue and return: the caller now rasterises the next band into its other
     // buffer while this one is on the wire. This is the whole point -- the CPU
     // used to busy-wait through all 11.5 ms of transfer per frame.
-    if (spi_device_queue_trans(s_spi, t, portMAX_DELAY) == ESP_OK) s_tx_pending = true;
+    if (spi_device_queue_trans(s_spi, t, portMAX_DELAY) == ESP_OK) s_outstanding++;
 }
 
 static void panel_clear(void) {
     const int CH = 16;   // divides 480 exactly, and well under the 32 KB limit
     uint16_t* buf = (uint16_t*)heap_caps_calloc(SCR_W * CH, 2, MALLOC_CAP_DMA);
     if (!buf) return;
-    for (int y = 0; y < SCR_H; y += CH) vg_panel_push_band(y, CH, buf);
+    // ONE BUFFER FOR EVERY CHUNK, so this cannot use the queue depth the frame loop
+    // does: a second chunk in flight would be reading a buffer the next push is about
+    // to hand over again. Harmless today because every chunk is the same zeroes, and
+    // drained anyway rather than left as a trap for whoever makes this draw something.
+    for (int y = 0; y < SCR_H; y += CH) {
+        vg_panel_push_band(y, CH, buf);
+        vg_panel_wait();
+    }
     vg_panel_wait();     // the buffer is about to go away
     heap_caps_free(buf);
 }

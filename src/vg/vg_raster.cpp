@@ -267,8 +267,11 @@ bool vg_rast_init(void) {
     if (!vg_prim_init()) return false;
     if (!vg_band_init()) return false;
 
-    Serial.printf("vg_rast_init: prims %uKB bands 2x%uKB (%d bands) internal-free %uKB\n",
+    // The buffer count comes from BAND_BUFS rather than being spelled "2x" as it was.
+    // A diagnostic that states the wrong layout is worse than one that states none.
+    Serial.printf("vg_rast_init: prims %uKB bands %dx%uKB (%d bands) internal-free %uKB\n",
                   (unsigned)(sizeof(Prim) * MAX_PRIMS / 1024),
+                  vg_band_bufs(),
                   (unsigned)(SCR_W * BAND_H * 2 / 1024),
                   (int)NUM_BANDS,
                   (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
