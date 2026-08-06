@@ -1176,6 +1176,9 @@ void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
     float sv = Av[0] + Dv[0] * w;
 
     for (int k = 0; k < SEGS; k++) {
+        // Where this segment's first chunk centre sits relative to the centre column. Only
+        // the tint reads it, and the compiler drops it entirely in the untinted instantiation.
+        int sx = k * seg_px + SPLASH / 2 - SCR_W / 2;
         // Endpoint values for THIS row: centre-column sample plus the
         // cross-derivative carried dxl columns over. The step between the
         // endpoints is the segment's own slope, so the walk is bilinear.
@@ -1204,7 +1207,12 @@ void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
                 // The ring index walks WITH x instead of restarting at every
                 // chunk -- restarting was thirteen compares a chunk, three
                 // milliseconds a frame parked against a wall.
-                const int adx = abs(k * seg_px + i * SPLASH + SPLASH / 2 - SCR_W / 2);
+                // CARRIED, not rebuilt. Inside a segment this advances by exactly SPLASH a
+                // chunk, so the two multiplies were re-deriving a value the loop already
+                // knows. `sx` is signed distance from the centre column; the tint is
+                // symmetric about it, so only the magnitude is compared.
+                const int adx = (sx < 0) ? -sx : sx;
+                sx += SPLASH;
                 while (ring >= 0 && adx < lim[ring]) ring--;
                 while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
                 // REVERTED, AND THE MEASUREMENT IS THE REASON. The blend was hoisted out of
