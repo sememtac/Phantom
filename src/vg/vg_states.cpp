@@ -28,7 +28,17 @@ void vg_use_menu_sky(void) {
     vg_sky_menu();
 }
 
-void vg_enter_attract(void) {
+// STATIC, so that this cannot be called as though it were a transition.
+//
+// It was public, and the one caller outside this file used it as one: an enter hook
+// sets a state up, it does not go there, so calling it left the game in whatever
+// state it was already in with the attract scene built underneath. That was reachable
+// only by winning the tournament, which is why it survived.
+//
+// Private, the table is the only thing that can reach it and the compiler enforces
+// what a comment could only ask for. Everything else uses vg_state_cut or
+// vg_state_go, which change the state and then let the table run this.
+static void enter_attract(void) {
     vg_use_menu_sky();
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive   = false;
@@ -252,7 +262,7 @@ struct VgStateDef {
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
 static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               vg_enter_attract, nullptr, vg_upd_attract },
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               enter_attract,    nullptr, vg_upd_attract },
     { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_entry },
     { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_select },
     { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_repair },

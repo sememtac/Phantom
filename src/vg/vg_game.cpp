@@ -633,8 +633,18 @@ void vg_upd_won(float dt, const VgInput* in, const Tap* tap) {
     //
     // Tapping is allowed only once the name is fully up, so an impatient
     // hand cannot cut the one moment the whole story was built toward.
+    //
+    // A CUT, not the enter hook. This called vg_enter_attract() directly, which is
+    // ATTRACT's own entry in the state table -- so it built the attract scene and
+    // never changed vg.state. The game stayed in WON for ever: the title card had no
+    // crawl, because the crawl belongs to ATTRACT, and nothing answered a tap,
+    // because vg_upd_won answers nothing else. Beating the game bricked the session.
+    //
+    // vg_state_cut is what VG_OVER already uses for the same journey, and it is safe
+    // to call every frame -- it returns early while a transition is running, which
+    // matters here because this condition stays true until the state actually changes.
     if (vg.state_t > WON_RETURN ||
-        (vg.state_t > WON_NAME_IN + 2.6f && tap->up)) vg_enter_attract();
+        (vg.state_t > WON_NAME_IN + 2.6f && tap->up)) vg_state_cut(VG_ATTRACT);
 }
 
 void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {

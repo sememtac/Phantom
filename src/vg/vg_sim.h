@@ -149,7 +149,10 @@ void vg_spawn_asteroid(void);
 // The attract loop's set-up. Called through the STATES table like every other
 // entry hook, and ALSO called directly from the won-screen exit, which is the
 // kind of thing Phase 4's `leave` column is meant to stop.
-void vg_enter_attract(void);
+// vg_enter_attract WAS DECLARED HERE and is now static in vg_states.cpp. It is an
+// enter hook: it sets ATTRACT up and does not go there, and the one caller outside
+// that file treated it as a transition -- which left the game stuck in WON after the
+// tournament was won. Use vg_state_cut(VG_ATTRACT) or vg_state_go(VG_ATTRACT).
 
 
 // The menus' own world motion: enough drift to stop the backdrop looking like a
