@@ -21,6 +21,11 @@ tools/build/
 tools/__pycache__/
 tools/*.spec
 
+# Affinity Designer's lock file. Written beside a document while it is open, and it
+# carries a session UUID and the name of whoever has it -- machine state, not work.
+# Tracking one would conflict on every open and reveal nothing.
+*~lock~
+
 # The design document is ours, not the public repo's. It stays on disk.
 DESIGN.md
 tools/regress-baseline.json
