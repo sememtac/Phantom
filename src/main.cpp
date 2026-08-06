@@ -13,6 +13,7 @@ int      vg_fire_live(void);          // live fireballs, defined in vg_game.cpp
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 uint32_t g_arena_hoop, g_arena_rail;                        // the grid's two loops
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
+uint32_t g_in_touch, g_in_lock;                             // the frame's last I2C
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
@@ -446,6 +447,9 @@ void loop(void) {
     acc_sxr += g_sfx_render_us;
     acc_star += g_sub_star; acc_aren += g_sub_arena;
     acc_wrld += g_sub_world; acc_hud += g_sub_hud;
+    static uint32_t acc_touch = 0, acc_lock = 0;
+    acc_touch += g_in_touch; g_in_touch = 0;
+    acc_lock  += g_in_lock;  g_in_lock  = 0;
     static uint32_t acc_suba = 0, acc_subb = 0;
     acc_suba += g_sub_a; acc_subb += g_sub_b;
     static uint32_t acc_ahoop = 0, acc_arail = 0;
@@ -553,6 +557,13 @@ void loop(void) {
                       vg_synth_live(),
                       vg_fire_live());
         // The halves, and the gap between them is the lever: `sub` is the slower one.
+        // `denied` is a running total, not a per-window figure: it should be 0 for ever, and
+        // any number at all is worth seeing rather than averaging away.
+        Serial.printf("        i2c  = touch %lu (lock %lu) of in %lu | denied %lu\n",
+                      (unsigned long)(acc_touch / frames),
+                      (unsigned long)(acc_lock  / frames),
+                      (unsigned long)(acc_input / frames),
+                      (unsigned long)vg_i2c_denied());
         Serial.printf("        half = A %lu (core 1) B %lu (core 0)\n",
                       (unsigned long)(acc_suba / frames),
                       (unsigned long)(acc_subb / frames));
@@ -672,6 +683,7 @@ void loop(void) {
         acc_hud_radar = acc_hud_thr = 0;
         acc_ahoop = acc_arail = 0;
         acc_suba = acc_subb = 0;
+        acc_touch = acc_lock = 0;
         frames = 0;
     }
 }

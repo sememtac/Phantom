@@ -103,3 +103,19 @@ extern uint32_t g_arena_hoop, g_arena_rail;
 //
 // The GAP between them is what is recoverable, and its sign says which way to move.
 extern uint32_t g_sub_a, g_sub_b;
+
+// THE FRAME'S LAST I2C, split three ways.
+//
+// `in` is ~680 us and the touch controller is the only I2C left on the render thread -- the
+// IMU and the PMU moved to a core 0 task. The touch read CANNOT follow them: CST226's
+// getPoint consumes the status buffer's fresh-data marker, so a 4 ms poller eats the sample
+// and the frame sees no contacts on most frames. That was tried and it killed steering while
+// leaving the throttle looking fine, because the throttle retains its last value.
+//
+// So the question is not whether to move it but what it is made of:
+//
+//   lock   blocked in i2c_take, waiting for the sensor task to finish with the bus
+//   touch  the whole of vg_touch_read, lock included
+//
+// `in` minus touch is the partitioning and gesture work, which is pure arithmetic.
+extern uint32_t g_in_touch, g_in_lock;

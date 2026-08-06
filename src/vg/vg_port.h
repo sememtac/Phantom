@@ -53,6 +53,17 @@ bool vg_touch_init(void);
 // more than one point so the throttle can be held while firing.
 int  vg_touch_read(uint16_t* xs, uint16_t* ys);
 
+// HOW OFTEN THE BUS WAS REFUSED, since boot and never reset.
+//
+// The I2C mutex is bounded now -- it was portMAX_DELAY, and one recorded crash is a task
+// watchdog in the input poll with a 7999 ms worst frame beside it. A frame that cannot get
+// the bus loses one frame of input instead of the game.
+//
+// So this has to be VISIBLE. A silent bounded wait is a dropped read nobody knows about,
+// which is a worse diagnostic than the hang it replaced: if this climbs, something is
+// holding the bus far longer than the sensor task's own reads ever do.
+uint32_t vg_i2c_denied(void);
+
 // ---- Buttons ---------------------------------------------------------------
 
 #define VG_BTN_A 0x01   // GPIO 0  (BOOT)

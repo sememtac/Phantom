@@ -394,8 +394,29 @@ static SemaphoreHandle_t s_i2c_mux = nullptr;
 static void i2c_lock_init(void) {
     if (!s_i2c_mux) s_i2c_mux = xSemaphoreCreateMutex();
 }
-static inline void i2c_take(void) {
-    if (s_i2c_mux) xSemaphoreTake(s_i2c_mux, portMAX_DELAY);
+// BOUNDED, and this was the frame's last unbounded wait.
+//
+// portMAX_DELAY meant that anything hanging while it held the bus took the render thread with
+// it -- and something did: one recorded crash is a task watchdog, reason 6, in the input poll,
+// with a worst frame of 7999 ms beside it in the crumb log. A frame that cannot read the touch
+// controller should lose one frame of input, not the game.
+//
+// 8 ms is half a frame and hundreds of times the longest legitimate hold: the sensor task's
+// IMU read is tens of microseconds, and its PMU poll -- three transactions and two clock
+// changes -- is the longest thing that ever owns the bus. Past that, the holder is not
+// working and waiting longer cannot help.
+//
+// Returns whether it got the bus. Every caller has to check, because proceeding without it
+// would put two masters on the same wires, which is worse than a dropped read.
+#define I2C_WAIT_MS 8
+static uint32_t s_i2c_denied = 0;
+uint32_t vg_i2c_denied(void) { return s_i2c_denied; }
+
+static inline bool i2c_take(void) {
+    if (!s_i2c_mux) return true;
+    if (xSemaphoreTake(s_i2c_mux, pdMS_TO_TICKS(I2C_WAIT_MS)) == pdTRUE) return true;
+    s_i2c_denied++;
+    return false;
 }
 static inline void i2c_give(void) {
     if (s_i2c_mux) xSemaphoreGive(s_i2c_mux);
@@ -472,7 +493,11 @@ void vg_pmu_poll(void) {
     // Held across the clock change as well as the transfers: leaving the bus at
     // 400 kHz for somebody else is merely slow, but sharing TwoWire's rxBuffer is
     // the fault this lock exists for.
-    i2c_take();
+    // Skipped rather than waited out. The power key is polled every 50 ms and missing one
+    // pass costs nothing -- and this runs on the sensor task, so blocking here would hold the
+    // IMU up as well. `s_pmu_last_ms` is already advanced, so the next pass is 50 ms away
+    // either way; a key press is tens of milliseconds long and will still be latched.
+    if (!i2c_take()) return;
     Wire.setClock(IIC_HZ_PMU);
 
     uint8_t st[3];
@@ -597,7 +622,7 @@ bool vg_imu_init(void) {
 
 bool vg_imu_read(float* ax, float* ay, float* az) {
     if (!s_imu_ok) return false;
-    i2c_take();
+    if (!i2c_take()) return false;      // no bus: no sample, and the caller keeps its last
     const bool ok = s_imu.getAccelerometer(*ax, *ay, *az);
     i2c_give();
     return ok;
@@ -626,6 +651,9 @@ bool vg_touch_init(void) {
 
 int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (!s_touch_ok) return 0;
+    const uint32_t t_touch = micros();
+    struct Bill { uint32_t t0; ~Bill() { g_in_touch += micros() - t0; } } bill{t_touch};
+    (void)bill;
 
     // Zeroed, because the controller does not always fill every slot it counts.
     int16_t tx[VG_MAX_TOUCH] = {0};
@@ -635,9 +663,19 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // move to another core -- which is exactly why it needs the lock: one unlocked
     // participant defeats the mutex for everybody. Left out on the first attempt,
     // and `pmu 0000FF` stayed on the telemetry until it went in.
-    i2c_take();
-    uint8_t want = s_touch.getSupportTouchPoint();
-    if (want > VG_MAX_TOUCH) want = VG_MAX_TOUCH;
+    const uint32_t t_lock = micros();
+    if (!i2c_take()) { g_in_lock += micros() - t_lock; return 0; }
+    g_in_lock += micros() - t_lock;
+
+    // HOW MANY SLOTS THE PART HAS, asked once. It is a property of the controller and does
+    // not change, and asking every frame spent an I2C transaction on a constant.
+    static uint8_t s_want = 0;
+    if (!s_want) {
+        s_want = s_touch.getSupportTouchPoint();
+        if (s_want > VG_MAX_TOUCH) s_want = VG_MAX_TOUCH;
+        if (!s_want) s_want = 1;        // never re-ask on a bad answer
+    }
+    const uint8_t want = s_want;
 
     // Polled, not interrupt-latched: the game reads once per frame and needs
     // the *current* set of contacts, including "all fingers lifted", which an
