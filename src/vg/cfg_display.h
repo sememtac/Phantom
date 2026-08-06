@@ -48,7 +48,29 @@
 
 // Screen-space primitives per frame. Thick-stroked missile trails cost up to 3
 // primitives per segment, which is what set this ceiling.
-#define MAX_PRIMS            3400
+// 3400 WAS FOUR TIMES WHAT THE GAME USES, and internal SRAM is the scarce pool.
+//
+// The list has to be internal -- it is swept once per band, fifteen times a frame -- and so
+// do the band buffers and the backdrop's 32 KB texture. A third band buffer took the total
+// past what fits, and the backdrop lost: 32 KB requested, no contiguous block that size, no
+// nebula. 3400 primitives at 20 bytes is 66 KB of the pool the backdrop needed 32 of.
+//
+// Measured per slice, high water since boot, in the attract loop:
+//
+//   slice 0 star+hoops    93 of 800
+//   slice 1 rails         38 of 300
+//   slice 2 world        164 of 1500
+//   slice 3 instruments  224 of 800
+//
+// 2000 keeps at least twice the observed peak on every slice and stays above each one's
+// THEORETICAL worst, which is the figure that matters where one is known: the grid is at most
+// 294 hoop and 160 rail segments, and the rear-view patch re-submits a half-density grid of
+// ~234 into the instruments' slice on top of the HUD's own.
+//
+// An overflow is visible rather than silent -- the telemetry line prints OVERFLOW and the
+// primitive count drops -- so if a busy fight finds a slice's ceiling it says so. The shard
+// burst is the case 3400 was sized for and it lands in slice 2, which keeps the most room.
+#define MAX_PRIMS            2000
 
 // --- projection ------------------------------------------------------------
 // FOCAL is the projection-plane distance in pixels: on a 480 px wide screen, 400

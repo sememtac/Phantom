@@ -18,6 +18,7 @@ uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "vg/vg_port.h"
+#include "vg/vg_sky.h"
 #include "vg/vg_raster.h"
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
@@ -96,6 +97,23 @@ void setup(void) {
         s_halted = true;
         return;
     }
+    // THE BACKDROP CLAIMS ITS TEXTURE FIRST, and the order is the whole point.
+    //
+    // Three things need INTERNAL SRAM and cannot use PSRAM: the primitive list, the band
+    // buffers, and the backdrop's 32 KB texture. All three are read in scattered patterns
+    // every frame, which is the finding the two-stage rasteriser is built on.
+    //
+    // The backdrop used to allocate last, from vg_game_init, and a third band buffer took
+    // the room it needed -- 41 KB free but the largest contiguous block only 21 KB, so a
+    // 32 KB request failed and the nebula switched off entirely. Total free said there was
+    // room; contiguous free said there was not.
+    //
+    // Asking first is what makes that unrepresentable rather than a sum to keep re-checking:
+    // the one allocation with a hard contiguous minimum takes it from an unfragmented heap,
+    // and the renderer sizes itself against what is left. vg_sky_init is idempotent, so
+    // vg_game_init's own call still finds the texture and does the rest of its work.
+    if (!vg_sky_init()) Serial.println("WARN: no backdrop - out of internal SRAM");
+
     if (!vg_rast_init()) {
         Serial.println("FATAL: rasteriser allocation failed");
         s_halted = true;

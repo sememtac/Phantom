@@ -106,11 +106,11 @@ struct Sub {
 //
 // Slice 0 ends where slice 1 begins, and so on; the last bound is MAX_PRIMS.
 static constexpr int SUB_AT[NSUB + 1] = {
-    0,        // 0: starfield + hoops   -- 294 segments of grid, plus the stars
-    800,      // 1: rails               -- 160 segments
-    1100,     // 2: world objects, gate -- the shard burst's 160 lives here
-    2600,     // 3: instruments         -- HUD, overlays, and the mirror's own grid
-    3400,     // == MAX_PRIMS
+    0,        // 0: starfield + hoops   -- 450: at most 294 grid segments, plus the stars
+    450,      // 1: rails               -- 200: at most 160 segments
+    650,      // 2: world objects, gate -- 800: the shard burst's 160 lives here
+    1450,     // 3: instruments         -- 550: HUD, overlays, and the mirror's ~234
+    2000,     // == MAX_PRIMS
 };
 static_assert(SUB_AT[NSUB] == MAX_PRIMS, "slice bounds must cover the list exactly");
 
