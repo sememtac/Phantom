@@ -311,6 +311,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     // halves overlap for as long as possible. The wait is at the end of this
     // function, and group B is the shorter half (1.8 ms against 2.0), so in
     // practice it has finished by the time the world is done and the wait is free.
+    const uint32_t t_half_a = micros();
     const bool async = kick_instruments(cam, in, fps);
 
     vg_prim_select(0);
@@ -342,6 +343,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Collect core 0. If it was never started -- the first frame, or a board where
     // the task could not be created -- group B has not been submitted at all, so it
     // happens here instead, on this thread, exactly as it used to.
+    // BEFORE the await, so this is core 1's own work and not the rendezvous -- what the
+    // wait costs is exactly the gap between the halves, which is the thing being measured.
+    g_sub_a = micros() - t_half_a;
+
     if (async) await_instruments();
     else       submit_instruments(cam, in, fps);
 
@@ -378,6 +383,7 @@ void vg_render_frame(const VgInput* in, float fps) {
 // to live in vg_rast_flush rather than at the end of submit.
 // ===========================================================================
 static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
+    const uint32_t t_half = micros();
     // Two locals that group A used to share with this code when the two were one
     // function. `rear_view` comes off the camera rather than being re-read from vg,
     // because the preamble set cam.rear from it -- same value, and it keeps this
@@ -394,6 +400,11 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // GROUP B FROM HERE, and the AA boundary and the group boundary being the same
     // line is not a coincidence -- the reason the halves are separable is the same
     // reason they want different settings.
+    // Closed on EVERY exit, including the menu return below, so the figure is the whole
+    // half and not only the flying case. See g_sub_b in vg_prof.h.
+    struct HalfB { uint32_t t0; ~HalfB() { g_sub_b = micros() - t0; } } half_b{t_half};
+    (void)half_b;
+
     // THE RAILS FIRST, and they are not instruments at all.
     //
     // They are here because this is the function core 0 runs, and they are ahead of

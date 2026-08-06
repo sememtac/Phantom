@@ -87,3 +87,19 @@ extern uint32_t g_hud_radar, g_hud_throttle;
 // contention with the audio task, which also lives on core 0. A finer split therefore
 // pays less than the arithmetic suggests.
 extern uint32_t g_arena_hoop, g_arena_rail;
+
+// THE TWO HALVES' WALL TIMES, which is what the split has to be balanced against and is
+// not what was balanced against the first time.
+//
+// `sub` is the slower of the two, so the only number that decides where work should go is
+// each half's TOTAL. g_sub_hud is not that: it brackets vg_draw_hud alone, and group B
+// also carries the rear-view patch, the lock box, the missile markers and the overlays --
+// about 900 us that no counter named. Balanced against the part instead of the whole, the
+// arena grid went onto the core that was already busier, and a comparison taken on a
+// lighter scene reported it as a saving.
+//
+//   a   the kick to the await: starfield, hoops, world objects, course gate
+//   b   the whole of submit_instruments: rails, and every instrument
+//
+// The GAP between them is what is recoverable, and its sign says which way to move.
+extern uint32_t g_sub_a, g_sub_b;

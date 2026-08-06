@@ -11,7 +11,8 @@ uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
 int      vg_fire_live(void);          // live fireballs, defined in vg_game.cpp
 // Defined here, declared in vg_prof.h, which both writers include.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
-uint32_t g_arena_hoop, g_arena_rail;                        // temporary: the grid's two loops
+uint32_t g_arena_hoop, g_arena_rail;                        // the grid's two loops
+uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
@@ -427,6 +428,8 @@ void loop(void) {
     acc_sxr += g_sfx_render_us;
     acc_star += g_sub_star; acc_aren += g_sub_arena;
     acc_wrld += g_sub_world; acc_hud += g_sub_hud;
+    static uint32_t acc_suba = 0, acc_subb = 0;
+    acc_suba += g_sub_a; acc_subb += g_sub_b;
     static uint32_t acc_ahoop = 0, acc_arail = 0;
     acc_ahoop += g_arena_hoop; g_arena_hoop = 0;
     acc_arail += g_arena_rail; g_arena_rail = 0;
@@ -531,6 +534,10 @@ void loop(void) {
                       (unsigned long)(acc_sxr  / frames),
                       vg_synth_live(),
                       vg_fire_live());
+        // The halves, and the gap between them is the lever: `sub` is the slower one.
+        Serial.printf("        half = A %lu (core 1) B %lu (core 0)\n",
+                      (unsigned long)(acc_suba / frames),
+                      (unsigned long)(acc_subb / frames));
         Serial.printf("        grid = hoops %lu (core 1) rails %lu (core 0)\n",
                       (unsigned long)(acc_ahoop / frames),
                       (unsigned long)(acc_arail / frames));
@@ -637,6 +644,7 @@ void loop(void) {
         acc_star = acc_aren = acc_wrld = acc_hud = acc_sfx = acc_sxr = 0;
         acc_hud_radar = acc_hud_thr = 0;
         acc_ahoop = acc_arail = 0;
+        acc_suba = acc_subb = 0;
         frames = 0;
     }
 }
