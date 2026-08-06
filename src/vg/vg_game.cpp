@@ -10,6 +10,7 @@
 #include "vg_course.h"
 #include "vg_sfx.h"
 #include "vg_raster.h"
+#include "vg_canopy_set.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -115,6 +116,10 @@ void vg_game_init(void) {
     // depth and motion than the inside of a sphere, where everything sits at a
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
+    // A COCKPIT FROM THE START, so nothing downstream has to cope with not having one. The
+    // per-hull choice is made again at each match entry; this is only so the rasteriser's
+    // pointer is never null between boot and the first flight.
+    vg_canopy_use(vg_canopy_default());
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 

@@ -5,7 +5,7 @@
 #include "vg_port.h"
 #include "vg_capture.h"
 #include "vg_sky.h"
-#include "vg_canopy_data.h"
+#include "vg_canopy.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
@@ -1116,9 +1116,16 @@ static bool     s_can_ready = false;
 // hull can have its own now. Nothing is owned or copied: a canopy lives in flash and this
 // points at it.
 //
-// Defaulted rather than left null, so a build that never calls vg_canopy_use still draws a
-// cockpit. The reference drawing is the one it falls back to.
-static const VgCanopy* s_can = &CANOPY;
+// NULL UNTIL SELECTED, and this file no longer includes a drawing at all.
+//
+// It cannot: a generated header defines its tables as `static`, so including one here and
+// again wherever the per-hull table lives would put two copies of every drawing in flash.
+// vg_canopy_set.cpp owns them; this holds a pointer it is handed.
+//
+// Which means every entry point has to tolerate not having one yet. vg_game_init selects at
+// boot so it never happens in practice, but "never happens in practice" is not something to
+// dereference a pointer on -- and a missing cockpit should be a missing cockpit, not a crash.
+static const VgCanopy* s_can = nullptr;
 
 const VgCanopy* vg_canopy_current(void) { return s_can; }
 
@@ -1507,6 +1514,7 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
 static float s_settle_t = -1.0f;          // < 0 means not settling
 
 void vg_canopy_warp(float k) {
+    if (!s_can) return;                    // the maps are built from the drawing
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
@@ -1895,6 +1903,7 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
 // sorts the green values it found and stores each block's position in that order, so zone 0 is
 // simply first and this needs no table of its own.
 void vg_canopy_intro_begin(void) {
+    if (!s_can) return;
     s_intro_on = true;
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
@@ -1944,7 +1953,7 @@ bool vg_canopy_intro_cued(void) { return s_icued; }
 // fell into: a query that answers for a state it is not in. The answer has to be scoped to the
 // sequence, because that is the only thing the question means.
 int vg_canopy_intro_lit(void) {
-    if (!s_intro_on) return 0;
+    if (!s_can || !s_intro_on) return 0;
     int n = 0;
     for (int z = 0; z < s_can->zones; z++) if (s_ilive[z]) n++;
     return n;
@@ -1974,6 +1983,7 @@ float vg_canopy_intro_flex(void) {
 }
 
 bool vg_canopy_intro_update(float dt) {
+    if (!s_can) return false;
     if (!s_intro_on) {
         if (s_settle_t >= 0.0f) {
             s_settle_t += dt;
@@ -2042,6 +2052,7 @@ bool vg_canopy_intro_update(float dt) {
 // Three instantiations, not four. The intro is always rigid -- see the note above the intro
 // state -- so there is no warped intro path to build.
 static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
+    if (!s_can) return;                    // no drawing selected: no cockpit, and no crash
     if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
     else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
     else                canopy_rows_t<false, false>(band, by0, r0, r1);
@@ -2265,6 +2276,7 @@ void vg_sky_bench(VgSkyCost* out) {
 // taken, which is not what the pass meets in a frame.
 void vg_canopy_bench(VgCanopyCost* out) {
     static uint16_t scratch[SCR_W];
+    if (!s_can) { *out = VgCanopyCost{}; return; }
     if (!s_can_ready) canopy_lut();
 
     // BOTH STATES, because the warp is the thing most likely to be changed next and its cost
@@ -2452,6 +2464,7 @@ static void draw_band(int band_index, uint16_t* band) {
             // During the intro neither applies: the world gate blacks out whole columns of
             // screen and dwarfs the frame, and its work is spread evenly enough across a band
             // that the midpoint is the right guess.
+            if (!s_can) break;
             const int at = s_intro_on ? ROW_SPLIT
                          : s_warp_on  ? s_wsplit[band_index]
                                       : s_can->split[band_index];
