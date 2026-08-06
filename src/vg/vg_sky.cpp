@@ -1207,6 +1207,13 @@ void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
                 const int adx = abs(k * seg_px + i * SPLASH + SPLASH / 2 - SCR_W / 2);
                 while (ring >= 0 && adx < lim[ring]) ring--;
                 while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
+                // REVERTED, AND THE MEASUREMENT IS THE REASON. The blend was hoisted out of
+                // vg_tint_word into here, on the theory that a cross-unit call per chunk --
+                // no LTO in this build -- was what the tint cost. It measured FLAT: 5251 us
+                // before, 5307 after, checksum identical. SPLASH is 16, so a row is thirty
+                // chunks and not sixty, and thirty calls a row was never the bill.
+                //
+                // The bill is the thirteen sqrtf in vg_tint_row_limits, once per ROW.
                 if (ring >= 0)
                     cc = vg_tint_word(cc, ring >= VG_TINT_RINGS ? VG_TINT_RINGS - 1 : ring);
             }

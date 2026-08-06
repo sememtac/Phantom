@@ -618,6 +618,19 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
 // and knows nothing about walls. The render layer owns the game state.
 static float s_tint_k = 0.0f;
 
+// THE RING RADII, SQUARED, ONCE PER FRAME.
+//
+// rmax, rin and step depend only on s_tint_k, so they are constant for a whole frame -- and
+// vg_tint_row_limits recomputed all three, including a square root for rmax, on EVERY PANEL
+// ROW. 480 rows of arithmetic to arrive at the same three numbers.
+//
+// Squared, because that is the form the callers want: a row wants sqrt(r2 - dy*dy), and a
+// primitive wants to know which band its own squared radius falls in without taking a root at
+// all. What is left per row is one subtract and one root per ring, and neither can be hoisted
+// -- dy is the row.
+static float s_tint_r2[TINT_RINGS + 1];
+
+
 // --- tint, at the source ----------------------------------------------------
 //
 // The full-frame tint pass died of the lit sky. Its pixel op is three masks a
@@ -633,15 +646,12 @@ bool vg_tint_active(void) { return s_tint_k > 0.0f; }
 // Ring crossings for one panel row: lim[i] is the half-width where ring i
 // begins. Geometry identical to the dead pass.
 void vg_tint_row_limits(int sy, int* lim) {
-    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
-    const float rmax = sqrtf(cx * cx + cy * cy);
-    const float rin  = rmax * (1.0f - s_tint_k);
-    const float step = (rmax - rin) / (float)TINT_RINGS;
-    const float dy   = (float)sy - cy;
-    const float dy2  = dy * dy;
+    const float dy  = (float)sy - (float)(SCR_H / 2);
+    const float dy2 = dy * dy;
+    // One subtract and one root per ring. Everything else moved into vg_rast_tint; see
+    // s_tint_r2.
     for (int i = 0; i <= TINT_RINGS; i++) {
-        const float r  = rin + step * (float)i;
-        const float d2 = r * r - dy2;
+        const float d2 = s_tint_r2[i] - dy2;
         lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
     }
 }
@@ -658,12 +668,14 @@ uint32_t vg_tint_word(uint32_t v, int ring) {
 uint16_t vg_tint_prim(uint16_t c, float x, float y) {
     if (s_tint_k <= 0.0f || c == 0) return c;
     const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
-    const float rmax = sqrtf(cx * cx + cy * cy);
-    const float rin  = rmax * (1.0f - s_tint_k);
-    const float step = (rmax - rin) / (float)TINT_RINGS;
-    const float r    = sqrtf((x - cx) * (x - cx) + (y - cy) * (y - cy));
-    int ring = (int)((r - rin) / step);
-    if (ring < 0) return c;
+    // AGAINST THE SQUARED RADII, so this needs no root and no divide. It took two roots and
+    // two divides per primitive to rediscover the same three frame constants the row walk was
+    // recomputing. Thirteen ascending compares replace them, and the bands are wide enough
+    // that a primitive lands in the first or second one it tries.
+    const float d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+    if (d2 < s_tint_r2[0]) return c;
+    int ring = 0;
+    while (ring + 1 <= TINT_RINGS && d2 >= s_tint_r2[ring + 1]) ring++;
     if (ring >= TINT_RINGS) ring = TINT_RINGS - 1;
     const uint32_t v = ((uint32_t)c << 16) | c;
     return (uint16_t)vg_tint_word(v, ring);
@@ -726,6 +738,29 @@ void vg_rast_tint(float k) {
     // written the obvious way. Nothing produces a NaN wall distance today; a
     // clamp that cannot actually clamp is still not worth keeping.
     s_tint_k = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
+
+    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
+    const float rmax = sqrtf(cx * cx + cy * cy);
+    const float rin  = rmax * (1.0f - s_tint_k);
+    const float step = (rmax - rin) / (float)TINT_RINGS;
+    for (int i = 0; i <= TINT_RINGS; i++) {
+        const float r = rin + step * (float)i;
+        s_tint_r2[i] = r * r;
+    }
+}
+
+// ONE RING'S THREE CONSTANTS, so a caller can hoist them out of its pixel loop.
+//
+// vg_tint_word is in this file and its callers are not, so every chunk of the backdrop paid a
+// cross-unit CALL that could not be inlined -- 28,800 of them a frame. The tables are indexed
+// by ring and the ring changes at most twelve times across a row, so the fix is to hand them
+// over when it changes and let the caller do the four masking operations itself.
+void vg_tint_ring(int ring, uint32_t* keep, uint32_t* glow, int* shift) {
+    if (ring < 0) ring = 0;
+    if (ring >= TINT_RINGS) ring = TINT_RINGS - 1;
+    *keep  = TINT_KEEP[ring];
+    *glow  = TINT_GLOW[ring];
+    *shift = (int)TINT_GSHIFT[ring];
 }
 
 // ---------------------------------------------------------------------------
@@ -2239,7 +2274,7 @@ void vg_glyph_bench(VgGlyphCost* out) {
 // It therefore has a visible side effect: the sky on screen changes to this one. That is a
 // fair price for a number that means something, and it only happens when asked.
 void vg_sky_bench(VgSkyCost* out) {
-    uint32_t pc = 0, fc = 0, sum = 2166136261u;
+    uint32_t pc = 0, fc = 0, tc = 0, sum = 2166136261u;
     if (!s_band[0]) { *out = VgSkyCost{}; return; }
 
     vg_sky_generate(SKY_NEBULA, 0x5EED1234u);
@@ -2257,8 +2292,26 @@ void vg_sky_bench(VgSkyCost* out) {
         const uint32_t t1 = esp_cpu_get_cycle_count();
         vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
         const uint32_t t2 = esp_cpu_get_cycle_count();
+        // AND AGAIN WITH THE BOUNDARY TINT ON. Held at 0.6 rather than 1.0: at full the
+        // innermost ring reaches the centre and every pixel is inside the gradient, which is
+        // the geometry at the instant of death and not the one a player flies in.
+        //
+        // The tint is read from a file static, so it is forced around the call and put back.
+        // Timed on one core like the fill it is compared against -- the frame splits both.
+        // THROUGH vg_rast_tint, not by assigning s_tint_k. The ring radii are derived there
+        // now, so setting the amount directly left them at whatever the last real call
+        // produced -- the bench then tinted against the menu's zero and measured work the
+        // game never does. Caught by the checksum, which is what it is for.
+        const float save_k = s_tint_k;
+        vg_rast_tint(0.6f);
+        const uint32_t t3 = esp_cpu_get_cycle_count();
+        vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
+        const uint32_t t4 = esp_cpu_get_cycle_count();
+        vg_rast_tint(save_k);
+
         pc += t1 - t0;
         fc += t2 - t1;
+        tc += t4 - t3;
 
         // Outside the timing: what the band came out as, folded in a word at a time.
         const uint32_t* w = (const uint32_t*)(const void*)s_band[0];
@@ -2267,6 +2320,7 @@ void vg_sky_bench(VgSkyCost* out) {
     vg_sky_bench_pin(false);
     out->prep_us = pc / 240u;
     out->fill_us = fc / 240u;
+    out->tint_us = tc / 240u;
     out->sum     = sum;
 }
 
