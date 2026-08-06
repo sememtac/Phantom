@@ -251,6 +251,34 @@ point at. **Touch handling is entirely unwarped** — only the drawing bends.
 The warp is barrel (negative `HUD_WARP_K`), which is both the classic CRT face
 and the safe direction: pincushion pushes the left-edge throttle off-screen.
 
+### The canopy
+
+**There is no crosshair.** The cockpit frame is a drawing. An artist's PNG is
+baked to a table of runs by `tools/canopy_bake.py` and applied by the band
+rasteriser as a *change* to the finished picture, so the frame lights what is
+behind it instead of painting over it. 24,261 pixels, 10.5% of the screen, 13.9 KB
+of flash, about 2.5 ms of the frame.
+
+Area is the whole cost — 95% of it is pixels covered, so levels, gradients and
+antialiased edges are free and only the width of the shapes matters. Authoring
+rules are in [tools/README.md](tools/README.md).
+
+**It flexes, and inverted against the instruments**: full bulge with the throttle
+shut, flattening as the ship accelerates, so opening up reads as being pressed
+back into the seat rather than pulled toward the glass. That also puts the
+expensive case at idle, where the scene is quiet, instead of at full throttle
+where the trails are longest. It trails the ship on all three axes through a
+spring-damper scaled by the airframe's own character, so a CHARIOT's frame is
+visibly looser than a BALLISTA's on the same drawing.
+
+**The cockpit comes online.** A match opens black. The frame arrives a region at a
+time: each region flashes white, the world dissolves out of that white as an
+ordered dither, and the members run hot and cool to their drawn level. The order
+is the artist's — the same PNG carries the frame in its red channel and the
+activation mask in its green, where a shape's grey value is its place in the
+sequence. Then the instruments catch, and only then does the radio open. Every
+hull can have its own drawing; `src/vg/vg_canopy_set.cpp` is the table.
+
 ### Radar
 
 A half-ellipse dome across the bottom — a circular plan view seen in steep
@@ -439,6 +467,24 @@ ping-pong safe.
 
 ---
 
+### Sound
+
+**Nothing is sampled.** Every cue is generated: a table in `vg_sfx.cpp` describing
+what each sound *is*, and a synth in `vg_synth.cpp` that renders it — square, sine
+and noise through a two-pole low pass, with an amplitude modulator and a per-layer
+delay for sequences. Not a compromise forced by flash, either; there is room for
+twenty samples. A wireframe dogfight scored by square waves is coherent in a way a
+recording would not be, the whole synth costs less flash than one second of PCM,
+and a generated cue can respond: the missile alert climbs with range, and a dying
+pilot's blip is pitched lower than a routine one.
+
+It mixes on **core 0**. Measured, mixing cost up to 4.3 ms in a busy frame and
+billed to the submit phase, in front of the panel flush, so it delayed the whole
+transfer. Moving it was safe by construction rather than by luck: `vg_synth.cpp`
+touches no game state and keeps its own RNG, because drawing from the game's
+stream would make the audio a term in the simulation and take replay determinism
+with it.
+
 ## Measured performance
 
 480x480, 80 MHz QSPI, on hardware:
@@ -467,10 +513,20 @@ How it got there:
 | + incremental trig on grid lines | 12.0 ms | 73 |
 | + CRT scanlines, warped HUD, speed motes | 12.2 ms | 68 |
 | **+ procedural nebula backdrop** | **12.65 ms** | **67.5** |
+| + generated audio, mixed on core 0 | 12.65 ms | 67 |
+| **+ the baked canopy, flexing** | **~14 ms** | **58-62** |
 
 12.2 ms against a hard floor of 11.52 ms of wire time (460,800 bytes at 80 MHz
 quad). The remaining ~0.7 ms is the first band's rasterisation plus 30 small
-window-command transactions. **This is done** — the panel is saturated.
+window-command transactions. **The panel is saturated** and that part is done.
+
+**The raster is no longer what the frame is waiting on**, which took a while to
+believe. Roughly 3.5 ms was cut out of the canopy, the backdrop and the line walk
+over one pass, and the frame rate barely moved: `rast` had already fallen below
+the wire's own total, so the savings went into `push` — the CPU sitting idle
+waiting on DMA. The deficit now lives in the pre-flush phase, and most of it is
+the instruments' own spherical warp subdividing every line it draws. That is where
+the next millisecond is, and it has never been profiled.
 
 ### Line quality
 
@@ -571,8 +627,6 @@ All in `vg_config.h`. The ones that actually change how it plays:
 
 ## Not done yet
 
-- **Sound.** The board has an ES8311 codec and a speaker on I2S, entirely unused
-  so far. A launch whoosh and a lock tone would add a lot.
 - **More maps.** `vg_arena.cpp` needs a `surf`, a `nearest`, an `inward` and a
   `patch_extent` per shape; everything else is generic. A box/hangar interior is
   the obvious next one, though it is the first non-parametric shape so it would
