@@ -26,6 +26,8 @@
 //
 // 30 KB of internal SRAM, which is the scarce memory on this part. Bought against 590
 // us of measured wire idle, on every frame, whatever the scene is doing.
+static void tint_table_init(void);   // defined with the tint, below
+
 #define BAND_BUFS 3
 static uint16_t* s_band[BAND_BUFS] = { nullptr, nullptr, nullptr };
 
@@ -34,6 +36,8 @@ int vg_band_bufs(void) { return BAND_BUFS; }
 bool vg_band_init(void) {
     // Must be internal and DMA-capable: written pixel-by-pixel, then handed
     // straight to the SPI engine.
+    tint_table_init();
+
     for (int i = 0; i < BAND_BUFS; i++) {
         s_band[i] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
                                                MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
@@ -630,6 +634,43 @@ static float s_tint_k = 0.0f;
 // -- dy is the row.
 static float s_tint_r2[TINT_RINGS + 1];
 
+// THE RING LIMITS, PRECOMPUTED, AND IN PSRAM.
+//
+// vg_tint_row_limits took thirteen sqrtf per PANEL ROW -- about 6,240 libm calls a frame --
+// and that was the whole cost of the boundary tint: 1700 us of backdrop became 5251 with it
+// on, which is 2.1 ms of frame and 60 fps down to about 53.
+//
+// The limits depend on two things only: the tint amount, and |dy| from the centre row. So the
+// whole set is 241 rows by thirteen rings, and it is the SAME set for every frame the amount
+// does not change.
+//
+// PSRAM ON PURPOSE, and the distinction matters. The backdrop's texture has to be internal
+// because it is sampled in a scattered pattern, which is the finding the two-stage rasteriser
+// rests on -- but this is read SEQUENTIALLY, thirteen adjacent entries per row, which is the
+// case a cache handles well. Internal SRAM is down to ~10 KB free and the backdrop has already
+// been broken once by spending it; 6 KB of the 8 MB next door costs nothing anyone needs.
+//
+// QUANTISED to TINT_QSTEPS, so a steady approach rebuilds the table a few times rather than
+// every frame. The worst case is safe without the quantiser at all: a rebuild is 3,133 roots
+// against the 6,240 a frame used to pay, so even rebuilding EVERY frame would be twice as fast
+// as asking per row.
+#define TINT_QSTEPS 128
+#define TINT_ROWS   (SCR_H / 2 + 1)          // |dy| is 0..240 inclusive
+static int16_t* s_tint_lim = nullptr;        // [TINT_ROWS][TINT_RINGS + 1]
+static int      s_tint_q   = -1;             // the quantised amount the table holds
+
+// Allocated once, at init, and never during a frame: this is reached from the render thread
+// and a malloc mid-frame is a stall nobody asked for. A failure is not fatal -- the row walk
+// below falls back to computing, which is exactly what it did before the table existed.
+static void tint_table_init(void) {
+    if (s_tint_lim) return;
+    s_tint_lim = (int16_t*)heap_caps_malloc(
+        (size_t)TINT_ROWS * (TINT_RINGS + 1) * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    Serial.printf("vg_tint_table: %u bytes in %s\n",
+                  (unsigned)((size_t)TINT_ROWS * (TINT_RINGS + 1) * sizeof(int16_t)),
+                  s_tint_lim ? "PSRAM" : "NOWHERE -- falling back to per-row sqrt");
+}
+
 
 // --- tint, at the source ----------------------------------------------------
 //
@@ -646,10 +687,21 @@ bool vg_tint_active(void) { return s_tint_k > 0.0f; }
 // Ring crossings for one panel row: lim[i] is the half-width where ring i
 // begins. Geometry identical to the dead pass.
 void vg_tint_row_limits(int sy, int* lim) {
-    const float dy  = (float)sy - (float)(SCR_H / 2);
-    const float dy2 = dy * dy;
-    // One subtract and one root per ring. Everything else moved into vg_rast_tint; see
-    // s_tint_r2.
+    // THIRTEEN LOADS, not thirteen roots. Mirrored about the centre row, because the limits
+    // depend on |dy| and nothing else -- see s_tint_lim.
+    int ady = sy - SCR_H / 2;
+    if (ady < 0) ady = -ady;
+    // A/B'd against the fallback below at the same amount: both give checksum 90cefd65, so
+    // the table reproduces the computed limits exactly rather than approximately.
+    if (s_tint_lim && ady < TINT_ROWS) {
+        const int16_t* row = &s_tint_lim[ady * (TINT_RINGS + 1)];
+        for (int i = 0; i <= TINT_RINGS; i++) lim[i] = (int)row[i];
+        return;
+    }
+
+    // No table: compute, exactly as before it existed. Reached only if the PSRAM allocation
+    // failed, and the tint still works -- slowly.
+    const float dy2 = (float)ady * (float)ady;
     for (int i = 0; i <= TINT_RINGS; i++) {
         const float d2 = s_tint_r2[i] - dy2;
         lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
@@ -737,7 +789,16 @@ void vg_rast_tint(float k) {
     // because a NaN fails BOTH `k < 0` and `k > 1` and would sail through a clamp
     // written the obvious way. Nothing produces a NaN wall distance today; a
     // clamp that cannot actually clamp is still not worth keeping.
-    s_tint_k = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
+    const float kc = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
+
+    // Snapped to a step, so the table is rebuilt a handful of times across an approach rather
+    // than on every frame the distance changes. 128 steps put rmax's outermost ring within
+    // about 2.6 px of where an unquantised amount would have placed it, which is nothing during
+    // a boundary alarm.
+    const int q = (int)(kc * (float)TINT_QSTEPS + 0.5f);
+    s_tint_k = (float)q / (float)TINT_QSTEPS;
+    if (q == s_tint_q) return;
+    s_tint_q = q;
 
     const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
     const float rmax = sqrtf(cx * cx + cy * cy);
@@ -746,6 +807,18 @@ void vg_rast_tint(float k) {
     for (int i = 0; i <= TINT_RINGS; i++) {
         const float r = rin + step * (float)i;
         s_tint_r2[i] = r * r;
+    }
+
+    // And the whole set of row limits, in exactly the arithmetic the row walk used to do, so
+    // the picture is unchanged for any amount that lands on a step.
+    if (!s_tint_lim) return;
+    for (int ady = 0; ady < TINT_ROWS; ady++) {
+        const float dy2 = (float)ady * (float)ady;
+        int16_t* row = &s_tint_lim[ady * (TINT_RINGS + 1)];
+        for (int i = 0; i <= TINT_RINGS; i++) {
+            const float d2 = s_tint_r2[i] - dy2;
+            row[i] = (int16_t)((d2 <= 0.0f) ? 0 : (int)sqrtf(d2));
+        }
     }
 }
 
@@ -2302,8 +2375,12 @@ void vg_sky_bench(VgSkyCost* out) {
         // now, so setting the amount directly left them at whatever the last real call
         // produced -- the bench then tinted against the menu's zero and measured work the
         // game never does. Caught by the checksum, which is what it is for.
+        // 0.625 IS EXACTLY ON A STEP -- 0.625 * 128 is 80 -- so the quantiser returns it
+        // unchanged and the checksum stays comparable with builds from before the table
+        // existed. 0.6 would have been snapped to 0.6015625 and every ring moved a pixel,
+        // which would have looked like the table getting the picture wrong.
         const float save_k = s_tint_k;
-        vg_rast_tint(0.6f);
+        vg_rast_tint(0.625f);
         const uint32_t t3 = esp_cpu_get_cycle_count();
         vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
         const uint32_t t4 = esp_cpu_get_cycle_count();
