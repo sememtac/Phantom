@@ -168,9 +168,11 @@ void vg_tourney_begin(ShipClass player_class) {
         // make the legend a different thing every cycle instead of the same one wearing
         // a new name.
         //
-        // The bracket and the overlay still print PHANTOM for anyone with is_phantom
-        // set, which is deliberate: the player reading it has been reset and has never
-        // met this pilot. The name is carried, not revealed.
+        // The name IS revealed: the bracket and the cutscene both print the callsign, so
+        // first time through the final reads PHM and afterwards it reads whoever took
+        // the title. is_phantom no longer decides any text -- it survives only as the
+        // rule in sim_match that keeps this pilot from going out in a round the player
+        // never sees.
         if (vg.phantom_tag[0]) {
             for (int i = 0; i < 4; i++) ph->tag[i] = vg.phantom_tag[i];
         } else {

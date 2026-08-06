@@ -238,10 +238,19 @@ void vg_draw_bracket(void) {
         // Colour column butted against the callsign rather than parked at the
         // screen edge: the point of the swatch is to bind a hue to a NAME, and
         // it only does that if the two are touching.
-        // The legend gets its full name here. Three characters is what fits in a
-        // bracket slot, not what the player should read on the way into a final.
+        // BY CALLSIGN, LIKE EVERY OTHER PILOT. This used to expand the legend's tag to
+        // "PHANTOM" here and in the cutscene's name card, on the reasoning that three
+        // characters is a bracket slot and not what you should read walking into a
+        // final. That reading changed when the title started changing hands: the pilot
+        // in the final is a specific person now, and after the first cycle they are
+        // whoever killed the last champion. Their callsign is the interesting fact, and
+        // a label saying PHANTOM would hide exactly the thing worth knowing.
+        //
+        // First playthrough it reads PHM, which is the legend's own callsign. The
+        // bracket tree beside it has always shown tags, so this also stops one pilot
+        // having two names on the same screen.
         snprintf(buf, sizeof(buf), "VS %s  %s",
-                 opp->is_phantom ? "PHANTOM" : opp->tag, vg_spec(opp->cls)->name);
+                 opp->tag, vg_spec(opp->cls)->name);
         const int tw = vg_text_width(buf, 3);
         const int tx = (SCR_W - tw) / 2 + 6;
         vg_fill_rect(tx - 14, 40, 6, 24, vg_hue_col(opp->hue));

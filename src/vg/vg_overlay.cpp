@@ -381,7 +381,10 @@ void vg_draw_overlays(void) {
         } else if (said_opp && t > INTRO_OPP_START && t < INTRO_OPP_END) {
             const Entrant* o = vg_tourney_opponent();
             if (o) {
-                centred(360, o->is_phantom ? "PHANTOM" : o->tag, INK_MAX, 5);
+                // The callsign, not "PHANTOM" -- see the note in vg_bracket.cpp. Both
+                // sites are the same act, naming the pilot you are about to fight, so
+                // they change together or one of them is wrong.
+                centred(360, o->tag, INK_MAX, 5);
                 snprintf(buf, sizeof(buf), "%s   %s",
                          vg_spec(o->cls)->name, vg_voice_archetype(o->voice));
                 centred(414, buf, INK_BRIGHT, 2);
