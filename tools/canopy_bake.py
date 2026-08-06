@@ -119,6 +119,17 @@ def bake(src, out, name="CANOPY"):
     zones = sorted(v for v, c in zhist.items() if c >= floor_px)
     if not zones:
         zones = [0]
+    # REFUSED, not truncated. The firmware keeps a colour table per region, so it has a
+    # ceiling -- see VG_CANOPY_MAX_ZONES. Silently dropping the extras would alias them onto
+    # the last region and flash them at the wrong time, which reads as a drawing mistake.
+    if len(zones) > MAX_ZONES:
+        raise SystemExit(
+            "%s: %d activation regions in the green channel, and the limit is %d.\n"
+            "  found these values: %s\n"
+            "  Use fewer distinct greys. Regions meant to come on together must share EXACTLY\n"
+            "  one value, so look for a feathered or anti-aliased border between two of them --\n"
+            "  a soft edge invents values that are neither." %
+            (src, len(zones), MAX_ZONES, ", ".join(str(v) for v in zones)))
 
     def zone_of(v):
         best, bi = None, 0
@@ -330,14 +341,8 @@ def bake(src, out, name="CANOPY"):
         else:
             fh.write(f"//\n// ASYMMETRIC ({bad} pixels differ, worst {worst}), so every"
                      " column is stored.\n")
-        fh.write("#pragma once\n#include <stdint.h>\n\n")
-        fh.write(f"#define {name}_BG {bg}\n")
-        fh.write(f"#define {name}_COLS {cols}\n")
-        fh.write(f"#define {name}_MIRROR {1 if mirror else 0}\n")
-        fh.write("// What the pass has to get through, for the bench to report against.\n")
-        fh.write(f"#define {name}_BLOCKS {items}\n")
-        fh.write(f"#define {name}_FLAT_PX {flat_px}\n")
-        fh.write(f"#define {name}_LIT_PX {lit_px}\n\n")
+        fh.write("#pragma once\n#include <stdint.h>\n")
+        fh.write('#include "vg_canopy.h"\n\n')
         fh.write("// Where each band's WORK balances, so the two cores finish together.\n")
         fh.write(f"static const uint8_t {name}_SPLIT[{len(splits)}] = {{\n    "
                  + ",".join(str(v) for v in splits) + ",\n};\n\n")
@@ -385,6 +390,22 @@ def bake(src, out, name="CANOPY"):
         fh.write(f"static const uint8_t {name}_ZDATA[{len(zstream)}] = {{\n")
         for i in range(0, len(zstream), 24):
             fh.write("    " + ",".join(str(v) for v in zstream[i:i + 24]) + ",\n")
+        fh.write("};\n")
+
+        # THE DRAWING AS ONE OBJECT, which is what makes a second cockpit possible.
+        #
+        # The three tables and the numbers describing them used to be loose arrays and CANOPY_*
+        # macros. A macro cannot be chosen at runtime, so that shape allowed exactly one canopy
+        # to exist -- selecting per hull means the whole drawing has to be a thing that can be
+        # pointed at.
+        fh.write("\n// The drawing, as one object. Hand it to vg_canopy_use.\n")
+        fh.write(f"static const VgCanopy {name} = {{\n")
+        fh.write(f"    {name}_OFS, {name}_DATA,\n")
+        fh.write(f"    {name}_IOFS, {name}_IDATA,\n")
+        fh.write(f"    {name}_ZOFS, {name}_ZDATA,\n")
+        fh.write(f"    {name}_SPLIT,\n")
+        fh.write(f"    {cols}, {bg}, {1 if mirror else 0}, {len(zones)},\n")
+        fh.write(f"    {items}, {flat_px}, {lit_px},\n")
         fh.write("};\n")
 
     print(f"{src}: background {bg}, {items} blocks, {kb:.1f} KB -> {out}")
@@ -447,6 +468,11 @@ def bake(src, out, name="CANOPY"):
 # about 32, so a header is worth less than one pixel and 95% of the bill is pixels.
 # There is nothing left to win in the encoding: AREA is the only lever, which is the
 # author's, not the compiler's.
+# MUST MATCH VG_CANOPY_MAX_ZONES in src/vg/vg_canopy.h. The firmware keeps a 256-entry colour
+# table per activation region so each can run its own glow, and internal SRAM is the scarce
+# memory on this part -- not flash. Eight of them is 4 KB of it.
+MAX_ZONES = 8
+
 A_ITEM = 31.6        # decoding one block header
 A_FLAT = 36.3        # one pixel of a flat block
 A_LIT = 39.3         # one pixel that carries its own level

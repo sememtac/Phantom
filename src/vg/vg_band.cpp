@@ -1109,11 +1109,25 @@ static inline void rowsplit_wait(void) { xSemaphoreTake(s_rs_done, portMAX_DELAY
 static uint16_t s_can_lut[256];
 static bool     s_can_ready = false;
 
+// WHICH DRAWING IS BEING FLOWN.
+//
+// It used to be the CANOPY_* macros, read straight out of the generated header, and that
+// shape allowed exactly one cockpit to exist -- a macro cannot be selected at runtime. Every
+// hull can have its own now. Nothing is owned or copied: a canopy lives in flash and this
+// points at it.
+//
+// Defaulted rather than left null, so a build that never calls vg_canopy_use still draws a
+// cockpit. The reference drawing is the one it falls back to.
+static const VgCanopy* s_can = &CANOPY;
+
+const VgCanopy* vg_canopy_current(void) { return s_can; }
+
 static void canopy_lut(void) {
+    const int bg = (int)s_can->bg;
     for (int g = 0; g < 256; g++) {
-        const float f = (g > CANOPY_BG)
-                      ? (float)(g - CANOPY_BG) / (float)(255 - CANOPY_BG)
-                      : (float)(CANOPY_BG - g) / (float)CANOPY_BG;
+        const float f = (g > bg)
+                      ? (float)(g - bg) / (float)(255 - bg)
+                      : (float)(bg - g) / (float)bg;
         // NATIVE order, swapped once here. Palette colours are stored in panel order
         // and blend_px works in native, so leaving this unswapped would put the delta's
         // red into the blue channel -- a bug that would have looked like a design
@@ -1359,7 +1373,7 @@ static int16_t s_wcol[SCR_H];
 
 // WHERE A WARPED BAND BALANCES, which the baked table cannot know.
 //
-// CANOPY_SPLIT is computed by the baker from where the drawing's work falls, and it is right
+// VgCanopy::split is computed by the baker from where the drawing's work falls, and it is right
 // only while each panel row reads its own column. Warping breaks that: the inverse column map
 // duplicates some columns and skips others, so the work slides along the band and the baked
 // balance point stops being the middle of it. A band costs whichever half is slower, so the
@@ -1374,9 +1388,9 @@ static bool     s_colcost_ready = false;
 static void canopy_colcost(void) {
     for (int c = 0; c < SCR_H; c++) {
         uint32_t cost = 0;
-        if (c < CANOPY_COLS) {
-            const uint8_t* p = &CANOPY_DATA[CANOPY_OFS[c]];
-            const uint8_t* e = &CANOPY_DATA[CANOPY_OFS[c + 1]];
+        if (c < (int)s_can->cols) {
+            const uint8_t* p = &s_can->data[s_can->ofs[c]];
+            const uint8_t* e = &s_can->data[s_can->ofs[c + 1]];
             while (p + 3 <= e) {
                 const uint8_t h = p[0];
                 const int len = ((h & 2) << 7) | p[2];
@@ -1390,6 +1404,22 @@ static void canopy_colcost(void) {
 }
 static int     s_wq = -1;                 // the quantised amount the maps were built for
 static bool    s_warp_on = false;
+
+// SELECTING A DRAWING, and it is down here rather than beside s_can because of what it has to
+// invalidate: three caches, two of which are the warp's and are declared just above.
+//
+// All three are derived from the drawing and none of them can survive a change of it. The
+// colour table is built from `bg`, which is per drawing -- two cockpits with different
+// background levels turn the same stored grey into different amounts of light, so a stale
+// table draws the new one at the wrong brightness. The per-column costs and the warp maps are
+// built from where the drawing's work falls, which is the whole point of them.
+void vg_canopy_use(const VgCanopy* c) {
+    if (!c || c == s_can) return;
+    s_can           = c;
+    s_can_ready     = false;
+    s_colcost_ready = false;
+    s_wq            = -1;
+}
 
 // THE FRAME LAGS THE SHIP, which is what makes it read as being inside something.
 //
@@ -1654,13 +1684,13 @@ void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, f
 // spend their first moments fully white, which is the part with no colour in it at all.
 static bool    s_intro_on   = false;
 static float   s_intro_t    = 0.0f;
-static uint8_t s_izon[CANOPY_ZONES];      // 0 held, 255 fully dissolved to the world
-static uint8_t s_ilive[CANOPY_ZONES];     // whether this zone's blocks are drawn at all
-static uint16_t s_ifill[CANOPY_ZONES];    // what a held pixel is: black before the flash, white after
-static uint8_t s_iglow[CANOPY_ZONES];     // 255 white-hot members, 0 their authored level
+static uint8_t s_izon[VG_CANOPY_MAX_ZONES];   // 0 held, 255 fully dissolved to the world
+static uint8_t s_ilive[VG_CANOPY_MAX_ZONES];  // whether this zone's blocks are drawn at all
+static uint16_t s_ifill[VG_CANOPY_MAX_ZONES]; // a held pixel: black before the flash, white after
+static uint8_t s_iglow[VG_CANOPY_MAX_ZONES];  // 255 white-hot members, 0 their authored level
 static bool    s_icued     = false;       // the instruments' cue, latched -- see vg_canopy_intro_cued
-static uint8_t s_iq[CANOPY_ZONES];        // the quantised glow each table was built for
-static uint16_t s_ilut[CANOPY_ZONES][256];
+static uint8_t s_iq[VG_CANOPY_MAX_ZONES];     // the quantised glow each table was built for
+static uint16_t s_ilut[VG_CANOPY_MAX_ZONES][256];
 
 // A zone's member colours, from white-hot down to the authored level.
 //
@@ -1709,8 +1739,8 @@ static const uint8_t BAYER4[16] = {
 // only across the frame: a flat fill is the cheapest thing this file does.
 static __attribute__((noinline))
 void canopy_gate(uint16_t* row, int lx, int py) {
-    const uint8_t* p = &CANOPY_ZDATA[CANOPY_ZOFS[lx]];
-    const uint8_t* e = &CANOPY_ZDATA[CANOPY_ZOFS[lx + 1]];
+    const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
+    const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
     const uint8_t* bay = &BAYER4[(py & 3) << 2];
     while (p + 3 <= e) {
         const uint8_t h  = p[0];
@@ -1718,7 +1748,7 @@ void canopy_gate(uint16_t* row, int lx, int py) {
         const int     n  = ((h & 2) << 7) | p[2];
         const int     z  = (h >> 2) & 15;
         p += 3;
-        if (z >= CANOPY_ZONES) continue;
+        if (z >= s_can->zones) continue;
         const uint32_t rev  = s_izon[z];
         if (rev >= 255u) continue;                  // this region is all the way in
         const uint16_t fill = s_ifill[z];
@@ -1740,10 +1770,14 @@ template <bool WARP, bool INTRO>
 static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
 
-    // Compile-time, so each instantiation holds a constant address and the choice costs
-    // nothing. This is also the parameterisation a per-hull canopy wants.
-    const uint16_t* T_OFS  = INTRO ? CANOPY_IOFS  : CANOPY_OFS;
-    const uint8_t*  T_DATA = INTRO ? CANOPY_IDATA : CANOPY_DATA;
+    // HOISTED OUT OF THE ROW LOOP, all of it. Which table is a compile-time choice still, so
+    // the branch folds; the drawing behind it is a runtime pointer now, and reading it once per
+    // call rather than once per row is what keeps that free.
+    const VgCanopy* const cp = s_can;
+    const uint16_t* const T_OFS  = INTRO ? cp->iofs  : cp->ofs;
+    const uint8_t*  const T_DATA = INTRO ? cp->idata : cp->data;
+    const int  T_COLS   = (int)cp->cols;
+    const bool T_MIRROR = (cp->mirror != 0);
 
     for (int py = by0 + r0; py < by0 + r1; py++) {
         int lx = SCR_H - 1 - py;                       // this panel row IS a column
@@ -1764,9 +1798,9 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // Mirrored only when the drawing is symmetric, which the baker decides and
         // records. An asymmetric frame stores every column and is read straight
         // through -- a cockpit is allowed to be lopsided.
-        int c = (CANOPY_MIRROR && lx >= CANOPY_COLS) ? (SCR_W - 1 - lx) : lx;
+        int c = (T_MIRROR && lx >= T_COLS) ? (SCR_W - 1 - lx) : lx;
         // Clamped for the same reason, and it also covers a drawing narrower than the screen.
-        if (c < 0) c = 0; else if (c >= CANOPY_COLS) c = CANOPY_COLS - 1;
+        if (c < 0) c = 0; else if (c >= T_COLS) c = T_COLS - 1;
 
         const uint8_t* p = &T_DATA[T_OFS[c]];
         const uint8_t* e = &T_DATA[T_OFS[c + 1]];
@@ -1809,7 +1843,7 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             const uint16_t* lut = s_can_lut;
             if (INTRO) {
                 const int z = (h >> 2) & 15;
-                if (z >= CANOPY_ZONES || !s_ilive[z]) {
+                if (z >= s_can->zones || !s_ilive[z]) {
                     p += (h & 0x80) ? len : 1;
                     continue;
                 }
@@ -1866,7 +1900,7 @@ void vg_canopy_intro_begin(void) {
     s_settle_t = -1.0f;
     s_icued    = false;
     if (!s_can_ready) canopy_lut();
-    for (int z = 0; z < CANOPY_ZONES; z++) {
+    for (int z = 0; z < s_can->zones; z++) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
         s_iglow[z] = 255;                                // and white-hot the moment it lights
         canopy_ilut(z);
@@ -1912,7 +1946,7 @@ bool vg_canopy_intro_cued(void) { return s_icued; }
 int vg_canopy_intro_lit(void) {
     if (!s_intro_on) return 0;
     int n = 0;
-    for (int z = 0; z < CANOPY_ZONES; z++) if (s_ilive[z]) n++;
+    for (int z = 0; z < s_can->zones; z++) if (s_ilive[z]) n++;
     return n;
 }
 
@@ -1922,7 +1956,7 @@ void vg_canopy_intro_reset(void) {
     s_intro_on = false;
     s_icued    = false;
     s_settle_t = -1.0f;
-    for (int z = 0; z < CANOPY_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
+    for (int z = 0; z < s_can->zones; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
 
 // HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
@@ -1952,11 +1986,11 @@ bool vg_canopy_intro_update(float dt) {
     // THE INSTRUMENTS' CUE, latched from inside the running sequence -- which is the only place
     // that can know the sequence is actually running. The length is derived here from the pacing
     // constants, so retuning them moves the cue with them rather than sliding it out of step.
-    const float span = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
+    const float span = CANOPY_INTRO_LEAD + (float)(s_can->zones - 1) * CANOPY_INTRO_STEP
                      + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
     if (!s_icued && span > 0.0f && s_intro_t >= span * CANOPY_INTRO_HUD_AT) s_icued = true;
 
-    for (int z = 0; z < CANOPY_ZONES; z++) {
+    for (int z = 0; z < s_can->zones; z++) {
         const float e = s_intro_t - (CANOPY_INTRO_LEAD + (float)z * CANOPY_INTRO_STEP);
         if (e < 0.0f) continue;                  // this one's turn has not come
         s_ilive[z]  = 1;
@@ -1991,12 +2025,12 @@ bool vg_canopy_intro_update(float dt) {
     // Over when the last zone's members have finished cooling, which is now the last thing to
     // happen anywhere in the sequence. The settle that follows is not part of it: the view is
     // fully in well before this and the frame is merely taking up its flex.
-    const float end = CANOPY_INTRO_LEAD + (float)(CANOPY_ZONES - 1) * CANOPY_INTRO_STEP
+    const float end = CANOPY_INTRO_LEAD + (float)(s_can->zones - 1) * CANOPY_INTRO_STEP
                     + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
     if (s_intro_t >= end) {
         s_intro_on = false;
         s_settle_t = 0.0f;
-        for (int z = 0; z < CANOPY_ZONES; z++) {
+        for (int z = 0; z < s_can->zones; z++) {
             s_izon[z] = 255; s_ilive[z] = 1;
             if (s_iglow[z]) { s_iglow[z] = 0; canopy_ilut(z); }
         }
@@ -2244,9 +2278,9 @@ void vg_canopy_bench(VgCanopyCost* out) {
     // it as the flight cost -- the same failure the glyph bench had, where the number is wrong
     // and believed. Measured on purpose in the third pass below.
     const bool  save_in = s_intro_on;
-    uint8_t     save_live[CANOPY_ZONES], save_rev[CANOPY_ZONES];
-    uint16_t    save_fill[CANOPY_ZONES];
-    for (int z = 0; z < CANOPY_ZONES; z++) {
+    uint8_t     save_live[VG_CANOPY_MAX_ZONES], save_rev[VG_CANOPY_MAX_ZONES];
+    uint16_t    save_fill[VG_CANOPY_MAX_ZONES];
+    for (int z = 0; z < s_can->zones; z++) {
         save_live[z] = s_ilive[z]; save_rev[z] = s_izon[z]; save_fill[z] = s_ifill[z];
     }
     s_intro_on = false;
@@ -2283,7 +2317,7 @@ void vg_canopy_bench(VgCanopyCost* out) {
     // dips" is a number rather than an impression, and so the next person to widen the zones
     // knows what they are spending.
     s_intro_on = true;
-    for (int z = 0; z < CANOPY_ZONES; z++) {
+    for (int z = 0; z < s_can->zones; z++) {
         s_ilive[z] = 1; s_izon[z] = 128; s_ifill[z] = CANOPY_INTRO_WHITE;
     }
     vg_canopy_warp(0.0f);
@@ -2296,16 +2330,16 @@ void vg_canopy_bench(VgCanopyCost* out) {
 
     s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
     s_intro_on = save_in;
-    for (int z = 0; z < CANOPY_ZONES; z++) {
+    for (int z = 0; z < s_can->zones; z++) {
         s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; s_ifill[z] = save_fill[z];
     }
 
     out->us       = (cyc  > cal ? cyc  - cal : 0) / 240u;
     out->warp_us  = (wcyc > cal ? wcyc - cal : 0) / 240u;
     out->intro_us = (icyc > cal ? icyc - cal : 0) / 240u;
-    out->blocks   = CANOPY_BLOCKS;
-    out->flat_px  = CANOPY_FLAT_PX;
-    out->lit_px   = CANOPY_LIT_PX;
+    out->blocks   = (int)s_can->blocks;
+    out->flat_px  = (int)s_can->flat_px;
+    out->lit_px   = (int)s_can->lit_px;
 }
 
 static void draw_band(int band_index, uint16_t* band) {
@@ -2420,7 +2454,7 @@ static void draw_band(int band_index, uint16_t* band) {
             // that the midpoint is the right guess.
             const int at = s_intro_on ? ROW_SPLIT
                          : s_warp_on  ? s_wsplit[band_index]
-                                      : CANOPY_SPLIT[band_index];
+                                      : s_can->split[band_index];
             const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
             canopy_rows(band, by0, 0, split ? at : BAND_H);
             if (split) rowsplit_wait();

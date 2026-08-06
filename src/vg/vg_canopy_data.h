@@ -21,14 +21,7 @@
 // ASYMMETRIC (1530 pixels differ, worst 94), so every column is stored.
 #pragma once
 #include <stdint.h>
-
-#define CANOPY_BG 121
-#define CANOPY_COLS 480
-#define CANOPY_MIRROR 0
-// What the pass has to get through, for the bench to report against.
-#define CANOPY_BLOCKS 2492
-#define CANOPY_FLAT_PX 19469
-#define CANOPY_LIT_PX 4792
+#include "vg_canopy.h"
 
 // Where each band's WORK balances, so the two cores finish together.
 static const uint8_t CANOPY_SPLIT[15] = {
@@ -1540,4 +1533,14 @@ static const uint8_t CANOPY_ZDATA[4314] = {
     8,0,11,2,11,213,8,0,10,2,10,214,8,0,9,2,9,215,8,0,7,4,7,1,
     2,8,216,8,0,6,4,6,1,2,7,217,8,0,5,4,5,1,2,6,218,8,0,4,
     4,4,1,2,5,219,8,0,3,2,3,221,8,0,2,2,2,222,
+};
+
+// The drawing, as one object. Hand it to vg_canopy_use.
+static const VgCanopy CANOPY = {
+    CANOPY_OFS, CANOPY_DATA,
+    CANOPY_IOFS, CANOPY_IDATA,
+    CANOPY_ZOFS, CANOPY_ZDATA,
+    CANOPY_SPLIT,
+    480, 121, 0, 4,
+    2492, 19469, 4792,
 };
