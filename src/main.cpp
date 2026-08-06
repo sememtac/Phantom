@@ -613,6 +613,15 @@ void loop(void) {
                                (unsigned long)(acc_band[i] / frames));
             Serial.printf("        band us/768 = %s\n", row);
         }
+        {
+            // Peak against cap, per slice. Sized down only from this.
+            char row[96];
+            int  at = 0;
+            for (int i = 0; i < vg_rast_slices() && at < (int)sizeof(row) - 1; i++)
+                at += snprintf(row + at, sizeof(row) - at, "%d/%d ",
+                               vg_rast_slice_peak(i), vg_rast_slice_cap(i));
+            Serial.printf("        slice peak/cap = %s\n", row);
+        }
         ft_skip_next = true;
     }
 

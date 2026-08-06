@@ -243,6 +243,15 @@ void vg_rast_flush(void);
 // Submit splits in two halves that can be built concurrently -- see the note on
 // Sub in vg_raster.cpp. `select` says which half the CALLING CORE is filling;
 // `join` closes the frame by making the two slices contiguous in draw order.
+// PER-SLICE PEAKS AND CAPS, for sizing the primitive list.
+//
+// Each slice is its own ceiling, so the whole-frame peak cannot size one. `peak` is the
+// high water mark since boot and is never reset -- the number that decides a buffer size
+// is the worst moment the game can produce, not the usual one.
+int  vg_rast_slices(void);
+int  vg_rast_slice_peak(int i);
+int  vg_rast_slice_cap(int i);
+
 void vg_prim_select(int group);
 void vg_prim_join(void);
 

@@ -275,6 +275,26 @@ bool vg_rast_init(void) {
                   (unsigned)(SCR_W * BAND_H * 2 / 1024),
                   (int)NUM_BANDS,
                   (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+    // BOTH POOLS, AND THE FLASH, because "is there room" is a question about three
+    // budgets that behave nothing alike and only one of them was ever reported.
+    //
+    // Internal SRAM is the scarce one and the only one the renderer can use: the band
+    // buffers and the primitive list have to be here, because rasterising against PSRAM
+    // thrashes the cache badly enough to dominate a frame -- which is the finding the
+    // whole two-stage design is built on.
+    //
+    // PSRAM is large and nearly untouched, and it is fine for anything read once per
+    // frame or less. Game DATA belongs here if it ever gets big enough to matter.
+    //
+    // Flash is where content actually lives: dialogue, ship tables, models, canopy
+    // drawings are all const and never copied to RAM. It is the budget with the most
+    // room and the one a writer or an artist is most likely to spend.
+    Serial.printf("vg_rast_init: internal-free %uKB  psram-free %uKB  (largest block: "
+                  "internal %uKB psram %uKB)\n",
+                  (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                  (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+                  (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+                  (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
     return true;
 }
 
@@ -297,10 +317,22 @@ bool vg_rast_init(void) {
 // is complete.
 static int s_peak = 0;
 
+// PER SLICE, because the whole-frame peak cannot size a slice.
+//
+// MAX_PRIMS is 3400 and the frame peak is 759, so the list looks four times larger than
+// it needs to be -- but each slice is its own ceiling now, and a slice that overflows
+// drops primitives whatever the total was doing. Sizing them down needs to know which
+// one gets closest to its own bound, and nothing measured that.
+static int s_peak_slice[NSUB] = { 0 };
+
 void vg_rast_begin_frame(void) {
     // From the cursors, before they are reset, so the peak does not depend on join
     // having run at all.
     if (live_count() > s_peak) s_peak = live_count();
+    for (int i = 0; i < NSUB; i++) {
+        const int n = s_sub[i].at - SUB_AT[i];
+        if (n > s_peak_slice[i]) s_peak_slice[i] = n;
+    }
     s_count = 0;
     // Both submitters, to the same defaults the globals used to hold: AA on, fills
     // on, clipping to the whole panel. vg_render overrides what it needs per half.
@@ -322,6 +354,9 @@ void vg_rast_begin_frame(void) {
 }
 int  vg_rast_prim_count(void)  { return live_count(); }
 int  vg_rast_prim_peak(void)   { return s_peak; }
+int  vg_rast_slice_peak(int i) { return (i >= 0 && i < NSUB) ? s_peak_slice[i] : 0; }
+int  vg_rast_slice_cap(int i)  { return (i >= 0 && i < NSUB) ? SUB_AT[i + 1] - SUB_AT[i] : 0; }
+int  vg_rast_slices(void)      { return NSUB; }
 bool vg_rast_overflowed(void)  {
     for (int i = 0; i < NSUB; i++) if (s_sub[i].overflow) return true;
     return false;
