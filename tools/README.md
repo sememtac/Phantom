@@ -288,7 +288,108 @@ would move the simulation off the sequence the recording was made from.
 | `phantom_session.py` | the command line |
 | `phantom_vfx.py` | fires the explosions, to look at them |
 | `canopy_bake.py` | turns a canopy drawing into a table the firmware draws |
+| `canopy_cost.py` | asks the board what the canopy costs to draw |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
+
+## Canopy drawings
+
+The canopy is the cockpit frame. It replaces the crosshair. Each ship can have its
+own drawing.
+
+### What the file must be
+
+Use a square PNG, 480 x 480 pixels or larger. Two channels carry the work.
+
+| channel | holds |
+|---|---|
+| red | the frame |
+| green | the activation regions |
+| blue | not read |
+
+The baker reads the two channels separately. Do not send a grey image. A grey image
+puts the same values in both channels, so the frame becomes its own mask.
+
+### Red: the frame
+
+The most common red value is the background. That value means "leave this pixel
+alone". A brighter value adds light. A darker value takes light away.
+
+The firmware applies the frame to the finished picture. The frame lights what is
+behind it. It does not paint over it.
+
+### Green: the activation regions
+
+The cockpit comes online one region at a time. A region is a shape in the green
+channel. The grey value of the shape is the order. The lowest value comes on first.
+
+Each region flashes white. The world behind it then appears. The frame inside it
+lights up and cools to the value you drew.
+
+Obey these three rules:
+
+1. Give each region one flat value. A soft edge between two regions makes a third
+   value, and that value becomes a region.
+2. Use 8 regions or fewer. The baker stops and shows the values it found if there
+   are more.
+3. Cover the whole image. Every pixel needs a region, not only the pixels the frame
+   covers. The world stays black until its region comes on.
+
+### The coverage budget
+
+Area is the only cost. About 95% of the cost is the number of pixels the frame
+covers. Levels, gradients and fine detail are free.
+
+| the frame covers | what to expect |
+|---|---|
+| less than 6% | cheap |
+| 6% to 10% | there is room for it |
+| 10% to 14% | the game loses 60 frames a second in a busy fight |
+| more than 14% | the game drops to about 50 frames a second |
+
+The reference drawing covers 10.5%. To make a drawing cheaper, make the shapes
+narrower. Do not remove detail. Detail costs nothing.
+
+### Bake it
+
+1. Put the PNG in `design\`.
+2. Run `.\tools\canopy.ps1 -Png design\Chariot.png -Name CANOPY_CHARIOT -Out src\vg\vg_canopy_chariot.h`.
+3. Read the report. It shows the coverage, the cost, and the regions it found.
+4. Add `#include "vg_canopy_chariot.h"` to `src\vg\vg_canopy_set.cpp`.
+5. Point that ship's row in the same file at `&CANOPY_CHARIOT`.
+
+Give every drawing its own name. The firmware holds all of them at once, so two
+headers must not use the same name.
+
+To replace the drawing that every ship uses, leave `-Name` and `-Out` out. The
+script then bakes to the default header.
+
+### What the report tells you
+
+| line | what to do about it |
+|---|---|
+| `symmetric` or `asymmetric` | nothing. A symmetric drawing stores half the columns and costs half the flash. |
+| `N activation zones ... in order` | make sure the order and the count are the ones you drew |
+| `N pixels a frame, N% of the screen` | compare it against the coverage table above |
+| `costs the frame about N ms` | an estimate from the device. More than 2.5 ms is too much. |
+| `TOO HEAVY` or `HEAVY` | make the shapes narrower |
+
+Ask the board for the real cost after you flash:
+
+    python tools\canopy_cost.py COM6
+
+### Symmetry
+
+The baker looks for left-right symmetry. It does not need it. A cockpit can be
+lopsided. A symmetric drawing stores its left half and costs half the flash. A
+lopsided drawing stores every column.
+
+### How the frame moves
+
+Each ship moves its cockpit by a different amount. A light hull is looser than a
+heavy one. This comes from the airframe, not from the drawing.
+
+Fly a new drawing on more than one ship before you judge it. Some of what you feel
+is the ship.
 
 ## Serial commands
 

@@ -6,6 +6,15 @@
 #   .\tools\canopy.ps1 -Png other.png  use another drawing
 #   .\tools\canopy.ps1 -Port COM7      a different port
 #
+# To add a cockpit for one ship, give the drawing its own name and its own header:
+#
+#   .\tools\canopy.ps1 -Png design\Chariot.png -Name CANOPY_CHARIOT `
+#       -Out src\vg\vg_canopy_chariot.h
+#
+# Then include that header in src\vg\vg_canopy_set.cpp and point the ship's row at
+# the new object. The firmware holds every cockpit at once, so two headers must not
+# use the same name.
+#
 # Run it from the repository root.
 #
 # The drawing is a grey field with the frame on it. Mid grey means leave the pixel
@@ -19,12 +28,16 @@
 #   python tools\canopy_cost.py COM6
 #
 # Coverage is the only thing that matters to the budget. 95% of the cost is the number
-# of pixels covered, so if the game starts missing 60 frames a second, narrow the
-# shapes -- levels, gradients and fine detail are all free.
+# of pixels the frame covers. If the game starts to miss 60 frames a second, make the
+# shapes narrower. Levels, gradients and fine detail are all free.
+#
+# The full authoring rules, including the green channel, are in tools/README.md.
 
 param(
     [string]$Png  = "design\Test.png",
     [string]$Port = "COM6",
+    [string]$Name = "CANOPY",
+    [string]$Out  = "src\vg\vg_canopy_data.h",
     [switch]$Bake,
     [switch]$NoFlash
 )
@@ -41,8 +54,8 @@ $env:PYTHONIOENCODING = "utf-8"
 if (-not (Test-Path $Png)) { throw "no drawing at $Png" }
 
 Write-Host ""
-Write-Host "-- baking $Png" -ForegroundColor Cyan
-python tools\canopy_bake.py $Png src\vg\vg_canopy_data.h
+Write-Host "-- baking $Png as $Name -> $Out" -ForegroundColor Cyan
+python tools\canopy_bake.py $Png $Out --name=$Name
 if ($LASTEXITCODE -ne 0) { throw "bake failed" }
 if ($Bake) { Write-Host "`nbaked. build skipped." -ForegroundColor Green; exit 0 }
 

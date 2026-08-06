@@ -2,6 +2,11 @@
 """Turn a canopy drawing into a table the firmware can draw.
 
     python tools/canopy_bake.py design/Test.png src/vg/vg_canopy_data.h
+    python tools/canopy_bake.py design/Chariot.png src/vg/vg_canopy_chariot.h \n        --name=CANOPY_CHARIOT
+
+Give each drawing its own --name. The firmware holds every cockpit at once and
+selects one per ship, so two headers that define the same name cannot both be
+used. See src/vg/vg_canopy_set.cpp.
 
 The drawing is a grey field with the frame drawn on it. Mid grey means "leave this
 pixel alone"; brighter means add light, darker means take it away. The firmware
@@ -361,8 +366,8 @@ def bake(src, out, name="CANOPY"):
         # block belongs to exactly one zone and switching a zone on is switching a set of
         # whole blocks on. That costs blocks -- which is why the flight table does not pay
         # for it.
-        fh.write(f"\n#define {name}_ZONES {len(zones)}\n")
-        fh.write(f"#define {name}_IBLOCKS {i_flat + i_lit}\n")
+        fh.write(f"\n// {len(zones)} activation regions in the green channel.\n")
+        fh.write(f"// {i_flat + i_lit} blocks, against the flight table's {items}.\n")
         fh.write("// The same drawing, with every run cut at its zone border.\n")
         fh.write(f"static const uint16_t {name}_IOFS[{len(i_offsets)}] = {{\n")
         for i in range(0, len(i_offsets), 16):
@@ -380,7 +385,7 @@ def bake(src, out, name="CANOPY"):
         # the block table cannot answer it: the block table only knows where the drawing is.
         #
         # Three bytes a run, no payload, same header layout so one reader serves both.
-        fh.write(f"\n#define {name}_ZRUNS {zruns}\n")
+        fh.write(f"\n// {zruns} runs, covering every pixel of the screen.\n")
         fh.write("// Every pixel of the screen, by activation zone. Runs down a column,\n")
         fh.write("// three bytes each: zone in bits 5..2, then start and length.\n")
         fh.write(f"static const uint16_t {name}_ZOFS[{len(zoffs)}] = {{\n")
@@ -473,6 +478,9 @@ def bake(src, out, name="CANOPY"):
 # memory on this part -- not flash. Eight of them is 4 KB of it.
 MAX_ZONES = 8
 
+# Set by --name=. A list so the argument loop can write to it.
+NAME = ["CANOPY"]
+
 A_ITEM = 31.6        # decoding one block header
 A_FLAT = 36.3        # one pixel of a flat block
 A_LIT = 39.3         # one pixel that carries its own level
@@ -496,6 +504,10 @@ if __name__ == "__main__":
         # ordinary use -- the default is the setting that is actually fast.
         if a.startswith("--minflat="):
             MINFLAT = int(a.split("=", 1)[1])
+        # The C name of the object the header defines. One per drawing, because the
+        # firmware holds them all at once and selects per ship.
+        if a.startswith("--name="):
+            NAME[0] = a.split("=", 1)[1]
     if len(argv) < 2:
         sys.exit(__doc__)
-    bake(argv[0], argv[1], argv[2] if len(argv) > 2 else "CANOPY")
+    bake(argv[0], argv[1], argv[2] if len(argv) > 2 else NAME[0])

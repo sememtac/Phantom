@@ -617,8 +617,8 @@ static const uint8_t CANOPY_DATA[13241] = {
     1,133,136,0,3,209,185,141,8,3,37,137,136,40,2,133,129,
 };
 
-#define CANOPY_ZONES 4
-#define CANOPY_IBLOCKS 3338
+// 4 activation regions in the green channel.
+// 3338 blocks, against the flight table's 2492.
 // The same drawing, with every run cut at its zone border.
 static const uint16_t CANOPY_IOFS[481] = {
     0,13,31,49,68,88,108,129,149,169,190,211,232,253,272,291,
@@ -1315,7 +1315,7 @@ static const uint8_t CANOPY_IDATA[15792] = {
     37,137,128,41,1,133,136,0,2,209,185,128,2,1,141,0,3,37,137,128,40,2,133,129,
 };
 
-#define CANOPY_ZRUNS 1438
+// 1438 runs, covering every pixel of the screen.
 // Every pixel of the screen, by activation zone. Runs down a column,
 // three bytes each: zone in bits 5..2, then start and length.
 static const uint16_t CANOPY_ZOFS[481] = {
