@@ -16,7 +16,13 @@
 #
 # The ship names are aegis, lance, chariot and ballista.
 #
-# Run it from the repository root.
+# Run it from any directory. Use the path to it:
+#
+#   .\tools\canopy.ps1        from the repository root
+#   .\canopy.ps1              from this folder
+#
+# PowerShell does not run a script from the current directory without a path, so the
+# leading .\ is required. "canopy.ps1" alone fails with CommandNotFoundException.
 #
 # The drawing is SWIZZLED: red carries the frame and green carries the activation
 # regions. In red, mid grey means leave the pixel alone, brighter adds light and darker
@@ -43,6 +49,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# THE SCRIPT FINDS THE PROJECT, the project does not have to find the script.
+#
+# Everything below uses a path relative to the repository root: design\canopy, the two
+# Python tools, and pio itself, which reads platformio.ini from the current directory. So
+# the root has to BE the current directory.
+#
+# It used to say "run it from the repository root" in a comment and leave it there. That
+# put the one directory the script works from one level above the directory the script
+# lives in, so opening the folder and running .\canopy.ps1 -- the most natural thing to
+# try -- got "no drawings folder at design\canopy" and named a path that is really there.
+#
+# $PSScriptRoot is this file's folder, so its parent is the root. Push and pop rather than
+# Set-Location, and in a finally, so a failed bake does not leave the caller's shell in a
+# directory it did not ask for.
+Push-Location (Split-Path -Parent $PSScriptRoot)
+try {
+
 # PlatformIO is not on the PATH.
 $pio = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
 if (-not (Test-Path $pio)) { throw "no PlatformIO at $pio" }
@@ -56,13 +79,15 @@ Write-Host ""
 Write-Host "-- baking design\canopy" -ForegroundColor Cyan
 python tools\canopy_set.py
 if ($LASTEXITCODE -ne 0) { throw "bake failed" }
-if ($Bake) { Write-Host "`nbaked. build skipped." -ForegroundColor Green; exit 0 }
+# `return`, not `exit`. exit leaves the caller's shell in the repository root, because it
+# skips the finally that pops it. A script that changes directory has to leave by the door.
+if ($Bake) { Write-Host "`nbaked. build skipped." -ForegroundColor Green; return }
 
 Write-Host ""
 Write-Host "-- building" -ForegroundColor Cyan
 & $pio run | Select-String -Pattern "error|Error|RAM:|Flash:|SUCCESS|FAILED"
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
-if ($NoFlash) { Write-Host "`nbuilt. device untouched." -ForegroundColor Green; exit 0 }
+if ($NoFlash) { Write-Host "`nbuilt. device untouched." -ForegroundColor Green; return }
 
 Write-Host ""
 Write-Host "-- flashing $Port  (do not interrupt this)" -ForegroundColor Yellow
@@ -78,3 +103,5 @@ Write-Host ""
 Write-Host "on the device. Fly a match to see it." -ForegroundColor Green
 Write-Host "The replay baseline will now report DIFFERENT on any frame with the" -ForegroundColor DarkGray
 Write-Host "canopy in it, which is correct: the picture changed on purpose." -ForegroundColor DarkGray
+
+} finally { Pop-Location }
