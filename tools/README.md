@@ -408,6 +408,47 @@ heavy one. This comes from the airframe, not from the drawing.
 Fly a new drawing on more than one ship before you judge it. Some of what you feel
 is the ship.
 
+## The regression test
+
+The replay is the only regression test in this project. A session renders frame for
+frame. If the same frames come back with the same bytes, the simulation and the
+drawing did not change.
+
+Two files make it work, and both are in git:
+
+| file | what it is |
+|---|---|
+| `captures/regress.phr` | the session. 90 s of play, with the canopy start, a fight, the wall and the rear view in it. |
+| `tools/regress-baseline.json` | 9 frame hashes, and the commit they were taken at |
+
+To check a change that must not alter the picture:
+
+    python tools/phantom_regress.py --port COM6 captures/regress.phr --against tools/regress-baseline.json
+
+The render takes about four minutes. The deepest frame in the list sets the time,
+because the board must replay every frame before it.
+
+### When to take a new baseline
+
+Take one after any change that is MEANT to alter the picture. Put that change and the
+new baseline in the same commit. Do not mix a change that alters the picture with one
+that must not.
+
+    python tools/phantom_regress.py --port COM6 captures/regress.phr --frames 300,900,1500,2100,2700,3300,4000,4600,5200 --save tools/regress-baseline.json
+
+### When to record a new session
+
+Record one if `VgInput` changes size. The session stores one input structure for each
+frame, so a session recorded against a different size cannot be replayed.
+
+The board refuses it and says so:
+
+    vg_replay: REJECT ver 1 blob 80 (want 1/76)
+
+This is why both files are in git. The baseline used to name a session that had been
+deleted, which is the same as having no baseline. Everything else under `captures/` is
+still ignored: those are recordings of a moment, not a test.
+
 ## Serial commands
 
 Single bytes, typed at the board while nothing else holds the port.

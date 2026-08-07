@@ -28,5 +28,13 @@ tools/*.spec
 
 # The design document is ours, not the public repo's. It stays on disk.
 DESIGN.md
-tools/regress-baseline.json
-captures/
+# THE REGRESSION HARNESS HAS TO SURVIVE, and it did not.
+#
+# Both the baseline and the session it was taken against were ignored, so the baseline
+# ended up naming a .phr that no longer existed. A baseline whose session is gone cannot
+# be compared with anything, which is the same as having none.
+#
+# So one canonical session is tracked, and the baseline with it. 431 KB and 9 hashes.
+# Everything else under captures/ stays out: those are recordings of a moment, not a test.
+captures/*
+!captures/regress.phr
