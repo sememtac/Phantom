@@ -1,500 +1,517 @@
 # PHANTOM
 
-A wireframe dogfight sim for the **Waveshare ESP32-S3-Touch-AMOLED-2.16** — a
-480×480 round AMOLED with a touch layer, an IMU and a speaker, driven straight off
-the QSPI bus with no widget toolkit in the way.
+A wireframe dogfight game for the **Waveshare ESP32-S3-Touch-AMOLED-2.16**. The board
+has a round 480x480 AMOLED screen, a touch layer, an accelerometer and a speaker. The
+game writes to the screen through the QSPI bus. It does not use a widget toolkit.
 
-You fly a tournament of one-on-one missile duels. Sixteen pilots enter, one comes
-out, and the legend waiting in the final is the reason the story exists.
+You fly a tournament of missile duels, one pilot against one pilot. Sixteen pilots
+start and one wins. The last opponent is the pilot the opening story is about.
 
-Everything on screen is generated: the ships, the arena, the nebula behind it, the
-cockpit frame, and every sound. Nothing is sampled and nothing is a bitmap.
+The game makes everything you see and hear while it runs. The ships, the arena, the
+sky, the canopy and every sound are generated. There are no bitmaps and no samples.
 
-- **~22,000 lines**, no vendored code except one MIT sensor library
-- **60–61 fps in a fight**, 71 idle, against an 11.52 ms hard floor of wire time
-- Runs the game, records itself, and replays a session frame-for-frame
+- About 22,000 lines. Only one library is not written here.
+- 60 to 61 frames a second in a fight, and 71 when idle.
+- The game can record itself and play a session back, frame for frame.
 
 ---
 
-## Getting it onto the hardware
+## How to put the game on the board
 
-You need [PlatformIO](https://platformio.org/). The board profile, the toolchain and
-the one dependency all come down on the first build.
+You need [PlatformIO](https://platformio.org/). The first build downloads the board
+profile, the toolchain and the one library.
 
-```
-pio run                 build
-pio run -t upload       build and flash
-pio device monitor       watch the telemetry
-```
+| command | what it does |
+|---|---|
+| `pio run` | build |
+| `pio run -t upload` | build, then write to the board |
+| `pio device monitor` | show the telemetry |
 
-The port is picked up automatically. If you have more than one board attached, name
-it: `pio run -t upload --upload-port COM6`.
+PlatformIO finds the port. If more than one board is connected, give the port:
+`pio run -t upload --upload-port COM6`.
 
-### Two things that will bite you
+### Before you upload
 
-**Set `PYTHONIOENCODING=utf-8` before uploading.** Without it the upload can hang
-forever partway through, and a half-written flash is a board that will not boot.
+Set `PYTHONIOENCODING` to `utf-8` first. If you do not, the upload can stop and never
+continue. A flash that stops in the middle leaves a board that does not start.
 
-```
-set PYTHONIOENCODING=utf-8         (cmd)
-$env:PYTHONIOENCODING = "utf-8"    (PowerShell)
-```
+    set PYTHONIOENCODING=utf-8            in cmd
+    $env:PYTHONIOENCODING = "utf-8"       in PowerShell
 
-**Never interrupt a flash.** `esptool` verifies the hash at the end; a killed upload
-leaves the part in a state you have to recover with a full erase.
+Do not stop an upload. `esptool` checks the hash at the end. To repair a board that
+was interrupted, erase all of the flash and write it again.
 
-### Sharing the board with other firmware
+### If the board runs other firmware
 
-This is a dev board and yours may be running something else. Flashing **overwrites
-whatever is there** — there is no dual-boot and no partition scheme protecting the
-other image.
+An upload replaces everything on the board. There is no dual boot, and no partition
+keeps the other firmware safe.
 
-If another program holds the serial port — a monitor, a tray daemon, an IDE — the
-upload fails with `Access is denied` or `could not open port`. Close it first. Only
-one process can own the port, and that includes the telemetry monitor.
+Close every program that uses the serial port before you upload. A monitor, a
+background service or an IDE all hold the port. Only one program can hold it. The
+telemetry monitor holds it too.
 
-### What the board actually is
+If the port is held, the upload stops and shows `Access is denied` or
+`could not open port`.
 
-| part | what it does | driver |
+### What is on the board
+
+| part | function | driver |
 |---|---|---|
-| CO5300 | 480×480 AMOLED, QSPI at 80 MHz | `vg_port_co5300.cpp`, written here |
-| CST9220 | capacitive touch, up to 5 contacts | SensorLib |
-| QMI8658 | accelerometer, 250 Hz | SensorLib |
-| ES8311 | mono codec and speaker, I²S | `vg_audio` in the port |
-| AXP2101 | power management, and the power key | `vg_pmu_*` in the port |
+| CO5300 | 480x480 AMOLED screen, QSPI at 80 MHz | `vg_port_co5300.cpp`, written here |
+| CST9220 | touch, up to 5 contacts | SensorLib |
+| QMI8658 | accelerometer at 250 Hz | SensorLib |
+| ES8311 | mono codec and speaker, I2S | `vg_audio` in the port |
+| AXP2101 | power management and the power key | `vg_pmu_*` in the port |
 
-The panel driver is written from scratch because the whole frame budget is the
-transfer, and a general-purpose display library cannot hand a band straight to DMA
-and return. See **Optimisation** below.
+The screen driver is written here because the transfer is nearly all of the time a
+frame has. A general display library cannot give one band to DMA and return at once.
+See **Speed** below.
 
 ---
 
-## The systems
+## The parts of the game
 
 ### Controls
 
 | input | action |
 |---|---|
-| left edge strip | throttle, under the left thumb. Snaps to the finger. |
-| anywhere right of it | steering. Press to set an origin, hold displaced to turn, release to self-centre. |
-| quick tap | launch a missile at the locked target |
-| second contact | also fires, so you can shoot without giving up the steering finger |
-| hold the **+** key | the steering swipe rolls instead of turning |
-| hold the rear-view patch | look aft. A look, not a control: it changes nothing about the ship. |
+| left edge strip | throttle. It moves to your thumb. |
+| anywhere to the right | steering. Touch to set an origin. Hold away from the origin to turn. Lift to centre. |
+| short tap | fire a missile at the locked target |
+| second contact | also fires, so the steering finger can stay down |
+| hold the **+** key | the steering swipe rolls the ship instead of turning it |
+| hold the rear-view window | look behind. This changes the view only, not the ship. |
 | **PWR** | pause, and the menus |
 
-Steering is **pointer-style**, like an FPS look control: the nose goes where the
-finger goes, so dragging toward the top-right aims up and right. `STEER_PITCH_SIGN`
-in `cfg_flight.h` inverts it.
+Steering points the nose where your finger goes. Move the finger up and right and the
+ship aims up and right. To reverse this, change `STEER_PITCH_SIGN` in `cfg_flight.h`.
 
-It is a **virtual joystick, not tilt.** Tilt was built first and rejected on
-hardware: the board gets held at whatever angle is comfortable, and while the code
-does calibrate a neutral pose per run, any change of grip breaks it. The accelerometer
-path still exists — `STEER_MODE` 2 for tilt, 1 for trackball-style relative steering.
+The steering is a screen joystick, not tilt. Tilt was built first and then removed:
+you hold the board at whatever angle is comfortable, and the code cannot know that
+angle. It measures a neutral pose once for each run, but any change of grip makes the
+measurement wrong. The accelerometer code is still there. Set `STEER_MODE` to 2 for
+tilt, or to 1 for relative steering.
 
-**Roll needs its own key** because there is otherwise no way to roll at all, and roll
-is what makes a turn unpredictable rather than merely fast. The same key reports a
-menu edge elsewhere: it means two things in two places, and which one applies is the
-game's decision rather than the input layer's.
+Roll has its own key because there is no other way to roll. Roll is what makes a turn
+hard to predict. The same key also opens menus. It means one thing in flight and
+another thing in a menu, and the game decides which.
 
-### Flight and combat
+### Flight and missiles
 
-Everything interesting falls out of **one** rule: *a missile can only pull so many
-degrees per second.*
+One rule causes most of what happens: a missile can turn only so many degrees each
+second.
 
-- Missiles fly **lead pursuit**, aiming where the target will be. That is what
-  bends the path into the arc you see.
-- The seeker has a cone. If the bearing leaves it, the lock breaks **permanently**
-  and the round coasts ballistic. Nothing scripts a miss — a hard enough break
-  outruns the seeker's turn rate and it sails past. That moment is emergent.
-- A **proximity fuse** detonates at closest approach: once inside fuse range and the
-  range starts opening again, that was as close as it was going to get.
+- A missile aims at where the target will be, not at where it is. This is what curves
+  the path.
+- The seeker looks through a cone. If the target leaves the cone, the lock breaks and
+  does not come back. The missile then flies straight. Nothing in the code makes a
+  missile miss. A hard enough turn is faster than the seeker, the target leaves the
+  cone, and the missile goes past.
+- A proximity fuse fires the warhead at the closest point. When the missile is inside
+  fuse range and the range starts to grow again, that was the closest point.
 
-**Turn rate scales inversely with speed**, so evading is a *decision to slow down*.
-That is the whole reason the throttle is a control and not a setting, and the enemy
-gets the same trade — their evasive break is a real duel, not a formality.
+Turn rate falls as speed rises. So you slow down to escape a missile. This is why the
+throttle is a control and not a setting. The enemy has the same limit, so an enemy
+that turns away from your missile is in the same trouble you are.
 
-Enemy AI has two states. **Pursue**: turn toward the player, close, fire inside a
-nose cone, blow through and re-merge if it gets too close to manoeuvre. **Evade**:
-break *perpendicular* to an incoming missile, because turning across a seeker
-defeats it where turning away just gets you run down.
+Enemy behaviour has two states:
 
-Tuning lives in `cfg_combat.h` and `cfg_flight.h`.
+- **Pursue.** Turn toward the player, close the range, and fire when the player is
+  inside a cone ahead of the nose. Fly past and turn back if the range gets too short
+  to turn in.
+- **Evade.** Turn across the path of an incoming missile, not away from it. A turn
+  across a seeker defeats it. A turn away lets the missile catch up.
 
-### Four airframes
+The numbers are in `cfg_combat.h` and `cfg_flight.h`.
 
-| | tagline |
+### The four ships
+
+| ship | tagline |
 |---|---|
 | **AEGIS** | NO WEAKNESS, NO EDGE |
 | **LANCE** | CLEAN HITS ONLY |
 | **CHARIOT** | FAST, LOUD, FRAGILE |
 | **BALLISTA** | KILL THEM FIRST |
 
-They differ in hull, speed range, magazine, agility and `shake` — and `shake` does
-more than rattle the camera: the cockpit frame's inertia rides it, so a CHARIOT's
-canopy is visibly looser than a BALLISTA's on the same drawing.
+The ships differ in hull strength, speed range, magazine size, turn rate and `shake`.
+`shake` moves more than the camera. The canopy swings by the same value. So a
+CHARIOT canopy moves more than a BALLISTA canopy with the same drawing.
 
 ### The tournament
 
-Sixteen entrants, four rounds, single elimination. You take the first seed; the rest
-are generated with a callsign, a hull, a trail colour, a voice archetype and a
-seeding rating. Matches you do not fly are simulated from those ratings.
+Sixteen pilots, four rounds, and a loss ends the run. You get the first seed. The game
+makes the other fifteen with a callsign, a ship, a trail colour, a voice and a rating.
+It decides the matches you do not fly from the ratings.
 
-**The legend takes the second seed**, which puts it in the opposite half and
-therefore in the final — and `sim_match` guarantees it never loses a round you do
-not see. The story in the opening crawl is about a pilot nobody has beaten, and the
-bracket makes sure you meet them.
+The last opponent gets the second seed. The second seed is in the other half of the
+bracket, so that pilot reaches the final. `sim_match` also stops that pilot losing any
+match you do not watch. The opening story is about a pilot nobody has beaten, and the
+bracket makes sure you meet that pilot.
 
-Between rounds you spend a purse on repairs. Damage carries: the hull you take into
-the final is the hull you brought out of the round of 16, minus whatever you could
-not afford to fix. Credits start at 0 and cap at 1500 (`cfg_econ.h`).
+You get a purse for each round and you spend it on repairs. Damage stays on the ship
+between rounds. The hull you fly in the final is the hull you had after the first
+round, less the repairs you could afford. Credits start at 0 and stop at 1500. See
+`cfg_econ.h`.
 
-**Win it and the name is yours.** Rivals start recognising you, and the title card
-changes to say the rumour is about you now.
+Win the tournament and the name is yours. Some pilots start to say so, and the title
+screen changes.
 
-**Then lose it and it changes hands.** Dying as champion resets the player
-completely — bank, callsign, hull, title — because the narrative has no room for a
-PHANTOM who is still flying around having been killed. And whoever killed you
-inherits the name: their callsign is seeded to the next final, guaranteed to get
-there, until somebody beats them. Then the cycle repeats.
+Lose it and the name goes to somebody else. If you die while you hold the title, the
+game clears your bank, your callsign, your ship and the title. A dead pilot cannot
+keep the name. The pilot who killed you takes it: that callsign gets the second seed
+in the next tournament and reaches the final. This repeats each time the title
+changes.
 
-### The course
+### The ring course
 
-A motor test before the fighting: fly through five consecutive rings. It exists
-because the first thing to learn is what the stick does, and a duel is a poor place
-to learn it. The broadcast talks you through it.
+A test of the controls before the fighting starts. Fly through five rings, one after
+another, without a miss. It is here because the first thing to learn is what the stick
+does, and a duel is a poor place to learn it. The broadcast explains the test.
 
-### The cockpit
+### The canopy
 
-**There is no crosshair.** The cockpit frame is a drawing — an artist's PNG, baked
-to a table of runs and applied by the band rasteriser as a *change* to the finished
-picture, so the frame lights what is behind it instead of painting over it.
+There is no crosshair. The canopy is a drawing. `tools/canopy_bake.py` turns a PNG
+into a table of runs, and the band renderer applies the table to the finished picture
+as a change. So the canopy lights what is behind it. It does not paint over it.
 
-It flexes, **inverted against the instruments**: full bulge with the throttle shut,
-flattening as the ship accelerates, so opening up reads as being pressed back into
-the seat rather than pulled toward the glass. It also trails the ship on three axes
-through a spring-damper scaled by the airframe.
+The canopy bends, and it bends the opposite way to the instruments. It bends most when
+the throttle is shut and flattens as the ship speeds up. The canopy also swings behind
+the ship on three axes. A spring and a damper control the swing, and the ship's
+`shake` scales it.
 
-**And it comes online.** A match opens black. The frame arrives a region at a time:
-each region flashes white, the world dissolves out of that white as an ordered
-dither, and the members run hot and cool to their drawn level. The order is the
-artist's — the same PNG carries the frame in its **red** channel and an activation
-mask in its **green**, where a shape's grey value is its place in the sequence.
+The canopy also arrives one piece at a time. A match starts with a black screen. Each
+region of the canopy flashes white. The world then appears through the white as a
+dither pattern. The parts of the canopy get bright and then fall to the level you
+drew. The order is yours. The same PNG holds the canopy in the **red** channel and a mask in
+the **green** channel. The grey value of each shape in the mask is its place in the
+order.
 
-Then the instruments catch, and only then does the radio open. Each stage waits for
-the one before it (`CANOPY_INTRO_*` in `cfg_hud.h`).
+The instruments come on next. The radio opens last. Each step waits for the step
+before it. See `CANOPY_INTRO_*` in `cfg_hud.h`.
 
-**Every hull can have its own, and a hull with no drawing flies with no frame** —
-there is no default texture. Drop `design/canopy/ballista.png` in and run
-`.\tools\canopy.ps1`; the file name is the wiring. Authoring rules are in
+Each ship can have its own canopy. A ship with no drawing flies with no canopy. There
+is no default drawing. To add one, put the PNG in `design/canopy/` and run
+`.\tools\canopy.ps1`. The file name selects the ship. The rules for drawing one are in
 [tools/README.md](tools/README.md).
 
 ### The instruments
 
-The HUD follows [AmberConsole](https://github.com/DutchDiederik/AmberConsole).
-Its governing rule is that **hierarchy is brightness, inverse video and blink —
-never hue**, so the interface is a single-hue intensity ramp: a missile lock reads
-as maximum brightness plus blink rather than a colour change, and labels read by
-inversion. `VG_PALETTE` selects the ramp: `VG_PAL_AMBER` is CRT phosphor, and
-anything else takes the neon branch.
+The interface follows [AmberConsole](https://github.com/DutchDiederik/AmberConsole).
+Its rule is that brightness, inverse video and blink show importance. Colour never
+does. So the interface uses one colour at many brightness levels. A missile lock shows
+as the brightest level and a blink, not as a different colour. A label shows as a
+filled block with dark text.
 
-**Spherical warp.** Instruments are laid out on a flat grid and then bent onto a
-virtual canopy (`HUD_WARP_K`, −0.22, barrel), applied inside the rasteriser so the
-whole panel curves at once without any drawing code knowing. Lines subdivide and
-bend, filled rectangles become strips of warped quads, glyphs keep their shape while
-their origins follow the curve.
+`VG_PALETTE` selects the colours. `VG_PAL_AMBER` gives amber. Any other value gives
+the neon set.
 
-Two things deliberately stay flat: the steering ring, which must sit under your
-finger, and world-space markers, which must line up with what they point at. **Touch
-handling is entirely unwarped** — only the drawing bends.
+The instruments are drawn on a flat grid and then bent onto a curved surface. See
+`HUD_WARP_K`, which is -0.22. The renderer bends them, so no drawing code knows about
+the curve. Lines are cut into segments and bent. Filled rectangles become strips of
+bent quads. Letters keep their shape, and only their positions move.
 
-**CRT scanlines** halve one row in three. Normally too expensive
-per-pixel, but it lands in the per-band rasteriser under DMA cover, and vector art
-is overwhelmingly black — so the loop walks two pixels at a time as a `uint32_t` and
-skips empty pairs in a single test, paying only for lit pixels. Halving specifically,
-because it is a shift and a mask: the per-channel scale it replaced cost ~18 ops a
-pixel and broke the DMA window once a lit backdrop reached every pixel.
+Two things stay flat. The steering ring stays flat because it must sit under your
+finger. Markers that point at objects stay flat because they must line up with those
+objects. Touch input is never bent. Only the drawing bends.
 
-**Radar** is a half-ellipse dome across the bottom: a circular plan view in steep
-perspective. Forward is the top, the flat chord is your own 3–9 line. Contacts
-behind you park just under the chord on the correct side rather than vanishing,
-because *"he is on my six"* is the most useful thing a radar can say. Bogeys only —
-asteroids are terrain.
+The screen dims one row in three by half. A per-pixel effect is normally too slow, but
+this one runs inside the band renderer, under the transfer. Vector art is mostly black. So the loop reads
+two pixels at a time as one 32-bit word, and one test skips a pair of black pixels. It
+pays only for pixels that are lit.
 
-**A rear-view patch** sits in the panel as a repeater, held down like a button. It
-rides the panel's warp rigidly rather than bending, because bending a viewport would
-bend the picture inside it.
+Halving is important. A general scale of each colour channel cost about 18 operations
+for each pixel. It also made a band too slow to fit the transfer once a bright sky
+filled the screen. A half is a shift and a mask.
+
+The radar is a half ellipse across the bottom of the screen. It shows a flat circle in
+steep perspective. Ahead is the top. Your own left-right line is the flat edge. A
+contact behind you sits just under that edge, on the correct side, instead of leaving
+the display. Where a contact is behind you is the most useful thing the radar shows.
+The radar shows fighters and missiles. It does not show asteroids, which are terrain.
+
+A rear-view window sits in the panel. Hold it like a button. It moves with the panel
+but stays flat, because a bent window would bend the picture inside it.
 
 ### The arena
 
-The fight happens inside a closed world, so there is somewhere to *be* rather than
-an empty void. Two shapes:
+Every fight is inside a closed space, so there is somewhere to be. There are two
+shapes:
 
-- **`ARENA_TORUS`** — inside the tube of a doughnut: a closed-loop tunnel. Hoops
-  around the tube and rails along it, drawn only in a window ahead of and behind
-  you, because the receding hoops are what sell it as a corridor.
-- **`ARENA_SPHERE`** — inside a big hollow sphere, with meridians and parallels.
+- `ARENA_TORUS` is the inside of a tube that closes into a loop. The game draws hoops
+  around the tube and rails along it, and only inside a window ahead of you and behind
+  you. The hoops that shrink into the distance are what make it look like a tunnel.
+- `ARENA_SPHERE` is the inside of a large hollow sphere, with lines of longitude and
+  latitude.
 
-Approach the boundary and it brightens and reddens, the annunciator beeps faster,
-and the whole frame takes a red gradient. Touch it and the run is over.
+The wall gets brighter and redder as you get close. The alarm beeps faster. The whole
+picture takes a red gradient. If you touch the wall, the run ends.
 
-### The backdrop
+### The sky
 
-Three procedural kinds — `SKY_NEBULA` (drifting fBm cloud), `SKY_GALAXY` (barred
-spiral, warm core and cooler arms), `SKY_CLUSTER` (knots of unresolved starlight).
-A venue rolls one. The menus cool their copy toward blue so the amber system text
-has something to sit against.
+There are three kinds. `SKY_NEBULA` is a drifting cloud. `SKY_GALAXY` is a barred
+spiral with a warm centre and cooler arms. `SKY_CLUSTER` is knots of faint starlight.
+Each venue uses one of the three. The menus make their copy more blue, so the amber
+text has a background that does not match it.
 
-It is a 32 KB texture sampled onto a sphere, evaluated exactly at a grid of points
-per band and interpolated between them. Sharp stars stay in the vector point
-renderer, where they are nearly free — soft goes in the texture, sharp stays vector.
+The sky is a 32 KB texture put onto a sphere. The renderer works out the exact
+position at a grid of points for each band and interpolates between them. Sharp stars
+are not in the texture. They stay in the point renderer, where they cost very little.
+Soft light goes in the texture and sharp light stays as points.
 
 ### Sound
 
-**Nothing is sampled.** Every cue is generated: a table in `vg_sfx.cpp` describing
-what each sound *is*, and a synth in `vg_synth.cpp` that renders it — square, sine
-and noise through a two-pole low pass, with an amplitude modulator and a per-layer
-delay for sequences.
+Nothing is sampled. The game makes every sound. `vg_sfx.cpp` holds a table that
+describes each sound. `vg_synth.cpp` makes it from square, sine and noise waves, a
+two-pole low pass filter, an amplitude modulator, and a delay for each layer.
 
-Not a compromise forced by flash; there is room for twenty samples. A wireframe
-dogfight scored by square waves is coherent in a way a recording would not be, the
-whole synth costs less flash than one second of PCM, and a generated cue can
-respond: the missile alert climbs with range, and a dying pilot's blip is pitched
-lower than a routine one.
+Flash size is not the reason. There is room for twenty samples. There are three better
+reasons. Square waves suit a wireframe game. The synthesizer uses less flash than one
+second of recorded audio. And a generated sound can change. The missile alarm rises
+as the missile gets closer. A dying pilot's tone is lower than a normal one.
 
-It mixes on **core 0**. Measured, mixing cost up to 4.3 ms in a busy frame and
-billed to the submit phase in front of the panel flush, delaying the whole transfer.
-Moving it was safe by construction rather than luck: `vg_synth.cpp` touches no game
-state and keeps its own RNG, because drawing from the game's stream would make audio
-a term in the simulation and take replay determinism with it.
+The mixer runs on core 0. Measured, it cost up to 4.3 ms in a busy frame. That time
+went to the submit stage, in front of the screen transfer, so it delayed the transfer.
+The move was safe for a reason and not by luck: `vg_synth.cpp` reads no game state and
+has its own random number generator. If it used the game's generator, the audio would
+change the simulation and a replay would no longer match.
 
-### Pilots talk
+### What the pilots say
 
-Seven voice archetypes, each with lines for taunting, firing, being hurt and dying --
-six a rival may be given, plus the legend's own, which is never rolled. There is only
-ever one PHANTOM, and it is either the pilot waiting in the final or it is you.
+There are seven voices. Each one has lines for a taunt, a shot, a wound and a death.
+The game can give six of them to an opponent. The seventh belongs to the last
+opponent and is never given to anybody else. There is one PHANTOM, and it is either
+the pilot in the final or it is you.
 
-A rival is assigned one at bracket time, so a pilot's personality is consistent
-across a tournament. Once you are champion some of them start saying so.
+A pilot gets a voice when the bracket is made, so that pilot sounds the same for the
+whole tournament. After you win a tournament, some opponents say so.
 
 ---
 
-## Optimisation
+## Speed
 
-This is the part of the project with the most work in it, so it gets the most space.
+This is where most of the work went, so it gets the most space.
 
-### Everything lives in view space
+### There is no world space
 
-There is no world-space camera. The ship is always at the origin looking down +Z,
-and flying rotates and translates *the universe* instead. So a view-space point's
-length **is** its distance from you, and the projection is two multiplies and a
-divide with no matrix anywhere.
+The ship is always at the origin and always looks along +Z. Flying rotates and moves
+the world instead of the ship. So the length of a point is its distance from you, and
+the projection is two multiplies and a divide. There is no matrix.
 
-### Two-stage rasteriser
+### Two stages
 
-**Submit**: the renderer projects the scene and appends screen-space primitives to a
-flat list. Each call clips against the full screen. Nothing is drawn.
+**Submit.** The renderer works out where each object is on the screen and adds it to a
+flat list. Each call clips against the whole screen. Nothing is drawn yet.
 
-**Flush**: for each of 15 horizontal bands, clear a band-sized buffer in **internal
-SRAM**, draw every primitive overlapping that band into it, and hand it to DMA.
+**Flush.** For each of the 15 bands: clear a band-sized buffer in internal RAM, draw
+every object that touches that band into it, and give the buffer to DMA.
 
-The point of the split is that the band buffer never lives in PSRAM. Line
-rasterisation is a scattered write pattern, and doing it against PSRAM thrashes the
-cache badly enough to dominate the frame. Internal SRAM buys the whole frame at
-internal-bus speed instead — and that one finding is why the memory budget below
-matters so much.
+The reason for two stages is that the band buffer is never in PSRAM. Drawing a line
+writes to scattered addresses. Against PSRAM that misses the cache often enough to use
+most of the frame. Internal RAM runs at bus speed instead. That one measurement is why
+the memory limits below matter.
 
 ### Both cores, three ways
 
-| what | how |
+| work | how it splits |
 |---|---|
-| submit | the world on core 1, the instruments on core 0, concurrently |
-| within a band | the backdrop, the scanlines and the cockpit split by row across both cores |
-| audio | the mixer lives on core 0 entirely |
+| submit | the world on core 1 and the instruments on core 0, at the same time |
+| inside a band | the sky, the dim rows and the canopy split by row across both cores |
+| audio | the mixer is on core 0 only |
 
-Submit splits into **four slices** of one primitive list, joined in index order at
-flush — so a core's slice decides where its work lands in draw order, and the join
-produces byte-for-byte the array a serial submit would have. That is what lets two
-cores build one list without the band raster knowing.
+Submit writes into four parts of one list. The flush joins them in order, so the part
+a core writes to decides where its objects land in the drawing order. The joined list
+is the same, byte for byte, as a list built by one core. This is what lets two cores
+build one list without the band renderer knowing.
 
-The cockpit's row split uses a **baked per-band balance point** from the drawing,
-because a band costs whichever half is slower: an even-looking split of uneven work
-returned 1.2 of the 1.9 ms it should have.
+The canopy splits each band at a point the baker works out from the drawing. A band
+costs as much as its slower half, so an even split of uneven work saves little.
+Measured, an even split returned 1.2 ms of the 1.9 ms it should have.
 
-### The wire is the floor
+### The transfer sets the limit
 
-460,800 bytes at 80 MHz quad-SPI is **11.52 ms**, every frame, and nothing can move
-it. The whole architecture is arranged around hiding CPU work underneath it.
+460,800 bytes at 80 MHz on four data lines takes **11.52 ms**. Every frame pays it and
+nothing can change it. The rest of the design hides CPU work inside that time.
 
-One address window is set per frame and the fifteen bands stream into it as
-memory-continue writes; re-windowing per band cost ~0.5 ms in driver overhead for a
-few bits on the wire.
+The driver sets the screen window once for each frame. The 15 bands then write into it
+with a continue command. Setting the window for each band cost about 0.5 ms in driver
+work, for a few bits of data.
 
-**A band is kept queued behind the one in flight**, so the SPI engine starts the
-next the instant the current one ends with no CPU in the path. That needs three band
-buffers: two outstanding, one to rasterise into. The effect was larger than
-predicted — two bands are still transferring when the flush loop exits, so ~1.5 ms
-of transfer now overlaps the *next* frame's input and submit, and the wire never
-idles at the frame boundary.
+The driver also keeps one band waiting behind the band that is transferring. The SPI
+hardware starts the next band as soon as the current one ends, with no CPU step
+between. This needs three band buffers: two are in use and the renderer draws into the
+third.
 
-Which is why **`blit` reads below the wire floor and that is not a fault.** Every
-byte still goes out; some of it is outside the bracket that measures it.
+The result was larger than expected. Two bands are still transferring when the flush
+loop ends, so about 1.5 ms of transfer now happens during the next frame's input and
+submit. The bus is never idle between frames.
 
-### Where the frame goes
+This is why `blit` now reads as less than 11.52 ms. It is not a fault. Every byte
+still goes out. Some of the transfer is outside the counter that measures it.
 
-Flown, not modelled:
+### Where the time goes
 
-| | frame rate |
+These are measured in flight. They are not calculated.
+
+| state | frames a second |
 |---|---|
-| attract loop | 71 |
-| a fight | 60–61 |
-| encroaching on the boundary | 57 |
+| idle loop | 71 |
+| a fight | 60 to 61 |
+| close to the wall | 57 |
 
-```
-a fight:   in 720   upd 758   sub 2851   blit 12252
-                                       = rast 10461  push 1598
-```
+    a fight:  in 720   upd 758   sub 2851   blit 12252
+                                          = rast 10461  push 1598
 
-`push` is the CPU standing idle on DMA. **The two regimes disagree, and averaging
-across them hides it completely:**
+`push` is the CPU waiting for DMA. The idle loop and a fight do not agree, and an
+average of the two hides it:
 
-```
-attract   rast  5.6 ms   push 6.8 ms   0 bands over their window
-fight     rast 10.5 ms   push 1.6 ms   3.5 bands over
-```
+| state | rast | push | bands over their limit |
+|---|---|---|---|
+| idle | 5.6 ms | 6.8 ms | 0 |
+| fight | 10.5 ms | 1.6 ms | 3.5 |
 
-Idle, there is 6.8 ms of slack and raster work is nearly free. In a fight there is
-1.6 ms and bands overrun the 768 µs each gets, so raster work costs frame time
-directly. Both are true; which applies depends on the scene.
+When idle there is 6.8 ms spare and drawing work is nearly free. In a fight there is
+1.6 ms spare and some bands take longer than the 768 us each band gets. Then drawing
+work costs frame time directly. Both rows are true. Which one applies depends on what
+is on the screen.
 
-**The pre-flush phase is serial**, so a microsecond cut from input, update or submit
-comes straight off the frame. That is where the recent wins came from.
+Input, update and submit all run before the transfer starts, one after another. A
+microsecond saved there is a microsecond off the frame. That is where the recent
+savings came from.
 
-### Three memory budgets, and only one is tight
+### Three memory limits, and one is tight
 
-| pool | free | what belongs there |
+| memory | free | what goes there |
 |---|---|---|
-| internal SRAM | ~10 KB | the primitive list, the band buffers, the backdrop texture |
-| PSRAM | 8.1 MB | anything read sequentially or once per frame |
+| internal RAM | about 10 KB | the object list, the band buffers, the sky texture |
+| PSRAM | 8.1 MB | anything read in order, or read once for each frame |
 | flash | 2.6 MB | dialogue, ship tables, models, canopy drawings |
 
-**Internal SRAM is the only pressed one and it is entirely the renderer's.** It has
-to be — those three are written and sampled in scattered patterns every frame.
+Internal RAM is the only tight one, and the renderer uses all of it. It has to: those
+three are written and read at scattered addresses every frame.
 
-Nothing content adds goes there. Dialogue and ship tables are `const` and live in
-flash; a pilot archetype is about 400 bytes. What behaviour work costs is CPU in
-`upd`, currently ~760 µs, not memory.
+Nothing you add to the content goes there. Dialogue and ship tables are `const` and
+sit in flash. One pilot voice is about 400 bytes. New ship behaviour costs CPU time in
+`upd`, which is about 760 us now. It does not cost memory.
 
-**Total free is not the number.** The backdrop needs 32 KB *contiguous*, and a third
-band buffer once left 41 KB free with a largest block of 21 — so the allocation
-failed and the nebula switched off entirely while the sum said there was room. The
-backdrop therefore claims its texture *before* the rasteriser, so the one allocation
-with a hard contiguous minimum takes it from an unfragmented heap.
+Free memory is not the number to watch. The sky texture needs 32 KB in one piece. A
+third band buffer once left 41 KB free but no piece larger than 21 KB. The request
+failed and the sky turned off, while the total said there was room. So the sky now
+takes its memory before the renderer does. The one request with a fixed minimum piece
+size gets it from a heap that is not yet broken up.
 
-### Hidden-line rendering
+### Hidden-line drawing
 
-A model's faces are filled in the background colour and its edges drawn over them,
-so a hull occludes both its own back edges and whatever is behind it, while still
-reading as vector art. Two passes, same geometry, no depth buffer.
+The game fills the faces of a model in the background colour, then draws the edges
+over them. So a hull hides its own back edges and whatever is behind it, and still
+looks like line art. Two passes, the same shapes, and no depth buffer.
 
 ### Line quality
 
-Lines are **Wu antialiased** (`VG_LINE_AA`), which cost about 6x a solid Bresenham
-pixel: twice the pixels, and unlike a plain store it must READ the destination to
-blend, so it cannot be a write-only loop. So it is paid for instruments,
-hulls and arena structure — and switched **off for the whole world layer**, because
-the HUD carries nearly everything the player needs to read while a dogfight gives
-the ship itself very little screen. An AA span costs per pixel, so its price tracks
-length, and in combat the long spans are near ship hulls.
+Lines are anti-aliased by Wu's method. See `VG_LINE_AA`. Each step lights the two
+pixels on each side of the true line, and the brightness comes from the position
+between them.
 
-### Four ways a measurement lies
+This costs about 6 times a solid pixel. There are twice as many pixels, and each one
+must be read before it is written, so the loop cannot only write.
 
-Hard-won, and the transferable part of all of this:
+So the game pays for it on the instruments, the hulls and the arena, and turns it off
+for the whole world layer. The instruments carry nearly everything the player reads. A
+ship in a dogfight is small, distant and moving, so a smooth edge on it is worth
+little. The cost of a smooth line rises with its length, and the longest lines in a
+fight are near a hull.
 
-1. **Balancing against a part instead of the whole.** Submit is the *slower* of two
-   concurrent halves, so only each half's total can decide where work goes. Timing
-   one function inside a half and treating it as the half sent 570 µs of work onto
-   the core that was already busier.
-2. **Comparing across scenes.** A before with two ships and an after with one is not
-   a before and after. Benches pin their workload; the telemetry line does not.
-3. **Averaging across regimes.** Idle and combat gate on opposite halves. Averaged,
-   the gap reads as 79 µs and "nearly balanced" — it is neither.
-4. **A bench measuring work the program does not do.** Three separate times a
-   checksum was the only thing that caught a false number, including a 25% win that
-   did not exist.
+### Four ways a measurement can be wrong
 
-Every bench here reports a checksum for exactly that reason.
+Each of these happened during this work. They are the most useful part of it.
+
+1. **A part used as the whole.** Submit is the slower of two halves that run at the
+   same time. Only the total of each half says where work should go. One function
+   inside a half was timed and used as the half. That moved 570 us onto the core that
+   was already busier.
+2. **Two different scenes compared.** A measurement with two ships and a measurement
+   with one ship are not a before and an after. Each bench fixes what it draws. The
+   telemetry line does not.
+3. **Two states averaged.** The idle loop and a fight are limited by opposite halves.
+   The average of the two gives a difference of 79 us and looks balanced. It is
+   neither.
+4. **A bench that measures work the game never does.** A checksum caught a false
+   number three times. One was a 25% saving that did not exist.
+
+Every bench here reports a checksum for this reason.
 
 ---
 
 ## Tools
 
-Python, in `tools/`, talking to the board over the same USB serial the telemetry
-uses. Full documentation in [tools/README.md](tools/README.md).
+The tools are Python and live in `tools/`. They use the same USB serial port as the
+telemetry. See [tools/README.md](tools/README.md).
 
-| | |
+| tool | what it does |
 |---|---|
-| `phantom_recorder.py` | record and render footage, in a window |
-| `phantom_session.py` | the same from the command line |
-| `canopy_set.py` | bake `design/canopy/` and generate the wiring |
-| `canopy.ps1` | bake, build, flash and measure in one command |
+| `phantom_recorder.py` | record and render video, in a window |
+| `phantom_session.py` | the same, from the command line |
+| `canopy_set.py` | bake `design/canopy/` and write the table the game reads |
+| `canopy.ps1` | bake, build, write to the board, and measure |
 | `canopy_cost.py` | ask the board what a canopy costs to draw |
 
-**Recording is two steps, because of the link.** One frame is 460,800 bytes and the
-link carries 0.74 MB/s, so the device cannot send 60 frames a second — the limit is
-about 23. But a *session* is one frame time and one input structure per frame, under
-100 bytes. So a record saves only those and the game keeps full speed; a render then
-replays the session on the device and reads the pixels at the link's pace. The video
-is a true 60 fps because the game made the frames 1/60 s apart.
+Recording has two steps because of the serial port. One frame is 460,800 bytes and the
+port carries 0.74 MB/s, so the board cannot send 60 frames a second. The limit is about
+23.
 
-That replay is also the regression harness: the same session renders frame-for-frame
-identically, and band checksums say when a refactor changed a pixel it should not
-have.
+But a session is one frame time and one input structure for each frame, which is less
+than 100 bytes. So the record step saves only those and the game keeps full speed. The
+render step then plays the session on the board and reads the pixels at the speed of
+the port. The video is 60 frames a second because the game made the frames 1/60 s
+apart.
 
-Single-byte serial commands run the benches — what the cockpit costs, what the
-backdrop costs, the glyph nest and the line walk, each old against new over an
-identical workload with a checksum to keep it honest.
+The same replay is the test for changes. One session renders the same frames every
+time. A checksum for each band then shows when a change altered a pixel it must
+not alter.
+
+Single bytes sent to the board run the benches. They measure what the canopy costs,
+what the sky costs, the letter renderer and the line renderer. Each bench runs the old
+code and the new code over the same work and compares a checksum.
 
 ---
 
-## Tuning
+## Where the numbers are
 
-Everything is in `src/vg/cfg_*.h`, split by concern so changing missile balance does
-not mean scrolling past the palette:
+The settings are in `src/vg/cfg_*.h`, in separate files by subject. So a change to
+missile balance does not mean reading past the colours.
 
-| | |
+| file | contents |
 |---|---|
-| `cfg_display.h` | screen, orientation, banding, projection, scanlines, HUD warp |
-| `cfg_palette.h` | every colour, and the byte-swap convention behind them |
-| `cfg_flight.h` | speed, steering, agility, hull integrity, damage |
+| `cfg_display.h` | screen, orientation, bands, projection, dim rows, instrument curve |
+| `cfg_palette.h` | every colour, and the byte order they use |
+| `cfg_flight.h` | speed, steering, turn rate, hull strength, damage |
 | `cfg_combat.h` | missiles, player weapons, enemy behaviour |
-| `cfg_world.h` | arena, asteroids, stars, motes, spawning and culling |
-| `cfg_hud.h` | HUD layout, radar geometry, touch zones, the cockpit sequence |
-| `cfg_econ.h` | credit purses, repair pricing, the bank ceiling |
+| `cfg_world.h` | arena, asteroids, stars, motes, spawning, culling |
+| `cfg_hud.h` | instrument layout, radar shape, touch areas, the canopy sequence |
+| `cfg_econ.h` | purses, repair prices, the credit limit |
 
-`vg_config.h` is an umbrella that includes them all.
+`vg_config.h` includes all of them.
 
 ---
 
 ## Not done yet
 
-- **More arena shapes.** `vg_arena.cpp` needs a `surf`, a `nearest`, an `inward` and
-  a `patch_extent` per shape; everything else is generic. A box interior is the
-  obvious next one, and the first non-parametric shape, so it would want a per-face
-  treatment rather than a (u,v) grid.
-- **Flat shading** instead of hidden-line: one colour per face from a light dot
-  product. Same cost, different look — swap the background fill in pass 1 for a lit
-  colour and drop pass 2.
-- **Tearing.** We render faster than the panel refreshes and do not sync to TE. If
-  tearing shows, either enable it and wait, or cap the frame rate.
-- **A gun** for close-in work, once the missile duel feels right.
-- **Canopies for three hulls.** The CHARIOT has one; AEGIS, LANCE and BALLISTA fly
-  without a frame until somebody draws them.
+- **More arena shapes.** Each shape needs a `surf`, a `nearest`, an `inward` and a
+  `patch_extent` function. The rest of `vg_arena.cpp` works for any shape. The inside
+  of a box is the next one to try. It is also the first shape that is not made from
+  a formula. So it needs one treatment for each face, not a (u,v) grid.
+- **Flat shading** in place of hidden-line drawing. One colour for each face, from the
+  angle to a light. It costs the same and looks different. Fill the faces with a lit
+  colour in the first pass and remove the second pass.
+- **Screen tearing.** The game draws faster than the screen refreshes and does not wait
+  for the tear signal. If tearing shows, wait for the signal or limit the frame rate.
+- **A gun** for close range, after the missile duel is right.
+- **Canopies for three ships.** The CHARIOT has one. AEGIS, LANCE and BALLISTA fly
+  without one until somebody draws them.
 
-## License
+## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
-The one dependency, [SensorLib](https://github.com/lewisxhe/SensorLib), is MIT as
-well. Nothing else is vendored: the panel driver, rasteriser, font, synth and
-procedural backdrop are all written from scratch in this repo.
+The one library, [SensorLib](https://github.com/lewisxhe/SensorLib), is also MIT.
+Nothing else is copied in. The screen driver, the renderer, the font, the synthesizer
+and the sky are written in this repository.
