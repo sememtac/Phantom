@@ -89,10 +89,38 @@ Write-Host "-- building" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 if ($NoFlash) { Write-Host "`nbuilt. device untouched." -ForegroundColor Green; return }
 
+# IS THE PORT EVEN THERE? Asked before the flash, because the answer changes the advice
+# completely and the flash cannot tell the two cases apart.
+#
+# A second board arrives on its own port number, and plugging one in while the other is out
+# does not reuse the old number -- COM6 became COM7 that way. esptool then prints the port
+# it was given and fails, and the message below used to blame another program for holding a
+# port that was not there at all. That sent the reader to look for the process holding it.
+#
+# Naming the ports that ARE present is the whole value here: the next step is almost always
+# to pass one of them to -Port.
+$present = [System.IO.Ports.SerialPort]::GetPortNames()
+if ($present -notcontains $Port) {
+    $seen = if ($present) { ($present | Sort-Object) -join ", " } else { "none at all" }
+    # The parentheses around the concatenation are load-bearing: -f binds to the string
+    # immediately left of it, so without them it formats only "or plug the board in.",
+    # which has no placeholders, and {0} and {1} reach the reader verbatim.
+    throw (("{0} is not present. Ports found: {1}. Pass one with -Port, " +
+            "or plug the board in.") -f $Port, $seen)
+}
+
 Write-Host ""
 Write-Host "-- flashing $Port  (do not interrupt this)" -ForegroundColor Yellow
 & $pio run -t upload --upload-port $Port | Select-Object -Last 3
-if ($LASTEXITCODE -ne 0) { throw "flash failed -- is another program holding $Port?" }
+# ${Port} AND NOT $Port. PowerShell allows ? inside a bare variable name -- that is why $?
+# works -- so "$Port?" reads as a variable called Port?, which nothing ever set. The message
+# lost the port name silently and came out as "is another program holding" with a trailing
+# space, which is the one detail the reader needed.
+if ($LASTEXITCODE -ne 0) {
+    throw ("flash failed on ${Port}. Another program may be holding it -- the Clawdmeter " +
+           "tray daemon is the usual one. Hold BOOT while plugging it in if esptool " +
+           "cannot reach the bootloader.")
+}
 
 Write-Host ""
 Write-Host "-- asking the board what it costs" -ForegroundColor Cyan
