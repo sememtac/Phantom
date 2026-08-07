@@ -34,10 +34,15 @@ import time
 
 import serial
 
+from phantom_link import open_quiet
+
 port = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 30.0
 
-ser = serial.Serial(port, 115200, timeout=0.5)
+# open_quiet, NOT serial.Serial: a plain open restarts the board, so a tool for
+# watching what the board says would destroy whatever it was doing. See
+# phantom_link.open_quiet.
+ser = open_quiet(port, timeout=0.5)
 end = time.time() + secs
 rows, subs, dist, auds, raw = [], [], [], [], []
 while time.time() < end:

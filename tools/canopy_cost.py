@@ -21,6 +21,8 @@ import time
 
 import serial
 
+from phantom_link import open_quiet
+
 REPEATS = 5
 
 # The device prints one line for each bench. `blocks` is the honest test for a real
@@ -31,7 +33,10 @@ LINE = re.compile(r"^canopy:\s+(\d+)\s+us rigid.*?(\d+)\s+blocks"
 
 
 def main(port):
-    ser = serial.Serial(port, 115200, timeout=0.5)
+    # open_quiet, NOT serial.Serial: the plain constructor restarts the board on
+    # connect, so asking what the canopy costs would first throw the player out of
+    # the match they were measuring. See phantom_link.open_quiet.
+    ser = open_quiet(port, timeout=0.5)
     time.sleep(2.0)                    # the board prints telemetry; let it settle
     ser.reset_input_buffer()
 

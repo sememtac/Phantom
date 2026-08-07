@@ -71,6 +71,35 @@ def list_ports():
     return out
 
 
+def open_quiet(port, baud=115200, timeout=0.5):
+    """Open a port WITHOUT restarting the board.
+
+    serial.Serial(port, ...) opens the port inside the constructor, and the open
+    asserts DTR and RTS. The ESP32-S3 reads that as the request to restart, so the
+    board reboots the moment a program connects to it.
+
+    That makes the board impossible to watch while somebody plays: every attempt to
+    read the telemetry during a match threw the player back to the title screen and
+    returned the numbers for the attract loop. Measured: a default open reports 50
+    frames in its first window, which is a window cut short by a boot, and this
+    function reports 132, which is a whole one.
+
+    PhantomLink and reset_board have always done this correctly. canopy_cost.py and
+    listen.py opened the port themselves and did not, so use this instead of
+    serial.Serial for any tool that only wants to look.
+
+    Set the line states first, then open. The order is the whole point.
+    """
+    s = serial.Serial()
+    s.port = port
+    s.baudrate = baud
+    s.timeout = timeout
+    s.dtr = False
+    s.rts = False
+    s.open()
+    return s
+
+
 class Desync(Exception):
     pass
 
