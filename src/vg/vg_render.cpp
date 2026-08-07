@@ -220,6 +220,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // than reading this.
     vg_sky_set_rear(rear_view);
 
+    // And the cockpit is not drawn while looking aft. The canopy is the front of the ship;
+    // over a rear view it would claim you are facing the other way. The intro's world gate
+    // still runs -- see vg_canopy_rear.
+    vg_canopy_rear(rear_view);
+
     // How red the whole picture goes. Decided here because this is the layer that
     // knows both the wall distance and the rasteriser; the rasteriser itself has
     // no idea a wall exists. Only while flying: a menu has no boundary to hit,

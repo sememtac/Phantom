@@ -1233,6 +1233,21 @@ static bool     s_can_ready = false;
 // dereference a pointer on -- and a missing cockpit should be a missing cockpit, not a crash.
 static const VgCanopy* s_can = nullptr;
 
+// LOOKING AFT, so the cockpit must not be drawn.
+//
+// The canopy is the front of the ship. Draw it over a view out of the back and the picture
+// says two things at once: the frame claims you are looking forward while everything inside
+// it is behind you. From a playtest, and it is a continuity fault rather than a cosmetic one.
+//
+// It suppresses the FRAME ONLY, not the intro's world gate. Those share one primitive, and
+// the gate is what holds the world black region by region while the cockpit comes online --
+// so switching the whole primitive off in rear view would show the entire world at full
+// brightness in the middle of the sequence. That is the same trap that lifting this
+// primitive out of vg_draw_hud was fixing.
+static bool s_can_rear = false;
+
+void vg_canopy_rear(bool on) { s_can_rear = on; }
+
 const VgCanopy* vg_canopy_current(void) { return s_can; }
 
 static void canopy_lut(void) {
@@ -1936,6 +1951,9 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // this is the one point in the band where blacking the view hides the world without
         // touching the panel. Rigid, so it uses the raw column and lands where the frame does.
         if (INTRO) canopy_gate(row, SCR_H - 1 - py, py);
+        // The gate ran; the frame does not. See s_can_rear -- in rear view the world still
+        // has to arrive region by region, and the cockpit still has to be absent.
+        if (INTRO && s_can_rear) continue;
 
         // Three bytes of header, then either one level for the whole block or a level
         // per pixel. Nine bits each of start and length, so the odd bit of both rides
@@ -2188,6 +2206,10 @@ bool vg_canopy_intro_update(float dt) {
 // state -- so there is no warped intro path to build.
 static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can) return;                    // no drawing selected: no cockpit, and no crash
+    // Aft with no sequence running: there is no frame to draw and no world to hold back, so
+    // the whole pass is skipped. Checked here rather than at the submit site, because the
+    // primitive still has to exist for the intro's gate to run.
+    if (s_can_rear && !s_intro_on) return;
     if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
     else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
     else                canopy_rows_t<false, false>(band, by0, r0, r1);

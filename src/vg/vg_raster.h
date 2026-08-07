@@ -139,6 +139,16 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // while the sequence runs, because the world gate reads the unwarped column and a flexing frame
 // would put the black somewhere other than where the panel ends, then ramps to 1 so the cockpit
 // takes up its resting bulge instead of snapping into it.
+// LOOKING AFT. Set once a frame, before the flush.
+//
+// Suppresses the cockpit frame and nothing else. The canopy is the front of the ship, so
+// drawing it over a view out of the back makes the picture contradict itself.
+//
+// The intro's world gate is NOT suppressed. It shares this primitive, and it is what holds
+// the world black while the cockpit arrives -- so turning the primitive off would show the
+// whole world at once, mid-sequence.
+void  vg_canopy_rear(bool on);
+
 void  vg_canopy_intro_reset(void);
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);
