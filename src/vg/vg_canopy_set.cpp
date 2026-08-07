@@ -1,51 +1,56 @@
 #include "vg_canopy_set.h"
 
 // ===========================================================================
-// THE COCKPITS, AND THE ONLY PLACE THE DRAWINGS ARE INCLUDED
+// WHICH COCKPIT A HULL FLIES, and the table is GENERATED
 //
-// That last part is not a style preference. A generated header defines its tables
-// as `static`, so every translation unit that includes one gets its OWN COPY in
-// flash -- and the first version of this table lived in a header, which put a
-// second 36 KB copy of the reference drawing in the binary. Harmless at one
-// drawing and multiplied by every hull the artist adds, which is precisely when it
-// would have been noticed as "canopies are expensive" rather than as a mistake.
+// A drawing is named after the hull that flies it -- design/canopy/chariot.png is
+// the CHARIOT's cockpit -- and tools/canopy_set.py bakes the directory and writes
+// the rows. So adding a canopy is dropping a PNG in and running one command. No C++
+// is edited, and a drawing cannot be wired to the wrong hull, because the file name
+// IS the wiring.
 //
-// So the data has one owner. The rasteriser never includes a drawing; it is handed
-// one through vg_canopy_use and holds a pointer.
+// It used to be a hand-edited table beside a hand-chosen C identifier and a
+// hand-chosen output path: three things to keep consistent, nothing checking that
+// they agreed, and the one step in the pipeline that was not "drop a file in".
 //
-// THIS TABLE IS THE WHOLE INTERFACE FOR THE ARTIST PASS. Adding a cockpit is
-// baking a drawing and editing one row; nothing else in the firmware is touched.
-//
-//   1. draw it -- the authoring rules are in tools/README.md
-//   2. python tools/canopy_bake.py design/Chariot.png src/vg/vg_canopy_chariot.h \
-//          --name CANOPY_CHARIOT
-//   3. #include it below
-//   4. point that hull's row at it
-//
-// EVERY HULL FLIES THE SAME DRAWING TODAY, which is a statement of where the work
-// is rather than a placeholder to tidy. The reference cockpit is the one the whole
-// feature was tuned against, so it is the right thing to fall back to: a cockpit
-// that is not this hull's is something an artist can see and judge, where an empty
-// frame would only look broken.
+// A HULL WITH NO DRAWING FLIES WITH NO COCKPIT. There is no default texture and no
+// substitute, which is the author's call and the right one -- the reference drawing
+// belongs to the CHARIOT, and a shared placeholder would put a cockpit that is not
+// this hull's in front of the player and call it finished. nullptr is a supported
+// selection: see vg_canopy_use, and the note in vg_canopy_intro_begin about the boot
+// chain still having to run when there is no sequence to play.
 //
 // WORTH KNOWING BEFORE JUDGING A NEW DRAWING. The four hulls already differ in how
 // the frame MOVES without differing in what it looks like -- CANOPY_LAG_HULL rides
-// ShipSpec::shake, so a CHARIOT's cockpit is visibly looser than a BALLISTA's on
-// the same art. Some of what is felt is the airframe, not the drawing.
+// ShipSpec::shake, so a CHARIOT's cockpit is visibly looser than a BALLISTA's on the
+// same art. Some of what is felt is the airframe, not the drawing.
+//
+// THIS FILE IS THE ONLY PLACE THE DRAWINGS ARE INCLUDED. A generated header defines
+// its tables as `static`, so every translation unit that includes one gets its own
+// copy in flash -- a table in a header once put a second 36 KB copy of a drawing in
+// the binary, and that would multiply by every hull the artist adds.
 // ===========================================================================
-#include "vg_canopy_data.h"
+#include "generated/canopy_set.h"
 
 static const VgCanopy* const SET[SHIP_CLASSES] = {
-    /* AEGIS    */ &CANOPY,
-    /* LANCE    */ &CANOPY,
-    /* CHARIOT  */ &CANOPY,
-    /* BALLISTA */ &CANOPY,
+    VG_CANOPY_SET_ROWS
 };
 
-// Clamped rather than trusted. ShipClass is a uint8_t restored from a save file,
-// and one written by a build with more hulls in it would index off the end.
+static_assert(sizeof(SET) / sizeof(SET[0]) == SHIP_CLASSES,
+              "the generated set has a different number of hulls than ShipClass -- "
+              "re-run tools/canopy_set.py");
+
+// Clamped rather than trusted. ShipClass is a uint8_t restored from a save file, and
+// one written by a build with more hulls in it would index off the end.
+//
+// MAY RETURN NULL, and callers must not assume otherwise. That is the point: a hull
+// with no drawing has no canopy rather than borrowing another hull's.
 const VgCanopy* vg_canopy_for(ShipClass c) {
     return SET[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
 }
 
-const VgCanopy* vg_canopy_default(void) { return &CANOPY; }
+// WHAT TO SELECT BEFORE A SHIP HAS BEEN CHOSEN. Deliberately nothing: at boot there
+// is no cockpit to draw and no hull to draw one for, and the rasteriser tolerates a
+// null drawing throughout. vg_game_init reached for a default here, which only ever
+// existed because the set had one.
+const VgCanopy* vg_canopy_default(void) { return nullptr; }

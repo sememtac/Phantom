@@ -1,26 +1,28 @@
 # Draw, build, fly. One command for the canopy loop.
 #
-#   .\tools\canopy.ps1                 bake design\Test.png, build, flash
+#   .\tools\canopy.ps1                 bake what changed, build, flash
 #   .\tools\canopy.ps1 -Bake           bake only, no build
 #   .\tools\canopy.ps1 -NoFlash        bake and build, do not touch the device
-#   .\tools\canopy.ps1 -Png other.png  use another drawing
 #   .\tools\canopy.ps1 -Port COM7      a different port
 #
-# To add a cockpit for one ship, give the drawing its own name and its own header:
+# TO ADD A COCKPIT FOR A SHIP, put the drawing in design\canopy\ and name it after
+# the ship:
 #
-#   .\tools\canopy.ps1 -Png design\Chariot.png -Name CANOPY_CHARIOT `
-#       -Out src\vg\vg_canopy_chariot.h
+#   design\canopy\chariot.png
 #
-# Then include that header in src\vg\vg_canopy_set.cpp and point the ship's row at
-# the new object. The firmware holds every cockpit at once, so two headers must not
-# use the same name.
+# Then run this with no arguments. The file name is the wiring: there is nothing to
+# edit, no name to choose and no header path to keep in step. A ship with no drawing
+# flies with no cockpit frame, which the game supports -- there is no default texture.
+#
+# The ship names are aegis, lance, chariot and ballista.
 #
 # Run it from the repository root.
 #
-# The drawing is a grey field with the frame on it. Mid grey means leave the pixel
-# alone, brighter adds light, darker takes it away. Left-right symmetry is detected,
-# not required: a symmetric drawing is stored as a half, and a lopsided one is stored
-# whole and costs a little more flash.
+# The drawing is SWIZZLED: red carries the frame and green carries the activation
+# regions. In red, mid grey means leave the pixel alone, brighter adds light and darker
+# takes it away. Left-right symmetry is detected, not required. Do not send a grey
+# image -- that puts the same values in both channels, so the frame becomes its own
+# mask. Full rules in tools\README.md.
 #
 # WHAT TO WATCH: the baker prints what the drawing costs the frame, from a cost model
 # fitted to the device. After flashing, this asks the board itself:
@@ -34,10 +36,7 @@
 # The full authoring rules, including the green channel, are in tools/README.md.
 
 param(
-    [string]$Png  = "design\Test.png",
     [string]$Port = "COM6",
-    [string]$Name = "CANOPY",
-    [string]$Out  = "src\vg\vg_canopy_data.h",
     [switch]$Bake,
     [switch]$NoFlash
 )
@@ -51,11 +50,11 @@ if (-not (Test-Path $pio)) { throw "no PlatformIO at $pio" }
 # The uploader hangs forever without this. Do not leave it out.
 $env:PYTHONIOENCODING = "utf-8"
 
-if (-not (Test-Path $Png)) { throw "no drawing at $Png" }
+if (-not (Test-Path "design\canopy")) { throw "no drawings folder at design\canopy" }
 
 Write-Host ""
-Write-Host "-- baking $Png as $Name -> $Out" -ForegroundColor Cyan
-python tools\canopy_bake.py $Png $Out --name=$Name
+Write-Host "-- baking design\canopy" -ForegroundColor Cyan
+python tools\canopy_set.py
 if ($LASTEXITCODE -ne 0) { throw "bake failed" }
 if ($Bake) { Write-Host "`nbaked. build skipped." -ForegroundColor Green; exit 0 }
 

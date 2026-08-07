@@ -1526,8 +1526,19 @@ static bool    s_warp_on = false;
 // background levels turn the same stored grey into different amounts of light, so a stale
 // table draws the new one at the wrong brightness. The per-column costs and the warp maps are
 // built from where the drawing's work falls, which is the whole point of them.
+// NULL IS A HULL WITH NO COCKPIT, and that is a supported state rather than a mistake.
+//
+// This used to ignore null and keep whatever was selected last, on the reasoning that a wrong
+// cockpit is something an artist can see where an empty frame just looks broken. That was
+// written when a default drawing was assumed. There is no default: a canopy is authored per
+// hull, the reference drawing belongs to the CHARIOT, and the other three fly without one
+// until somebody draws them.
+//
+// Everything downstream already tolerates it -- canopy_rows, the warp, the bench and the
+// PRIM_CANOPY case all return early on a null drawing -- so what was missing was only the
+// ability to SAY none.
 void vg_canopy_use(const VgCanopy* c) {
-    if (!c || c == s_can) return;
+    if (c == s_can) return;
     s_can           = c;
     s_can_ready     = false;
     s_colcost_ready = false;
@@ -2009,7 +2020,24 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
 // sorts the green values it found and stores each block's position in that order, so zone 0 is
 // simply first and this needs no table of its own.
 void vg_canopy_intro_begin(void) {
-    if (!s_can) return;
+    // NO COCKPIT, NO SEQUENCE -- BUT THE CHAIN STILL HAS TO RUN.
+    //
+    // The sequence is the cockpit arriving a region at a time, and with no drawing there are no
+    // regions and no zone map to hold the world black with. So it does not play.
+    //
+    // The cue is latched anyway, and that is the part that matters: the instruments hang off it
+    // -- draw_instruments is vg.hud_cued -- so returning early here left a hull with no canopy
+    // showing no cockpit AND no instruments, for ever. The chain degrades to what the game did
+    // before there were canopies: the panel catches, then the player is ready, then the radio.
+    if (!s_can) {
+        s_intro_on = false;
+        s_icued    = true;
+        s_settle_t = -1.0f;
+        for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
+        s_lag_px = s_lag_py = 0;
+        s_lag_sh = 0.0f;
+        return;
+    }
     s_intro_on = true;
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
@@ -2081,6 +2109,7 @@ void vg_canopy_intro_reset(void) {
 // somewhere other than where the panel ends. The ramp afterwards exists because the resting
 // warp is full bulge -- releasing straight into it would pop.
 float vg_canopy_intro_flex(void) {
+    if (!s_can)     return 1.0f;    // nothing to hold flat, and nothing to settle
     if (s_intro_on) return 0.0f;
     if (s_settle_t < 0.0f) return 1.0f;
     float a = s_settle_t / CANOPY_INTRO_SETTLE;

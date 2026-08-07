@@ -347,7 +347,11 @@ def bake(src, out, name="CANOPY"):
             fh.write(f"//\n// ASYMMETRIC ({bad} pixels differ, worst {worst}), so every"
                      " column is stored.\n")
         fh.write("#pragma once\n#include <stdint.h>\n")
-        fh.write('#include "vg_canopy.h"\n\n')
+        # ONE DIRECTORY UP, because a baked header lives in src/vg/generated/ and the
+        # struct it describes is hand-written code in src/vg/. Kept as an include rather
+        # than left to the set header that pulls this in first: a header that cannot be
+        # compiled on its own is a trap for whoever includes it second.
+        fh.write('#include "../vg_canopy.h"\n\n')
         fh.write("// Where each band's WORK balances, so the two cores finish together.\n")
         fh.write(f"static const uint8_t {name}_SPLIT[{len(splits)}] = {{\n    "
                  + ",".join(str(v) for v in splits) + ",\n};\n\n")
