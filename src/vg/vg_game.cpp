@@ -860,7 +860,7 @@ void vg_game_update(float dt, const VgInput* in) {
     VgInput gated;
     if (vg.tv.phase != TV_NONE) {
         gated = *in;
-        gated.fire_edge = gated.alt_edge = gated.tap_edge = gated.menu_edge = false;
+        gated.fire_edge = gated.alt_edge = gated.menu_edge = false;
         in = &gated;
     }
 

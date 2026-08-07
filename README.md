@@ -77,14 +77,21 @@ See **Speed** below.
 |---|---|
 | left edge strip | throttle. It moves to your thumb. |
 | anywhere to the right | steering. Touch to set an origin. Hold away from the origin to turn. Lift to centre. |
-| short tap | fire a missile at the locked target |
-| second contact | also fires, so the steering finger can stay down |
-| hold the **+** key | the steering swipe rolls the ship instead of turning it |
+| **BOOT** button | fire one missile at the locked target |
+| hold the **+/-** key | the steering swipe rolls the ship instead of turning it |
 | hold the rear-view window | look behind. This changes the view only, not the ship. |
 | **PWR** | pause, and the menus |
 
 Steering points the nose where your finger goes. Move the finger up and right and the
 ship aims up and right. To reverse this, change `STEER_PITCH_SIGN` in `cfg_flight.h`.
+
+**The screen does not fire.** A missile goes only when you press the BOOT button. The
+game fires on the press, not while you hold the button, so one press sends one missile.
+If it fired while held, the rack would be empty in three seconds. The lock takes time to
+get, so a shot has to be a decision.
+
+The **+/-** key does two things. In flight, hold it and the steering swipe rolls the ship.
+In a menu it is a menu key. The game decides which, not the input code.
 
 The steering is a screen joystick, not tilt. Tilt was built first and then removed:
 you hold the board at whatever angle is comfortable, and the code cannot know that
@@ -234,14 +241,20 @@ but stays flat, because a bent window would bend the picture inside it.
 
 ### The arena
 
-Every fight is inside a closed space, so there is somewhere to be. There are two
-shapes:
+Every fight is inside a closed space, so there is somewhere to be. The code has two
+shapes. **The game uses only the first one.**
 
-- `ARENA_TORUS` is the inside of a tube that closes into a loop. The game draws hoops
-  around the tube and rails along it, and only inside a window ahead of you and behind
-  you. The hoops that shrink into the distance are what make it look like a tunnel.
+- `ARENA_TORUS` is the inside of a tube that closes into a loop. Every fight uses it.
+  The game draws hoops around the tube and rails along it, and only inside a window
+  ahead of you and behind you. The hoops that shrink into the distance are what make it
+  look like a tunnel.
 - `ARENA_SPHERE` is the inside of a large hollow sphere, with lines of longitude and
-  latitude.
+  latitude. **It works, and nothing selects it.** Every call to `vg_arena_init` asks for
+  the torus. A tunnel gives the fight more depth and more motion, because a sphere puts
+  every wall at the same distance.
+
+The sphere is kept for a reason. It is the second shape, so it shows that the arena code
+is not written for one shape only. A new shape must work for both.
 
 The wall gets brighter and redder as you get close. The alarm beeps faster. The whole
 picture takes a red gradient. If you touch the wall, the run ends.

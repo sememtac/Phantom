@@ -37,7 +37,10 @@ struct VgInput {
     // about the ship, only which way the camera points.
     bool  rear_held;
 
-    bool  tap_edge;     // first frame of any new steering-side contact
+    // tap_edge WAS HERE: the first frame of any new steering-side contact. It fired a
+    // missile once. Firing is the BOOT button now, nothing read the field, and dead
+    // input state that used to launch a weapon is worth removing rather than leaving
+    // for somebody to reconnect by accident.
     bool  any_touch;
 
     // Menu pointer. Menus want ANY contact anywhere -- including the throttle

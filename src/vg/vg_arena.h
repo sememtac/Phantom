@@ -17,8 +17,16 @@
 // and an orthonormal basis that ride the same per-frame world transform as
 // ships and asteroids.
 
+// ARENA_SPHERE IS BUILT AND NOT USED. Every vg_arena_init call in the game passes
+// ARENA_TORUS. The sphere has its surface, nearest-point, inward and patch-extent
+// functions and its radius, and it works -- it is simply not the arena the game is
+// played in, because a tunnel gives the fight depth and motion that the inside of a
+// sphere does not.
+//
+// Kept on purpose, and worth keeping: it is the second shape, so it is what proves the
+// arena code is not secretly torus-only. Anything added here should still satisfy both.
 enum ArenaKind : uint8_t {
-    ARENA_SPHERE = 0,   // inside a big hollow sphere
+    ARENA_SPHERE = 0,   // inside a big hollow sphere -- implemented, never selected
     ARENA_TORUS,        // inside the tube of a doughnut: a closed-loop tunnel
     ARENA_KINDS
 };

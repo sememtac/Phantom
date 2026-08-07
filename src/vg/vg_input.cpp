@@ -24,7 +24,6 @@ static float s_steer_x  = 0, s_steer_y  = 0;   // current position
 static float s_steer_px = 0, s_steer_py = 0;   // previous position (trackball)
 static float s_steer_age = 0;                  // seconds held
 static float s_yaw = 0, s_pitch = 0;           // smoothed deflection
-static bool  s_prev_steer_contact = false;
 static bool  s_prev_fire_btn      = false;
 static bool  s_prev_alt_btn       = false;
 static bool  s_prev_touch         = false;
@@ -39,7 +38,6 @@ void vg_input_init(void) {
     s_throttle = 0.55f;
     s_thr_active = false;
     s_steer_active = false;
-    s_prev_steer_contact = false;
     s_yaw = s_pitch = 0;
     s_have_sample = false;
 }
@@ -435,7 +433,6 @@ void vg_input_update(float dt, VgInput* out) {
     s_yaw   += (target_yaw   - s_yaw)   * k;
     s_pitch += (target_pitch - s_pitch) * k;
 
-    bool steer_contact = (nother > 0);
 
     out->pitch     = s_pitch;
     out->yaw       = s_yaw;
@@ -498,7 +495,6 @@ void vg_input_update(float dt, VgInput* out) {
         }
     }
 
-    out->tap_edge  = steer_contact && !s_prev_steer_contact;
     out->any_touch = (n > 0);
 
     // ---- menu pointer ----
@@ -530,5 +526,4 @@ void vg_input_update(float dt, VgInput* out) {
     out->raw_ay = s_ay;
     out->raw_az = s_az;
 
-    s_prev_steer_contact = steer_contact;
 }

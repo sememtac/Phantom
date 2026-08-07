@@ -338,7 +338,7 @@ void loop(void) {
     for (int s = 0; s < steps; s++) {
         vg_game_update(dt, &sub);
         if (s == 0) {
-            sub.fire_edge = sub.alt_edge = sub.tap_edge = false;
+            sub.fire_edge = sub.alt_edge = false;
             sub.menu_edge = sub.pwr_edge = false;
         }
     }

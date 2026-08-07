@@ -61,8 +61,16 @@
 // The other one. Menus only -- currently cycles the ship class on the title card.
 #define ALT_BUTTON_MASK      0x02
 
-// --- gestures --------------------------------------------------------------
-// A contact that lifts quickly without travelling counts as a tap, and fires.
+// A GESTURE SECTION USED TO BE HERE, and what it said stopped being true.
+//
+// It read "a contact that lifts quickly without travelling counts as a tap, and fires".
+// Firing moved to the BOOT button, and the tap path went with it -- vg_player_fire is
+// reached from in->fire_edge and from nowhere else. The section had no constants left
+// either: the one tap threshold that survives is MENU_TAP_SLOP, and that belongs to the
+// menus and lives in vg_screens.h.
+//
+// Left as a note rather than deleted, because the claim outlived the code by long enough
+// to reach the README, and somebody reading only the headers would have believed it.
 
 // --- caution annunciators --------------------------------------------------
 // Both alerts flash the same way, so the cadence is defined once, here, rather
