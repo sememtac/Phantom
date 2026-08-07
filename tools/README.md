@@ -485,6 +485,39 @@ You need `ffmpeg` on the PATH to write mp4 files. Without `ffmpeg`, the tools
 write a sequence of PPM files, and another program can convert them later. The
 `.exe` file contains all three.
 
+## Windows blocks the PowerShell scripts at first
+
+`canopy.ps1` fails the first time you run it on a new machine:
+
+    .\canopy.ps1 : File ...\canopy.ps1 cannot be loaded because running scripts
+    is disabled on this system.
+
+Windows does not run PowerShell scripts by default. The script is correct. Run this
+command one time to allow your own scripts:
+
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+You do not need administrator rights. `RemoteSigned` runs the scripts you wrote and
+still blocks a downloaded script that has no signature. The setting stays after you
+close the window.
+
+To run the script one time and change no setting:
+
+    powershell -ExecutionPolicy Bypass -File .\canopy.ps1
+
+If your company sets this policy for you, `Get-ExecutionPolicy -List` shows
+`MachinePolicy` or `UserPolicy`. The command above cannot change those two. Use the
+`-ExecutionPolicy Bypass` form instead.
+
+Also give the script a path. PowerShell does not run a script from the current
+directory on the name alone:
+
+    .\tools\canopy.ps1        from the top of the repository
+    .\canopy.ps1              from the tools folder
+
+`canopy.ps1` with no `.\` fails with `CommandNotFoundException`. The script itself
+runs from any directory: it finds the repository from its own location.
+
 ## Sound
 
 The video contains the sound. The device sends the samples inside each frame,
