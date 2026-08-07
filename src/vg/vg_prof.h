@@ -141,6 +141,29 @@ extern uint32_t g_sub_a, g_sub_b;
 // came out the largest single item at 183 us, and the flight model it is named for is a
 // dozen scalar lerps and one 3x3 -- so the number could not have been the model, and a
 // span that big with the wrong name on it is worse than no span at all.
+//
+// Measured in a fight, of 753 us:
+//
+//     field 113   arena 92   ai 84    vfx 74   oth 74   enemy 68
+//     sky 62      pre 50     ship 41  cbt 37   trail 36  ord 21
+//
+// THE MODEL IS 41 US. The other 142 were the arena and the backdrop, exactly as the size
+// of the number said they had to be.
+//
+// AND THE ARENA IS THE BIGGER OF THE TWO IN FLIGHT, which is the reverse of what the menu
+// showed. On the title screen it reads arena 25, sky 58; in a match it is arena 92, sky 62.
+// The backdrop barely moves -- it is a fixed rotation of a fixed point set, so it should
+// not -- while the arena costs nearly four times more once the ship is really travelling
+// through it.
+//
+// So the menu did not merely under-report the arena, it INVERTED THE RANKING, and a
+// conclusion drawn there would have sent the next optimisation at the wrong one of the two.
+// This is the third time in this project that a figure taken on one scene has misdescribed
+// another; the difference is that this time it was expected and checked.
+//
+// What the ranking says overall is that there is no lever in upd. The largest span is 15%
+// of it, the top four are within 40 us of each other, and the next 100 us would have to
+// come from four places at once.
 extern uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
                 g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
                 g_upd_ai, g_upd_combat;
