@@ -217,13 +217,6 @@ bool     vg_tint_active(void);
 void     vg_tint_row_limits(int sy, int* lim);   // lim[VG_TINT_RINGS + 1]
 uint32_t vg_tint_word(uint32_t v, int ring);
 
-// The same thing taken apart, for a caller with a pixel loop. vg_tint_word lives in another
-// translation unit and cannot be inlined into one, so calling it per chunk cost 28,800
-// uninlinable calls a frame. Ask for a ring's constants when the ring CHANGES -- at most
-// twelve times across a row -- and apply them yourself:
-//
-//     cc = (cc & keep) | (((cc & 0xE000E000u) >> shift) & 0xE000E000u) | glow;
-void vg_tint_ring(int ring, uint32_t* keep, uint32_t* glow, int* shift);
 uint16_t vg_tint_prim(uint16_t c, float x, float y);
 
 // Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.

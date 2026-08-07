@@ -822,19 +822,6 @@ void vg_rast_tint(float k) {
     }
 }
 
-// ONE RING'S THREE CONSTANTS, so a caller can hoist them out of its pixel loop.
-//
-// vg_tint_word is in this file and its callers are not, so every chunk of the backdrop paid a
-// cross-unit CALL that could not be inlined -- 28,800 of them a frame. The tables are indexed
-// by ring and the ring changes at most twelve times across a row, so the fix is to hand them
-// over when it changes and let the caller do the four masking operations itself.
-void vg_tint_ring(int ring, uint32_t* keep, uint32_t* glow, int* shift) {
-    if (ring < 0) ring = 0;
-    if (ring >= TINT_RINGS) ring = TINT_RINGS - 1;
-    *keep  = TINT_KEEP[ring];
-    *glow  = TINT_GLOW[ring];
-    *shift = (int)TINT_GSHIFT[ring];
-}
 
 // ---------------------------------------------------------------------------
 // The set turning on and off
