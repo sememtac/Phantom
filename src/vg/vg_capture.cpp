@@ -5,6 +5,7 @@
 #include "vg_crumb.h"
 #include "vg_sim.h"     // the VFX bench commands
 #include "vg_raster.h"  // the 'q' antialiasing toggle
+#include "vg_canopy_set.h"  // the 'k' bench selects a drawing to measure
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -262,14 +263,47 @@ void vg_capture_poll(void) {
             // and it reports a band's slower half rather than the pass. This is the
             // whole pass on one core, so a change to the table or the inner loop can be
             // judged in one flash instead of one flight.
+            //
+            // AND "FROM ANYWHERE" WAS NOT TRUE, which is what this selection is for.
+            //
+            // vg_canopy_bench zeroes its output and returns when no drawing is selected,
+            // and on a menu none is: a canopy is chosen on the way into flight. So the
+            // bench answered every question asked from the title screen with zeros, and
+            // the host tool graded them and printed "there is room for it". A tool that
+            // says a too-heavy drawing is fine is worse than no tool, and this one said it
+            // three times in a row after three separate flashes.
+            //
+            // So the bench is given something to measure. The saved profile's hull first,
+            // because that is the one the author is flying; failing that, whichever hull
+            // has a drawing at all, so a reading taken right after a flash still lands.
+            // The hull is named in the output either way -- one number for a drawing is
+            // only meaningful next to which drawing it was.
+            const VgCanopy* prev = vg_canopy_current();
+            const VgCanopy* use  = prev;
+            ShipClass       hull = vg.ship;
+            if (!use) {
+                use = vg_canopy_for(vg.ship);
+                for (int i = 0; !use && i < SHIP_CLASSES; i++) {
+                    use = vg_canopy_for((ShipClass)i);
+                    if (use) hull = (ShipClass)i;
+                }
+            }
+            // Swapped and put back. Safe here and only here: vg_capture_poll runs at the
+            // top of the frame, so the previous frame's raster has finished with s_can and
+            // the next one has not started. The restore costs one lazy LUT rebuild.
+            if (use != prev) vg_canopy_use(use);
             VgCanopyCost k;
             vg_canopy_bench(&k);
+            if (use != prev) vg_canopy_use(prev);
             if (!vg_link_busy()) {
+                // `hull` goes LAST. The host reads the microseconds as the second
+                // whitespace-separated token, so nothing may be inserted before them.
                 Serial.printf("canopy: %lu us rigid, %lu us warped, %lu us intro, %d blocks, "
-                              "%d flat px, %d literal px\n",
+                              "%d flat px, %d literal px, hull %s\n",
                               (unsigned long)k.us, (unsigned long)k.warp_us,
                               (unsigned long)k.intro_us,
-                              k.blocks, k.flat_px, k.lit_px);
+                              k.blocks, k.flat_px, k.lit_px,
+                              use ? vg_spec(hull)->name : "none");
             }
         } else if (c == 'y' && !vg_link_busy()) {
             // 'y', NOT 's'. The host sends 's' to stop a capture -- phantom_link.close does
