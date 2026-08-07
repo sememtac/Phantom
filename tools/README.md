@@ -351,17 +351,34 @@ narrower. Do not remove detail. Detail costs nothing.
 
 ### Bake it
 
-1. Put the PNG in `design\`.
-2. Run `.\tools\canopy.ps1 -Png design\Chariot.png -Name CANOPY_CHARIOT -Out src\vg\vg_canopy_chariot.h`.
+The file name is the wiring. Name the PNG after the ship that flies it.
+
+1. Put the PNG in `design\canopy\`. Use one of these names:
+   `aegis.png`, `lance.png`, `chariot.png`, `ballista.png`.
+2. Run `.\tools\canopy.ps1`. It takes no arguments.
 3. Read the report. It shows the coverage, the cost, and the regions it found.
-4. Add `#include "vg_canopy_chariot.h"` to `src\vg\vg_canopy_set.cpp`.
-5. Point that ship's row in the same file at `&CANOPY_CHARIOT`.
 
-Give every drawing its own name. The firmware holds all of them at once, so two
-headers must not use the same name.
+There is nothing to edit. The script bakes the folder and writes the table that
+gives each ship its canopy, so no C++ changes and a drawing cannot go to the wrong
+ship.
 
-To replace the drawing that every ship uses, leave `-Name` and `-Out` out. The
-script then bakes to the default header.
+The script bakes only the drawings that changed. It prints the whole set every time:
+
+    AEGIS     --             no cockpit frame
+    LANCE     --             no cockpit frame
+    CHARIOT   chariot.png       128 KB of generated header
+    BALLISTA  --             no cockpit frame
+
+### A ship with no drawing
+
+A ship with no drawing flies with no cockpit frame. The game supports this. There is
+no default texture, and one ship never borrows another ship's canopy.
+
+Everything else still works: the instruments come up, the radio opens, and the ship
+flies. What you lose is the frame and the sequence that brings it online, because
+both are made from the drawing.
+
+So you can add the four canopies one at a time and fly the game after each one.
 
 ### What the report tells you
 

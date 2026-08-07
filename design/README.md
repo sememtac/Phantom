@@ -1,20 +1,21 @@
 # Design sources
 
 The drawings the firmware is built from. These are **build inputs**, not reference
-images. `tools/canopy_bake.py` reads a PNG here and writes a table into `src/vg/`,
-so a change to a PNG changes what the game looks like.
+images. `tools/canopy_set.py` reads the PNGs here and writes tables into
+`src/vg/generated/`, so a change to a PNG changes what the game looks like.
 
 | file | what it is |
 |---|---|
-| `Test.png` | the canopy in use. Red channel is the frame, green channel is the activation mask. |
+| `canopy/chariot.png` | the CHARIOT's cockpit. Red channel is the frame, green channel is the activation mask. |
 | `hudSrc.psd` | the editable source for the HUD layout |
 | `HUD.af` | Affinity Designer source |
 | `HUD.png` | HUD layout reference |
 
 ## The generated header is not a source
 
-`src/vg/vg_canopy_data.h` says `GENERATED ... do not edit` at the top and means it.
-It is one bake away from the PNG and cannot be turned back into one. Edit the PNG.
+Everything in `src/vg/generated/` says `GENERATED ... do not edit` at the top and
+means it. A generated file is one bake away from the PNG and cannot be turned back
+into one. Edit the PNG.
 
 ## Canopy drawings
 
@@ -27,10 +28,14 @@ people:
 - Paint the green channel over the **whole image**, not only where the frame is. The
   regions gate the world behind the cockpit, not just the cockpit.
 
-To bake one:
+Name it after the ship and put it in `canopy/`: `aegis.png`, `lance.png`,
+`chariot.png`, `ballista.png`. The file name is the wiring, so there is nothing to
+edit afterwards.
 
-    .\tools\canopy.ps1 -Png design\Chariot.png -Name CANOPY_CHARIOT `
-        -Out src\vg\vg_canopy_chariot.h
+    .\tools\canopy.ps1
+
+A ship with no drawing flies with no cockpit frame, which the game supports. You can
+add them one at a time.
 
 ## A note on file sizes
 
