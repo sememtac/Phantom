@@ -10,6 +10,7 @@
 #include "vg_course.h"
 #include "vg_sfx.h"
 #include "vg_raster.h"
+#include "vg_prof.h"
 #include "vg_canopy_set.h"
 #include <Arduino.h>
 #include "vg_replay.h"
@@ -689,7 +690,11 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
 
     vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
 
+    const uint32_t t_ai = micros();
     for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+    const uint32_t t_cbt = micros();
+    g_upd_ai += t_cbt - t_ai;
+
     // After they have moved, or the range being tested is a frame stale --
     // which at a combined 800 units a second is sixteen units of error.
     vg_update_passes();
@@ -697,6 +702,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     vg_update_missiles(dt);
     vg_update_lock(dt);
     vg_update_threat();
+    g_upd_combat += micros() - t_cbt;
 
     // No hull regeneration. Damage taken here is carried for the rest of the
     // tournament and only credits will undo it, which is what makes the
@@ -851,7 +857,12 @@ void vg_upd_over(float dt, const VgInput* in, const Tap* tap) {
 // leaving the loser's missiles and wreckage flying through the attract loop --
 // and a missile whose seeker had broken draws in the dead-seeker grey, which is
 // exactly the stray grey lines that were turning up on the menu.
+uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
+         g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
+         g_upd_ai, g_upd_combat;
+
 void vg_game_update(float dt, const VgInput* in) {
+    const uint32_t t_pre = micros();
     vg_tv_update(dt);
 
     // A press during the wipe belongs to neither scene. Without this a tap that
@@ -950,14 +961,29 @@ void vg_game_update(float dt, const VgInput* in) {
     }
     s_held = in->menu_held;
 
-    // ONE CALL, NOT SEVEN. Hoisted out of the cases because it is a property of
-    // the state rather than a step in its logic -- and hoisted on VGS_DRIFT and
+    // ONE CALL, NOT SEVEN (the call itself is below, after the profile bracket). Hoisted out of
+    // the cases because it is a property of the state rather than a step in its logic -- and hoisted on VGS_DRIFT and
     // NOT on VGS_MENU, which is the trap this replaces. Nine states are menus;
     // only seven of them drift. INTRO gives the viewpoint to the cutscene camera
     // and OVER tumbles the wreck with its own world step, so hoisting on
     // VGS_MENU would have run two world motions at once in both.
     //
     // It was the first statement of all seven cases, so nothing moves past it.
+    // CLOSED BEFORE THE DRIFT, and it was closed after it first, which made every span
+    // in the world step get counted twice on a menu.
+    //
+    // vg_menu_world calls vg_world_step. With the bracket below the call, all seven of
+    // the world step's own spans ran INSIDE pre -- so the title screen reported pre 506
+    // of a 523 total while the other spans came to 310, and `oth`, being a subtraction,
+    // clamped at zero rather than going negative and saying so.
+    //
+    // The flight path hid it completely: there, the world step runs from the state's own
+    // update, which is after this point, so pre read a truthful 57 us. A nesting fault
+    // is invisible in exactly the case you are profiling for.
+    g_upd_pre += micros() - t_pre;
+
+    // ONE CALL, NOT SEVEN -- see the note below. It is a world step, so its cost belongs
+    // to the world step's spans, and what is left of it falls into `oth`.
     if (sf & VGS_DRIFT) vg_menu_world(dt);
 
     // ONE LINE, AND THIRTEEN NAMED FUNCTIONS. What used to be a 390-line switch

@@ -455,6 +455,16 @@ void loop(void) {
     static uint32_t acc_ahoop = 0, acc_arail = 0;
     acc_ahoop += g_arena_hoop; g_arena_hoop = 0;
     acc_arail += g_arena_rail; g_arena_rail = 0;
+    // The update's nine spans. Reset here, accumulated here: they are written with += in
+    // the simulation so a frame split into sub-steps reports the FRAME's cost and not the
+    // last step's. See g_upd_pre in vg_prof.h.
+    static uint32_t acc_u[11] = {0};
+    {
+        uint32_t* const g[11] = { &g_upd_pre, &g_upd_ship, &g_upd_arena, &g_upd_sky,
+                                  &g_upd_field, &g_upd_trail, &g_upd_enemy, &g_upd_ord,
+                                  &g_upd_vfx, &g_upd_ai, &g_upd_combat };
+        for (int i = 0; i < 11; i++) { acc_u[i] += *g[i]; *g[i] = 0; }
+    }
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
     acc_hud_radar += g_hud_radar;  g_hud_radar    = 0;
     acc_hud_thr   += g_hud_throttle; g_hud_throttle = 0;
@@ -570,6 +580,31 @@ void loop(void) {
         Serial.printf("        grid = hoops %lu (core 1) rails %lu (core 0)\n",
                       (unsigned long)(acc_ahoop / frames),
                       (unsigned long)(acc_arail / frames));
+        // THE UPDATE, and it is all on the critical path -- serial, and before the flush.
+        // `oth` is the rest of the state's own function plus the replay note, by
+        // SUBTRACTION rather than by a tenth bracket. It can read 0: the spans are
+        // integer microseconds and rounding across a window can just cover the total.
+        {
+            uint32_t named = 0;
+            for (int i = 0; i < 11; i++) named += acc_u[i] / frames;
+            const uint32_t tot = acc_update / frames;
+            Serial.printf("        upd  = pre %lu ship %lu arena %lu sky %lu field %lu "
+                          "trail %lu enemy %lu ord %lu vfx %lu ai %lu cbt %lu "
+                          "oth %lu of %lu\n",
+                          (unsigned long)(acc_u[0] / frames),
+                          (unsigned long)(acc_u[1] / frames),
+                          (unsigned long)(acc_u[2] / frames),
+                          (unsigned long)(acc_u[3] / frames),
+                          (unsigned long)(acc_u[4] / frames),
+                          (unsigned long)(acc_u[5] / frames),
+                          (unsigned long)(acc_u[6] / frames),
+                          (unsigned long)(acc_u[7] / frames),
+                          (unsigned long)(acc_u[8] / frames),
+                          (unsigned long)(acc_u[9] / frames),
+                          (unsigned long)(acc_u[10] / frames),
+                          (unsigned long)(tot > named ? tot - named : 0),
+                          (unsigned long)tot);
+        }
 #if VG_DEBUG_TILT
         Serial.printf("   accel %.3f %.3f %.3f -> pitch %.2f yaw %.2f thr %.2f\n",
                       (double)in.raw_ax, (double)in.raw_ay, (double)in.raw_az,
@@ -668,7 +703,8 @@ void loop(void) {
         // ft_skip_next belongs to the PRINTING, not to the window: it exists to
         // keep the frame that paid for the formatting out of the histogram.
 
-        acc_input = acc_update = acc_submit = acc_flush = 0;
+        for (int i = 0; i < 11; i++) acc_u[i] = 0;
+    acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
         acc_join = acc_res = 0;

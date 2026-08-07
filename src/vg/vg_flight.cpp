@@ -2,9 +2,26 @@
 #include "vg_shake.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
+#include "vg_prof.h"
+#include <Arduino.h>
 #include <math.h>
 
 // The flight model and the per-frame world transform.
+
+// A CURSOR, NOT A PAIR OF BRACKETS PER SPAN.
+//
+// Each UPD_MARK closes the span that was open and opens the next one from the SAME
+// micros() reading, so seven readings cover seven spans instead of fourteen. That
+// matters at this scale: the spans being measured are tens of microseconds, so a
+// per-span open and close would have put the instrument's own cost into the same
+// order as the smaller numbers it reports.
+//
+// It also makes gaps and overlaps impossible to write by accident. Two independent
+// brackets can leave the work between them unattributed; a cursor cannot.
+static uint32_t s_upd_mark;
+#define UPD_OPEN()    (s_upd_mark = micros())
+#define UPD_MARK(acc) do { const uint32_t n_ = micros();                            \
+                           (acc) += n_ - s_upd_mark; s_upd_mark = n_; } while (0)
 
 // ---------------------------------------------------------------------------
 // World step
@@ -46,6 +63,7 @@ float vg_roll_angle(const VgInput* in, float dt) {
 
 void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
                        float throttle_in) {
+    UPD_OPEN();
     float k = dt * THROTTLE_LERP;
     if (k > 1.0f) k = 1.0f;
     vg.throttle += (throttle_in - vg.throttle) * k;
@@ -93,6 +111,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     Mat3  R  = mat3_euler(-pitch, -yaw, roll_in);
     float dz = vg.speed * dt;
 
+    UPD_MARK(g_upd_ship);
+
     // The arena is static in the world, so it rides exactly the same transform.
     vg_arena_step(R, dz);
     vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
@@ -106,7 +126,13 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // scalar pitch and yaw next door into a flat pan, and angles do not compose.
     // Only the cosmetic bank goes separately, because that one is added by the
     // projection and is not in R.
+    UPD_MARK(g_upd_arena);
+
     vg_sky_orient(R, vg.bank);
+
+    UPD_MARK(g_upd_sky);
+    // The bank lerp below is the flight model again, so it lands back on g_upd_ship --
+    // which is why these are accumulators and not assignments. One span, two places.
 
     // The cosmetic lean, from the yaw command as always -- plus a lead into any
     // roll. Rolling used to have NO visual signature of its own: yaw is forced to
@@ -123,6 +149,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     float kb = dt * BANK_LERP;
     if (kb > 1.0f) kb = 1.0f;
     vg.bank += (bank_target - vg.bank) * kb;
+
+    UPD_MARK(g_upd_ship);
 
     for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
 
@@ -148,6 +176,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
             vg_arena_clearance(vg_arena_local_of(a->pos)) < -40.0f)
             a->alive = false;
     }
+
+    UPD_MARK(g_upd_field);
 
     // Trails are world geometry, so every stored point rides the same transform
     // the objects do -- otherwise a ribbon would smear sideways the moment you
@@ -201,6 +231,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         }
     }
 
+    UPD_MARK(g_upd_trail);
+
     for (int i = 0; i < MAX_ENEMIES; i++) {
         Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
@@ -252,6 +284,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         vg.course.ring_norm = vnorm(mat3_apply(R, vg.course.ring_norm));
         vg.course.ring_pos.z -= dz;
     }
+
+    UPD_MARK(g_upd_enemy);
 
     for (int i = 0; i < MAX_MISSILES; i++) {
         Missile* m = &vg.msl[i];
@@ -309,6 +343,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         }
     }
 
+    UPD_MARK(g_upd_ord);
+
     vg_vfx_tick(dt);
 
     // Every knock the airframe has taken, decayed and rolled into this frame's
@@ -342,6 +378,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // point in the frame, and moving a countdown between two points in a frame
     // is a behaviour change wearing a refactor's clothes.
     if (vg.cine.gate_t > 0) vg.cine.gate_t -= dt;
+
+    UPD_MARK(g_upd_vfx);
 }
 
 // A fighter crossing close aboard. Two airframes going opposite ways at a

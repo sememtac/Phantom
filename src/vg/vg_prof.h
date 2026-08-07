@@ -104,6 +104,47 @@ extern uint32_t g_arena_hoop, g_arena_rail;
 // The GAP between them is what is recoverable, and its sign says which way to move.
 extern uint32_t g_sub_a, g_sub_b;
 
+// THE UPDATE, WHICH HAD NEVER BEEN MEASURED AT ALL.
+//
+// `upd` is about 760 us and it was ONE number for the whole simulation. Submit has had a
+// per-layer split since early on and blit is accounted to the microsecond, so the update
+// was the last phase of the frame that could only be guessed at -- and a phase nobody
+// has measured is exactly where an assumption goes to live.
+//
+// It is also the phase with the least room for error, because it is entirely SERIAL and
+// entirely BEFORE the flush. Submit's two halves run on two cores and blit overlaps the
+// wire; nothing here overlaps anything. Every microsecond is on the critical path.
+//
+// The split follows the code's real shape rather than a guess at the cost:
+//
+//   pre     everything vg_game_update does before the state's own update: the wipe,
+//           the alerts, the engine and flatline voices, the menu-tap resolve
+//   ship    the flight model and the frame's transform: throttle, agility, bank, R. Two
+//           spans, because the arena and the backdrop sit between its halves.
+//   arena   vg_arena_step and the clearance test
+//   sky     vg_sky_orient -- the backdrop rides the rotation only
+//   field   the scenery that is only points: stars, motes, asteroids
+//   trail   the player's ribbon, and the cutscene ship with its own
+//   enemy    every live opponent's transform and ribbon, inside the world step
+//   ord     missiles, debris and fireballs -- the same transform, three more pools
+//   vfx     the tail: vg_vfx_tick, the shake, the buzz, the HUD decay, the radio
+//   ai      vg_update_enemy for each opponent. The only THINKING in the list.
+//   combat  passes, missile logic, lock and threat
+//
+// Microseconds, and they ACCUMULATE rather than assign, because a long frame is split
+// into sub-steps and the whole point is the frame's total. main.cpp resets them.
+//
+// What the nine do not cover is the rest of the state's own function plus the replay
+// note, and the telemetry gets that by subtraction rather than by timing it again --
+// the same trick the HUD line uses.
+// SPLIT AFTER THE FIRST READING, which is why `ship` is three counters and not one. It
+// came out the largest single item at 183 us, and the flight model it is named for is a
+// dozen scalar lerps and one 3x3 -- so the number could not have been the model, and a
+// span that big with the wrong name on it is worse than no span at all.
+extern uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
+                g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
+                g_upd_ai, g_upd_combat;
+
 // THE FRAME'S LAST I2C, split three ways.
 //
 // `in` is ~680 us and the touch controller is the only I2C left on the render thread -- the
