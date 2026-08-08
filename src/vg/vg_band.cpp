@@ -1336,6 +1336,24 @@ static inline uint32_t px_sub(uint32_t s, uint32_t drb, uint32_t dg) {
 // already hidden behind the load and the store -- so the only thing left to remove is
 // the number of accesses. One 32-bit load and one 32-bit store per pair halves them.
 //
+// TWO MORE ATTEMPTS HAVE SINCE BEEN MEASURED AND REJECTED, both over the same recorded
+// session with tools/replay_cost.py, whose noise floor on this counter is one microsecond:
+//
+//   The byte swaps lifted out of px_add and done once per PAIR instead of once per pixel.
+//   Seven operations of about twenty-two are swapping, so this looked like the obvious
+//   win. It cost 32 us, +1.1%. The compiler was already folding the swap into the field
+//   masks better than the hand-written version could.
+//
+//   The whole flight table copied from flash into internal SRAM, on the theory that 11 KB
+//   read through the cache every frame was the missing time. It saved 3 us, -0.1%, for
+//   11 KB of the scarcest memory on the part.
+//
+// So the 36 cycles a flat pixel costs are neither the arithmetic nor the table: they are
+// the read-modify-write of the band itself. That is the floor, and the only way under it
+// is to touch fewer pixels. AREA is the lever, and it belongs to the artist, not to this
+// file -- which is what the estimate in tools/canopy_bake.py has always said. It now has
+// three measurements behind it instead of an assertion.
+//
 // The pixel maths stays per-pixel on purpose. Packing both into one 32-bit add would
 // need a spare bit above red to catch its carry, and red sits at the top of its half,
 // so the carry lands in the neighbouring pixel's blue. That is a real trap and not
