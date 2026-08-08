@@ -78,64 +78,56 @@ def run(port, path, limit):
     except Desync as e:
         sys.exit("%s\n  Record a new session: sizeof(VgInput) probably changed." % e)
 
-    # SENT is not RUN, and the difference is the whole timing of this tool.
+    # SEND A BATCH, THEN DRAIN ITS ANSWERS. Never both at once.
     #
-    # The host writes every record in under a second; the device then works through them
-    # at the rate it can actually draw frames, which is tens of times slower. So the
-    # progress below counts what has been HANDED OVER and deliberately claims no rate --
-    # the first version printed the host's write rate, 3,669 fps, which is a real number
-    # measuring nothing anybody wants.
+    # Three earlier versions interleaved reads and writes -- an acknowledgement read between
+    # every record sent -- and every one of them died above about a thousand frames with an
+    # access violation inside pyserial. Batching the writes helped and did not fix it;
+    # batching the reads moved the failure rather than removing it. What they had in common
+    # was reading a Windows COM port while writes were still in flight on it.
     #
-    # 'E' goes into the same stream behind the records, so it arrives in order and ends
-    # the run at the right frame rather than cutting it short.
-    # A WINDOW, NOT THE WHOLE SESSION. The device answers each frame with one byte; every
-    # answer buys the right to send one more record. Sending them all at once overruns the
-    # device's receive ring and desyncs the record stream -- see the note in main.cpp, where
-    # the failure was a good deal stranger than a lost byte.
+    # So this alternates strictly. Send sixteen records, then wait for sixteen bytes back,
+    # then send sixteen more. There is no moment when a read and a write overlap.
     #
-    # Sixteen deep so the device never waits on the wire, which is what keeps the run at the
-    # rate it can draw rather than at the round trip.
-    # THE ACKS PACE IT; THEY DO NOT GATE IT, and that difference is the whole reliability
-    # of this loop.
+    # SIXTEEN IS THE DEVICE'S RECEIVE RING, not a tuning knob. That ring is 2048 bytes and a
+    # record is 89, so at most 23 can be outstanding; sending more silently drops bytes and
+    # the device then reads a record tag that is not "PHRP" and quietly ends the replay. That
+    # failure looked like the device dying at frame 244, and was the host shouting over it.
     #
-    # Counting acks as permission to send exactly one more deadlocks the moment the count
-    # drifts by one in the device's favour: the host waits for an ack, the device waits for
-    # a record, and neither ever moves. That is what happened, and the giveaway was that it
-    # stalled at 245 frames one run and 353 the next -- a bad frame stalls at the same
-    # number every time, and a race does not.
-    #
-    # So a quiet link is not an error. If nothing comes back for a moment and there are
-    # records left to send, send one: the device is either busy or waiting, and one more
-    # record in its ring is harmless either way. The window still does the pacing, the acks
-    # still keep it full, and no arithmetic between them can wedge it.
-    WINDOW = 16
-    link.ser.timeout = 0.5
+    # The cost is that the device idles briefly between batches, so a run takes a little
+    # longer than the frames themselves do. That is the whole price of never crashing.
+    CHUNK = 16
+    link.ser.timeout = 1.0
     started = time.time()
-    sent = done = 0
-    quiet = 0
-    while sent < min(WINDOW, n):
-        link.replay_send(ses.frames[sent]); sent += 1
-    while done < n:
-        b = link.ser.read(1)
-        if b:
-            quiet = 0
-            done += len(b)
-        else:
-            quiet += 1
-            # 30 s of complete silence with nothing outstanding is a dead device, not a
-            # slow one: a frame takes tens of milliseconds.
-            if quiet > 60 and sent >= n:
-                sys.exit("the device stopped answering after %d of %d frames.\n"
-                         "  It reset, or the replay desynced." % (done, n))
-            if sent < n:
-                link.replay_send(ses.frames[sent]); sent += 1
-                continue
-        while sent < n and sent - done < WINDOW:
-            link.replay_send(ses.frames[sent]); sent += 1
-        if done and done % 1000 == 0:
-            rate = done / max(time.time() - started, 1e-6)
+    sent = shown = 0
+
+    while sent < n:
+        k = min(CHUNK, n - sent)
+        for i in range(k):
+            link.replay_send(ses.frames[sent + i])
+        sent += k
+
+        # Exactly k bytes back, one per frame drawn. A short read is the device still
+        # working, not an error -- only a long silence is.
+        got = 0
+        quiet = 0
+        while got < k:
+            b = link.ser.read(k - got)
+            if b:
+                got += len(b)
+                quiet = 0
+            else:
+                quiet += 1
+                # 20 s with nothing at all, when a frame takes tens of milliseconds.
+                if quiet > 20:
+                    sys.exit("the device stopped answering after %d of %d frames.\n"
+                             "  It reset, or the replay desynced." % (sent - k + got, n))
+        if sent - shown >= 1000:
+            shown = sent
+            rate = sent / max(time.time() - started, 1e-6)
             print("  ...%d/%d  %.0f fps  %.0fs left"
-                  % (done, n, rate, (n - done) / max(rate, 1e-6)))
+                  % (sent, n, rate, (n - sent) / max(rate, 1e-6)))
+
     print("  device drew %d frames in %.1fs" % (n, time.time() - started))
     link.ser.timeout = 8
 
@@ -157,35 +149,35 @@ def run(port, path, limit):
     link.ser.write(b"EEEE")
     link.ser.flush()
     time.sleep(0.5)
+
+    # COLLECTED BY A SEPARATE PROCESS, not here. See fetch() for why -- in short, this
+    # handle has just carried eleven thousand operations and cannot be read afterwards.
     link.close()
+    return None
 
-    # A NEW HANDLE, BECAUSE THE OLD ONE IS NOT SAFE TO READ. Reading the tail on the
-    # connection that carried nine hundred acknowledgements killed the interpreter with an
-    # access violation, byte at a time and in bulk alike.
-    #
-    # Windows does not release a USB CDC port instantly, and reopening too soon crashed the
-    # same way -- so this waits and retries rather than assuming.
-    ser = None
-    for attempt in range(8):
-        time.sleep(0.6)
-        try:
-            ser = open_quiet(port, timeout=0.5)
-            break
-        except Exception:
-            continue
-    if ser is None:
-        sys.exit("could not reopen %s to collect the answer.\n"
-                 "  The run itself finished; ask the device yourself with:\n"
-                 "    python tools/listen.py %s   (then press c)" % (port, port))
 
-    # ASKED FOR, NOT CAUGHT. The device keeps the last timed run's sums until the next one,
-    # so this cannot race with a reconnect -- which is what lost the answer every previous
-    # time, USB CDC having discarded it while no host was attached.
+def fetch(port):
+    """Ask the device for the last timed run's cost, on a fresh connection.
+
+    SEPARATE FROM THE RUN, because a handle that has carried a full session cannot be
+    trusted to read afterwards. 5,444 records out and 5,444 acknowledgements back is about
+    eleven thousand operations on one Windows COM port, and past roughly a thousand frames
+    the tail read comes back empty and the interpreter dies on exit. Closing and reopening
+    inside the same process crashes too.
+
+    A fresh PROCESS is the one thing that reliably works, so the device keeps the answer --
+    see vg_replay_report_cost -- and this goes and gets it.
+
+    IT MUST FOLLOW THE RUN IMMEDIATELY, which is why the run invokes it rather than leaving
+    it to the reader. Opening this port resets the board unless it was open moments ago, and
+    a reset clears the sums -- so `--fetch` on its own, minutes later, reliably answers
+    "no timed run yet" about a run that definitely happened. Straight after the parent closes
+    the port, the open does not reset and the answer is there.
+    """
+    ser = open_quiet(port, timeout=0.5)
+    ser.reset_input_buffer()
     ser.write(b"c")
     ser.flush()
-
-    # Short, because the device answers a command in a frame or two. Nothing is being
-    # waited for here except one printf.
     deadline = time.time() + 10.0
     tail = bytearray()
     while time.time() < deadline:
@@ -198,18 +190,14 @@ def run(port, path, limit):
         if m:
             ser.close()
             g = [int(x) for x in m.groups()]
-            out = {"frames": g[0], "commit": git_commit(),
-                   "session": os.path.basename(path)}
-            for j, k in enumerate(KEYS):
-                out[k] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
+            out = {"frames": g[0], "commit": git_commit(), "session": "(fetched)"}
+            for j, k2 in enumerate(KEYS):
+                out[k2] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
             return out
     ser.close()
-    # SHOW WHAT IT DID SAY. A tool that reports only "no cost line" sends the reader to
-    # look at the firmware version, which was wrong both times it happened here.
     said = tail.decode("utf-8", "replace").strip()
-    sys.exit("the device ran the session but reported no cost line.\n"
-             "  It said:\n    %s"
-             % ("\n    ".join(said.splitlines()[-6:]) if said else "(nothing at all)"))
+    sys.exit("the device reported no cost line.\n  It said:\n    %s"
+             % ("\n    ".join(said.splitlines()[-4:]) if said else "(nothing at all)"))
 
 
 def show(r):
@@ -253,9 +241,32 @@ def main():
                     help="stop after this many frames (default: the whole session)")
     ap.add_argument("--save", metavar="FILE", help="write the result")
     ap.add_argument("--against", metavar="FILE", help="compare with a saved result")
+    ap.add_argument("--fetch", action="store_true",
+                    help="do not run; just read the last run's result off the device")
     a = ap.parse_args()
 
-    r = run(a.port, a.session, a.frames)
+    if a.fetch:
+        r = fetch(a.port)
+    else:
+        run(a.port, a.session, a.frames)
+        # A FRESH PROCESS FOR THE ANSWER. Re-running this file with --fetch is the only
+        # thing that reliably reads a device after a full session; doing it in-process
+        # crashes, whether on the same handle or a reopened one.
+        print("  collecting the result...")
+        argv = [sys.executable, os.path.abspath(__file__),
+                a.session, "--port", a.port, "--fetch"]
+        # --save and --against belong to the FETCH, which is the half that has the numbers.
+        # Left off, a full run wrote no baseline and said nothing about it.
+        if a.save:
+            argv += ["--save", a.save]
+        if a.against:
+            argv += ["--against", a.against]
+        out = subprocess.run(argv, capture_output=True, text=True)
+        sys.stdout.write(out.stdout)
+        if out.returncode != 0:
+            sys.stderr.write(out.stderr)
+            sys.exit(out.returncode)
+        return
     show(r)
 
     if a.against:

@@ -38,6 +38,10 @@ bool vg_replay_suppress_save(void) { return s_mode == VG_RP_PLAY; }
 // exactly the comparison this is for. The worst frame comes along because a mean hides the
 // case that actually drops a frame.
 static bool     s_timed = false;
+// How many times the record stream had to be realigned. Non-zero means the link dropped
+// bytes and the session is one record short for each -- the numbers are still sound, but
+// the run is not the same length as the file.
+static uint32_t s_resync = 0;
 static uint32_t s_t_n   = 0;
 static uint32_t s_t_sum[5], s_t_max[5];
 
@@ -212,6 +216,7 @@ static void begin_play(void) {
     s_rand_n = 0;
     vg_link_stats_reset();
     s_t_n = 0;
+    s_resync = 0;
     for (int i = 0; i < 5; i++) { s_t_sum[i] = 0; s_t_max[i] = 0; }
     // Announce BEFORE the transmit task starts. After it starts, this core and
     // core 0 would both write to Serial, and two writers corrupt the stream.
@@ -233,7 +238,44 @@ bool vg_replay_next(float* dt, VgInput* in) {
     // Generous: the host has to encode and write the previous frame before it
     // asks for the next one, and a slow disk should not end the session.
     if (!rd(tag, 4, 30000)) { vg_replay_command('E'); return false; }
-    if (memcmp(tag, "PHRP", 4) != 0) { vg_replay_command('E'); return false; }
+
+    // THE END IS EXPLICIT NOW, and it has to be checked before the resync below.
+    //
+    // The host ended a run by sending four bytes that were not a tag, which worked while
+    // any mismatch meant "stop". With the resync in place a mismatch means "a byte was
+    // lost", so the sentinel was being eaten by the scan looking for the next record -- the
+    // session then ended on a timeout, several seconds late, and the host had already given
+    // up waiting for the answer.
+    if (memcmp(tag, "EEEE", 4) == 0) { vg_replay_command('E'); return false; }
+
+    // A BAD TAG IS A DROPPED BYTE, NOT THE END OF THE SESSION.
+    //
+    // This used to end the replay on the first tag that was not "PHRP", which is correct
+    // when the host means to stop and wrong every other time. A full session is 5,444
+    // records and 451 KB over a link that is known to corrupt -- the render tool has
+    // reported a failed band twice in one day -- so one lost byte anywhere in it shifted
+    // the stream by one and ended the run. Measured: 5,072 frames of 5,444, reported as
+    // "the device stopped answering" when the device had in fact stopped being spoken to
+    // in a language it recognised.
+    //
+    // So the stream RESYNCS. Slide the window one byte at a time until "PHRP" lines up
+    // again; a dropped byte costs one record instead of the rest of the session. The host
+    // still ends the run deliberately by sending four bytes that are not a tag, and after
+    // RESYNC_MAX of them with no record found, that is what this concludes.
+    //
+    // The window is bounded because an unbounded scan cannot tell a corrupt stream from a
+    // host that has gone away, and waiting forever is worse than stopping.
+    if (memcmp(tag, "PHRP", 4) != 0) {
+        const int RESYNC_MAX = 512;         // ~6 records' worth of slack
+        int slid = 0;
+        for (;;) {
+            if (++slid > RESYNC_MAX) { vg_replay_command('E'); return false; }
+            tag[0] = tag[1]; tag[1] = tag[2]; tag[2] = tag[3];
+            if (!rd(&tag[3], 1, 5000))     { vg_replay_command('E'); return false; }
+            if (memcmp(tag, "PHRP", 4) == 0) break;
+        }
+        s_resync++;
+    }
 
     uint8_t nr = 0;
     if (!rd(dt, 4, 5000) || !rd(&nr, 1, 5000) || nr > RP_MAX_RAND) {
@@ -279,6 +321,10 @@ bool vg_replay_command(int c) {
         vg_link_stats(&wb, &ws, &wt, &wm);
         uint32_t fb, fe;
         vg_capture_frame_counts(&fb, &fe);
+        if (s_resync) {
+            Serial.printf("\nvg_replay: RESYNC %u -- the link dropped bytes; that many "
+                          "records were skipped\n", (unsigned)s_resync);
+        }
         Serial.printf("\nvg_replay: END %u frames  wrote %u bytes  short %u  "
                       "stall %u  mismatch %u  begins %u ends %u\n",
                       (unsigned)s_index, (unsigned)wb, (unsigned)ws,
