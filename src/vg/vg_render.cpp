@@ -8,6 +8,7 @@
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_shake.h"
+#include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
 #include <stdio.h>
 #include <math.h>
 
@@ -237,10 +238,21 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg.wall_clear < ARENA_TINT_RANGE) {
         tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
     }
-    // THE WARNING IS ON THE COCKPIT NOW, and the ring is off. Measured at the boundary:
-    // sky 3028 -> 1792 us and 53.3 -> 59.5 fps, because the ring was tinting the backdrop
-    // fill per pixel while this is a different entry in a colour table the frame already
-    // reads. Put `vg_rast_tint(tint)` back to restore the ring.
+    // THE WARNING IS ON THE COCKPIT, and the ring is the FALLBACK. Measured at the
+    // boundary: sky 3060 -> 1824 us and 53.1 -> 59.7 fps, because the ring tints the
+    // backdrop FILL per pixel over a large annulus, while this is a different entry in a
+    // colour table the cockpit already reads. It costs nothing per pixel.
+    //
+    // WHY THERE WAS A RING AT ALL, which is worth keeping now that it is being replaced:
+    // it was written before canopies existed, when there was no cockpit to light up and
+    // tinting the whole view was the only way to say "wall" at all. It was heavy-handed
+    // because it had to be. The cost of the canopy texture is already paid on every frame
+    // that draws one, so a hull that HAS a cockpit should spend that instead of buying a
+    // second full-screen effect.
+    //
+    // A hull with no drawing still needs telling. Three of the four have none, and they
+    // flew to the wall in silence for one commit because this was switched off
+    // unconditionally. So the ring remains, for exactly the case it was invented for.
     //
     // AND IT FLASHES once the wall is close enough that turning is urgent -- see
     // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
@@ -257,8 +269,16 @@ void vg_render_frame(const VgInput* in, float fps) {
               + (1.0f - CANOPY_ALARM_FLASH_AT)
                 * (CANOPY_ALARM_FLOOR + (1.0f - CANOPY_ALARM_FLOOR) * ph);
     }
-    vg_canopy_alarm(alarm);
-    vg_rast_tint(0.0f);
+    if (vg_canopy_current()) {
+        vg_canopy_alarm(alarm);
+        vg_rast_tint(0.0f);
+    } else {
+        // No cockpit: the ring, at the unflashed level. The flash rides the frame's own
+        // colour and there is no frame, and a whole view strobing red is a different and
+        // much worse thing than a cockpit doing it.
+        vg_canopy_alarm(0.0f);
+        vg_rast_tint(tint);
+    }
 
     // The set turning on and off. Both directions are the same two phases, but
     // they are not mirror images and each control has its own timing, which is
