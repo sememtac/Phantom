@@ -316,6 +316,20 @@
 // landed and moving the HUD cue only moved the collision. Ordering that depends on two timers
 // agreeing is not ordering, it is coincidence -- so the briefing waits on the gate too and the
 // sequence holds however the pacing above is retuned.
+// THE WALL WARNING FLASHES WHEN TURNING STOPS BEING OPTIONAL.
+//
+// A steady ramp from amber to red says "closer" and never says "now". The author's note:
+// without a change of KIND rather than of degree, there is no way to read which shade of
+// red means you are out of room, so the whole thing reads as decoration.
+//
+// So below FLASH_AT it holds, and above it the frame swings between that level and full,
+// faster the closer you get. Rate carries the urgency, which a colour cannot: a human reads
+// "getting quicker" instantly and "slightly more red" not at all.
+#define CANOPY_ALARM_FLASH_AT 0.55f   // fraction of the warning range where it starts
+#define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
+#define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
+#define CANOPY_ALARM_FLOOR    0.45f   // how far down the swing goes, so it never looks off
+
 #define BOOT_RADIO_WAIT        1.00f
 
 // The opponent's OPENING line, after the radio has opened. The broadcast speaks first where there

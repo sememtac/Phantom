@@ -1106,7 +1106,24 @@ uint32_t vg_rast_gl_us(void)   { return s_cyc_gl  / 240u; }
 uint32_t vg_rast_fl_us(void)   { return s_cyc_fl  / 240u; }
 uint32_t vg_rast_ln_px(void)   { return s_ln_px; }
 uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
-uint32_t vg_rast_tint_us(void) { return s_tint_us; }
+// A DEAD COUNTER FOR AS LONG AS THE TINT HAS BEEN DRAWN AT THE SOURCE.
+//
+// s_tint_us was declared, reset and read, and nothing ever wrote to it, so `tnt` reported
+// 0 for a warning that costs over a millisecond. It cost real time to trust: it was quoted
+// three times as evidence the boundary effect was cheap, and then as evidence it was
+// expensive, and the number behind both was never measured at all.
+//
+// THE COST IS NOT SEPARABLE ANY MORE, which is why this returns a LEVEL and not a time.
+// The tint moved into the sky fill and into submit -- see the note beside band_wall_tint --
+// so its work is interleaved with the fill it colours, and bracketing it would mean a
+// second pass to measure the first. What it costs is visible directly in `sky`, measured:
+// 1792 us with the warning off and 3028 with it on, up to 3445 hard against the wall.
+//
+// So `tnt` reports HOW HARD THE WARNING IS RUNNING, 0 to 100. That is the number that was
+// actually missing: without it there is no way to tell which telemetry windows had the
+// effect active, so an average over a flight buries it -- which is exactly how a 1240 us
+// cost and six frames a second were measured as "no change".
+uint32_t vg_rast_tint_us(void) { return (uint32_t)(s_tint_k * 100.0f + 0.5f); }
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
 uint32_t vg_rast_prim_us(void) { return s_prim_us; }
@@ -1257,8 +1274,34 @@ void vg_canopy_rear(bool on) { s_can_rear = on; }
 
 const VgCanopy* vg_canopy_current(void) { return s_can; }
 
+// THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW. Experiment.
+//
+// The ring tint is a per-pixel pass over its own area and costs about 1100 us at the wall,
+// measured. This costs NOTHING per pixel: the cockpit's members are already written every
+// frame, and their colour comes from a 256-entry table, so turning the frame red is a
+// different table rather than more work.
+//
+// Quantised to sixteen steps so a steady approach rebuilds the table a few times instead
+// of sixty a second. The table is 256 entries of trivial arithmetic, so even that is
+// nearly free -- the quantising is about not thrashing s_can_ready.
+static float s_alarm  = 0.0f;
+static int   s_alarm_q = 0;
+
+void vg_canopy_alarm(float k) {
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+    const int q = (int)(k * 16.0f + 0.5f);
+    if (q == s_alarm_q) return;
+    s_alarm_q   = q;
+    s_alarm     = (float)q * (1.0f / 16.0f);
+    s_can_ready = false;          // the colour table is stale; canopy_lut rebuilds it
+}
+
 static void canopy_lut(void) {
     const int bg = (int)s_can->bg;
+    // What the frame is made of right now: its own amber, pulled toward the danger red as
+    // the wall closes. One mix for the whole table rather than per pixel.
+    const uint16_t base = (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm)
+                                           : COL_HUD;
     for (int g = 0; g < 256; g++) {
         const float f = (g > bg)
                       ? (float)(g - bg) / (float)(255 - bg)
@@ -1267,7 +1310,7 @@ static void canopy_lut(void) {
         // and blend_px works in native, so leaving this unswapped would put the delta's
         // red into the blue channel -- a bug that would have looked like a design
         // decision rather than a mistake.
-        const uint16_t c = vg_dim(COL_HUD, f);
+        const uint16_t c = vg_dim(base, f);
         s_can_lut[g] = (uint16_t)((c >> 8) | (c << 8));
     }
     s_can_ready = true;

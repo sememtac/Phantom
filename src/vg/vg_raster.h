@@ -155,6 +155,13 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // whole world at once, mid-sequence.
 void  vg_canopy_rear(bool on);
 
+// THE WALL WARNING ON THE COCKPIT, 0 clear and 1 hard against the boundary. Experiment.
+//
+// Costs nothing per pixel: the members are drawn every frame anyway and their colour is a
+// table lookup, so this is a different table. Compare with vg_rast_tint, which is a pass
+// over its own area and was measured at about 1100 us at the wall.
+void  vg_canopy_alarm(float k);
+
 void  vg_canopy_intro_reset(void);
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);

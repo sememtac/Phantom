@@ -441,6 +441,8 @@ void loop(void) {
     acc_gl     += vg_rast_gl_us();
     acc_fl     += vg_rast_fl_us();
     acc_can    += vg_rast_can_us();
+    // NOT MICROSECONDS. `tnt` is the wall warning's LEVEL, 0 to 100 -- its cost lives in
+    // `sky` and cannot be separated from the fill it colours. See vg_rast_tint_us.
     acc_tint   += vg_rast_tint_us();
     acc_mir    += vg_render_mirror_us();
     static uint32_t acc_star = 0, acc_aren = 0, acc_wrld = 0, acc_hud = 0;

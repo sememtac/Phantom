@@ -237,7 +237,28 @@ void vg_render_frame(const VgInput* in, float fps) {
         vg.wall_clear < ARENA_TINT_RANGE) {
         tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
     }
-    vg_rast_tint(tint);
+    // THE WARNING IS ON THE COCKPIT NOW, and the ring is off. Measured at the boundary:
+    // sky 3028 -> 1792 us and 53.3 -> 59.5 fps, because the ring was tinting the backdrop
+    // fill per pixel while this is a different entry in a colour table the frame already
+    // reads. Put `vg_rast_tint(tint)` back to restore the ring.
+    //
+    // AND IT FLASHES once the wall is close enough that turning is urgent -- see
+    // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
+    float alarm = tint;
+    if (alarm > CANOPY_ALARM_FLASH_AT) {
+        const float u  = (alarm - CANOPY_ALARM_FLASH_AT)
+                       / (1.0f - CANOPY_ALARM_FLASH_AT);
+        const float hz = CANOPY_ALARM_HZ_MIN
+                       + (CANOPY_ALARM_HZ_MAX - CANOPY_ALARM_HZ_MIN) * u;
+        // 0 at the bottom of the swing, 1 at the top. vg.state_t is the clock everything
+        // else in the cockpit already runs on, so the flash cannot drift against it.
+        const float ph = 0.5f + 0.5f * sinf(vg.state_t * hz * 6.2831853f);
+        alarm = CANOPY_ALARM_FLASH_AT
+              + (1.0f - CANOPY_ALARM_FLASH_AT)
+                * (CANOPY_ALARM_FLOOR + (1.0f - CANOPY_ALARM_FLOOR) * ph);
+    }
+    vg_canopy_alarm(alarm);
+    vg_rast_tint(0.0f);
 
     // The set turning on and off. Both directions are the same two phases, but
     // they are not mirror images and each control has its own timing, which is
