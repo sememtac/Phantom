@@ -468,6 +468,53 @@ void loop(void) {
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
     acc_hud_radar += g_hud_radar;  g_hud_radar    = 0;
     acc_hud_thr   += g_hud_throttle; g_hud_throttle = 0;
+    // THE TIMED REPLAY'S SAMPLE, taken here because every counter it wants has just been
+    // read for the window above and reading them twice would be reading them at two
+    // different moments.
+    //
+    // Only the CPU-work counters go over. Frame time and blit deliberately do not: with no
+    // pixels being streamed the panel is never the bottleneck, so those measure a pipeline
+    // the player never runs. What is left is the work itself, which is the same work whether
+    // or not anybody is watching the pixels. See vg_replay_timed.
+    if (vg_replay_timed()) {
+        vg_replay_note_cost(vg_rast_can_us(), vg_rast_raster_us(), vg_rast_prim_us(),
+                            t3 - t2, t2 - t1);
+        // AND YIELD, because nothing else in this mode does.
+        //
+        // Every other way of running a frame blocks somewhere: gameplay waits on the panel,
+        // a streamed replay waits on 460 KB going out over the link. A timed replay waits
+        // on neither -- records are already in the host's buffer and no pixels are sent --
+        // so the loop task spins, the idle task on this core never runs, and the watchdog
+        // resets the board. That looks like nothing at all from the host, because the panic
+        // goes to UART0 while this link is USB CDC: the port simply stops answering.
+        //
+        // One tick, once a frame. It costs a millisecond of wall clock that these counters
+        // do not measure anyway -- they are CPU spent on work already done by this point.
+        vTaskDelay(1);
+
+        // ONE BYTE BACK, WHICH IS THE FLOW CONTROL.
+        //
+        // A streamed replay paces itself: the host sends the next record only after it has
+        // read a whole frame, so it is never more than two ahead. A timed replay sends no
+        // frame, so without this the host writes the entire session at once -- 81 KB for a
+        // short one -- the device's CDC ring overflows, and the record stream desyncs.
+        //
+        // What that looked like was worse than a dropped byte. The device fell out of the
+        // replay mid-record, the command poller resumed on the REMAINDER of a record, and
+        // an 0x52 inside somebody's input blob is the letter R: it started a recording and
+        // streamed PHRC entries at the host until it was reset.
+        //
+        // So the device says it has finished a frame and the host keeps a small window of
+        // records outstanding. One byte a frame against 460,800 that a streamed replay
+        // sends, and the run still goes at whatever rate the device can draw.
+        // FLUSHED, or it is not an acknowledgement. USB CDC holds a lone byte until it has
+        // a packet's worth or a timer expires, so unflushed acks arrive in late bursts --
+        // the host then spends its time in the timeout path and a 900-frame run took 385
+        // seconds instead of fifteen. One USB transaction a frame is the price of the
+        // pacing working at all.
+        Serial.write('.');
+        Serial.flush();
+    }
     acc_prim   += vg_rast_prim_us();
     acc_scan   += vg_rast_scan_us();
     frames++;

@@ -33,6 +33,27 @@ static int      s_rand_i = 0;    // next to hand out (PLAY)
 int  vg_replay_mode(void)          { return s_mode; }
 bool vg_replay_suppress_save(void) { return s_mode == VG_RP_PLAY; }
 
+// TIMED REPLAY STATE. Sums rather than a per-frame log: 5,444 frames of five counters is
+// 109 KB and there is nowhere to put it, while the mean over an identical session is
+// exactly the comparison this is for. The worst frame comes along because a mean hides the
+// case that actually drops a frame.
+static bool     s_timed = false;
+static uint32_t s_t_n   = 0;
+static uint32_t s_t_sum[5], s_t_max[5];
+
+bool vg_replay_timed(void) { return s_timed; }
+
+void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
+                         uint32_t sub, uint32_t upd) {
+    if (!s_timed) return;
+    const uint32_t v[5] = { can, rast, prim, sub, upd };
+    for (int i = 0; i < 5; i++) {
+        s_t_sum[i] += v[i];
+        if (v[i] > s_t_max[i]) s_t_max[i] = v[i];
+    }
+    s_t_n++;
+}
+
 uint32_t vg_replay_rand(void) {
     if (s_mode == VG_RP_PLAY) {
         // Running out means the recording and the playback disagree about how
@@ -168,11 +189,19 @@ static void begin_play(void) {
     s_index = 0;
     s_rand_n = 0;
     vg_link_stats_reset();
+    s_t_n = 0;
+    for (int i = 0; i < 5; i++) { s_t_sum[i] = 0; s_t_max[i] = 0; }
     // Announce BEFORE the transmit task starts. After it starts, this core and
     // core 0 would both write to Serial, and two writers corrupt the stream.
+    //
+    // THE SAME WORD EITHER WAY. The host waits for "PLAYING" to know the device is ready,
+    // and a timed run is still a replay starting -- so it says the same thing and the host
+    // needs no second case for it.
     Serial.printf("\nvg_replay: PLAYING\n");
     Serial.flush();
-    vg_capture_set(VG_CAP_STREAM);   // every replayed frame is streamed
+    // Streamed only when somebody wants the pixels. A timed run wants the clock instead,
+    // and leaving the capture off is the entire difference between the two modes.
+    if (!s_timed) vg_capture_set(VG_CAP_STREAM);
 }
 
 bool vg_replay_next(float* dt, VgInput* in) {
@@ -206,6 +235,15 @@ bool vg_replay_command(int c) {
         return true;
     }
     if (c == 'P' && s_mode == VG_RP_OFF) {
+        s_timed = false;
+        begin_play();
+        return true;
+    }
+    // 'T', and everything after it on the wire is byte for byte what 'P' expects. The two
+    // modes differ in what the DEVICE does, not in what the host sends, so a timed run
+    // reuses the whole session protocol unchanged.
+    if (c == 'T' && s_mode == VG_RP_OFF) {
+        s_timed = true;
         begin_play();
         return true;
     }
@@ -223,6 +261,20 @@ bool vg_replay_command(int c) {
                       "stall %u  mismatch %u  begins %u ends %u\n",
                       (unsigned)s_index, (unsigned)wb, (unsigned)ws,
                       (unsigned)wt, (unsigned)wm, (unsigned)fb, (unsigned)fe);
+        // THE COST OF THE SESSION, for a timed run. Microseconds of CPU, meaned over every
+        // frame the device actually ran -- so two drawings measured this way are measured
+        // over the same scene and the difference between them is the drawing.
+        if (s_timed && s_t_n) {
+            Serial.printf("vg_replay: COST frames %u | can %u/%u | rast %u/%u | "
+                          "prim %u/%u | sub %u/%u | upd %u/%u  (mean/worst us)\n",
+                          (unsigned)s_t_n,
+                          (unsigned)(s_t_sum[0] / s_t_n), (unsigned)s_t_max[0],
+                          (unsigned)(s_t_sum[1] / s_t_n), (unsigned)s_t_max[1],
+                          (unsigned)(s_t_sum[2] / s_t_n), (unsigned)s_t_max[2],
+                          (unsigned)(s_t_sum[3] / s_t_n), (unsigned)s_t_max[3],
+                          (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4]);
+        }
+        s_timed = false;
         return true;
     }
     return false;

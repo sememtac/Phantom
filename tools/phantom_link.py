@@ -298,7 +298,16 @@ class PhantomLink:
         self.ser.write(b"EEEE")
         self.ser.flush()
 
-    def replay_start(self, hdr, audio=True):
+    def replay_start(self, hdr, audio=True, cmd=b"P"):
+        """Start a replay. cmd is b"P" to stream the pixels, b"T" to time it.
+
+        The two modes send byte for byte the same thing after the command, which is
+        why this takes the command rather than being copied. It was copied once, and
+        the copy hung: everything visible about it matched and it still never got the
+        device to answer, because this handshake has more in it than it looks --
+        the audio request, the sync flags, and a wait that reads the device's own
+        announcement rather than sleeping a fixed time.
+        """
         self._rx_clear()
         # Ask for sound before the frames start. The device sends none unless a
         # host asks, so a tool built before this existed still works.
@@ -306,7 +315,7 @@ class PhantomLink:
             self.ser.write(b"A")
             self.ser.flush()
         self.audio = bytearray()
-        self.ser.write(b"P")
+        self.ser.write(cmd)
         self.ser.write(struct.pack("<HHB", hdr["ver"], hdr["blob"],
                                    len(hdr["seeds"]) // 4))
         self.ser.write(hdr["seeds"])

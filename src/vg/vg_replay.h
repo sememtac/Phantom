@@ -40,9 +40,31 @@ int  vg_replay_mode(void);
 // while recording, replayed while playing, passed straight through otherwise.
 uint32_t vg_replay_rand(void);
 
-// Host command from the capture poller: 'R' record, 'P' play, 'E' end.
-// Returns true if the byte was a replay command and has been handled.
+// Host command from the capture poller: 'R' record, 'P' play, 'T' timed play,
+// 'E' end. Returns true if the byte was a replay command and has been handled.
 bool vg_replay_command(int c);
+
+// A TIMED REPLAY: the same session, frame for frame, WITHOUT sending the pixels.
+//
+// 'P' streams every replayed frame, which is the whole point of it -- but it also means the
+// link paces the run at about 17 frames a second and the host spends five minutes decoding
+// 460 KB a frame. None of that is needed to answer "what does this drawing cost".
+//
+// 'T' replays identically and streams nothing. The counters it accumulates are CPU WORK --
+// how long the raster spent on each kind of primitive -- so they are unaffected by the host
+// pacing the run. Wall-clock numbers are NOT: with no pixels to send, the panel is never the
+// bottleneck, so frame time and `blit` under a timed replay mean nothing and are not reported.
+//
+// This exists because the same scene twice is the only honest way to compare two drawings.
+// Every attempt in this project to compare canopy cost between two live fights has been
+// wrong, in both directions, because the scene moved underneath the comparison. A replay
+// cannot move: identical seeds, identical input, identical frames.
+bool vg_replay_timed(void);
+
+// One frame's raster cost, handed over by the frame loop while a timed replay runs.
+// Ignored otherwise. Summed and reported when the replay ends.
+void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
+                         uint32_t sub, uint32_t upd);
 
 // PLAY: block for the next frame's record. False when the host says the
 // session is finished.
