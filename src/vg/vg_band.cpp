@@ -1233,6 +1233,13 @@ static bool     s_can_ready = false;
 // dereference a pointer on -- and a missing cockpit should be a missing cockpit, not a crash.
 static const VgCanopy* s_can = nullptr;
 
+// IS THE ARRIVAL SEQUENCE RUNNING. Declared HERE, beside the drawing, and not down with the
+// rest of the intro's state where it used to live -- because the two are coupled and the
+// coupling is a safety property: canopy_intro_step reads s_can->zones under this flag alone,
+// so a true flag and a null drawing is a fault. vg_canopy_use is the only place that can
+// break that pair, and it is a few lines below.
+static bool s_intro_on = false;
+
 // LOOKING AFT, so the cockpit must not be drawn.
 //
 // The canopy is the front of the ship. Draw it over a view out of the back and the picture
@@ -1558,6 +1565,12 @@ void vg_canopy_use(const VgCanopy* c) {
     s_can_ready     = false;
     s_colcost_ready = false;
     s_wq            = -1;
+    // A SEQUENCE CANNOT BE RUNNING AGAINST A DRAWING THAT IS GONE.
+    //
+    // canopy_intro_step reads s_can->zones and is guarded only by s_intro_on, so leaving the
+    // flag set while selecting nullptr arms exactly the fault that vg_canopy_intro_reset just
+    // had to be fixed for. No caller does that today, and no caller should have to know not to.
+    if (!c) s_intro_on = false;
 }
 
 // THE FRAME LAGS THE SHIP, which is what makes it read as being inside something.
@@ -1822,7 +1835,7 @@ void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, f
 // white delta over a lit world passes through magenta and amber before it whites out. Note that
 // CANOPY_INTRO_LIT_PEAK below is what governs how much of that is seen -- at 1.0 the members
 // spend their first moments fully white, which is the part with no colour in it at all.
-static bool    s_intro_on   = false;
+// s_intro_on is declared up beside s_can -- see the note there.
 static float   s_intro_t    = 0.0f;
 static uint8_t s_izon[VG_CANOPY_MAX_ZONES];   // 0 held, 255 fully dissolved to the world
 static uint8_t s_ilive[VG_CANOPY_MAX_ZONES];  // whether this zone's blocks are drawn at all
@@ -2117,6 +2130,17 @@ void vg_canopy_intro_reset(void) {
     s_intro_on = false;
     s_icued    = false;
     s_settle_t = -1.0f;
+    // A HULL WITH NO DRAWING REACHES HERE, and this used to read s_can->zones anyway.
+    //
+    // vg_match_start calls this from the top of the cutscene, before anything has selected a
+    // cockpit for the hull about to fly -- so on a hull that HAS no cockpit, s_can is null and
+    // the load faulted. The panic rebooted the board, and from the seat that looks like the
+    // match refusing to start and dropping back to the title. Reported exactly that way.
+    //
+    // Guarded here rather than at the call, because the three scalars above are the boot
+    // chain's disarm and have to happen for every hull. Only the per-zone arrays need a
+    // drawing to be about.
+    if (!s_can) return;
     for (int z = 0; z < s_can->zones; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
 
