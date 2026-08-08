@@ -256,6 +256,10 @@ void vg_capture_poll(void) {
             const bool on = !vg_rast_aa_master_on();
             vg_rast_aa_master(on);
             if (!vg_link_busy()) Serial.println(on ? "hud aa: on" : "hud aa: off");
+        } else if (c == 'c' && !vg_link_busy()) {
+            // The last timed replay's cost, on demand. See vg_replay_report_cost: catching
+            // it as it went past was a race the host lost every time.
+            if (!vg_replay_report_cost()) Serial.println("vg_replay: no timed run yet");
         } else if (c == 'k' && !vg_link_busy()) {
             // WHAT THE CANOPY COSTS, from anywhere -- the attract loop included.
             //

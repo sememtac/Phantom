@@ -1,0 +1,25 @@
+{
+  "frames": 900,
+  "commit": "9dd8f3b",
+  "session": "regress.phr",
+  "can": {
+    "mean": 2799,
+    "worst": 7089
+  },
+  "rast": {
+    "mean": 9414,
+    "worst": 18156
+  },
+  "prim": {
+    "mean": 5545,
+    "worst": 8946
+  },
+  "sub": {
+    "mean": 3018,
+    "worst": 13161
+  },
+  "upd": {
+    "mean": 624,
+    "worst": 82904
+  }
+}

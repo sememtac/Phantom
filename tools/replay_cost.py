@@ -40,7 +40,7 @@ import subprocess
 import sys
 import time
 
-from phantom_link import Desync, PhantomLink, Session, reset_board
+from phantom_link import Desync, PhantomLink, Session, open_quiet, reset_board
 
 COST = re.compile(
     r"vg_replay: COST frames (\d+) \| can (\d+)/(\d+) \| rast (\d+)/(\d+) \| "
@@ -149,40 +149,61 @@ def run(port, path, limit):
     #
     # Any four bytes that are not "PHRP" end it immediately; the mismatch is what the device
     # tests, not the content. 'E' four times says what it means to a human reading the wire.
+    # END IT ON THE HANDLE THAT RAN IT, then ASK for the answer on a new one.
+    #
+    # Four bytes, because a replay in progress is not reading commands: vg_replay_next owns
+    # the stream and reads a four-byte record tag, so a lone 'E' left the device waiting out
+    # a 30-second timeout before it would end.
     link.ser.write(b"EEEE")
     link.ser.flush()
+    time.sleep(0.5)
+    link.close()
 
-    # Scaled to the work, not a fixed guess. The device draws these at roughly the rate
-    # it draws anything -- the panel is still being pushed, only the LINK is idle -- so a
-    # session takes about n/60 seconds however fast the host handed it over. The first
-    # version waited a flat 15 s, gave up 2 s before a 1,200-frame run finished, and
-    # reported that the firmware must be too old.
-    # The frames are all drawn by now -- the acks proved it -- so this only has to cover
-    # the device noticing the end and printing two lines.
-    # Generous anyway: the tag mismatch above ends the replay at once, but the device still
-    # has vg_game_init and two printfs to get through.
-    deadline = time.time() + 30.0
-    # BULK, NOT BYTE AT A TIME. Reading single bytes here dropped characters and then
-    # crashed the interpreter outright -- the COST line came back as "aoe u8s r iv", which
-    # is the right line with most of it missing. in_waiting says how much is there; take it
-    # all and let the regex find the line in whatever arrives.
+    # A NEW HANDLE, BECAUSE THE OLD ONE IS NOT SAFE TO READ. Reading the tail on the
+    # connection that carried nine hundred acknowledgements killed the interpreter with an
+    # access violation, byte at a time and in bulk alike.
+    #
+    # Windows does not release a USB CDC port instantly, and reopening too soon crashed the
+    # same way -- so this waits and retries rather than assuming.
+    ser = None
+    for attempt in range(8):
+        time.sleep(0.6)
+        try:
+            ser = open_quiet(port, timeout=0.5)
+            break
+        except Exception:
+            continue
+    if ser is None:
+        sys.exit("could not reopen %s to collect the answer.\n"
+                 "  The run itself finished; ask the device yourself with:\n"
+                 "    python tools/listen.py %s   (then press c)" % (port, port))
+
+    # ASKED FOR, NOT CAUGHT. The device keeps the last timed run's sums until the next one,
+    # so this cannot race with a reconnect -- which is what lost the answer every previous
+    # time, USB CDC having discarded it while no host was attached.
+    ser.write(b"c")
+    ser.flush()
+
+    # Short, because the device answers a command in a frame or two. Nothing is being
+    # waited for here except one printf.
+    deadline = time.time() + 10.0
     tail = bytearray()
     while time.time() < deadline:
-        k = link.ser.in_waiting
+        k = ser.in_waiting
         if not k:
             time.sleep(0.02)
             continue
-        tail += link.ser.read(k)
+        tail += ser.read(k)
         m = COST.search(tail.decode("utf-8", "replace"))
         if m:
-            link.close()
+            ser.close()
             g = [int(x) for x in m.groups()]
             out = {"frames": g[0], "commit": git_commit(),
                    "session": os.path.basename(path)}
             for j, k in enumerate(KEYS):
                 out[k] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
             return out
-    link.close()
+    ser.close()
     # SHOW WHAT IT DID SAY. A tool that reports only "no cost line" sends the reader to
     # look at the firmware version, which was wrong both times it happened here.
     said = tail.decode("utf-8", "replace").strip()
@@ -244,6 +265,19 @@ def main():
         with open(a.save, "w") as fh:
             json.dump(r, fh, indent=2)
         print("\nwrote %s" % a.save)
+
+    # LEAVE WITHOUT UNWINDING, and this is not tidiness either.
+    #
+    # Every run of this tool crashed the interpreter on the way out -- an access violation,
+    # after the report had been printed and the file written, so the work was done and the
+    # exit code said 3221225477. A tool nothing can check the exit code of is a tool nothing
+    # can put in a script.
+    #
+    # It is a teardown fault in the serial layer on a port that carried nine hundred
+    # acknowledgements, not anything this file computes. Both handles are already closed by
+    # here. So: say what happened, make sure it is on the terminal, and go.
+    sys.stdout.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

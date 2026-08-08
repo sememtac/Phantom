@@ -408,6 +408,51 @@ heavy one. This comes from the airframe, not from the drawing.
 Fly a new drawing on more than one ship before you judge it. Some of what you feel
 is the ship.
 
+## What a drawing costs
+
+`replay_cost.py` measures the CPU the game spends, over a recorded session. Use it to
+compare two canopy drawings, or to check that a change did not make the frame slower.
+
+    python tools/replay_cost.py captures/regress.phr --port COM6
+
+A run takes about 20 seconds. The device replays the session and sends no pixels.
+
+### Why not simply fly and read the telemetry
+
+Because the numbers move. The `can` counter was measured at 2805 microseconds and again
+at 7100 in the same fight, in the same build. The fight is different every second, so two
+readings from two fights compare the two moments and not the two drawings.
+
+A replay is the same frames every time. The only difference between two runs is the
+build. Measured: the same build twice gives the same `can` to the microsecond.
+
+### To compare two drawings
+
+1. Put the first drawing in `design/canopy/`. Run `tools/canopy.ps1`.
+2. Run `replay_cost.py` with `--save first.json`.
+3. Put the second drawing in. Run `tools/canopy.ps1` again.
+4. Run `replay_cost.py` with `--against first.json`.
+
+The table shows both runs and the change between them.
+
+### What the numbers mean
+
+| name | what it measures |
+|---|---|
+| `can` | the cockpit |
+| `rast` | the whole raster: sky, primitives and scanlines |
+| `prim` | the primitives alone |
+| `sub` | building the primitive list |
+| `upd` | the simulation |
+
+Compare `rast` with **11520 microseconds**. That is the time the wire needs to send one
+frame, and the frame cannot be quicker than it. Below that number, more drawing is mostly
+free, because the processor waits for the wire anyway. Above it, the processor sets the
+frame time, and every microsecond of drawing costs a microsecond.
+
+**This tool does not measure the frame rate.** It sends no pixels, so the panel never
+holds the frame up. The numbers are processor time, not frame time.
+
 ## The regression test
 
 The replay is the only regression test in this project. A session renders frame for

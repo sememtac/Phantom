@@ -43,6 +43,28 @@ static uint32_t s_t_sum[5], s_t_max[5];
 
 bool vg_replay_timed(void) { return s_timed; }
 
+// THE LAST TIMED RUN'S COST, printed again on demand.
+//
+// The sums are statics and survive the replay ending, so the answer exists until the next
+// run overwrites it. Printing it once, at the end, made collecting it a race the host kept
+// losing: USB CDC discards what it writes while no host is attached, so an answer sent
+// during a reconnect ceases to exist and the tool reports that the device said nothing.
+//
+// Asking for it cannot race. Returns false when there is nothing to report, which is the
+// honest answer before any timed run and after a reboot.
+bool vg_replay_report_cost(void) {
+    if (!s_t_n) return false;
+    Serial.printf("vg_replay: COST frames %u | can %u/%u | rast %u/%u | "
+                  "prim %u/%u | sub %u/%u | upd %u/%u  (mean/worst us)\n",
+                  (unsigned)s_t_n,
+                  (unsigned)(s_t_sum[0] / s_t_n), (unsigned)s_t_max[0],
+                  (unsigned)(s_t_sum[1] / s_t_n), (unsigned)s_t_max[1],
+                  (unsigned)(s_t_sum[2] / s_t_n), (unsigned)s_t_max[2],
+                  (unsigned)(s_t_sum[3] / s_t_n), (unsigned)s_t_max[3],
+                  (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4]);
+    return true;
+}
+
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
                          uint32_t sub, uint32_t upd) {
     if (!s_timed) return;
@@ -264,16 +286,9 @@ bool vg_replay_command(int c) {
         // THE COST OF THE SESSION, for a timed run. Microseconds of CPU, meaned over every
         // frame the device actually ran -- so two drawings measured this way are measured
         // over the same scene and the difference between them is the drawing.
-        if (s_timed && s_t_n) {
-            Serial.printf("vg_replay: COST frames %u | can %u/%u | rast %u/%u | "
-                          "prim %u/%u | sub %u/%u | upd %u/%u  (mean/worst us)\n",
-                          (unsigned)s_t_n,
-                          (unsigned)(s_t_sum[0] / s_t_n), (unsigned)s_t_max[0],
-                          (unsigned)(s_t_sum[1] / s_t_n), (unsigned)s_t_max[1],
-                          (unsigned)(s_t_sum[2] / s_t_n), (unsigned)s_t_max[2],
-                          (unsigned)(s_t_sum[3] / s_t_n), (unsigned)s_t_max[3],
-                          (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4]);
-        }
+        // One format, one place. The host may miss this -- see vg_replay_report_cost --
+        // and is expected to ask for it rather than depend on catching it.
+        if (s_timed) vg_replay_report_cost();
         s_timed = false;
         return true;
     }

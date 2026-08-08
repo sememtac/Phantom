@@ -61,6 +61,9 @@ bool vg_replay_command(int c);
 // cannot move: identical seeds, identical input, identical frames.
 bool vg_replay_timed(void);
 
+// Print the last timed run's cost again. False when there has not been one. Serial 'c'.
+bool vg_replay_report_cost(void);
+
 // One frame's raster cost, handed over by the frame loop while a timed replay runs.
 // Ignored otherwise. Summed and reported when the replay ends.
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
