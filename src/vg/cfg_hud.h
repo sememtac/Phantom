@@ -337,6 +337,15 @@
 #define CANOPY_ALARM_SECS     1.6f    // start flashing this far from impact
 #define CANOPY_ALARM_SECS_MAX 0.4f    // ...and reach the top rate here
 #define CANOPY_ALARM_RATE_MIN 8.0f    // units a second of closing before it counts at all
+
+// THE STROBE. White for this long, then back to whatever the clearance asked for.
+//
+// A DUTY CYCLE AND NOT A WAVE. A sine spends half its time near the top, which reads as the
+// frame being generally brighter; a short spike with a long gap reads as a flash. 45 ms is
+// about three frames at sixty -- long enough to register, short enough that the red is what
+// the eye spends its time on.
+#define CANOPY_ALARM_WHITE    0xFFFF  // what a strobe goes to
+#define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
 #define CANOPY_ALARM_FLOOR    0.45f   // how far down the swing goes, so it never looks off

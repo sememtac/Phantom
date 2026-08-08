@@ -256,39 +256,35 @@ void vg_render_frame(const VgInput* in, float fps) {
     //
     // AND IT FLASHES once the wall is close enough that turning is urgent -- see
     // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
-    float alarm = tint;
     // SECONDS TO IMPACT AT THE CURRENT CLOSING RATE, and only while the clearance is
     // actually being spent -- see vg.wall_rate. RATE_MIN keeps a ship holding station from
-    // flashing on numerical noise.
+    // strobing on numerical noise.
+    //
+    // The colour stays what the clearance asked for. What the countdown drives is the
+    // STROBE: white for CANOPY_ALARM_ON_SECS, then back to the red, faster as the seconds
+    // run out. Two signals from two facts -- see the note in cfg_hud.h.
+    bool white = false;
     if (tint > 0.0f && vg.wall_rate > CANOPY_ALARM_RATE_MIN) {
         const float ttc = vg.wall_clear / vg.wall_rate;
         if (ttc < CANOPY_ALARM_SECS) {
-            // 0 at the threshold, 1 at the point where the rate tops out.
+            // 0 at the threshold, 1 where the rate tops out.
             float u = (CANOPY_ALARM_SECS - ttc)
                     / (CANOPY_ALARM_SECS - CANOPY_ALARM_SECS_MAX);
             if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
             const float hz = CANOPY_ALARM_HZ_MIN
                            + (CANOPY_ALARM_HZ_MAX - CANOPY_ALARM_HZ_MIN) * u;
-            // vg.state_t is the clock the rest of the cockpit runs on, so the flash cannot
-            // drift against it.
-            const float ph = 0.5f + 0.5f * sinf(vg.state_t * hz * 6.2831853f);
-            // Swings between the colour the distance asked for and full red. The floor
-            // keeps the bottom of the swing lit, so it reads as a flash rather than as the
-            // warning switching off and on.
-            const float lo = alarm * CANOPY_ALARM_FLOOR;
-            alarm = lo + (1.0f - lo) * ph;
+            // vg.state_t is the clock the rest of the cockpit runs on, so the strobe cannot
+            // drift against it. fmodf gives the position within one flash period.
+            const float period = 1.0f / hz;
+            white = fmodf(vg.state_t, period) < CANOPY_ALARM_ON_SECS;
         }
     }
-    if (vg_canopy_current()) {
-        vg_canopy_alarm(alarm);
-        vg_rast_tint(0.0f);
-    } else {
-        // No cockpit: the ring, at the unflashed level. The flash rides the frame's own
-        // colour and there is no frame, and a whole view strobing red is a different and
-        // much worse thing than a cockpit doing it.
-        vg_canopy_alarm(0.0f);
-        vg_rast_tint(tint);
-    }
+    // THE COCKPIT IS THE ONLY WARNING, by the author's decision, and a hull with no
+    // drawing gets none until one is drawn for it. The ring is gone rather than kept as a
+    // fallback: it was invented because there was no cockpit to light, and keeping a
+    // second full-screen effect alive for three hulls that are getting canopies anyway is
+    // paying twice for a problem that is being solved once.
+    vg_canopy_alarm(tint, white);
 
     // The set turning on and off. Both directions are the same two phases, but
     // they are not mirror images and each control has its own timing, which is

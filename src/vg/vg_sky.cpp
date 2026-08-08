@@ -1295,11 +1295,12 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
         // The walk itself, and which of the two it is settled at compile time. See the
         // note above sky_row for why the flag could not simply live in a register.
         if (row_step == 2) {
-            if (tint) sky_row<true, true>(bd, dst, sy, dr, w);
-            else      sky_row<false, true>(bd, dst, sy, dr, w);
+            // ONE INSTANTIATION. The tinted one is gone with the ring -- see
+            // vg_canopy_alarm. `if (TINT)` in the body is now compile-time false, so the
+            // per-chunk ring walk and the thirteen sqrtf a row compile out entirely.
+            sky_row<false, true>(bd, dst, sy, dr, w);
         } else {
-            if (tint) sky_row<true, false>(bd, dst, sy, dr, w);
-            else      sky_row<false, false>(bd, dst, sy, dr, w);
+            sky_row<false, false>(bd, dst, sy, dr, w);
         }
 
     }

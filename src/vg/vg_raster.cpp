@@ -590,7 +590,6 @@ static void line_raw(float x0, float y0, float x1, float y1, uint16_t color) {
 
     Prim* p = push();
     if (!p) return;
-    color = vg_tint_prim(color, (x0 + x1) * 0.5f, (y0 + y1) * 0.5f);
     p->type  = PRIM_LINE;
     p->aa    = sub()->aa;
     p->x0    = (int16_t)lrintf(x0);
@@ -653,7 +652,6 @@ void vg_point(int x, int y, uint16_t color) {
 
     Prim* p = push();
     if (!p) return;
-    color = vg_tint_prim(color, (float)x, (float)y);
     p->type  = PRIM_POINT;
     p->x0    = (int16_t)x;
     p->y0    = (int16_t)y;
@@ -675,7 +673,6 @@ static void fill_rect_raw(int x, int y, int w, int h, uint16_t color) {
 
     Prim* p = push();
     if (!p) return;
-    color = vg_tint_prim(color, (float)x + w * 0.5f, (float)y + h * 0.5f);
     p->type  = PRIM_FILL;
     p->x0    = (int16_t)x;
     p->y0    = (int16_t)y;
@@ -781,8 +778,6 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
 
     Prim* p = push();
     if (!p) return;
-    color = vg_tint_prim(color, (x0 + x1 + x2) * (1.0f / 3.0f),
-                                (y0 + y1 + y2) * (1.0f / 3.0f));
     p->type  = PRIM_TRI;
     sub()->tri++;
     p->x0 = TCLAMP(x0); p->y0 = TCLAMP(y0);
@@ -827,7 +822,6 @@ void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
 
         Prim* p = push();
         if (!p) return;
-        color = vg_tint_prim(color, gx, gy);
         p->type  = PRIM_GLYPH;
         p->x0    = (int16_t)lrintf(gx);
         p->y0    = (int16_t)lrintf(gy);

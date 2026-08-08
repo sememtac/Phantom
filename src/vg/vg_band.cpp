@@ -1304,22 +1304,43 @@ const VgCanopy* vg_canopy_current(void) { return s_can; }
 // nearly free -- the quantising is about not thrashing s_can_ready.
 // s_alarm is declared up beside s_tint_k -- see the note there.
 static int   s_alarm_q = 0;
+static bool  s_alarm_white = false;
 
-void vg_canopy_alarm(float k) {
+// TWO THINGS, because they are two different signals and the first attempt conflated them.
+//
+// `k` is how red the frame is, from the clearance. `white` is a STROBE: the frame goes to
+// white for a fraction of a second and comes back. The author's words, after flying the
+// first version and not seeing it: "the flashing i have in mind is not the canopy flashing
+// its opacity, rather, it's the color flashing from split second of white to the current
+// tint".
+//
+// That is why the first attempt was invisible. It swung the red LEVEL between a floor and
+// full, and vg_mix(COL_HUD, COL_DANGER, k) cannot reach white at either end -- so the whole
+// effect was a slight change of saturation on an already-red frame, which is precisely the
+// "which shade means I am dead" problem it was meant to solve.
+//
+// The strobe is a bool and the level is quantised, so the table rebuilds on either edge of
+// a flash and on a step of the ramp. At the top rate that is about eighteen rebuilds a
+// second of 256 trivial entries, which is nothing beside a per-pixel pass.
+void vg_canopy_alarm(float k, bool white) {
     if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * 16.0f + 0.5f);
-    if (q == s_alarm_q) return;
-    s_alarm_q   = q;
-    s_alarm     = (float)q * (1.0f / 16.0f);
-    s_can_ready = false;          // the colour table is stale; canopy_lut rebuilds it
+    if (q == s_alarm_q && white == s_alarm_white) return;
+    s_alarm_q     = q;
+    s_alarm       = (float)q * (1.0f / 16.0f);
+    s_alarm_white = white;
+    s_can_ready   = false;        // the colour table is stale; canopy_lut rebuilds it
 }
 
 static void canopy_lut(void) {
     const int bg = (int)s_can->bg;
     // What the frame is made of right now: its own amber, pulled toward the danger red as
     // the wall closes. One mix for the whole table rather than per pixel.
-    const uint16_t base = (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm)
-                                           : COL_HUD;
+    // The frame's own amber, pulled toward the danger red by the clearance, and then all
+    // the way to white for the length of a strobe. One mix for the whole table rather than
+    // anything per pixel.
+    uint16_t base = (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm) : COL_HUD;
+    if (s_alarm_white) base = CANOPY_ALARM_WHITE;
     for (int g = 0; g < 256; g++) {
         const float f = (g > bg)
                       ? (float)(g - bg) / (float)(255 - bg)
