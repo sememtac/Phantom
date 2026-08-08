@@ -53,7 +53,7 @@ static void set_hue_from(float x) {
     float t = (x - (float)ENT_HUE_X) / (float)ENT_HUE_W;
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
-    vg.trail_hue = t;
+    vg.trail_hue = t * ENT_HUE_SPAN;
 }
 
 bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
@@ -185,10 +185,12 @@ void vg_draw_entry(void) {
         // discrete swatches for showing that hue is continuous.
         for (int i = 0; i < ENT_HUE_W; i += 2)
             vg_fill_rect(ENT_HUE_X + i, ENT_HUE_Y, 2, ENT_HUE_H,
-                         vg_hue_col((float)i / (float)ENT_HUE_W));
+                         vg_hue_col((float)i / (float)ENT_HUE_W * ENT_HUE_SPAN));
 
         // A wide handle, not a hairline: it has to be findable under a thumb.
-        int mx = ENT_HUE_X + (int)(vg.trail_hue * (float)ENT_HUE_W);
+        // Divided by the span, so the handle sits under the colour it selected. A hue
+        // from an older profile can exceed the span; the clamp below pins it to the end.
+        int mx = ENT_HUE_X + (int)(vg.trail_hue / ENT_HUE_SPAN * (float)ENT_HUE_W);
         if (mx < ENT_HUE_X + 7)               mx = ENT_HUE_X + 7;
         if (mx > ENT_HUE_X + ENT_HUE_W - 7)   mx = ENT_HUE_X + ENT_HUE_W - 7;
         vg_fill_rect(mx - 7, ENT_HUE_Y - 9, 15, ENT_HUE_H + 18, COL_BLACK);

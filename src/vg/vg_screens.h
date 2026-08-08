@@ -82,6 +82,22 @@ float vg_pause_slider_value(float x);
 // Acquiring the ramp should not demand precision -- the slider is a coarse
 // choice and the finger covers most of it.
 #define ENT_HUE_PAD     26
+
+// HOW MUCH OF THE COLOUR WHEEL THE SLIDER SPENDS ITS WIDTH ON.
+//
+// vg_hue_col takes a full turn, so a slider mapped straight onto it ran red - yellow -
+// green - cyan - blue - magenta - red and arrived back where it started. The two ends
+// were the same colour, which wastes the last third of a 400px bar on a journey home
+// nobody asked for and makes the extremes impossible to tell apart.
+//
+// Two thirds of a turn is red through to pure blue: h=2/3 is exactly (0,0,1), so the bar
+// ends on a primary rather than part way through a ramp.
+//
+// vg.trail_hue stays a REAL HUE in 0..1 and is not rescaled -- the save file, the
+// opponents' hues and vg_hue_col all keep one meaning for the number. Only the picker is
+// restricted, so a profile saved with a magenta hue still draws magenta; its handle just
+// pins to the end of the bar.
+#define ENT_HUE_SPAN    0.6667f
 #define ENT_GO_X        150
 #define ENT_GO_Y        408
 #define ENT_GO_W        180
