@@ -1,5 +1,7 @@
 ﻿#include "vg_draw.h"
 #include "vg_game.h"
+#include "vg_prof.h"
+#include <Arduino.h>
 #include <math.h>
 
 // Everything with a position in the world: stars, dust, rocks, fighters,
@@ -608,8 +610,21 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
 }
 
 void vg_draw_world(const VgCam& cam) {
+    // COUNTED FOR THE MAIN VIEW ONLY, because this function runs TWICE a frame.
+    //
+    // The rear-view repeater renders the world again with cam.lite set, and lite skips the
+    // trails. Assigning these unconditionally meant the mirror's pass overwrote the real
+    // one, so `trails` read 0 in the middle of a dogfight and three quarters of `world`
+    // fell into the unnamed remainder. The mirror has its own counter already -- see
+    // vg_render_mirror_us -- so this half of the split belongs to the main view alone.
+    //
+    // g_sub_world brackets the main call only, so these must too, or the parts would not
+    // add up to the whole they are a split of.
+    const bool bill = !cam.lite;
+    uint32_t t_w = micros();
     draw_motes(cam);
     draw_debris(cam);
+    if (bill) { g_w_motes = micros() - t_w; } t_w = micros();
 
     // Painter order: farthest rock first, so a nearer one's black fills occlude
     // it. Within a single rock, back-face culling already sorts things out.
@@ -626,6 +641,7 @@ void vg_draw_world(const VgCam& cam) {
         order[j + 1] = key;
     }
     for (int i = 0; i < nast; i++) draw_asteroid(cam, &vg.ast[order[i]]);
+    if (bill) { g_w_rocks = micros() - t_w; } t_w = micros();
 
     // Ships after the rocks and never occluded by them: losing the bandit behind
     // scenery in a dogfight is worse than the small inconsistency.
@@ -647,6 +663,9 @@ void vg_draw_world(const VgCam& cam) {
                         v3(0, 0, 0), vg.trail_hue);
     }
 
+    // The trails end here; the gate and the hulls are the next span.
+    if (bill) { g_w_trails = micros() - t_w; } t_w = micros();
+
     // Gate first: the ship comes THROUGH it, so it has to be behind.
     draw_gate(cam);
 
@@ -666,6 +685,8 @@ void vg_draw_world(const VgCam& cam) {
     // colour reserved for hostiles said the wrong thing about both.
     if (vg.cine.on) draw_enemy(cam, &vg.cine.ship, true);
 
+    if (bill) { g_w_ships = micros() - t_w; } t_w = micros();
+
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);
 
@@ -673,4 +694,5 @@ void vg_draw_world(const VgCam& cam) {
     // wreckage it came from -- drawn under the ships, the brightest thing in the
     // frame would be the one thing getting occluded by black hull fills.
     draw_fireballs(cam);
+    if (bill) { g_w_ord = micros() - t_w; }
 }

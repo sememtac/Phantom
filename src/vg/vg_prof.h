@@ -207,6 +207,25 @@ extern uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
 // arithmetic, which the telemetry gets by subtraction rather than by timing it twice.
 extern uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over;
 
+// WHAT `world` IS MADE OF, which is the phase that swings.
+//
+// g_sub_world was measured at 615 us in the quietest fight window and 2794 in the busiest,
+// against a starfield that never leaves 132-137. It tracks the frame rate almost exactly,
+// so it is the shakiness -- and it was one number for eight different kinds of object.
+//
+// A curve to flatten rather than a cost to shave, so what matters is not the mean of each
+// of these but which one GROWS when the fight gets busy. Read the range, not the average.
+//
+//   motes   the speed cue and the debris shards: many points, no structure
+//   rocks   the asteroid sort and the asteroids
+//   trails  every ship's ribbon. The comment on draw_ship_trail calls these the single
+//           largest primitive source in a fight, which this is here to confirm or deny.
+//   ships   the hulls, the entry gate, and the cutscene ship's own ribbon -- which sits
+//           between them in draw order. Left there: moving a draw call to tidy up a
+//           counter is how a rendering bug gets made, and the cutscene is not a fight.
+//   ord     missiles and fireballs
+extern uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord;
+
 // THE FRAME'S LAST I2C, split three ways.
 //
 // `in` is ~680 us and the touch controller is the only I2C left on the render thread -- the

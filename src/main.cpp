@@ -15,6 +15,7 @@ uint32_t g_arena_hoop, g_arena_rail;                        // the grid's two lo
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_in_touch, g_in_lock;                             // the frame's last I2C
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
+uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord;  // and `world` too
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
@@ -472,6 +473,14 @@ void loop(void) {
     acc_scan_p += g_sub_canopy; g_sub_canopy = 0;
     acc_smarks += g_sub_marks;  g_sub_marks  = 0;
     acc_sover  += g_sub_over;   g_sub_over   = 0;
+    // `world`'s five parts. See g_w_motes in vg_prof.h -- read the RANGE of these,
+    // not the mean: the question is which one grows when the fight gets busy.
+    static uint32_t acc_w[5] = {0};
+    {
+        uint32_t* const g[5] = { &g_w_motes, &g_w_rocks, &g_w_trails,
+                                 &g_w_ships, &g_w_ord };
+        for (int i = 0; i < 5; i++) { acc_w[i] += *g[i]; *g[i] = 0; }
+    }
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
     acc_hud_radar += g_hud_radar;  g_hud_radar    = 0;
     acc_hud_thr   += g_hud_throttle; g_hud_throttle = 0;
@@ -650,6 +659,20 @@ void loop(void) {
                           (unsigned long)(b > named ? b - named : 0),
                           (unsigned long)b);
         }
+        {
+            const uint32_t w = acc_wrld / frames;
+            uint32_t named = 0;
+            for (int i = 0; i < 5; i++) named += acc_w[i] / frames;
+            Serial.printf("        world = motes %lu rocks %lu trails %lu ships %lu "
+                          "ord %lu rest %lu of %lu\n",
+                          (unsigned long)(acc_w[0] / frames),
+                          (unsigned long)(acc_w[1] / frames),
+                          (unsigned long)(acc_w[2] / frames),
+                          (unsigned long)(acc_w[3] / frames),
+                          (unsigned long)(acc_w[4] / frames),
+                          (unsigned long)(w > named ? w - named : 0),
+                          (unsigned long)w);
+        }
         Serial.printf("        grid = hoops %lu (core 1) rails %lu (core 0)\n",
                       (unsigned long)(acc_ahoop / frames),
                       (unsigned long)(acc_arail / frames));
@@ -777,6 +800,7 @@ void loop(void) {
         // keep the frame that paid for the formatting out of the histogram.
 
         for (int i = 0; i < 11; i++) acc_u[i] = 0;
+    for (int i = 0; i < 5; i++) acc_w[i] = 0;
     acc_slock = acc_scan_p = acc_smarks = acc_sover = 0;
     acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = acc_push = 0;
