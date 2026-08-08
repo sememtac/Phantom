@@ -2748,6 +2748,12 @@ static void draw_band(int band_index, uint16_t* band) {
             break;
         }
         const uint32_t dc = esp_cpu_get_cycle_count() - c0;
+        // `aa` COUNTS EVERY BLENDED LINE, NOT ONLY SMOOTHED ONES. The field holds
+        // LINE_AA, LINE_ADD and LINE_SUB alike, so an additive line lands in this bucket
+        // and out of `ln`. That is worth knowing before reading the two against each
+        // other: making the ship trails additive moved them wholesale from one to the
+        // other, which looked like the line cost falling and antialiasing switching itself
+        // on, and was neither.
         if      (p->type == PRIM_LINE && p->aa) s_cyc_aa  += dc;
         else if (p->type == PRIM_LINE)          s_cyc_ln  += dc;
         else if (p->type == PRIM_TRI)           s_cyc_tri += dc;

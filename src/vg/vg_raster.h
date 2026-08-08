@@ -62,7 +62,13 @@ void vg_line_blend(int mode);
 #define VG_LINE_SUB 3
 
 // Master switch over the above, for judging what the smoothing is actually worth.
-// Serial 'q' toggles it. Default on, so nothing changes unless it is asked for.
+// Serial 'q' toggles it.
+//
+// DEFAULT OFF, and it said "default on" here until somebody asked what turning it off
+// would save. The answer was nothing, because it has never been on: s_aa_master is false
+// at boot and vg_line_aa_mode(true) is gated on it, so no antialiased line has been drawn
+// in any build anybody has measured. A header that describes the opposite of the code is
+// worse than no header, and this one had been read and believed.
 void vg_rast_aa_master(bool on);
 bool vg_rast_aa_master_on(void);
 
