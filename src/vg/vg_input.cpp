@@ -208,8 +208,25 @@ void vg_input_update(float dt, VgInput* out) {
     // point every host must reach.
     static bool s_task = false;
     if (!s_task) {
-        s_task = true;
-        xTaskCreatePinnedToCore(sensor_task, "sens", 4096, nullptr, 2, nullptr, 0);
+        // FLAGGED ON SUCCESS, NOT BEFORE THE ATTEMPT. Set first, a failed creation was
+        // permanent and silent -- and silent is the part that matters here, because the
+        // fallback below is not "no tilt steering", it is vg_imu_read on THIS thread every
+        // frame. That is the blocking I2C read the task exists to get off the render
+        // thread, so the failure mode is the frame quietly getting slower for ever and
+        // nothing anywhere saying so.
+        //
+        // Retried rather than given up on: creation fails when the heap is short, and the
+        // heap recovers. Warned once, because a warning per frame over USB CDC would cost
+        // more than the fault.
+        static bool s_warned = false;
+        if (xTaskCreatePinnedToCore(sensor_task, "sens", 4096, nullptr, 2, nullptr, 0)
+                == pdPASS) {
+            s_task = true;
+        } else if (!s_warned) {
+            s_warned = true;
+            Serial.println("WARN: sensor task would not start - the IMU is being read on "
+                           "the render thread, which costs frame time. Retrying.");
+        }
     }
 
     // ON THIS THREAD, always -- see the note on Sensors for why this one cannot
