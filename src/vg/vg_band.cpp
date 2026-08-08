@@ -26,7 +26,6 @@
 //
 // 30 KB of internal SRAM, which is the scarce memory on this part. Bought against 590
 // us of measured wire idle, on every frame, whatever the scene is doing.
-static void tint_table_init(void);   // defined with the tint, below
 
 #define BAND_BUFS 3
 static uint16_t* s_band[BAND_BUFS] = { nullptr, nullptr, nullptr };
@@ -36,7 +35,6 @@ int vg_band_bufs(void) { return BAND_BUFS; }
 bool vg_band_init(void) {
     // Must be internal and DMA-capable: written pixel-by-pixel, then handed
     // straight to the SPI engine.
-    tint_table_init();
 
     for (int i = 0; i < BAND_BUFS; i++) {
         s_band[i] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
@@ -519,7 +517,6 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // Twelve rings, not four. Four was a gradient in the sense that it had steps in
 // it, and the steps were the thing you noticed. Each extra ring costs one more
 // square root per ROW and two more spans, which is nothing next to the pixels.
-#define TINT_RINGS 12
 
 // Per ring, from the faint inner edge out to the rim. The mask CLEARS bits and
 // the glow is a red value out of 31, pre-shifted into the swapped red field.
@@ -529,102 +526,37 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // Pre-paired, so the hot loop does not build them. Each entry is the mask and the
 // glow for TWO pixels at once. Recomputing these inside the span function cost
 // six operations per call, and there are twelve rings on both sides of 480 rows.
-static const uint32_t TINT_KEEP[TINT_RINGS] = {
-    0x1FFF1FFFu, 0x1EFF1EFFu, 0x1CFF1CFFu, 0x18FF18FFu,
-    0x10FF10FFu, 0x00FE00FEu, 0x00FF00FFu, 0x00FE00FEu,
-    0x00FE00FEu, 0x00FA00FAu, 0x00F800F8u, 0x00F800F8u,
-};
-static const uint32_t TINT_GLOW[TINT_RINGS] = {
-    0x00000000u, 0x00080008u, 0x00100010u, 0x00180018u,
-    0x00200020u, 0x00300030u, 0x00400040u, 0x00500050u,
-    0x00600060u, 0x00700070u, 0x00800080u, 0x00900090u,
-};
 // Shift applied to green's HIGH three bits, which are contiguous at 15..13 in
 // the swapped word. This is what gives amber intermediate levels: masks alone
 // could only take its green from 21 straight to 0, because 010101 has no bits
 // left to remove in between.
-static const uint8_t TINT_GSHIFT[TINT_RINGS] = {
-    0, 0, 0, 1, 1, 1,
-    2, 2, 3, 3, 3, 3,
-};
 
 // Tint [x0,x1) of one row. Unrolled four words at a time, which is what the
 // scanline pass above learned: at five operations of real work per word, the loop
 // itself was most of the cost.
-static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
-    if (x0 < 0)     x0 = 0;
-    if (x1 > SCR_W) x1 = SCR_W;
-    if (x1 <= x0)   return;
 
-    const uint32_t keep = TINT_KEEP[ring];
-    const uint32_t glow = TINT_GLOW[ring];
-    const int       gs  = TINT_GSHIFT[ring];
-    if (glow == 0u && gs == 0 && keep == 0xE000E000u) { /* nothing to do */ }
-    // Green's high field is rebuilt rather than kept, so it is cleared in `keep`
-    // and re-inserted shifted. GH is the mask for that field, in both pixels.
-    const uint32_t GH = 0xE000E000u;
-
-    int x = x0;
-    if (x & 1) {
-        const uint16_t v = row[x];
-        row[x] = (uint16_t)((v & (uint16_t)keep)
-                          | (((v & (uint16_t)GH) >> gs) & (uint16_t)GH)
-                          | (uint16_t)glow);
-        x++;
-    }
-
-    uint32_t* p = (uint32_t*)(row + x);
-    int n = (x1 - x) >> 1;
-    int i = 0;
-    for (; i + 4 <= n; i += 4) {
-        uint32_t a = p[i], b2 = p[i + 1], c = p[i + 2], d = p[i + 3];
-        p[i]     = (a  & keep) | (((a  & GH) >> gs) & GH) | glow;
-        p[i + 1] = (b2 & keep) | (((b2 & GH) >> gs) & GH) | glow;
-        p[i + 2] = (c  & keep) | (((c  & GH) >> gs) & GH) | glow;
-        p[i + 3] = (d  & keep) | (((d  & GH) >> gs) & GH) | glow;
-    }
-    for (; i < n; i++) {
-        const uint32_t v = p[i];
-        p[i] = (v & keep) | (((v & GH) >> gs) & GH) | glow;
-    }
-    x += n * 2;
-
-    for (; x < x1; x++) {
-        const uint16_t v = row[x];
-        row[x] = (uint16_t)((v & (uint16_t)keep)
-                          | (((v & (uint16_t)GH) >> gs) & (uint16_t)GH)
-                          | (uint16_t)glow);
-    }
-}
-
-// A RADIAL gradient that closes inward. The edge of the screen reddens first and
-// the red front travels toward the middle, so at the moment of real danger the
-// whole picture is red and the strongest part is still the rim.
+// THE WALL WARNING WAS A FULL-SCREEN RED RING AND IT IS GONE. What it cost, measured, is
+// the argument against ever putting one back:
 //
-// This replaced a flat tint over the whole frame, which said "danger" but not
-// "how close", and before that a subdivided patch of wall, which was a detail on
-// a surface the player was not looking at.
+//   the backdrop fill      1700 us clear, 5251 us with the ring on
+//   at the boundary        53 fps against 59-60 with the cockpit doing the job instead
+//   per primitive          every line, point, rect, triangle and glyph of every frame
+//                          asked whether the player was near a wall, wall or no wall
 //
-// No square root per pixel. For a row at dy from centre, the ring of radius R
-// crosses it at dx = sqrt(R*R - dy*dy), so one root per ring per ROW gives the
-// boundaries and everything between them is a span. Untinted spans cost nothing.
+// Two rounds of optimisation went into it and both worked: the ring radii were hoisted to
+// once a frame from once a row, and the thirteen square roots a row became a 241 x 13 table
+// in PSRAM, which took 5251 us to 4188. It was still the most expensive thing in the frame,
+// because the cost was never the arithmetic -- it was writing to 153,600 pixels that were
+// already going to be written once.
 //
-// TINT_RINGS is defined once, above the tables. It was defined a second time
-// here, at 4, left behind by an edit -- so the tables held twelve entries and the
-// loop only ever read the first four, which are the faintest. The gradient was
-// running over the whole screen, writing 153,600 pixels a frame, and doing
-// almost nothing visible with them. The compiler warned about the redefinition
-// and the warning was filtered out of the build output.
+// A cockpit member is already being drawn. Colouring it differently costs nothing per pixel,
+// which no amount of work on a second full-screen pass can match. See vg_canopy_alarm.
+//
+// It existed because it had to: it predates canopies, and with no cockpit to light up,
+// tinting the whole view was the only way to say "wall" at all.
 
-
-// Set from outside, once per frame: 0 for no tint, up to 1 at the wall. The
-// rasteriser does not include vg_game.h and must not -- it draws what it is given
-// and knows nothing about walls. The render layer owns the game state.
-static float s_tint_k = 0.0f;
-
-// THE OTHER WARNING LEVEL, declared beside the first because they are alternatives and
-// vg_rast_tint_us has to read both. The ring tints the backdrop; this reddens the cockpit.
-// Only one of them runs, and which one depends on whether the hull has a drawing.
+// HOW RED THE COCKPIT IS, 0 clear and 1 hard against the wall. The only wall warning there
+// is now: the ring that used to sit beside this is deleted, above.
 static float s_alarm  = 0.0f;
 
 // THE RING RADII, SQUARED, ONCE PER FRAME.
@@ -637,7 +569,6 @@ static float s_alarm  = 0.0f;
 // primitive wants to know which band its own squared radius falls in without taking a root at
 // all. What is left per row is one subtract and one root per ring, and neither can be hoisted
 // -- dy is the row.
-static float s_tint_r2[TINT_RINGS + 1];
 
 // THE RING LIMITS, PRECOMPUTED, AND IN PSRAM.
 //
@@ -659,22 +590,11 @@ static float s_tint_r2[TINT_RINGS + 1];
 // every frame. The worst case is safe without the quantiser at all: a rebuild is 3,133 roots
 // against the 6,240 a frame used to pay, so even rebuilding EVERY frame would be twice as fast
 // as asking per row.
-#define TINT_QSTEPS 128
-#define TINT_ROWS   (SCR_H / 2 + 1)          // |dy| is 0..240 inclusive
-static int16_t* s_tint_lim = nullptr;        // [TINT_ROWS][TINT_RINGS + 1]
 static int      s_tint_q   = -1;             // the quantised amount the table holds
 
 // Allocated once, at init, and never during a frame: this is reached from the render thread
 // and a malloc mid-frame is a stall nobody asked for. A failure is not fatal -- the row walk
 // below falls back to computing, which is exactly what it did before the table existed.
-static void tint_table_init(void) {
-    if (s_tint_lim) return;
-    s_tint_lim = (int16_t*)heap_caps_malloc(
-        (size_t)TINT_ROWS * (TINT_RINGS + 1) * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-    Serial.printf("vg_tint_table: %u bytes in %s\n",
-                  (unsigned)((size_t)TINT_ROWS * (TINT_RINGS + 1) * sizeof(int16_t)),
-                  s_tint_lim ? "PSRAM" : "NOWHERE -- falling back to per-row sqrt");
-}
 
 
 // --- tint, at the source ----------------------------------------------------
@@ -687,145 +607,18 @@ static void tint_table_init(void) {
 // 8-pixel chunks as it writes them, and primitives are tinted once each at
 // submit. A 60-chunk row costs sixty ops where the pass paid two hundred and
 // forty; a primitive costs one.
-bool vg_tint_active(void) { return s_tint_k > 0.0f; }
 
 // Ring crossings for one panel row: lim[i] is the half-width where ring i
 // begins. Geometry identical to the dead pass.
-void vg_tint_row_limits(int sy, int* lim) {
-    // THIRTEEN LOADS, not thirteen roots. Mirrored about the centre row, because the limits
-    // depend on |dy| and nothing else -- see s_tint_lim.
-    int ady = sy - SCR_H / 2;
-    if (ady < 0) ady = -ady;
-    // A/B'd against the fallback below at the same amount: both give checksum 90cefd65, so
-    // the table reproduces the computed limits exactly rather than approximately.
-    if (s_tint_lim && ady < TINT_ROWS) {
-        const int16_t* row = &s_tint_lim[ady * (TINT_RINGS + 1)];
-        for (int i = 0; i <= TINT_RINGS; i++) lim[i] = (int)row[i];
-        return;
-    }
 
-    // No table: compute, exactly as before it existed. Reached only if the PSRAM allocation
-    // failed, and the tint still works -- slowly.
-    const float dy2 = (float)ady * (float)ady;
-    for (int i = 0; i <= TINT_RINGS; i++) {
-        const float d2 = s_tint_r2[i] - dy2;
-        lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
-    }
-}
-
-uint32_t vg_tint_word(uint32_t v, int ring) {
-    const uint32_t GH = 0xE000E000u;
-    return (v & TINT_KEEP[ring]) | (((v & GH) >> TINT_GSHIFT[ring]) & GH)
-         | TINT_GLOW[ring];
-}
 
 // One primitive, tinted by the ring under its centre. A long line crosses
 // several rings and gets its centre's -- a visible simplification nobody will
 // study during a boundary alarm.
-uint16_t vg_tint_prim(uint16_t c, float x, float y) {
-    if (s_tint_k <= 0.0f || c == 0) return c;
-    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
-    // AGAINST THE SQUARED RADII, so this needs no root and no divide. It took two roots and
-    // two divides per primitive to rediscover the same three frame constants the row walk was
-    // recomputing. Thirteen ascending compares replace them, and the bands are wide enough
-    // that a primitive lands in the first or second one it tries.
-    const float d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-    if (d2 < s_tint_r2[0]) return c;
-    int ring = 0;
-    while (ring + 1 <= TINT_RINGS && d2 >= s_tint_r2[ring + 1]) ring++;
-    if (ring >= TINT_RINGS) ring = TINT_RINGS - 1;
-    const uint32_t v = ((uint32_t)c << 16) | c;
-    return (uint16_t)vg_tint_word(v, ring);
-}
-
-static void band_wall_tint(uint16_t* band, int by0, float k) __attribute__((unused));
-static void band_wall_tint(uint16_t* band, int by0, float k) {
-    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
-    // The corner. At k=1 the innermost boundary reaches the centre and the whole
-    // frame is inside the gradient.
-    const float rmax = sqrtf(cx * cx + cy * cy);
-    const float rin  = rmax * (1.0f - k);
-    const float step = (rmax - rin) / (float)TINT_RINGS;
-
-    for (int row = 0; row < BAND_H; row++) {
-        // Only the rows the scanline pass left BRIGHT.
-        //
-        // This halves the pixel work, which is what pays for reddening amber at
-        // all: rebuilding green's high field costs three more operations a word
-        // than a mask does, and at full coverage that was 5.8ms and 48 fps.
-        //
-        // It is not a compromise on the look. band_scanlines has already darkened
-        // the other rows, so the red lands exactly where there is brightness to
-        // colour, and the result reads as a red vignette with the scanline texture
-        // still in it rather than as stripes.
-        if (((by0 + row) % SCANLINE_PITCH) == 0) continue;
-
-        const float dy  = (float)(by0 + row) - cy;
-        const float dy2 = dy * dy;
-        uint16_t*   p   = band + row * SCR_W;
-
-        // Where each ring boundary crosses this row, as a half-width. Rings that
-        // do not reach the row at all clamp to the screen edge and their spans
-        // come out empty.
-        int lim[TINT_RINGS + 1];
-        for (int i = 0; i <= TINT_RINGS; i++) {
-            const float r  = rin + step * (float)i;
-            const float d2 = r * r - dy2;
-            lim[i] = (d2 <= 0.0f) ? 0 : (int)sqrtf(d2);
-        }
-
-        // Innermost ring is the faintest. Outside the last boundary is the corner
-        // region, which stays at the strongest setting.
-        for (int i = 0; i < TINT_RINGS; i++) {
-            const int a = lim[i], b = lim[i + 1];
-            tint_span(p, (int)cx + a, (int)cx + b, i);            // right
-            tint_span(p, (int)cx - b, (int)cx - a, i);            // left
-        }
-        // Beyond the last boundary is the corner region, held at the rim setting.
-        tint_span(p, (int)cx + lim[TINT_RINGS], SCR_W, TINT_RINGS - 1);
-        tint_span(p, 0, (int)cx - lim[TINT_RINGS], TINT_RINGS - 1);
-    }
-}
 
 
 
-void vg_rast_tint(float k) {
-    // Written as "keep it only if it is in range" rather than as two rejections,
-    // because a NaN fails BOTH `k < 0` and `k > 1` and would sail through a clamp
-    // written the obvious way. Nothing produces a NaN wall distance today; a
-    // clamp that cannot actually clamp is still not worth keeping.
-    const float kc = (k >= 0.0f && k <= 1.0f) ? k : ((k > 0.0f) ? 1.0f : 0.0f);
 
-    // Snapped to a step, so the table is rebuilt a handful of times across an approach rather
-    // than on every frame the distance changes. 128 steps put rmax's outermost ring within
-    // about 2.6 px of where an unquantised amount would have placed it, which is nothing during
-    // a boundary alarm.
-    const int q = (int)(kc * (float)TINT_QSTEPS + 0.5f);
-    s_tint_k = (float)q / (float)TINT_QSTEPS;
-    if (q == s_tint_q) return;
-    s_tint_q = q;
-
-    const float cx = (float)(SCR_W / 2), cy = (float)(SCR_H / 2);
-    const float rmax = sqrtf(cx * cx + cy * cy);
-    const float rin  = rmax * (1.0f - s_tint_k);
-    const float step = (rmax - rin) / (float)TINT_RINGS;
-    for (int i = 0; i <= TINT_RINGS; i++) {
-        const float r = rin + step * (float)i;
-        s_tint_r2[i] = r * r;
-    }
-
-    // And the whole set of row limits, in exactly the arithmetic the row walk used to do, so
-    // the picture is unchanged for any amount that lands on a step.
-    if (!s_tint_lim) return;
-    for (int ady = 0; ady < TINT_ROWS; ady++) {
-        const float dy2 = (float)ady * (float)ady;
-        int16_t* row = &s_tint_lim[ady * (TINT_RINGS + 1)];
-        for (int i = 0; i <= TINT_RINGS; i++) {
-            const float d2 = s_tint_r2[i] - dy2;
-            row[i] = (int16_t)((d2 <= 0.0f) ? 0 : (int)sqrtf(d2));
-        }
-    }
-}
 
 
 // ---------------------------------------------------------------------------
@@ -1119,7 +912,7 @@ uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
 // expensive, and the number behind both was never measured at all.
 //
 // THE COST IS NOT SEPARABLE ANY MORE, which is why this returns a LEVEL and not a time.
-// The tint moved into the sky fill and into submit -- see the note beside band_wall_tint --
+// The tint moved into the sky fill and into submit, and then out of both --
 // so its work is interleaved with the fill it colours, and bracketing it would mean a
 // second pass to measure the first. What it costs is visible directly in `sky`, measured:
 // 1792 us with the warning off and 3028 with it on, up to 3445 hard against the wall.
@@ -1128,19 +921,20 @@ uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
 // actually missing: without it there is no way to tell which telemetry windows had the
 // effect active, so an average over a flight buries it -- which is exactly how a 1240 us
 // cost and six frames a second were measured as "no change".
-// WHICHEVER WARNING IS RUNNING, and reading s_tint_k alone was not that.
+// HOW HARD THE WALL WARNING IS RUNNING, 0 to 100. Not microseconds, and it has been three
+// different wrong things.
 //
-// The first attempt at fixing this returned s_tint_k * 100 -- and the same commit had just
-// switched the ring off by calling vg_rast_tint(0.0f), so the counter faithfully reported
-// the zero it had been handed. Two flights read "warning never up" while the cockpit was
-// visibly red, which is the dead counter's exact failure repeated with more steps.
+// It was a dead counter for as long as the tint was drawn at the source: s_tint_us was
+// declared, reset and read and nothing ever wrote to it, so `tnt` reported 0 for an effect
+// costing over a millisecond. Then it was pointed at s_tint_k -- in the same commit that
+// switched the ring off by handing vg_rast_tint a zero -- so it faithfully reported that
+// zero while the cockpit was visibly red on the panel. Two flights each time.
 //
-// The larger of the two, so this answers "is the player being warned" no matter which
-// mechanism does it -- and it keeps working if the ring comes back as the fallback for
-// hulls that have no cockpit to redden.
+// The level is what was actually needed. Without it there is no way to tell which telemetry
+// windows had the warning up, so an average over a flight buries the effect entirely -- which
+// is how 1240 us and six frames a second were once measured as "no change".
 uint32_t vg_rast_tint_us(void) {
-    const float k = (s_alarm > s_tint_k) ? s_alarm : s_tint_k;
-    return (uint32_t)(k * 100.0f + 0.5f);
+    return (uint32_t)(s_alarm * 100.0f + 0.5f);
 }
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
@@ -1302,7 +1096,7 @@ const VgCanopy* vg_canopy_current(void) { return s_can; }
 // Quantised to sixteen steps so a steady approach rebuilds the table a few times instead
 // of sixty a second. The table is 256 entries of trivial arithmetic, so even that is
 // nearly free -- the quantising is about not thrashing s_can_ready.
-// s_alarm is declared up beside s_tint_k -- see the note there.
+// s_alarm is declared further up, where the ring's own level used to sit beside it.
 static int   s_alarm_q = 0;
 static bool  s_alarm_white = false;
 
@@ -2531,22 +2325,14 @@ void vg_sky_bench(VgSkyCost* out) {
         // innermost ring reaches the centre and every pixel is inside the gradient, which is
         // the geometry at the instant of death and not the one a player flies in.
         //
-        // The tint is read from a file static, so it is forced around the call and put back.
+        // NO TINT TO FORCE AROUND IT ANY MORE. This used to set the ring to 0.625 --
+        // exactly on a quantiser step, so the checksum stayed comparable -- because the
+        // fill's cost depended on whether the player was near a wall. The ring is gone, so
+        // the fill has one cost and this is it.
         // Timed on one core like the fill it is compared against -- the frame splits both.
-        // THROUGH vg_rast_tint, not by assigning s_tint_k. The ring radii are derived there
-        // now, so setting the amount directly left them at whatever the last real call
-        // produced -- the bench then tinted against the menu's zero and measured work the
-        // game never does. Caught by the checksum, which is what it is for.
-        // 0.625 IS EXACTLY ON A STEP -- 0.625 * 128 is 80 -- so the quantiser returns it
-        // unchanged and the checksum stays comparable with builds from before the table
-        // existed. 0.6 would have been snapped to 0.6015625 and every ring moved a pixel,
-        // which would have looked like the table getting the picture wrong.
-        const float save_k = s_tint_k;
-        vg_rast_tint(0.625f);
         const uint32_t t3 = esp_cpu_get_cycle_count();
         vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
         const uint32_t t4 = esp_cpu_get_cycle_count();
-        vg_rast_tint(save_k);
 
         pc += t1 - t0;
         fc += t2 - t1;
@@ -2909,8 +2695,6 @@ void vg_rast_flush(void) {
     s_ln_px = s_ln_n = 0;
     s_tint_us = 0;
 
-    const float tint_k = s_tint_k;
-
     // THE WHOLE FRAME'S CHART, BOTH CORES, BEFORE ANY BAND IS DRAWN.
     //
     // This used to be fifteen separate calls, one at the top of each band, on the drawing
@@ -2962,14 +2746,11 @@ void vg_rast_flush(void) {
             band_scanlines(buf, b * BAND_H, 0, split ? ROW_SPLIT : BAND_H);
             if (split) rowsplit_wait();
         }
-        // After the scanlines, so the tint colours those too. A red warning that
-        // left the scanlines amber would read as an overlay rather than as the
-        // whole picture going red.
-        // Tint happens at the source now -- in the sky fill and at submit --
-        // so there is nothing to do here. tint_k keeps the variable alive for
-        // the band_tv gate below. (void)band_wall_tint quiets the compiler; the
-        // function stays as the reference for the ring geometry.
-        (void)tint_k;
+        // THE WALL WARNING USED TO BE APPLIED HERE, over the finished band, so that it
+        // coloured the scanlines too. Then it moved to the source -- the sky fill and every
+        // primitive's colour at submit -- and this became a no-op holding a variable alive.
+        // Now it is the cockpit's own colour table, so there is nothing at any of the three
+        // places. See vg_canopy_alarm.
         // Last of all. The set turning off takes the whole picture with it --
         // scanlines, tint, instruments and all -- because it is the display
         // going away rather than another layer drawn on top of it.

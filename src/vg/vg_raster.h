@@ -230,17 +230,18 @@ uint32_t vg_rast_ln_n(void);
 // The baked canopy alone. Split out of `oth`, which is a bucket that also holds glyphs
 // and fills and therefore moves with how busy the fight is.
 uint32_t vg_rast_can_us(void);
+// HOW HARD THE WALL WARNING IS RUNNING, 0 to 100. Not a time -- see the note at its
+// definition, where it has been three different wrong things.
 uint32_t vg_rast_tint_us(void);
 
-// Tint at the source: ring geometry and colour ops for the boundary tint,
-// applied by the sky fill per chunk and by submit per primitive. The
-// full-frame pass they replace died of the lit sky -- see vg_band.cpp.
-#define VG_TINT_RINGS 12
-bool     vg_tint_active(void);
-void     vg_tint_row_limits(int sy, int* lim);   // lim[VG_TINT_RINGS + 1]
-uint32_t vg_tint_word(uint32_t v, int ring);
-
-uint16_t vg_tint_prim(uint16_t c, float x, float y);
+// THE RING IS GONE. Its geometry and colour operations lived here: VG_TINT_RINGS,
+// vg_tint_active, vg_tint_row_limits, vg_tint_word and vg_tint_prim, applied by the sky
+// fill per chunk and by submit PER PRIMITIVE -- every line, point, rect, triangle and
+// glyph of every frame asked whether the player was near a boundary.
+//
+// The warning is the cockpit's own colour table now, which costs nothing per pixel. See
+// vg_canopy_alarm. A hull with no drawing has no warning until one is drawn for it, which
+// is the author's decision and the reason the ring is deleted rather than kept.
 
 // Hidden-line fills. Off makes vg_tri a no-op; see the note at its definition.
 void vg_rast_fills(bool on);
@@ -342,11 +343,6 @@ uint16_t vg_dim(uint16_t c, float f);
 // Blend two colours, t=0 -> a, t=1 -> b. Per-channel, so it survives the
 // byte-swapped storage. Cheap enough for per-object use, not per-pixel.
 uint16_t vg_mix(uint16_t a, uint16_t b, float t);
-
-// How far a red gradient has closed in from the edge of the screen: 0 is off and
-// 1 covers the whole frame. Set once per frame by the render layer, which is what
-// knows how close the wall is.
-void vg_rast_tint(float k);
 
 // The set turning on and off, as an old tube does it: one bar at the centre that
 // grows, not a shutter opening.

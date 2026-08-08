@@ -1152,7 +1152,7 @@ void vg_sky_prep_bands(int b0, int b1) {
 // which is 240 words read and 240 written for a value the chunk loop already had in a
 // register. Writing both rows is eight more stores a chunk and no read pass at all -- 480
 // accesses a row pair against 720 -- and it is trivially the same pixels in the same places.
-template <bool TINT, bool PAIR>
+template <bool PAIR>
 static __attribute__((noinline))
 void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
     // The pair's partner row, in 32-bit words. BAND_H is 32 and band_y0 a multiple of it, so
@@ -1166,9 +1166,6 @@ void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
     const int seg_px = SCR_H / SEGS;
     const float step_k = ((float)SPLASH / (float)seg_px) * 65536.0f;
 
-    int lim[VG_TINT_RINGS + 1];
-    int ring = -1;                    // carried across the row's chunks
-    if (TINT) vg_tint_row_limits(sy, lim);
 
     // A segment's END endpoint is the next segment's START endpoint, the same
     // expression to the bit, so the walk carries it instead of computing it twice.
@@ -1203,28 +1200,6 @@ void sky_row(const SkyBand& bd, uint16_t* dst, int sy, int dr, float w) {
                                              (((u + ou) >> 16) & SKY_TEX_MASK));
             const uint32_t c  = tex[idx];
             uint32_t cc = (c << 16) | c;
-            if (TINT) {
-                // The ring index walks WITH x instead of restarting at every
-                // chunk -- restarting was thirteen compares a chunk, three
-                // milliseconds a frame parked against a wall.
-                // CARRIED, not rebuilt. Inside a segment this advances by exactly SPLASH a
-                // chunk, so the two multiplies were re-deriving a value the loop already
-                // knows. `sx` is signed distance from the centre column; the tint is
-                // symmetric about it, so only the magnitude is compared.
-                const int adx = (sx < 0) ? -sx : sx;
-                sx += SPLASH;
-                while (ring >= 0 && adx < lim[ring]) ring--;
-                while (ring + 1 < VG_TINT_RINGS && adx >= lim[ring + 1]) ring++;
-                // REVERTED, AND THE MEASUREMENT IS THE REASON. The blend was hoisted out of
-                // vg_tint_word into here, on the theory that a cross-unit call per chunk --
-                // no LTO in this build -- was what the tint cost. It measured FLAT: 5251 us
-                // before, 5307 after, checksum identical. SPLASH is 16, so a row is thirty
-                // chunks and not sixty, and thirty calls a row was never the bill.
-                //
-                // The bill is the thirteen sqrtf in vg_tint_row_limits, once per ROW.
-                if (ring >= 0)
-                    cc = vg_tint_word(cc, ring >= VG_TINT_RINGS ? VG_TINT_RINGS - 1 : ring);
-            }
             for (int q = 0; q < SPLASH / 2; q += 4) {
                 d32[q] = cc; d32[q + 1] = cc; d32[q + 2] = cc; d32[q + 3] = cc;
             }
@@ -1254,11 +1229,6 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
 #else
     const float lx_c = (float)(SCR_W / 2);
 #endif
-    // THE TINT DECIDED ONCE, not per row. It is set for the whole frame by the render
-    // layer, and vg_tint_active is a call into another unit -- so asking per row was 240
-    // calls the compiler had to assume could change anything it was holding.
-    const bool tint = vg_tint_active();
-
     // ROWS IN PAIRS. A splash of 16 across and 1 down is a ribbon, and the eye
     // reads the anisotropy before it reads the coarseness -- 16x2 costs the same
     // as 16x1 did against 8x1 and looks less like a smear. The second row of
@@ -1298,9 +1268,9 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
             // ONE INSTANTIATION. The tinted one is gone with the ring -- see
             // vg_canopy_alarm. `if (TINT)` in the body is now compile-time false, so the
             // per-chunk ring walk and the thirteen sqrtf a row compile out entirely.
-            sky_row<false, true>(bd, dst, sy, dr, w);
+            sky_row<true>(bd, dst, sy, dr, w);
         } else {
-            sky_row<false, false>(bd, dst, sy, dr, w);
+            sky_row<false>(bd, dst, sy, dr, w);
         }
 
     }
