@@ -435,10 +435,28 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
                             const uint8_t* power, int n, int head,
                             Vec3 from, float hue) {
     if (n < 2) return;
-    // Trails are the single largest primitive source in a fight and the one
-    // place antialiasing buys nothing: every segment is dim, one or two pixels
-    // wide, and moving fast enough that no step survives long enough to see.
-    vg_line_aa_mode(false);
+    // ADDITIVE, AND IT USED TO BE OPAQUE. That is the whole of the black-trail bug.
+    //
+    // The fade multiplies the pilot's colour toward BLACK -- SHIP_TRAIL_MIN is 0.09, so
+    // most of the ribbon is 9% of a hue. Written opaquely over a black starfield that
+    // reads as a trail dimming into the distance, which is what it was tuned against.
+    // Over a bright nebula the same pixels are DARKER than what they replace, so the
+    // ribbon reads as a black line drawn across the sky. Reported from a playtest.
+    //
+    // Additive fixes it without changing what it looks like where it already worked: over
+    // black, dst is 0, so dst+src IS src and every pixel is identical to before. Over a
+    // bright sky the same value now adds light instead of replacing it, so the colour
+    // survives whatever is behind it -- which it has to, because hue is IDENTITY here and
+    // identity is the one cue that cannot be allowed to depend on the venue.
+    //
+    // It also makes the fade mean the right thing. A contrail emits light; it does not
+    // paint the sky darker. The old code had the fade standing for "how black this line
+    // is", which only ever agreed with the physics because the sky was black too.
+    //
+    // Antialiasing is still off, and this is how: the mode and the blend share one field
+    // in the slice, so ADD replaces the OPAQUE this used to set rather than adding to it.
+    // Every segment is dim and moving fast enough that no step survives to be seen.
+    vg_line_blend(VG_LINE_ADD);
     const uint16_t col = vg_hue_col(hue);
     Vec3 prev = from;
     for (int t = 0; t < n; ) {
@@ -461,7 +479,9 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
         // so the bright head of every ribbon was costing double, and submit
         // bills per primitive whether or not the rasteriser ever hides. With
         // three ships trailing, that head was several hundred primitives.
-        vg_edge_w(cam, prev, cur, vg_dim(col, f), 1);
+        // Wide at the near end only -- see SHIP_TRAIL_WIDE. A one-pixel diagonal moving
+        // this fast is a dotted line, and the near end is the part being read.
+        vg_edge_w(cam, prev, cur, vg_dim(col, f), (age > SHIP_TRAIL_WIDE) ? 2 : 1);
         prev = cur;
 
         // Level of detail along the ribbon: full resolution near the engine
@@ -471,6 +491,9 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
         // stays continuous because each segment starts where the last ended.
         t += (t < 28) ? 1 : (t < 72) ? 2 : 3;
     }
+    // Put back, because the blend lives in the slice and everything after this expects
+    // opaque -- the hulls go down next and a hull is a solid object, not a light.
+    vg_line_blend(0);
 }
 
 // The entry gate: a lit plane in the pilot's colour, square to their travel,
@@ -555,7 +578,10 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
     // Same reasoning as the ship ribbons, and more so: a 3px-wide stroke is
     // already three primitives per segment, so this is the densest geometry in
     // the frame and the least able to show a stair-step.
-    vg_line_aa_mode(false);
+    // Additive for the same reason the ship ribbon is -- see draw_ship_trail. This one
+    // fades as f*f, so its tail goes darker still, and an incoming missile is the least
+    // affordable thing in the game to lose against a bright sky.
+    vg_line_blend(VG_LINE_ADD);
     Vec3 prev = m->pos;
     for (int t = 0; t < m->trail_n; t++) {
         int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
@@ -568,6 +594,10 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
         vg_edge_w(cam, prev, cur, vg_dim(trail_col, f * f), w);
         prev = cur;
     }
+    // Back to opaque before the body below. The body is drawn at FULL brightness, and a
+    // full-brightness opaque stroke is legible over anything -- it is only the dimmed
+    // geometry that needed the blend. Additive there would let a bright sky wash it out.
+    vg_line_blend(0);
 
     // Body: a short, fat, bright segment along the heading. Screen-space width is
     // constant with range, which is deliberate -- a missile inbound from distance

@@ -204,6 +204,19 @@
 #define SHIP_TRAIL_IDLE      0.30f    // emission strength at zero throttle
 #define SHIP_TRAIL_MIN       0.09f    // dimmest a segment may get -- never zero
 
+// HOW MUCH OF THE RIBBON IS STROKED WIDE. Age, so this is the newest fraction: above
+// this the segment is two pixels, below it one.
+//
+// The near end is the part that is read -- it says who is in front of you and which way
+// they just went -- and one pixel of a fast diagonal is a dotted line by the time it has
+// been drawn. The far end is history and stays a hairline, because width costs: vg_line_w
+// emits a separate offset copy per pixel of width, so a wide segment is two primitives
+// and submit bills per primitive.
+//
+// The missile trail has always done this with its own threshold of 0.66. Same idea, and
+// the ship ribbon is much longer, so this sits higher.
+#define SHIP_TRAIL_WIDE      0.78f    // age above which a segment is stroked 2px
+
 // --- roll ------------------------------------------------------------------
 // Radians per second at full stick, with the + key held. Deliberately brisk:
 // roll is an expert control that nobody is forced to touch, and a timid one
