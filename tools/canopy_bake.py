@@ -455,15 +455,18 @@ def bake(src, out, name="CANOPY"):
     print(f"  {whole} pixels a frame, {whole * 100.0 / (PANEL * PANEL):.1f}% of the screen")
     print(f"  {pass_us / 1000.0:.2f} ms of drawing, halved across the cores")
     print(f"  costs the frame about {us / 1000.0:.2f} ms")
-    # About 4 ms of the frame is spare at 60 a second, and the canopy is not the only
-    # thing that wants it.
-    if us > 2500.0:
-        print("  TOO HEAVY: at this cost the game drops to about 50 a second.")
-        print("     Narrowing the shapes is the lever that matters.")
-    elif us > 1200.0:
-        print("  HEAVY: expect to lose 60 in busy fights. Narrowing the shapes is the")
-        print("     only lever that matters -- levels and detail are free, area is not.")
-    elif us > 600.0:
+    # GRADED AGAINST THE BUDGET, not against a guess at the frame rate. The old grades
+    # named frame rates they had never measured -- "expect to lose 60", "drops to about
+    # 50" -- and were wrong about two drawings running.
+    pct = 100.0 * us / CANOPY_BUDGET_US
+    print(f"  {pct:.0f}% of the {CANOPY_BUDGET_US / 1000.0:.1f} ms the cockpit may have")
+    if us > CANOPY_BUDGET_US:
+        print("  TOO HEAVY: over budget, so the raster sets the frame instead of the wire")
+        print("     and every microsecond of this lands on the frame. Narrow the shapes:")
+        print("     area is the cost, and levels and detail are free.")
+    elif pct > 80.0:
+        print("  HEAVY: close to the ceiling, with nothing left for anything else that grows.")
+    elif pct > 50.0:
         print("  worth watching, but there is room for it")
     else:
         print("  cheap")
@@ -496,7 +499,33 @@ A_LIT = 39.3         # one pixel that carries its own level
 # 0.59 read in a match on 2026-08-04: 4028 us on the bench billed the frame 2361. The
 # earlier 0.67 came from the old encoding and overstated the charge -- fewer blocks means
 # less per-band overhead outside the split, so more of the pass halves cleanly.
-SPLIT_YIELD = 0.59
+# WHAT SHARE OF THE ONE-CORE PASS THE FRAME ACTUALLY PAYS.
+#
+# 0.59 until it was measured. Two drawings replayed over the same recorded session, and
+# the `can` counter read off the device rather than guessed at:
+#
+#     10.5% of the screen   pass 4060 us   frame paid 1855   ->  0.457
+#     16.6% of the screen   pass 6460 us   frame paid 2799   ->  0.433
+#
+# 0.445 fits both to within 3%. The old 0.59 overstated every drawing by a third, which
+# is how two drawings in a row were graded TOO HEAVY while one of them ran at 60 to 62
+# frames a second and the other had 2.1 ms of headroom to spare.
+#
+# Refit it with tools/replay_cost.py, which is the only measurement that can: the `can`
+# counter was watched swinging 2.8x between moments of one live fight, so a figure taken
+# by flying compares two moments rather than two drawings.
+SPLIT_YIELD = 0.445
+
+# WHAT THE COCKPIT IS ALLOWED TO COST, in microseconds of the frame.
+#
+# Not an opinion about frame rate. The wire needs 11520 us to send a frame and the frame
+# cannot beat it, so raster work under that ceiling is largely absorbed by the transfer
+# wait and work above it lands on the frame in full. Measured over the regression session,
+# everything in the raster EXCEPT the cockpit comes to about 6600 us -- 8448 minus 1855 on
+# one drawing, 9414 minus 2799 on the other, which agree to 22 us.
+#
+# So the cockpit may have what is left. The grades below are fractions of it.
+CANOPY_BUDGET_US = 11520.0 - 6600.0
 
 
 if __name__ == "__main__":

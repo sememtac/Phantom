@@ -82,20 +82,28 @@ def main(port):
     # the flash cache, and the first pass fills it. Later passes are the real cost.
     steady = got[1:] or got
     us = sum(steady) / float(len(steady))
-    frame_ms = us * 0.59 / 1000.0
+    # 0.436, MEASURED. The bench times the whole pass on one core; the frame pays this
+    # share of it. It was 0.59, a guess, and it overstated every drawing by a third.
+    # Fitted to two drawings replayed over the same session with tools/replay_cost.py:
+    # 4167 us of bench cost the frame 1855, and 6542 cost it 2799.
+    frame_ms = us * 0.436 / 1000.0
 
     print("\n%s: %.0f us of drawing on one core, %d blocks"
           % (hull or "canopy", us, blocks))
     print("the frame pays about %.2f ms of it" % frame_ms)
 
-    # The thresholds are the baker's, so one drawing gets the same verdict from the
-    # model and from the board. See tools/canopy_bake.py.
-    if frame_ms > 2.5:
-        print("TOO HEAVY: at this cost the game drops to about 50 frames a second.")
-        print("   Narrowing the shapes is the lever that matters.")
-    elif frame_ms > 1.2:
-        print("HEAVY: expect to lose 60 in busy fights. Narrowing the shapes is the")
-        print("   only lever that matters -- levels and detail are free, area is not.")
+    # The budget and the grades are the baker's, so one drawing cannot get two verdicts.
+    # See CANOPY_BUDGET_US in tools/canopy_bake.py for where the number comes from.
+    budget_ms = (11520.0 - 6600.0) / 1000.0
+    pct = 100.0 * frame_ms / budget_ms
+    print("%.0f%% of the %.1f ms the cockpit may have" % (pct, budget_ms))
+    if frame_ms > budget_ms:
+        print("TOO HEAVY: over budget, so the raster sets the frame instead of the wire.")
+        print("   Narrow the shapes: area is the cost, levels and detail are free.")
+    elif pct > 80.0:
+        print("HEAVY: close to the ceiling, with nothing left for anything else that grows.")
+    elif pct > 50.0:
+        print("worth watching, but there is room for it")
     else:
         print("there is room for it")
 

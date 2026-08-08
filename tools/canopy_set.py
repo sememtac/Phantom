@@ -13,7 +13,9 @@ Read tools/README.md before you draw one. The two rules that catch people are th
 the PNG must be swizzled -- red for the frame, green for the activation regions --
 and that the green channel has to cover the whole image, not only where the frame is.
 """
+import hashlib
 import os
+import re
 import subprocess
 import sys
 
@@ -44,16 +46,39 @@ def main():
         out = os.path.join(GEN, "canopy_%s.h" % hull)
         name = "CANOPY_%s" % hull.upper()
 
-        # Baked only when the drawing is newer than the header. A bake is a few
-        # seconds and there is no reason to spend it on three files that have not
-        # changed.
-        fresh = (os.path.isfile(out)
-                 and os.path.getmtime(out) >= os.path.getmtime(png))
+        # Baked when the drawing's CONTENT differs from what the header was made from,
+        # and not when it is merely newer.
+        #
+        # A modification time says nothing useful here. Copying an older export back over
+        # chariot.png carries its old timestamp with it, so the header looked newer, the
+        # bake was skipped, and the build silently kept the table for a drawing that was no
+        # longer on disk. That is not a slow rebuild, it is the wrong cockpit shipped
+        # quietly -- and reverting to an earlier drawing is an ordinary thing to do while
+        # working.
+        #
+        # It cost a measurement here: two canopies were compared and came back identical to
+        # one microsecond, which looked like a beautifully repeatable harness and was
+        # actually the same table twice.
+        want = hashlib.sha256(open(png, "rb").read()).hexdigest()[:16]
+        fresh = False
+        if os.path.isfile(out):
+            with open(out) as fh:
+                head = fh.read(2048)
+            m = re.search(r"source sha256 ([0-9a-f]{16})", head)
+            fresh = bool(m and m.group(1) == want)
         if not fresh:
             print("-- baking %s" % os.path.basename(png))
             r = subprocess.run([sys.executable, baker, png, out, "--name=" + name])
             if r.returncode != 0:
                 sys.exit("bake failed for %s" % png)
+            # The stamp the check above reads. Written here rather than by the baker so
+            # that the baker stays a plain PNG-to-header tool anybody can run by hand.
+            with open(out) as fh:
+                body = fh.read()
+            with open(out, "w") as fh:
+                fh.write("// source sha256 %s -- tools/canopy_set.py rebakes when this "
+                         "changes.\n" % want)
+                fh.write(body)
         else:
             print("-- %s is up to date" % os.path.basename(out))
         rows.append((hull, name, out))
