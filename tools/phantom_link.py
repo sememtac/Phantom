@@ -344,10 +344,20 @@ class PhantomLink:
         raise TimeoutError("device never started the replay")
 
     def replay_send(self, fr):
-        self.ser.write(b"PHRP")
-        self.ser.write(struct.pack("<fB", fr["dt"], len(fr["seeds"]) // 4))
-        self.ser.write(fr["seeds"])
-        self.ser.write(fr["input"])
+        """Hand one frame's record to the device.
+
+        ONE write, not five. A record is under a hundred bytes and was going out in four
+        writes and a flush, so a full session of 5,444 frames made 27,000 calls into the
+        serial layer. Assembling the bytes first costs nothing and makes it 5,444.
+
+        That is not only speed. Reading and writing this port heavily at the same time
+        killed the interpreter with an access violation, reliably above about a thousand
+        frames and never below it, so the count itself was the problem.
+        """
+        self.ser.write(b"PHRP"
+                       + struct.pack("<fB", fr["dt"], len(fr["seeds"]) // 4)
+                       + fr["seeds"]
+                       + fr["input"])
         self.ser.flush()
 
     # -- stream -------------------------------------------------------------
