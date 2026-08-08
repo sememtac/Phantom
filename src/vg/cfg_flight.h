@@ -193,6 +193,11 @@
 //
 // Segments behind the near plane reject on a single z compare, so the extra
 // length is nearly free until it is actually on screen.
+// How quickly vg.wall_rate follows the clearance it is the derivative of. Low enough that
+// one noisy frame cannot fire the alarm, high enough that turning into the wall is reported
+// within a few frames rather than after the fact.
+#define WALL_RATE_LERP       6.0f
+
 #define SHIP_TRAIL           140      // sample points per ship
 #define SHIP_TRAIL_DT        0.055f   // seconds between samples (~7.7s of tail)
 

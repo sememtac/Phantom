@@ -627,6 +627,21 @@ struct VgGame {
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it
 
     float    wall_clear;   // distance to the arena boundary, recomputed each frame
+    // HOW FAST THE WALL IS ARRIVING, units a second, positive while closing.
+    //
+    // Distance alone cannot say ''you are about to hit this''. A ship holding station a
+    // hundred units off the boundary is safe indefinitely; the same hundred units with the
+    // nose pointed at it is a second of life. So the warning reads BOTH: the colour comes
+    // from the clearance and the flashing comes from this.
+    //
+    // The RATE and not the speed, deliberately. Speed would cry wolf every time a fast hull
+    // ran parallel to the wall, which is most of a tunnel fight, and it would say nothing
+    // about a slow drift straight into it. This is d(clearance)/dt, so it is only large when
+    // the clearance is actually being spent.
+    //
+    // Smoothed: one frame''s difference of two clearances is mostly noise, because the
+    // clearance comes out of a torus solve that moves with the whole world transform.
+    float    wall_rate;
 
     // Threat state, recomputed each frame for the HUD. `on` rather than a bare
     // `threat` because the group is the noun now and the flag is one of its

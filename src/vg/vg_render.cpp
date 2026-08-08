@@ -257,17 +257,27 @@ void vg_render_frame(const VgInput* in, float fps) {
     // AND IT FLASHES once the wall is close enough that turning is urgent -- see
     // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
     float alarm = tint;
-    if (alarm > CANOPY_ALARM_FLASH_AT) {
-        const float u  = (alarm - CANOPY_ALARM_FLASH_AT)
-                       / (1.0f - CANOPY_ALARM_FLASH_AT);
-        const float hz = CANOPY_ALARM_HZ_MIN
-                       + (CANOPY_ALARM_HZ_MAX - CANOPY_ALARM_HZ_MIN) * u;
-        // 0 at the bottom of the swing, 1 at the top. vg.state_t is the clock everything
-        // else in the cockpit already runs on, so the flash cannot drift against it.
-        const float ph = 0.5f + 0.5f * sinf(vg.state_t * hz * 6.2831853f);
-        alarm = CANOPY_ALARM_FLASH_AT
-              + (1.0f - CANOPY_ALARM_FLASH_AT)
-                * (CANOPY_ALARM_FLOOR + (1.0f - CANOPY_ALARM_FLOOR) * ph);
+    // SECONDS TO IMPACT AT THE CURRENT CLOSING RATE, and only while the clearance is
+    // actually being spent -- see vg.wall_rate. RATE_MIN keeps a ship holding station from
+    // flashing on numerical noise.
+    if (tint > 0.0f && vg.wall_rate > CANOPY_ALARM_RATE_MIN) {
+        const float ttc = vg.wall_clear / vg.wall_rate;
+        if (ttc < CANOPY_ALARM_SECS) {
+            // 0 at the threshold, 1 at the point where the rate tops out.
+            float u = (CANOPY_ALARM_SECS - ttc)
+                    / (CANOPY_ALARM_SECS - CANOPY_ALARM_SECS_MAX);
+            if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
+            const float hz = CANOPY_ALARM_HZ_MIN
+                           + (CANOPY_ALARM_HZ_MAX - CANOPY_ALARM_HZ_MIN) * u;
+            // vg.state_t is the clock the rest of the cockpit runs on, so the flash cannot
+            // drift against it.
+            const float ph = 0.5f + 0.5f * sinf(vg.state_t * hz * 6.2831853f);
+            // Swings between the colour the distance asked for and full red. The floor
+            // keeps the bottom of the swing lit, so it reads as a flash rather than as the
+            // warning switching off and on.
+            const float lo = alarm * CANOPY_ALARM_FLOOR;
+            alarm = lo + (1.0f - lo) * ph;
+        }
     }
     if (vg_canopy_current()) {
         vg_canopy_alarm(alarm);

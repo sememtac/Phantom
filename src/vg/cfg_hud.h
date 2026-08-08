@@ -316,16 +316,27 @@
 // landed and moving the HUD cue only moved the collision. Ordering that depends on two timers
 // agreeing is not ordering, it is coincidence -- so the briefing waits on the gate too and the
 // sequence holds however the pacing above is retuned.
-// THE WALL WARNING FLASHES WHEN TURNING STOPS BEING OPTIONAL.
+// THE WALL WARNING FLASHES WHEN YOU ARE ABOUT TO HIT IT, and holds steady when you are
+// merely near it. Two signals, from two different facts, because one number cannot carry
+// both.
 //
 // A steady ramp from amber to red says "closer" and never says "now". The author's note:
 // without a change of KIND rather than of degree, there is no way to read which shade of
 // red means you are out of room, so the whole thing reads as decoration.
 //
-// So below FLASH_AT it holds, and above it the frame swings between that level and full,
-// faster the closer you get. Rate carries the urgency, which a colour cannot: a human reads
-// "getting quicker" instantly and "slightly more red" not at all.
-#define CANOPY_ALARM_FLASH_AT 0.55f   // fraction of the warning range where it starts
+//   the COLOUR comes from the clearance   -- how near the boundary is
+//   the FLASHING comes from vg.wall_rate  -- how soon you reach it at this rate
+//
+// So holding station near the wall is red and calm, and diving at it flashes from further
+// out. A BALLISTA at full throttle trips it earlier than a CHARIOT easing along, without
+// either being a special case: the rate does that on its own.
+//
+// SECONDS TO IMPACT, not a fraction of a range. It is the honest unit -- the player is being
+// told how long they have -- and it makes the threshold mean the same thing on every hull at
+// every speed, which a distance never can.
+#define CANOPY_ALARM_SECS     1.6f    // start flashing this far from impact
+#define CANOPY_ALARM_SECS_MAX 0.4f    // ...and reach the top rate here
+#define CANOPY_ALARM_RATE_MIN 8.0f    // units a second of closing before it counts at all
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
 #define CANOPY_ALARM_FLOOR    0.45f   // how far down the swing goes, so it never looks off
