@@ -102,6 +102,27 @@ extern uint32_t g_arena_hoop, g_arena_rail;
 //   b   the whole of submit_instruments: rails, and every instrument
 //
 // The GAP between them is what is recoverable, and its sign says which way to move.
+//
+// MEASURED ACROSS 62 FIGHT WINDOWS, and the answer is that the gap is gone and the
+// question has moved. Mean A 2632, mean B 2693 -- balanced to 2%. Neither core is the
+// bottleneck: A is the slower half in 24 windows of 62 and B in the other 38, and which
+// one it is flips with the scene rather than settling.
+//
+// So there is nothing left to move. `sub` is near its floor for the total work, and the
+// only way down is to do less of it, not to put it somewhere else. Taking an item out of
+// one half now buys only the gap, not the item: removing the mirror's 814 us from B would
+// make A the bottleneck at 2632, saving 61 us -- or about 437 after rebalancing, because
+// the two cores share whatever is left.
+//
+// WHAT SWINGS IS `world`, AND IT SWINGS 4.5x: 615 us in the quietest fight window and 2794
+// in the busiest, against a starfield that never leaves 132-137. It tracks the frame rate
+// almost exactly -- every window above 60 fps had world under 970, and every window below
+// 54 had it over 1190. That is the shakiness, and it is the submit cost of ships, missiles,
+// debris and trails scaling with how much is happening.
+//
+// The cockpit is NOT part of it. `can` measured 1748-1779 across the same 62 windows, which
+// is flat. An earlier claim in this project that `can` swings 2.8x within a fight was wrong:
+// those two readings were different STATES, not two moments of one fight.
 extern uint32_t g_sub_a, g_sub_b;
 
 // THE UPDATE, WHICH HAD NEVER BEEN MEASURED AT ALL.
