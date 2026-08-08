@@ -622,6 +622,11 @@ static inline void tint_span(uint16_t* row, int x0, int x1, int ring) {
 // and knows nothing about walls. The render layer owns the game state.
 static float s_tint_k = 0.0f;
 
+// THE OTHER WARNING LEVEL, declared beside the first because they are alternatives and
+// vg_rast_tint_us has to read both. The ring tints the backdrop; this reddens the cockpit.
+// Only one of them runs, and which one depends on whether the hull has a drawing.
+static float s_alarm  = 0.0f;
+
 // THE RING RADII, SQUARED, ONCE PER FRAME.
 //
 // rmax, rin and step depend only on s_tint_k, so they are constant for a whole frame -- and
@@ -1123,7 +1128,20 @@ uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
 // actually missing: without it there is no way to tell which telemetry windows had the
 // effect active, so an average over a flight buries it -- which is exactly how a 1240 us
 // cost and six frames a second were measured as "no change".
-uint32_t vg_rast_tint_us(void) { return (uint32_t)(s_tint_k * 100.0f + 0.5f); }
+// WHICHEVER WARNING IS RUNNING, and reading s_tint_k alone was not that.
+//
+// The first attempt at fixing this returned s_tint_k * 100 -- and the same commit had just
+// switched the ring off by calling vg_rast_tint(0.0f), so the counter faithfully reported
+// the zero it had been handed. Two flights read "warning never up" while the cockpit was
+// visibly red, which is the dead counter's exact failure repeated with more steps.
+//
+// The larger of the two, so this answers "is the player being warned" no matter which
+// mechanism does it -- and it keeps working if the ring comes back as the fallback for
+// hulls that have no cockpit to redden.
+uint32_t vg_rast_tint_us(void) {
+    const float k = (s_alarm > s_tint_k) ? s_alarm : s_tint_k;
+    return (uint32_t)(k * 100.0f + 0.5f);
+}
 
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
 uint32_t vg_rast_prim_us(void) { return s_prim_us; }
@@ -1284,7 +1302,7 @@ const VgCanopy* vg_canopy_current(void) { return s_can; }
 // Quantised to sixteen steps so a steady approach rebuilds the table a few times instead
 // of sixty a second. The table is 256 entries of trivial arithmetic, so even that is
 // nearly free -- the quantising is about not thrashing s_can_ready.
-static float s_alarm  = 0.0f;
+// s_alarm is declared up beside s_tint_k -- see the note there.
 static int   s_alarm_q = 0;
 
 void vg_canopy_alarm(float k) {
