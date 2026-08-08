@@ -168,6 +168,24 @@ extern uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
                 g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
                 g_upd_ai, g_upd_combat;
 
+// WHAT ELSE IS IN SUBMIT'S GROUP B, which is the largest unexamined phase left.
+//
+// g_sub_b is the half's total and g_sub_hud brackets vg_draw_hud alone. The note above
+// already says the difference is "about 900 us that no counter named" -- these name it.
+//
+// Worth doing for VARIANCE rather than for the mean. sub was measured swinging 2560 to
+// 3400 us between fights, and an 840 us swing is what makes the frame rate shaky rather
+// than merely low, which is the complaint. A mean cannot show which part swings.
+//
+//   lock    vg_draw_lock_box: the target reticle and its box
+//   canopy  vg_canopy_prim, the one primitive the whole cockpit rides on
+//   marks   the steering indicator, target markers, missile markers, threat indicator
+//   over    vg_draw_overlays: the radio, the alerts, whatever is being said
+//
+// What is left of g_sub_b after these, the HUD and the mirror is the glitch and shake
+// arithmetic, which the telemetry gets by subtraction rather than by timing it twice.
+extern uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over;
+
 // THE FRAME'S LAST I2C, split three ways.
 //
 // `in` is ~680 us and the touch controller is the only I2C left on the render thread -- the

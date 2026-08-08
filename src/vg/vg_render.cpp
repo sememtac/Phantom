@@ -449,7 +449,7 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         return;
     }
 
-    vg_draw_lock_box(cam);
+    { const uint32_t t = micros(); vg_draw_lock_box(cam); g_sub_lock = micros() - t; }
 
 
     // Instruments are drawn onto the virtual canopy. The bend tracks speed, so
@@ -625,7 +625,7 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // and carries no coordinates -- neither ever applied to it.
     //
     // Submitted first, so every instrument still draws on top of it.
-    vg_canopy_prim();
+    { const uint32_t t = micros(); vg_canopy_prim(); g_sub_canopy = micros() - t; }
 
     if (draw_instruments) {
         vg_hud_jitter(jx, jy);
@@ -687,13 +687,15 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // the finger, and the markers have to line up with what they point at. A
     // curved control that does not match where you are touching feels broken
     // rather than physical.
+    const uint32_t t_marks = micros();
     vg_draw_steer_indicator(in);
     vg_draw_target_markers(cam);
     vg_draw_missile_markers(cam, 26.0f, 26.0f, SCR_W - 26.0f, SCR_H - 26.0f,
                             7.0f, 22.0f);
     vg_draw_threat_indicator(cam);
+    g_sub_marks = micros() - t_marks;
 
-    vg_draw_overlays();
+    { const uint32_t t = micros(); vg_draw_overlays(); g_sub_over = micros() - t; }
 
     // The broadcast sits ON TOP of the instruments, not under them.
     //
