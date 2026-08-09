@@ -38,3 +38,9 @@ DESIGN.md
 # Everything else under captures/ stays out: those are recordings of a moment, not a test.
 captures/*
 !captures/regress.phr
+# The second tracked session, and for the same reason. regress.phr is a COURSE run: its
+# fight is thin and its ordnance barely moves, so it cannot answer anything about combat.
+# This one is 150 s of a deliberately missile-heavy match -- 8,442 frames, 6,264 distinct
+# input structures, 73% of them under 59 fps -- and tools/ordnance-baseline.json is measured
+# against it. 668 KB.
+!captures/ordnance.phr

@@ -481,6 +481,14 @@ void loop(void) {
     {
         uint32_t* const g[5] = { &g_w_motes, &g_w_rocks, &g_w_trails,
                                  &g_w_ships, &g_w_ord };
+        // THE TIMED REPLAY GETS THEM HERE, before the zeroing on the same line.
+        //
+        // It used to read them thirty lines further down, after this block had already
+        // cleared them for the next frame -- so a full session's world split came back as
+        // five zeros, from counters that were working perfectly. The order was the whole
+        // bug, and a zero is the one value that looks like "nothing happened" rather than
+        // like a fault.
+        vg_replay_note_world(g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord);
         for (int i = 0; i < 5; i++) { acc_w[i] += *g[i]; *g[i] = 0; }
     }
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;

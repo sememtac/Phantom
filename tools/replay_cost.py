@@ -46,7 +46,14 @@ COST = re.compile(
     r"vg_replay: COST frames (\d+) \| can (\d+)/(\d+) \| rast (\d+)/(\d+) \| "
     r"prim (\d+)/(\d+) \| sub (\d+)/(\d+) \| upd (\d+)/(\d+)")
 
+# The `world` split, on its own line. Optional, so a device built before this existed
+# still reports the first line and a run against one degrades rather than fails.
+WORLD = re.compile(
+    r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
+    r"ships (\d+)/(\d+) \| ord (\d+)/(\d+)")
+
 KEYS = ["can", "rast", "prim", "sub", "upd"]
+WKEYS = ["motes", "rocks", "trails", "ships", "ord"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
 
@@ -186,13 +193,22 @@ def fetch(port):
             time.sleep(0.02)
             continue
         tail += ser.read(k)
-        m = COST.search(tail.decode("utf-8", "replace"))
-        if m:
+        txt = tail.decode("utf-8", "replace")
+        m = COST.search(txt)
+        # WAIT FOR BOTH LINES. The device prints WORLD after COST, so returning the moment
+        # COST matched collected the frame costs and silently dropped the world split --
+        # which is the half this was extended for.
+        if m and (WORLD.search(txt) or time.time() > deadline - 8.0):
             ser.close()
             g = [int(x) for x in m.groups()]
             out = {"frames": g[0], "commit": git_commit(), "session": "(fetched)"}
             for j, k2 in enumerate(KEYS):
                 out[k2] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
+            w = WORLD.search(txt)
+            if w:
+                gw = [int(x) for x in w.groups()]
+                for j, k2 in enumerate(WKEYS):
+                    out[k2] = {"mean": gw[j * 2], "worst": gw[j * 2 + 1]}
             return out
     ser.close()
     said = tail.decode("utf-8", "replace").strip()
@@ -205,6 +221,10 @@ def show(r):
     print("  %-6s %10s %10s" % ("", "mean us", "worst us"))
     for k in KEYS:
         print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
+    if all(k in r for k in WKEYS):
+        print("  -- inside `world`; the WORST column is the one that matters --")
+        for k in WKEYS:
+            print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
     rast = r["rast"]["mean"]
     room = WIRE_US - rast
     if room >= 0:

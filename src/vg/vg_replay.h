@@ -69,6 +69,13 @@ bool vg_replay_report_cost(void);
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
                          uint32_t sub, uint32_t upd);
 
+// The same frame's `world` split -- see g_w_motes in vg_prof.h. Separate from the call
+// above because it answers a different question: that one is "what does a frame cost",
+// this one is "which of the things in it grows when the fight gets busy", and the second
+// is the one that needs a session with a fight in it.
+void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
+                          uint32_t ships, uint32_t ord);
+
 // PLAY: block for the next frame's record. False when the host says the
 // session is finished.
 bool vg_replay_next(float* dt, VgInput* in);

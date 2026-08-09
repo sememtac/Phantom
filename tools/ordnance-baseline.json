@@ -1,0 +1,45 @@
+{
+  "frames": 8442,
+  "commit": "1e41622",
+  "session": "(fetched)",
+  "can": {
+    "mean": 3588,
+    "worst": 7194
+  },
+  "rast": {
+    "mean": 10619,
+    "worst": 25547
+  },
+  "prim": {
+    "mean": 6924,
+    "worst": 10466
+  },
+  "sub": {
+    "mean": 3510,
+    "worst": 11493
+  },
+  "upd": {
+    "mean": 822,
+    "worst": 250763
+  },
+  "motes": {
+    "mean": 309,
+    "worst": 866
+  },
+  "rocks": {
+    "mean": 241,
+    "worst": 1443
+  },
+  "trails": {
+    "mean": 190,
+    "worst": 697
+  },
+  "ships": {
+    "mean": 77,
+    "worst": 292
+  },
+  "ord": {
+    "mean": 103,
+    "worst": 1891
+  }
+}
