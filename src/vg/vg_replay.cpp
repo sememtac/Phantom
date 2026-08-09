@@ -47,13 +47,18 @@ static uint32_t s_t_sum[5], s_t_max[5];
 // The `world` split for the same frames, kept the same way. Reported on its own line
 // because the two answer different questions: the costs above are "what does a frame come
 // to", and these are "which part of it grows when the fight gets busy".
-static uint32_t s_w_sum[6], s_w_max[6];
+static uint32_t s_w_sum[7], s_w_max[7];
 
 void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
-                          uint32_t ships, uint32_t msl, uint32_t fire) {
+                          uint32_t ships, uint32_t msl, uint32_t fire,
+                          uint32_t total) {
     if (!s_timed) return;
-    const uint32_t v[6] = { motes, rocks, trails, ships, msl, fire };
-    for (int i = 0; i < 6; i++) {
+    // `total` is g_sub_world, the whole these six are a split OF. Carried so the host can
+    // SUBTRACT rather than trust that they tile -- they are supposed to, the brackets cover
+    // the function end to end, and the live telemetry still showed 35-40% unaccounted. One
+    // of those two things is wrong and this is what will say which.
+    const uint32_t v[7] = { motes, rocks, trails, ships, msl, fire, total };
+    for (int i = 0; i < 7; i++) {
         s_w_sum[i] += v[i];
         if (v[i] > s_w_max[i]) s_w_max[i] = v[i];
     }
@@ -84,13 +89,14 @@ bool vg_replay_report_cost(void) {
     // because these answer a different question. The WORST column matters more than the
     // mean here: `world` is a curve to flatten, so what is wanted is how far it bends.
     Serial.printf("vg_replay: WORLD motes %u/%u | rocks %u/%u | trails %u/%u | "
-                  "ships %u/%u | msl %u/%u | fire %u/%u  (mean/worst us)\n",
+                  "ships %u/%u | msl %u/%u | fire %u/%u | TOTAL %u/%u  (mean/worst us)\n",
                   (unsigned)(s_w_sum[0] / s_t_n), (unsigned)s_w_max[0],
                   (unsigned)(s_w_sum[1] / s_t_n), (unsigned)s_w_max[1],
                   (unsigned)(s_w_sum[2] / s_t_n), (unsigned)s_w_max[2],
                   (unsigned)(s_w_sum[3] / s_t_n), (unsigned)s_w_max[3],
                   (unsigned)(s_w_sum[4] / s_t_n), (unsigned)s_w_max[4],
-                  (unsigned)(s_w_sum[5] / s_t_n), (unsigned)s_w_max[5]);
+                  (unsigned)(s_w_sum[5] / s_t_n), (unsigned)s_w_max[5],
+                  (unsigned)(s_w_sum[6] / s_t_n), (unsigned)s_w_max[6]);
     return true;
 }
 
@@ -243,7 +249,7 @@ static void begin_play(void) {
     s_t_n = 0;
     s_resync = 0;
     for (int i = 0; i < 5; i++) { s_t_sum[i] = 0; s_t_max[i] = 0; }
-    for (int i = 0; i < 6; i++) { s_w_sum[i] = 0; s_w_max[i] = 0; }
+    for (int i = 0; i < 7; i++) { s_w_sum[i] = 0; s_w_max[i] = 0; }
     // Announce BEFORE the transmit task starts. After it starts, this core and
     // core 0 would both write to Serial, and two writers corrupt the stream.
     //

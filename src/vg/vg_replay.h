@@ -74,7 +74,8 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
 // this one is "which of the things in it grows when the fight gets busy", and the second
 // is the one that needs a session with a fight in it.
 void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
-                          uint32_t ships, uint32_t msl, uint32_t fire);
+                          uint32_t ships, uint32_t msl, uint32_t fire,
+                          uint32_t total);
 
 // PLAY: block for the next frame's record. False when the host says the
 // session is finished.

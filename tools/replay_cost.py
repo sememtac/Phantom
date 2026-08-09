@@ -50,10 +50,10 @@ COST = re.compile(
 # still reports the first line and a run against one degrades rather than fails.
 WORLD = re.compile(
     r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
-    r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+)")
+    r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
 
 KEYS = ["can", "rast", "prim", "sub", "upd"]
-WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire"]
+WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
 

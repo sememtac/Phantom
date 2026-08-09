@@ -489,7 +489,7 @@ void loop(void) {
         // bug, and a zero is the one value that looks like "nothing happened" rather than
         // like a fault.
         vg_replay_note_world(g_w_motes, g_w_rocks, g_w_trails, g_w_ships,
-                             g_w_msl, g_w_fire);
+                             g_w_msl, g_w_fire, g_sub_world);
         for (int i = 0; i < 6; i++) { acc_w[i] += *g[i]; *g[i] = 0; }
     }
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
