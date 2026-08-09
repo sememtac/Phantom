@@ -612,6 +612,24 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
     vg_edge_w(cam, tail, nose, head_col, 4);
 }
 
+// THE CUTSCENE IS A CLOSED SET. Nothing that lives in the arena is drawn during it.
+//
+// vg_spawn_opponent runs at MATCH SETUP, which is before the launch cutscene, so the real
+// opponent is alive and flying the torus for the whole of it -- and nothing stopped it being
+// drawn. So the introductions had a second ship wandering through them: in the player's shot
+// it was the opponent in the opponent's colour, and in the OPPONENT's shot it was a second
+// ship in the same colour sitting roughly where the player's had been.
+//
+// Reported as a colour bug -- "both ships use the npc's colour" -- and the colours were never
+// wrong. There were simply two of them and one had no business being on set.
+//
+// The cutscene's own ship is deliberately kept out of vg.enemy so that neither the AI nor
+// the collision pass can see it. This is the other half of that separation: the arena must
+// not be visible from the cutscene either.
+static inline bool cine_set(void) {
+    return vg.state == VG_INTRO;
+}
+
 void vg_draw_world(const VgCam& cam) {
     // COUNTED FOR THE MAIN VIEW ONLY, because this function runs TWICE a frame.
     //
@@ -651,6 +669,7 @@ void vg_draw_world(const VgCam& cam) {
     // Trails go down before the hulls so a ribbon passing in front of its own
     // ship does not draw over the thing it belongs to.
     if (!cam.lite) {
+        if (!cine_set())
         for (int i = 0; i < MAX_ENEMIES; i++) {
             const Ship* s = &vg.enemy[i];
             if (s->alive)
@@ -680,6 +699,7 @@ void vg_draw_world(const VgCam& cam) {
                         vg.cine.ship.pos, vg.cine.ship.hue);
     }
 
+    if (!cine_set())
     for (int i = 0; i < MAX_ENEMIES; i++)
         if (vg.enemy[i].alive) draw_enemy(cam, &vg.enemy[i]);
 
