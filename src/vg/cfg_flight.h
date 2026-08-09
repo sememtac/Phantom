@@ -196,6 +196,14 @@
 // How quickly vg.wall_rate follows the clearance it is the derivative of. Low enough that
 // one noisy frame cannot fire the alarm, high enough that turning into the wall is reported
 // within a few frames rather than after the fact.
+// WHERE THE THROTTLE STARTS, every match and every course run.
+//
+// A quarter, so a fight opens with room to accelerate. Firewalled is not a neutral place to
+// begin -- turn rate falls off with speed, so starting at full is starting at the worst
+// agility the hull has, and the opening seconds of a match are when the player most needs
+// to turn.
+#define THROTTLE_START       0.25f
+
 #define WALL_RATE_LERP       6.0f
 
 #define SHIP_TRAIL           140      // sample points per ship

@@ -34,6 +34,14 @@ static float s_ax = 0, s_ay = 0, s_az = 1;
 static float s_nx = 0, s_ny = 0, s_nz = 1;
 static bool  s_have_sample = false;
 
+void vg_input_throttle_set(float t) {
+    if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+    s_throttle = t;
+    // The owning contact is dropped with it. Left set, a thumb still resting on the strip
+    // from the previous screen would own the control and drag it straight back.
+    s_thr_active = false;
+}
+
 void vg_input_init(void) {
     s_throttle = 0.55f;
     s_thr_active = false;

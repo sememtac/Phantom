@@ -223,8 +223,9 @@ extern uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over;
 //   ships   the hulls, the entry gate, and the cutscene ship's own ribbon -- which sits
 //           between them in draw order. Left there: moving a draw call to tidy up a
 //           counter is how a rendering bug gets made, and the cutscene is not a fight.
-//   ord     missiles and fireballs
-extern uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord;
+//   msl     the missiles: a body, a head and a trail each
+//   fire     the fireballs: concentric rings, and the most of them at once
+extern uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
 
 // THE FRAME'S LAST I2C, split three ways.
 //

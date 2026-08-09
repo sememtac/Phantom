@@ -66,4 +66,14 @@ void vg_input_init(void);
 // harmless otherwise, so the game can call it unconditionally on each new run.
 void vg_input_calibrate(void);
 
+// PUT THE THROTTLE BACK, which nothing but a reboot used to do.
+//
+// The input layer owns the throttle: it is a slider position held by a thumb, retained
+// between frames on purpose so lifting the thumb does not drop the ship out of the sky. The
+// simulation's vg.throttle merely follows it, so setting that at match start achieved
+// nothing at all -- the next frame overwrote it with the previous match's slider.
+//
+// The symptom was a new fight opening at whatever speed the last one ended at.
+void vg_input_throttle_set(float t);
+
 void vg_input_update(float dt, VgInput* out);

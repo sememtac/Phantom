@@ -585,7 +585,7 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
     // affordable thing in the game to lose against a bright sky.
     vg_line_blend(VG_LINE_ADD);
     Vec3 prev = m->pos;
-    for (int t = 0; t < m->trail_n; t++) {
+    for (int t = 0; t < m->trail_n; ) {
         int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
         Vec3 cur = m->trail[idx];
         float f = 1.0f - (float)t / (float)m->trail_n;
@@ -595,6 +595,9 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
         int w = (f > 0.66f) ? 2 : 1;
         vg_edge_w(cam, prev, cur, vg_dim(trail_col, f * f), w);
         prev = cur;
+        // See MISSILE_LOD_NEAR. The wide part of the stroke is the near part, so the
+        // segments that cost two primitives are exactly the ones still drawn one for one.
+        t += (t < MISSILE_LOD_NEAR) ? 1 : (t < MISSILE_LOD_MID) ? 2 : 3;
     }
     // Back to opaque before the body below. The body is drawn at FULL brightness, and a
     // full-brightness opaque stroke is legible over anything -- it is only the dimmed
@@ -689,10 +692,14 @@ void vg_draw_world(const VgCam& cam) {
 
     for (int i = 0; i < MAX_MISSILES; i++)
         if (vg.msl[i].alive) draw_missile(cam, &vg.msl[i]);
+    // SPLIT FROM THE FIREBALLS, because `ord` held both and adding level of detail to the
+    // missile trail moved it by nothing at all. One number for two unrelated kinds of work
+    // cannot say which of them is the 1891.
+    if (bill) { g_w_msl = micros() - t_w; } t_w = micros();
 
     // Last, over everything. A fireball is light, and light is in front of the
     // wreckage it came from -- drawn under the ships, the brightest thing in the
     // frame would be the one thing getting occluded by black hull fills.
     draw_fireballs(cam);
-    if (bill) { g_w_ord = micros() - t_w; }
+    if (bill) { g_w_fire = micros() - t_w; }
 }

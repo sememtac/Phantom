@@ -251,7 +251,12 @@ void vg_match_start(void) {
     vg.trail_acc   = 0;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
-    vg.throttle    = 0.5f;
+    // THE INPUT'S THROTTLE TOO, not just the simulation's. vg.throttle is a follower --
+    // vg_world_step lerps it toward in->throttle every frame -- so setting it here and
+    // nothing else meant a new match opened at the last one's speed. Reported from play.
+    vg.throttle     = THROTTLE_START;
+    vg.throttle_vis = THROTTLE_START;
+    vg_input_throttle_set(THROTTLE_START);
     vg.bank        = 0;
     vg_shake_clear();
     vg.hit_flash   = 0;

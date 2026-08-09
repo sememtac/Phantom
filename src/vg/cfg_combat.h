@@ -11,6 +11,25 @@
 // --- missiles --------------------------------------------------------------
 #define MAX_MISSILES         14
 #define MISSILE_TRAIL        30       // trail sample points per missile
+
+// LEVEL OF DETAIL ALONG THE ARC, and this was the one thing in the world with none.
+//
+// Everything else already steps down with distance or size: the ship ribbon walks 1, 2 then
+// 3 points at a time, asteroids drop through a wireframe to a diamond to a dot, and
+// fireballs shed ring segments. The missile trail walked all thirty points at full
+// resolution, and the head is stroked two pixels wide, which is two primitives a segment.
+// Fourteen missiles of that is the densest geometry in the frame at exactly the moment the
+// most is happening.
+//
+// Measured over a missile-heavy session: `ord` means 103 us and peaks at 1891, an
+// eighteenfold swing and the sharpest curve in the world split.
+//
+// Full resolution near the HEAD, because that is the part being read -- the arc says where
+// the round came from and where it is going -- and coarser behind it, where the trail is
+// dimmer and tapered to a hairline anyway. The ribbon stays unbroken because each segment
+// starts where the last one ended, whatever the step.
+#define MISSILE_LOD_NEAR     9        // points from the head drawn one for one
+#define MISSILE_LOD_MID      18       // ...then every second, then every third
 #define TRAIL_SAMPLE_DT      0.028f   // seconds between trail samples
 
 // THE SEEKER CONE lives in ShipSpec::msl_seeker_cos, per class. The constant that

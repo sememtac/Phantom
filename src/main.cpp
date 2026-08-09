@@ -15,7 +15,7 @@ uint32_t g_arena_hoop, g_arena_rail;                        // the grid's two lo
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_in_touch, g_in_lock;                             // the frame's last I2C
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
-uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord;  // and `world` too
+uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;  // `world`
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
@@ -477,10 +477,10 @@ void loop(void) {
     acc_sover  += g_sub_over;   g_sub_over   = 0;
     // `world`'s five parts. See g_w_motes in vg_prof.h -- read the RANGE of these,
     // not the mean: the question is which one grows when the fight gets busy.
-    static uint32_t acc_w[5] = {0};
+    static uint32_t acc_w[6] = {0};
     {
-        uint32_t* const g[5] = { &g_w_motes, &g_w_rocks, &g_w_trails,
-                                 &g_w_ships, &g_w_ord };
+        uint32_t* const g[6] = { &g_w_motes, &g_w_rocks, &g_w_trails,
+                                 &g_w_ships, &g_w_msl, &g_w_fire };
         // THE TIMED REPLAY GETS THEM HERE, before the zeroing on the same line.
         //
         // It used to read them thirty lines further down, after this block had already
@@ -488,8 +488,9 @@ void loop(void) {
         // five zeros, from counters that were working perfectly. The order was the whole
         // bug, and a zero is the one value that looks like "nothing happened" rather than
         // like a fault.
-        vg_replay_note_world(g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_ord);
-        for (int i = 0; i < 5; i++) { acc_w[i] += *g[i]; *g[i] = 0; }
+        vg_replay_note_world(g_w_motes, g_w_rocks, g_w_trails, g_w_ships,
+                             g_w_msl, g_w_fire);
+        for (int i = 0; i < 6; i++) { acc_w[i] += *g[i]; *g[i] = 0; }
     }
     static uint32_t acc_hud_radar = 0, acc_hud_thr = 0;
     acc_hud_radar += g_hud_radar;  g_hud_radar    = 0;
@@ -672,14 +673,15 @@ void loop(void) {
         {
             const uint32_t w = acc_wrld / frames;
             uint32_t named = 0;
-            for (int i = 0; i < 5; i++) named += acc_w[i] / frames;
+            for (int i = 0; i < 6; i++) named += acc_w[i] / frames;
             Serial.printf("        world = motes %lu rocks %lu trails %lu ships %lu "
-                          "ord %lu rest %lu of %lu\n",
+                          "msl %lu fire %lu rest %lu of %lu\n",
                           (unsigned long)(acc_w[0] / frames),
                           (unsigned long)(acc_w[1] / frames),
                           (unsigned long)(acc_w[2] / frames),
                           (unsigned long)(acc_w[3] / frames),
                           (unsigned long)(acc_w[4] / frames),
+                          (unsigned long)(acc_w[5] / frames),
                           (unsigned long)(w > named ? w - named : 0),
                           (unsigned long)w);
         }
@@ -810,7 +812,7 @@ void loop(void) {
         // keep the frame that paid for the formatting out of the histogram.
 
         for (int i = 0; i < 11; i++) acc_u[i] = 0;
-    for (int i = 0; i < 5; i++) acc_w[i] = 0;
+    for (int i = 0; i < 6; i++) acc_w[i] = 0;
     acc_slock = acc_scan_p = acc_smarks = acc_sover = 0;
     acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = acc_push = 0;

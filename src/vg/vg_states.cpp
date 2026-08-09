@@ -142,6 +142,11 @@ static void enter_course(void) {
     // itself: the sequence lives in the band rasteriser, and a cue triggered from drawing code is
     // a cue that does not happen when the panel is not drawn.
     vg_sfx_play(SFX_SPOOL, 1.0f);
+    // THE COURSE IS NOT A MATCH, so it does not go through vg_match_start and has to put the
+    // throttle back itself. Both places, or "every time" is only true of one of them.
+    vg.throttle     = THROTTLE_START;
+    vg.throttle_vis = THROTTLE_START;
+    vg_input_throttle_set(THROTTLE_START);
     vg_input_calibrate();
 }
 
