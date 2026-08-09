@@ -79,6 +79,18 @@ void vg_capture_frame_counts(uint32_t* begins, uint32_t* ends);
 // frame.
 void vg_capture_poll(void);
 
+// ONE FULL BREAKDOWN, ON REQUEST. Serial 'd'.
+//
+// The deep splits -- the update's eleven spans, group B's parts, the world's six, the grid
+// and the I2C -- used to print every two seconds alongside everything else, which came to
+// twelve lines a window. Most of them had already answered the question they were added
+// for, and a line nobody reads is worse than no line: it pushes the ones that matter off
+// the top of the terminal.
+//
+// So the periodic report is what you WATCH and this is what you ASK. Returns true once, for
+// the next window only.
+bool vg_capture_want_detail(void);
+
 // Called by the rasteriser around each finished frame. Bands arrive in the
 // order they are drawn, which is top to bottom in panel space.
 void vg_capture_frame_begin(void);

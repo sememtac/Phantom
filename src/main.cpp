@@ -643,18 +643,30 @@ void loop(void) {
         // The halves, and the gap between them is the lever: `sub` is the slower one.
         // `denied` is a running total, not a per-window figure: it should be 0 for ever, and
         // any number at all is worth seeing rather than averaging away.
+        // WHAT IS WATCHED AND WHAT IS ASKED FOR.
+        //
+        // Everything below this until the frame histogram used to print every two seconds.
+        // Twelve lines a window is more than a terminal shows, so the ones that matter --
+        // the phases, the band budget, the distribution -- were being pushed off the top by
+        // splits that had already answered their question months or hours ago.
+        //
+        // The counters are all still collected; only the printing is on request. Serial 'd'
+        // gives one window's full breakdown. See vg_capture_want_detail.
+        const bool deep = vg_capture_want_detail();
+        if (deep)
         Serial.printf("        i2c  = touch %lu (lock %lu) of in %lu | denied %lu\n",
                       (unsigned long)(acc_touch / frames),
                       (unsigned long)(acc_lock  / frames),
                       (unsigned long)(acc_input / frames),
                       (unsigned long)vg_i2c_denied());
+        if (deep)
         Serial.printf("        half = A %lu (core 1) B %lu (core 0)\n",
                       (unsigned long)(acc_suba / frames),
                       (unsigned long)(acc_subb / frames));
         // WHAT GROUP B IS MADE OF. `rest` is by subtraction -- the glitch and shake
         // arithmetic and whatever else is not one of the named calls -- so it costs no
         // second bracket and cannot double-count. See vg_prof.h.
-        {
+        if (deep) {
             const uint32_t b   = acc_subb / frames;
             const uint32_t named = acc_slock / frames + acc_scan_p / frames
                                  + acc_smarks / frames + acc_sover / frames
@@ -670,7 +682,7 @@ void loop(void) {
                           (unsigned long)(b > named ? b - named : 0),
                           (unsigned long)b);
         }
-        {
+        if (deep) {
             const uint32_t w = acc_wrld / frames;
             uint32_t named = 0;
             for (int i = 0; i < 6; i++) named += acc_w[i] / frames;
@@ -685,6 +697,7 @@ void loop(void) {
                           (unsigned long)(w > named ? w - named : 0),
                           (unsigned long)w);
         }
+        if (deep)
         Serial.printf("        grid = hoops %lu (core 1) rails %lu (core 0)\n",
                       (unsigned long)(acc_ahoop / frames),
                       (unsigned long)(acc_arail / frames));
@@ -692,7 +705,7 @@ void loop(void) {
         // `oth` is the rest of the state's own function plus the replay note, by
         // SUBTRACTION rather than by a tenth bracket. It can read 0: the spans are
         // integer microseconds and rounding across a window can just cover the total.
-        {
+        if (deep) {
             uint32_t named = 0;
             for (int i = 0; i < 11; i++) named += acc_u[i] / frames;
             const uint32_t tot = acc_update / frames;

@@ -4,6 +4,52 @@
 // Frame-time counters, written where the work happens and read by the telemetry
 // line in main.cpp.
 //
+// ===========================================================================
+// BEFORE YOU BELIEVE A COUNTER, MAKE IT PROVE IT CANNOT BE ZERO
+//
+// Four of the counters in this file were wrong at the same time, in four different ways,
+// and every one of them read as a plausible number rather than as a fault:
+//
+//   tnt      declared, reset and read -- and never written. It reported 0 for an effect
+//            costing over a millisecond, and that 0 was quoted three times: twice as
+//            evidence the boundary warning was cheap, once as evidence it was expensive.
+//
+//   aa       counts every BLENDED line, not just antialiased ones, because the slice field
+//            holds LINE_AA, LINE_ADD and LINE_SUB alike. Making the ship trails additive
+//            moved them out of `ln` and into `aa`, which looked like the line cost falling
+//            and antialiasing switching itself on. It was neither, and it invalidated a
+//            published measurement.
+//
+//   g_w_*    read thirty lines AFTER the block that zeroes them for the next frame. A whole
+//            session's world split came back as five zeros from counters that were working
+//            perfectly.
+//
+//   WORLD    the host returned as soon as it matched the line before it, so the line was
+//            printed, transmitted, and never read.
+//
+// THE COMMON FACTOR IS THE ZERO. A dead counter, a counter read too late and a counter
+// nobody collected all produce the same output as a thing that genuinely cost nothing, and
+// the reader cannot tell them apart. Three of these survived for hours because they were
+// first read in a state where zero was the correct answer -- at the title screen, in the
+// quiet part of a session, before the fight.
+//
+// So: a new counter is not trusted until it has been read in a case where it MUST be
+// non-zero. That is one deliberate measurement, and it would have caught all four in a
+// minute each.
+//
+// AND A SPLIT CARRIES THE WHOLE IT SPLITS. Six counters that are supposed to add up to
+// g_sub_world went four commits before anybody could check whether they did, because the
+// parts and the whole were reported by different instruments over different frames. They
+// do -- to 1.2%, which is the micros() calls -- but that was luck, not verification.
+// vg_replay_note_world carries the total for exactly this reason.
+//
+// WHAT IS PRINTED AND WHAT IS ASKED FOR. The periodic report is for WATCHING: the phases,
+// the band budget against its 768 us, the frame distribution, the audio. The deep splits
+// are for ASKING, on serial 'd', because they answer a question once and then cost a line
+// of terminal every two seconds for ever. Twelve lines a window pushed the ones that
+// mattered off the top of the screen, which is how a counter reading zero goes unnoticed.
+// ===========================================================================
+//
 // A HEADER RATHER THAN `extern` AT THE USE SITE. These were declared inline in
 // vg_render.cpp and vg_sfx.cpp, in function scope, which works and is silently
 // unsafe: a function-local extern is a promise about a symbol defined somewhere

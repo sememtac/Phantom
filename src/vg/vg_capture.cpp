@@ -40,6 +40,14 @@ void vg_capture_set(int mode) {
 }
 bool  vg_link_busy(void) { return s_mode != 0 || vg_replay_mode() != VG_RP_OFF; }
 
+// Set by 'd', cleared by the read. One window's worth, not a mode.
+static bool s_detail = false;
+bool vg_capture_want_detail(void) {
+    const bool w = s_detail;
+    s_detail = false;
+    return w;
+}
+
 // A blocking write is correct while a session runs and wrong at every other
 // time. During a session a host is reading, and a dropped byte truncates a frame
 // it then waits for. Outside a session nobody is reading, and a blocking write
@@ -256,6 +264,10 @@ void vg_capture_poll(void) {
             const bool on = !vg_rast_aa_master_on();
             vg_rast_aa_master(on);
             if (!vg_link_busy()) Serial.println(on ? "hud aa: on" : "hud aa: off");
+        } else if (c == 'd' && !vg_link_busy()) {
+            // The full breakdown, once, on the next telemetry window. See
+            // vg_capture_want_detail -- these lines are asked for, not broadcast.
+            s_detail = true;
         } else if (c == 'c' && !vg_link_busy()) {
             // The last timed replay's cost, on demand. See vg_replay_report_cost: catching
             // it as it went past was a race the host lost every time.
