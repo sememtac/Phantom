@@ -559,43 +559,6 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // is now: the ring that used to sit beside this is deleted, above.
 static float s_alarm  = 0.0f;
 
-// THE RING RADII, SQUARED, ONCE PER FRAME.
-//
-// rmax, rin and step depend only on s_tint_k, so they are constant for a whole frame -- and
-// vg_tint_row_limits recomputed all three, including a square root for rmax, on EVERY PANEL
-// ROW. 480 rows of arithmetic to arrive at the same three numbers.
-//
-// Squared, because that is the form the callers want: a row wants sqrt(r2 - dy*dy), and a
-// primitive wants to know which band its own squared radius falls in without taking a root at
-// all. What is left per row is one subtract and one root per ring, and neither can be hoisted
-// -- dy is the row.
-
-// THE RING LIMITS, PRECOMPUTED, AND IN PSRAM.
-//
-// vg_tint_row_limits took thirteen sqrtf per PANEL ROW -- about 6,240 libm calls a frame --
-// and that was the whole cost of the boundary tint: 1700 us of backdrop became 5251 with it
-// on, which is 2.1 ms of frame and 60 fps down to about 53.
-//
-// The limits depend on two things only: the tint amount, and |dy| from the centre row. So the
-// whole set is 241 rows by thirteen rings, and it is the SAME set for every frame the amount
-// does not change.
-//
-// PSRAM ON PURPOSE, and the distinction matters. The backdrop's texture has to be internal
-// because it is sampled in a scattered pattern, which is the finding the two-stage rasteriser
-// rests on -- but this is read SEQUENTIALLY, thirteen adjacent entries per row, which is the
-// case a cache handles well. Internal SRAM is down to ~10 KB free and the backdrop has already
-// been broken once by spending it; 6 KB of the 8 MB next door costs nothing anyone needs.
-//
-// QUANTISED to TINT_QSTEPS, so a steady approach rebuilds the table a few times rather than
-// every frame. The worst case is safe without the quantiser at all: a rebuild is 3,133 roots
-// against the 6,240 a frame used to pay, so even rebuilding EVERY frame would be twice as fast
-// as asking per row.
-static int      s_tint_q   = -1;             // the quantised amount the table holds
-
-// Allocated once, at init, and never during a frame: this is reached from the render thread
-// and a malloc mid-frame is a stall nobody asked for. A failure is not fatal -- the row walk
-// below falls back to computing, which is exactly what it did before the table existed.
-
 
 // --- tint, at the source ----------------------------------------------------
 //
@@ -646,8 +609,10 @@ static float s_tv_wash = 0.0f;   // how far the lit part is washed toward white
 static float s_tv_dim  = 0.0f;   // ...and how far the rest is faded to black
 
 void vg_rast_tv(float open, float wide, float wash, float dim) {
-    // Same "keep it only if it is in range" shape as vg_rast_tint, and for the
-    // same reason: a NaN fails every rejection test written the obvious way.
+    // KEEP IT ONLY IF IT IS IN RANGE, rather than rejecting what looks wrong. A NaN
+    // fails every test written the obvious way -- (v < 0) and (v > 1) are both false for
+    // it -- so a NaN would sail through a rejection and land in the state. The wall
+    // warning's own setter used the same shape before it was deleted.
     #define TV_CLAMP(v) (((v) >= 0.0f && (v) <= 1.0f) ? (v) : (((v) > 0.0f) ? 1.0f : 0.0f))
     s_tv_open = TV_CLAMP(open);
     s_tv_wide = TV_CLAMP(wide);
@@ -1086,7 +1051,7 @@ void vg_canopy_rear(bool on) { s_can_rear = on; }
 
 const VgCanopy* vg_canopy_current(void) { return s_can; }
 
-// THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW. Experiment.
+// THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW.
 //
 // The ring tint is a per-pixel pass over its own area and costs about 1100 us at the wall,
 // measured. This costs NOTHING per pixel: the cockpit's members are already written every

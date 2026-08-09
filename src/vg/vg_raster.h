@@ -155,11 +155,14 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // whole world at once, mid-sequence.
 void  vg_canopy_rear(bool on);
 
-// THE WALL WARNING ON THE COCKPIT, 0 clear and 1 hard against the boundary. Experiment.
+// THE WALL WARNING ON THE COCKPIT. `k` is how red, 0 clear and 1 hard against the
+// boundary; `white` strobes the frame for a moment and is driven by seconds to impact
+// rather than by distance -- see CANOPY_ALARM_SECS.
 //
-// Costs nothing per pixel: the members are drawn every frame anyway and their colour is a
-// table lookup, so this is a different table. Compare with vg_rast_tint, which is a pass
-// over its own area and was measured at about 1100 us at the wall.
+// Costs nothing per pixel: the members are drawn every frame anyway and their colour comes
+// from a table, so this is a different table. What it replaced was a red ring over the
+// whole view, and that WAS a per-pixel pass -- measured at the boundary, moving the warning
+// here took the backdrop fill from 3060 us to 1824 and the frame rate from 53.1 to 59.7.
 void  vg_canopy_alarm(float k, bool white);
 
 void  vg_canopy_intro_reset(void);
