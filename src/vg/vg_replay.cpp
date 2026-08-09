@@ -42,6 +42,14 @@ static bool     s_timed = false;
 // bytes and the session is one record short for each -- the numbers are still sound, but
 // the run is not the same length as the file.
 static uint32_t s_resync = 0;
+
+// WHY THE LAST REPLAY ENDED. Six ways out of vg_replay_next and they were indistinguishable
+// from the host, which sees only that the acknowledgements stopped.
+//
+// A run of ordnance.phr stops between frames 1000 and 1500, at a different frame each time,
+// while regress.phr completes all 5,444 -- so it is neither the firmware nor the protocol,
+// and a guess at which of the six it is would be a guess. This says.
+static const char* s_why = "not started";
 static uint32_t s_t_n   = 0;
 static uint32_t s_t_sum[5], s_t_max[5];
 // The `world` split for the same frames, kept the same way. Reported on its own line
@@ -248,6 +256,7 @@ static void begin_play(void) {
     vg_link_stats_reset();
     s_t_n = 0;
     s_resync = 0;
+    s_why = "still running";
     for (int i = 0; i < 5; i++) { s_t_sum[i] = 0; s_t_max[i] = 0; }
     for (int i = 0; i < 7; i++) { s_w_sum[i] = 0; s_w_max[i] = 0; }
     // Announce BEFORE the transmit task starts. After it starts, this core and
@@ -269,7 +278,10 @@ bool vg_replay_next(float* dt, VgInput* in) {
     char tag[4];
     // Generous: the host has to encode and write the previous frame before it
     // asks for the next one, and a slow disk should not end the session.
-    if (!rd(tag, 4, 30000)) { vg_replay_command('E'); return false; }
+    if (!rd(tag, 4, 30000)) {
+        s_why = "no tag: host went quiet for 30 s";
+        vg_replay_command('E'); return false;
+    }
 
     // THE END IS EXPLICIT NOW, and it has to be checked before the resync below.
     //
@@ -278,7 +290,10 @@ bool vg_replay_next(float* dt, VgInput* in) {
     // lost", so the sentinel was being eaten by the scan looking for the next record -- the
     // session then ended on a timeout, several seconds late, and the host had already given
     // up waiting for the answer.
-    if (memcmp(tag, "EEEE", 4) == 0) { vg_replay_command('E'); return false; }
+    if (memcmp(tag, "EEEE", 4) == 0) {
+        s_why = "host said stop";
+        vg_replay_command('E'); return false;
+    }
 
     // A BAD TAG IS A DROPPED BYTE, NOT THE END OF THE SESSION.
     //
@@ -301,21 +316,41 @@ bool vg_replay_next(float* dt, VgInput* in) {
         const int RESYNC_MAX = 512;         // ~6 records' worth of slack
         int slid = 0;
         for (;;) {
-            if (++slid > RESYNC_MAX) { vg_replay_command('E'); return false; }
+            if (++slid > RESYNC_MAX) {
+                s_why = "resync gave up after 512 bytes";
+                vg_replay_command('E'); return false;
+            }
             tag[0] = tag[1]; tag[1] = tag[2]; tag[2] = tag[3];
-            if (!rd(&tag[3], 1, 5000))     { vg_replay_command('E'); return false; }
+            if (!rd(&tag[3], 1, 5000)) {
+                s_why = "resync ran out of stream";
+                vg_replay_command('E'); return false;
+            }
             if (memcmp(tag, "PHRP", 4) == 0) break;
         }
         s_resync++;
     }
 
     uint8_t nr = 0;
-    if (!rd(dt, 4, 5000) || !rd(&nr, 1, 5000) || nr > RP_MAX_RAND) {
+    if (!rd(dt, 4, 5000) || !rd(&nr, 1, 5000)) {
+        s_why = "record header truncated";
         vg_replay_command('E');
         return false;
     }
-    if (nr && !rd(s_rand, (int)nr * 4, 5000)) { vg_replay_command('E'); return false; }
-    if (!rd(in, sizeof(VgInput), 5000))       { vg_replay_command('E'); return false; }
+    if (nr > RP_MAX_RAND) {
+        // A seed count larger than the log can hold. The tag matched, so the stream was
+        // aligned a moment ago -- this is what a corrupted byte inside a record looks like.
+        s_why = "seed count out of range";
+        vg_replay_command('E');
+        return false;
+    }
+    if (nr && !rd(s_rand, (int)nr * 4, 5000)) {
+        s_why = "seeds truncated";
+        vg_replay_command('E'); return false;
+    }
+    if (!rd(in, sizeof(VgInput), 5000)) {
+        s_why = "input struct truncated";
+        vg_replay_command('E'); return false;
+    }
 
     s_rand_n = nr;
     s_rand_i = 0;
@@ -357,6 +392,7 @@ bool vg_replay_command(int c) {
             Serial.printf("\nvg_replay: RESYNC %u -- the link dropped bytes; that many "
                           "records were skipped\n", (unsigned)s_resync);
         }
+        Serial.printf("\nvg_replay: WHY %s\n", s_why);
         Serial.printf("\nvg_replay: END %u frames  wrote %u bytes  short %u  "
                       "stall %u  mismatch %u  begins %u ends %u\n",
                       (unsigned)s_index, (unsigned)wb, (unsigned)ws,

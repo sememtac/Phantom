@@ -127,8 +127,27 @@ def run(port, path, limit):
                 quiet += 1
                 # 20 s with nothing at all, when a frame takes tens of milliseconds.
                 if quiet > 20:
-                    sys.exit("the device stopped answering after %d of %d frames.\n"
-                             "  It reset, or the replay desynced." % (sent - k + got, n))
+                    # ASK IT WHY BEFORE GIVING UP. The device ends a replay for six distinct
+                    # reasons and prints which -- see s_why in vg_replay.cpp -- but it prints
+                    # that when the replay ENDS, which is exactly the moment this loop used
+                    # to exit and stop reading. So the one line explaining the failure was
+                    # generated and thrown away every time, and three runs in a row were
+                    # diagnosed as "it reset, or it desynced" when the device had said.
+                    tail = bytearray()
+                    end = time.time() + 6.0
+                    while time.time() < end:
+                        w = link.ser.in_waiting
+                        if w:
+                            tail += link.ser.read(w)
+                        else:
+                            time.sleep(0.02)
+                    said = [l.strip() for l in
+                            tail.decode("utf-8", "replace").splitlines()
+                            if "vg_replay:" in l]
+                    sys.exit("the device stopped answering after %d of %d frames.\n  %s"
+                             % (sent - k + got, n,
+                                "\n  ".join(said) if said else
+                                "It said nothing at all, so it reset rather than ended."))
         if sent - shown >= 1000:
             shown = sent
             rate = sent / max(time.time() - started, 1e-6)
