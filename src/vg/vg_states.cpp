@@ -26,6 +26,13 @@
 // the title, the bracket and the repair screen costs nothing.
 void vg_use_menu_sky(void) {
     vg_sky_menu();
+    // AND A ROUND TUBE, because out of combat the arena is the menu's too. A match can end
+    // while an anomaly is at full strength -- the killing shot does not wait for the weather --
+    // and without this the bracket, the repair screen and the title would all be flown in the
+    // distorted tunnel of a fight that is already over. Here rather than in each of the three
+    // enter hooks: this function already means "the venue is not a venue any more", and that is
+    // the same sentence. See ANOM_CHANCE_ROUND0.
+    vg_arena_warp_set(0.0f);
 }
 
 // STATIC, so that this cannot be called as though it were a transition.
@@ -147,6 +154,13 @@ static void enter_course(void) {
     vg.throttle     = THROTTLE_START;
     vg.throttle_vis = THROTTLE_START;
     vg_input_throttle_set(THROTTLE_START);
+    // THE COURSE IS WHERE THE DISPLACEMENT GETS LOOKED AT, for now. It belongs in a match --
+    // the course is where the wall warning is met for free and where the controls are learned,
+    // and a boundary that moves is a difficulty rather than a lesson. But a tournament's first
+    // round is deliberately the faintest setting in the game, which makes it the worst place to
+    // judge the effect, so the course carries it at full strength while the look is decided.
+    // Set ARENA_WARP_COURSE to 0 to put the course back to a round tube.
+    vg_arena_warp_set(ARENA_WARP_COURSE);
     vg_input_calibrate();
 }
 

@@ -83,6 +83,122 @@
 
 
 // Torus structural hoops: how far ahead/behind they are drawn, and how far apart.
+// THE TUBE IS NOT PERFECTLY ROUND, in a tournament. Prototype.
+//
+// A radial displacement of the boundary by periodic value noise in the torus's OWN
+// coordinates (u around the loop, v around the tube). Indexed that way it is stable for
+// free: the arena rides the world transform every frame, but its intrinsic coordinates do
+// not move, so the terrain cannot swim as you fly.
+//
+// PERIODIC IN BOTH by construction -- the lattice wraps at NU and NV -- so the tunnel joins
+// itself with no seam where u comes back round.
+//
+// WHAT IT COSTS: 244us of `sub`, measured over 1200 replayed frames against the same scene
+// with only the amplitude changed. `rast`, `prim`, `can` and `upd` all moved by under 1%, so
+// this does not touch the wire floor -- it is not more pixels, it is the same grid in different
+// places. But `sub` is serial and runs before the flush, so those 244us land on the frame:
+// about 1.5% of one, or a fps at 60. That is the price of the whole grid, main view and mirror,
+// at one octave. A second octave roughly doubles it.
+//
+// RADIAL, which is what keeps the clearance solve O(1). Displacing along the tube's own
+// normal does not move the nearest point on the tube AXIS, so vg_arena_clearance stays one
+// atan2 and a length, with the local radius simply moved. That is exact for small amplitudes
+// and drifts as the slope steepens, which is why the amplitude is a fraction of r_minor and
+// not a free number.
+// BOTH POWERS OF TWO, and that is not a rounded-off aesthetic choice. The wrap that makes the
+// field periodic is the only integer work in the inner loop, and at a power of two it is a mask
+// instead of four divisions. Measured: with floorf, it is the difference between 466us and 244us.
+#define ARENA_WARP_NU        32       // lattice cells around the loop
+#define ARENA_WARP_NV        8        // ...and around the tube
+#define ARENA_WARP_OCTAVES   1        // 2 costs about twice as much per vertex
+// A fraction of r_minor (1100), and this number is being LOOKED AT, not defended.
+//
+// It was 0.09 and the first round of a tournament -- 0.35 of it -- was invisible, correctly:
+// 0.35 * 0.09 * 1100 is a 35 unit peak on a tube 2200 across, and value noise seldom reaches
+// its peak, so the typical bump was nearer 12 units. Raised to 0.22 so that the mechanic can
+// be judged by eye at all: +-242 units peak, and a first round still gets a third of that.
+//
+// Raised again to 0.30 -- +-330 units -- on the author's ask that the anomaly be plainly
+// noticeable and cost the player something. Amplitude is the FREE lever here: the cost is per
+// evaluation, not per unit, so a bigger displacement runs at exactly the 244us a small one does.
+// Octaves are the expensive lever and buy fine detail, which is not what makes this legible.
+//
+// THE CLEARANCE SOLVE IS APPROXIMATE AT THIS AMPLITUDE, and the direction it errs matters. The
+// radial estimate ignores the surface's slope, so on a steep inward face the true distance to
+// the wall is up to about a fifth less than the number the game holds -- the boundary bites
+// slightly EARLY, never late. Early is the safe direction: the player can never pass through a
+// wall they can see. It reads as clipping a face rather than as being cheated, and going much
+// past 0.30 is where that stops being true.
+#define ARENA_WARP_MAX       0.30f
+// How much of that the first round gets, against the last. Difficulty, by the author's ask:
+// the final should be flown somewhere less forgiving than the opening.
+//
+// Not lower than this, though: the displacement arrives as an EVENT that the broadcast
+// announces, and an announced event the player cannot see is worse than no event. 0.35 was
+// invisible at round 0 and 0.60 was merely present. At 0.75 the first round already deforms
+// hard enough to be a beat, and the bracket still has somewhere left to escalate to.
+#define ARENA_WARP_ROUND0    0.75f
+// THE COURSE, WHICH IS WHERE IT GETS LOOKED AT. 0 is the round tube the course was always
+// flown in and is where this should end up; 1 is the full amplitude above, which is what makes
+// the effect legible enough to have an opinion about. A separate knob from the tournament ramp
+// so that turning the demonstration off cannot disturb the difficulty curve.
+#define ARENA_WARP_COURSE    0.0f
+
+// ---------------------------------------------------------------------------
+// THE ANOMALY
+//
+// The arena is a different place in space every round, and something can be wrong with the
+// place. A match either has a disturbance or it does not, and if it does it arrives partway
+// through rather than being there at the start -- the tunnel the player launched into is the
+// one they thought they knew.
+//
+// Nothing explains it. The broadcast announces it and announces when it passes, and the
+// broadcast does not know what it is either. See IFT_ANOMALY.
+//
+// The roll is made from the recorded random stream, so a replay reproduces the same weather.
+// ---------------------------------------------------------------------------
+
+// The chance a match has any disturbance at all, at round 0 and at the final. A quiet match is
+// part of the mechanic: if it happened every time it would be scenery rather than an event.
+// PROTOTYPE VALUES, and the low end is deliberately generous so it can be seen while it is
+// being judged -- a real curve probably starts nearer 0.25.
+#define ANOM_CHANCE_ROUND0   0.70f
+#define ANOM_CHANCE_FINAL    0.90f
+// A match that has one can have a second. Rolled once at the start, so the pacing of a match
+// is decided before it begins and not drifted into.
+#define ANOM_CHANCE_SECOND   0.35f
+// Seconds of quiet before an episode. The first is short enough to be met while the fight is
+// still fresh; a later one waits longer.
+#define ANOM_WAIT_MIN        14.0f
+#define ANOM_WAIT_MAX        40.0f
+// How long it stays once it has arrived.
+#define ANOM_HOLD_MIN        16.0f
+#define ANOM_HOLD_MAX        34.0f
+// The arrival and the departure are NOT symmetrical, and that asymmetry is the whole read of
+// it. Coming on fast enough to notice mid-turn is what makes it an event; going away slowly is
+// what makes it feel like something passing rather than something switched off.
+#define ANOM_ONSET_S         1.8f
+#define ANOM_FADE_S          6.0f
+// An episode does not always reach the round's full strength. Scaled by this, so two matches in
+// the same round are not the same weather. The floor is high: the variation is there to keep two
+// episodes from being identical, not to produce a disturbance nobody notices.
+#define ANOM_PEAK_MIN        0.75f
+#define ANOM_PEAK_MAX        1.00f
+
+// THE AIRFRAME FEELS IT TOO, and this is the half that makes it cost the player something. The
+// moving wall takes away room; the rumble takes away the shot. Guns are aimed down the nose, so
+// a view that will not sit still is a real handicap for as long as it lasts -- which is the
+// point, and also why this number is nothing like the others on the bus.
+//
+// Far below every other rumble source (PASS_RUMBLE 1.50, FIRE_RUMBLE 1.15) because those are
+// MOMENTS -- a fighter crossing the nose, flying through a wreck -- and this is a condition that
+// holds for half a minute. At 0.35 it is about 2 px of continuous view movement: enough to spoil
+// a long shot and to be felt the whole time, not enough to be punishing to look at.
+//
+// It rides the same eased ramp as the geometry, so the shaking arrives with the ground moving
+// and leaves with it.
+#define ANOM_RUMBLE          0.35f
+
 #define ARENA_HOOP_SPACING   480.0f
 #define ARENA_HOOP_SPAN      5200.0f
 #define ARENA_HOOP_SEGS      14       // enough that the ring reads round

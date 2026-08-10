@@ -7,9 +7,9 @@
 // ---------------------------------------------------------------------------
 // SOME OF THESE LINES ARE THE AUTHOR'S WRITING. DO NOT EDIT THOSE.
 //
-// The course lines -- START and DONE -- are written, and belong to the author
-// like everything else the player reads (see CLAUDE.md). Change them only when
-// asked to, and never to make something fit.
+// The course lines -- START and DONE -- and both ANOMALY lines are written, and
+// belong to the author like everything else the player reads (see CLAUDE.md).
+// Change them only when asked to, and never to make something fit.
 //
 // The rest are still PLACEHOLDERS and are not writing: they are data labels, a
 // callsign and a ship class, which is a scoreboard rather than a script. Those
@@ -29,6 +29,9 @@
 //   IFT_MATCH_END   %s  the winner's callsign
 //                   %s  the loser's callsign
 //                   %s  the name of the round just finished
+//
+//   IFT_ANOMALY       no arguments
+//   IFT_ANOMALY_END   no arguments
 //
 //   IFT_COURSE_START  no arguments
 //   IFT_COURSE_PASS   %d  gates cleared in a row   %d  the target
@@ -51,6 +54,12 @@ static const char* const IFT_FMT[IFT_SLOTS] = {
     "%d / %d",              // IFT_COURSE_PASS
     "",                     // IFT_COURSE_MISS
     "CALIBRATION COMPLETE.", // IFT_COURSE_DONE
+    // THE AUTHOR'S, after flying it. Both are inside the 22 characters a scale 3 line fits
+    // beside the IFT mark, so neither drops to scale 2 -- which matters here more than on a
+    // written line the player has time with, because these two arrive mid-fight and get read
+    // in whatever glance is going spare.
+    "ANOMALY DETECTED",     // IFT_ANOMALY
+    "ANOMALY RECEDES",      // IFT_ANOMALY_END
 };
 
 // One buffer, because only one line is ever up: the slot is single and a new line
@@ -106,6 +115,8 @@ void vg_ift_line(IftSlot slot) {
     // No arguments, so the author's line is the whole of it.
     case IFT_COURSE_MISS:
     case IFT_COURSE_DONE:
+    case IFT_ANOMALY:
+    case IFT_ANOMALY_END:
         snprintf(s_buf, sizeof(s_buf), "%s", fmt);
         break;
 

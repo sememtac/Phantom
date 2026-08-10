@@ -24,6 +24,13 @@
 // chatter and with the missile and boundary alerts, and silence while the
 // shooting happens is what makes the broadcast feel like it cut to the action.
 // Other mechanics may earn it a voice later; these three moments are the floor.
+//
+// THE ANOMALY IS THAT MECHANIC, and it is the first thing to earn the broadcast a
+// voice mid-fight. The exception is narrow and it is the reason the rule held: the
+// arena itself changing shape is information the player cannot get anywhere else,
+// and it cannot be read off the instruments. A pilot would not say it -- they are
+// busy, and they are not the authority on the venue. So the broadcast says it, in
+// the one register it has left, which is that it does not know either.
 // ===========================================================================
 
 enum IftSlot : unsigned char {
@@ -34,6 +41,8 @@ enum IftSlot : unsigned char {
     IFT_COURSE_PASS,
     IFT_COURSE_MISS,
     IFT_COURSE_DONE,
+    IFT_ANOMALY,         // the arena has started to distort, mid-fight
+    IFT_ANOMALY_END,     // ...and it is passing
     IFT_SLOTS
 };
 

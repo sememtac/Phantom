@@ -87,20 +87,41 @@ static void arena_line(const VgCam& cam, bool along_v,
     const float dc = cosf(step),  ds = sinf(step);
     float c = cosf(from), s = sinf(from);
 
+    // THE ANGLE IS CARRIED, not recovered. The displacement is a function of (u, v) and this
+    // loop deliberately keeps its trig incremental -- one rotation per point instead of two
+    // transcendentals -- so paying an atan2 per vertex to get the angle back would cost more
+    // than the whole displacement. A multiply-add reproduces it exactly.
+    //
+    // The SAME field the clearance reads, which is the point: the drawn tunnel and the wall
+    // that kills you have to be the same surface, or the prettier one is a lie.
+    //
+    // ASKED ONCE PER LINE, not once per vertex. A round tube would otherwise pay a call per
+    // vertex to be told the displacement is zero, and the menus, the attract loop and the
+    // course are never displaced at all. The saving is below what the replay harness can
+    // resolve between two flashes -- about 60us of `sub` -- so this is on principle and not
+    // on a measurement: the common case should not pay for the rare one.
+    const bool warped = vg_arena_warped();
+    #define ARENA_DR(ang) (!warped ? 0.0f                          \
+                           : along_v ? vg_arena_warp(fixed, (ang)) \
+                                     : vg_arena_warp((ang), fixed))
+
     // Transform to view space once per POINT, not once per segment endpoint --
     // consecutive segments share a vertex, so the naive form does it twice.
-    Vec3 prev = vg_arena_to_view(along_v ? vg_arena_surf_t(cf, sf, c, s)
-                                         : vg_arena_surf_t(c, s, cf, sf));
+    float dr = ARENA_DR(from);
+    Vec3 prev = vg_arena_to_view(along_v ? vg_arena_surf_t(cf, sf, c, s, dr)
+                                         : vg_arena_surf_t(c, s, cf, sf, dr));
 
     for (int i = 1; i <= segs; i++) {
         float nc = c * dc - s * ds;
         float ns = s * dc + c * ds;
         c = nc; s = ns;
-        Vec3 cur = vg_arena_to_view(along_v ? vg_arena_surf_t(cf, sf, c, s)
-                                            : vg_arena_surf_t(c, s, cf, sf));
+        dr = ARENA_DR(from + step * (float)i);
+        Vec3 cur = vg_arena_to_view(along_v ? vg_arena_surf_t(cf, sf, c, s, dr)
+                                            : vg_arena_surf_t(c, s, cf, sf, dr));
         arena_seg(cam, prev, cur, col);
         prev = cur;
     }
+    #undef ARENA_DR
 }
 
 // A single structural grid over the whole boundary. Proximity is conveyed by

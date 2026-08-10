@@ -53,7 +53,28 @@ Vec3 vg_arena_local_of(Vec3 view_pos);    // view-space point   -> arena-local
 // Same, but from precomputed trig. Lets a caller walk a polyline with an
 // incremental rotation (4 trig calls per line) instead of a sin/cos pair per
 // point (2 per segment) -- the grid is dense enough that this dominates.
-Vec3  vg_arena_surf_t(float cu, float su, float cv, float sv);
+// A point on the boundary, from the sines and cosines of its two angles, displaced radially
+// by `dr` -- 0 for the smooth tube the course is flown in.
+//
+// The displacement arrives as a distance and not as the angles it is a function of, because
+// the caller already holds those. Recovering them here would be an atan2 per vertex, which is
+// more than the whole displacement costs. See vg_arena_warp.
+Vec3  vg_arena_surf_t(float cu, float su, float cv, float sv, float dr);
+
+// HOW FAR THE WALL MOVES AT (u, v), in world units. Zero when the arena is smooth.
+//
+// Both arguments are angles in radians and need no wrapping: the lattice is periodic, so
+// any u and any v land somewhere sensible.
+float vg_arena_warp(float u, float v);
+
+// Is the boundary displaced at all? Worth asking once per line rather than paying a call per
+// vertex to be told no: most of the game -- the menus, the attract loop, the course -- flies a
+// round tube, and the calls alone cost 34us of `sub` there with nothing to show for them.
+bool  vg_arena_warped(void);
+
+// Set every frame while an anomaly is running, and once when a match or a course run begins. 0 is a perfectly round tube -- see
+// ARENA_WARP_MAX for what 1 means, and note that it is a FRACTION of r_minor, not units.
+void  vg_arena_warp_set(float k);
 void  vg_arena_nearest(Vec3 local, float* u, float* v, float* clearance);
 float vg_arena_clearance(Vec3 local);     // >0 inside, <0 outside
 Vec3  vg_arena_inward(Vec3 local);        // unit normal pointing back inside

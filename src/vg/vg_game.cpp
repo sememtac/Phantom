@@ -121,6 +121,9 @@ void vg_game_init(void) {
     // per-hull choice is made again at each match entry; this is only so the rasteriser's
     // pointer is never null between boot and the first flight.
     vg_canopy_use(vg_canopy_default());
+    // The attract loop and every menu fly a round tube. Set here so nothing has to
+    // remember to clear it on the way out of a match.
+    vg_arena_warp_set(0.0f);
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -216,6 +219,154 @@ void vg_title_lost(void) {
     vg_save_store();
 }
 
+// ---------------------------------------------------------------------------
+// THE ANOMALY: the arena's weather. See ANOM_CHANCE_ROUND0 in cfg_world.h.
+// ---------------------------------------------------------------------------
+//
+// Five phases and one amplitude. It lives here, in the match logic, and not in vg_arena.cpp
+// beside the field it drives: the field is geometry and has no idea what a round is, while this
+// is a match event that rolls dice, watches a clock and puts a line on the broadcast. Arena
+// code that knew about the IFT would be the wrong shape.
+//
+// Stepped from vg_upd_playing, which means it holds still during VG_PAUSE for free -- that
+// function is not called there -- and keeps running through VG_HIT and VG_KILL, which is right.
+// The arena does not care that the player was hit.
+
+enum AnomPhase : uint8_t {
+    ANOM_OFF = 0,   // this match is quiet, or the last episode is over
+    ANOM_WAIT,      // an episode is coming, and this is the calm before it
+    ANOM_ONSET,     // ramping up; the broadcast has already said so
+    ANOM_HOLD,      // at strength
+    ANOM_FADE       // ramping down
+};
+
+static struct {
+    AnomPhase phase;
+    float     t;        // seconds spent in this phase
+    float     dur;      // how long WAIT or HOLD lasts
+    float     peak;     // the amplitude this episode reaches, 0..1
+    uint8_t   left;     // episodes still to come after this one
+} s_anom;
+
+// The amplitude the current round is allowed to reach at full strength.
+static float anom_round_amp(void) {
+    const int   r = (int)vt.round;                  // 0..3
+    const float t = (r < 3) ? (float)r / 3.0f : 1.0f;
+    return ARENA_WARP_ROUND0 + (1.0f - ARENA_WARP_ROUND0) * t;
+}
+
+// Roll the whole match's weather before it starts. Deciding it up front rather than rolling
+// every second is what lets a match be genuinely quiet: a per-frame chance always fires
+// eventually, and "eventually" over a four minute fight is every time.
+static void anom_begin_match(void) {
+    s_anom.phase = ANOM_OFF;
+    s_anom.t     = 0.0f;
+    s_anom.dur   = 0.0f;
+    s_anom.peak  = 0.0f;
+    s_anom.left  = 0;
+    vg_arena_warp_set(0.0f);
+
+    const int   r     = (int)vt.round;
+    const float rt    = (r < 3) ? (float)r / 3.0f : 1.0f;
+    const float chance = ANOM_CHANCE_ROUND0 + (ANOM_CHANCE_FINAL - ANOM_CHANCE_ROUND0) * rt;
+
+    if (vg_frand(0.0f, 1.0f) >= chance) return;     // a quiet match, and that is a result
+
+    s_anom.left  = (vg_frand(0.0f, 1.0f) < ANOM_CHANCE_SECOND) ? 1 : 0;
+    s_anom.phase = ANOM_WAIT;
+    s_anom.dur   = vg_frand(ANOM_WAIT_MIN, ANOM_WAIT_MAX);
+}
+
+static void anom_step(float dt) {
+    if (s_anom.phase == ANOM_OFF) return;
+
+    // FROZEN ONCE THE OPPONENT IS DOWN. VG_KILL is the broadcast's own moment -- the loser
+    // transmits and then the IFT sums up the round -- and there is only ever one IFT line up,
+    // so an anomaly announcement landing there would delete the summary or be deleted by it.
+    // The match is decided by then and the weather has nothing left to say. The amplitude simply
+    // holds where it was; vg_use_menu_sky flattens it on the way out.
+    if (vg.state == VG_KILL) return;
+
+    s_anom.t += dt;
+
+    switch (s_anom.phase) {
+    case ANOM_WAIT:
+        if (s_anom.t >= s_anom.dur) {
+            s_anom.phase = ANOM_ONSET;
+            s_anom.t     = 0.0f;
+            s_anom.peak  = anom_round_amp() * vg_frand(ANOM_PEAK_MIN, ANOM_PEAK_MAX);
+            // ANNOUNCED AS IT STARTS, not before and not after. Before would be a warning,
+            // which would make the broadcast an authority on something it has just been
+            // established as not understanding; after would be a report of something the
+            // player has already flown into. Said as the ground begins to move, it reads as
+            // the broadcast noticing at the same moment the pilot does.
+            vg_ift_line(IFT_ANOMALY);
+        }
+        break;
+
+    case ANOM_ONSET:
+        if (s_anom.t >= ANOM_ONSET_S) {
+            s_anom.phase = ANOM_HOLD;
+            s_anom.t     = 0.0f;
+            s_anom.dur   = vg_frand(ANOM_HOLD_MIN, ANOM_HOLD_MAX);
+        }
+        break;
+
+    case ANOM_HOLD:
+        if (s_anom.t >= s_anom.dur) {
+            s_anom.phase = ANOM_FADE;
+            s_anom.t     = 0.0f;
+            // Said at the top of the fade, while the ground is still settling. The player gets
+            // to watch it be true, which is the difference between the broadcast reporting the
+            // arena and the broadcast narrating it.
+            vg_ift_line(IFT_ANOMALY_END);
+        }
+        break;
+
+    case ANOM_FADE:
+        if (s_anom.t >= ANOM_FADE_S) {
+            if (s_anom.left) {
+                s_anom.left--;
+                s_anom.phase = ANOM_WAIT;
+                s_anom.t     = 0.0f;
+                s_anom.dur   = vg_frand(ANOM_WAIT_MIN, ANOM_WAIT_MAX);
+            } else {
+                s_anom.phase = ANOM_OFF;
+            }
+        }
+        break;
+
+    default: break;
+    }
+
+    // One place sets the amplitude, whatever the phase decided. A smoothstep on both ends, so
+    // the tunnel does not start or stop moving on a corner.
+    float k = 0.0f;
+    switch (s_anom.phase) {
+    case ANOM_ONSET: k = s_anom.t / ANOM_ONSET_S;         break;
+    case ANOM_HOLD:  k = 1.0f;                            break;
+    case ANOM_FADE:  k = 1.0f - s_anom.t / ANOM_FADE_S;   break;
+    default:         k = 0.0f;                            break;
+    }
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+    k = k * k * (3.0f - 2.0f * k);
+    vg_arena_warp_set(s_anom.peak * k);
+
+    // AND THE AIRFRAME FEELS IT. The moving wall takes away room; this takes away the shot,
+    // which is the half of the anomaly that costs the player something rather than just looking
+    // like it does. On the RUMBLE channel because that is exactly what this is -- a condition,
+    // renewed every frame it holds, where the loudest reason wins instead of summing. Flying
+    // through a wreck during an anomaly should not be the two of them added together.
+    //
+    // Scaled by the SAME eased k as the geometry, so the shaking arrives with the ground moving
+    // and settles with it -- and by peak, so a mild episode is mild in both.
+    //
+    // Requested after vg_shake_update has already run this frame, so it lands on the next one.
+    // PASS_RUMBLE does the same thing from vg_world_step's tail, and one frame is nothing to a
+    // condition that holds for half a minute.
+    vg_shake_rumble(ANOM_RUMBLE * s_anom.peak * k);
+}
+
 void vg_match_start(void) {
     for (int i = 0; i < MAX_ENEMIES;   i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
@@ -257,6 +408,17 @@ void vg_match_start(void) {
     vg.throttle     = THROTTLE_START;
     vg.throttle_vis = THROTTLE_START;
     vg_input_throttle_set(THROTTLE_START);
+
+    // THE ARENA LAUNCHES SMOOTH, WHATEVER IS COMING. The match's weather is rolled here and
+    // the tunnel is set round, so the venue the player is introduced to over the cutscene is
+    // the one they take off into. A disturbance that was already there at launch would be a
+    // property of the map; arriving partway through a fight makes it an event.
+    //
+    // Read from the bracket rather than passed in. vg_match_start is reached from exactly one
+    // place -- enter_intro, by way of the table -- and a match is always a tournament match, so
+    // vt.round is the round about to be flown. The course is the other way in and does not come
+    // through here at all, which is what makes this the right place for a tournament-only effect.
+    anom_begin_match();
     vg.bank        = 0;
     vg_shake_clear();
     vg.hit_flash   = 0;
@@ -694,6 +856,12 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     vg_clear_player_hit();
 
     vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
+
+    // BEFORE THE AI AND THE COLLISIONS, and after the world has moved. The amplitude this sets
+    // is the arena both of them are about to be tested against, so setting it later would spend
+    // a frame steering and colliding against last frame's boundary. At an onset ramp of a
+    // couple of seconds that is invisible, and it is still wrong.
+    anom_step(dt);
 
     const uint32_t t_ai = micros();
     for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
