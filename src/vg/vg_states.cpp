@@ -1,5 +1,6 @@
 ﻿#include "vg_sim.h"
 #include "vg_arena.h"
+#include "vg_anomaly.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
@@ -32,7 +33,7 @@ void vg_use_menu_sky(void) {
     // distorted tunnel of a fight that is already over. Here rather than in each of the three
     // enter hooks: this function already means "the venue is not a venue any more", and that is
     // the same sentence. See ANOM_CHANCE_ROUND0.
-    vg_arena_warp_set(0.0f);
+    vg_anomaly_clear();
 }
 
 // STATIC, so that this cannot be called as though it were a transition.
