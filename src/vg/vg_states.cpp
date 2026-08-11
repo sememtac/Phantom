@@ -1,5 +1,8 @@
 ﻿#include "vg_sim.h"
 #include "vg_states.h"
+#include "vg_ift.h"
+#include "vg_prof.h"
+#include <Arduino.h>
 #include "vg_arena.h"
 #include "vg_anomaly.h"
 #include "vg_sky.h"
@@ -420,4 +423,533 @@ void vg_tv_update(float dt) {
         vg_tv.phase = TV_NONE;
         vg_tv.t     = 0.0f;
     }
+}
+
+// ===========================================================================
+// THE STATE HANDLERS
+//
+// One function per state, moved here from vg_game.cpp where they sat beside the
+// spawning, the collisions and the match lifecycle. The table above is in this
+// file and every row's `update` column points into what follows -- so the rows
+// and the functions they name are now readable side by side instead of a file
+// apart.
+//
+// collide_player and the purse came with them because nothing else calls either:
+// the collision is reached from vg_upd_course and vg_upd_playing, and the purse
+// from vg_upd_kill.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Collisions
+// ---------------------------------------------------------------------------
+
+static void collide_player(void) {
+    // Boundary contact is fatal, so there is no bouncing the player back inside
+    // any more -- the run is simply over.
+    if (vg.wall_clear < SHIP_RADIUS) {
+        // The player's own airframe against the boundary. Right on top of the
+        // cockpit, so the flash vg_spawn_blast raises off the range is the
+        // brightest one in the game -- which is correct for hitting a wall.
+        vg_spawn_blast(v3(0, 0, 14), 34.0f, 7, 0, 1.7f);
+        vg_spawn_shrapnel(v3(0, 0, 14), 26.0f, 40.0f, 30, 4.0f, 1.7f);
+        vg_kill_player();
+    }
+
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        Asteroid* a = &vg.ast[i];
+        if (!a->alive) continue;
+        float r = a->radius + SHIP_RADIUS;
+        if (vlen2(a->pos) < r * r) {
+            vg_spawn_debris(a->pos, a->radius, 8);
+            a->alive = false;
+            vg_kill_player();
+        }
+    }
+
+    // Merging head-on has to cost something, or flying straight through them
+    // becomes a free way to reverse the geometry.
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        Ship* s = &vg.enemy[i];
+        if (!s->alive) continue;
+        float r = ENEMY_HIT_RADIUS + SHIP_RADIUS;
+        if (vlen2(s->pos) < r * r) {
+            // Say it BEFORE clearing alive. A pilot who dies in a collision gets
+            // the same last line as one who dies to a missile; only the missile
+            // path used to speak, so half the deaths in the game were silent.
+            vg_comms_say(s, VOICE_DEATH);
+            // A ram kills them too, and it used to be twelve shards and a radio
+            // line. Same eruption a missile kill gets: the hull does not care
+            // what opened it.
+            vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
+            vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
+            s->alive = false;
+            vg_kill_player();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Update
+
+// Purse for the round just won, plus a condition bonus scaled by hull remaining.
+// Flying well therefore pays twice -- you earn more AND need less repair -- but
+// the flat base dominates, so one scrappy match does not spiral the run.
+//
+// Called BEFORE vg_tourney_resolve, which is what advances the round counter.
+static int s_last_purse = 0;
+
+static void award_purse(void) {
+    static const int BASE[TOURNEY_ROUNDS] = {
+        CREDIT_R16, CREDIT_QF, CREDIT_SF, CREDIT_FINAL
+    };
+    const int r    = (vt.round < TOURNEY_ROUNDS) ? vt.round : TOURNEY_ROUNDS - 1;
+    const int base = BASE[r];
+
+    float cond = (vg.health_max > 0.0f) ? (vg.health / vg.health_max) : 0.0f;
+    if (cond < 0.0f) cond = 0.0f;
+    if (cond > 1.0f) cond = 1.0f;
+
+    s_last_purse = base + (int)((float)base * CREDIT_CONDITION_K * cond + 0.5f);
+
+    vg.credits += s_last_purse;
+    if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;
+
+    // Banked immediately. Losing a purse to a flat battery between the kill and
+    // the next screen would be the single most annoying way to lose progress.
+    vg_save_store();
+}
+
+int vg_last_purse(void) { return s_last_purse; }
+
+// ---------------------------------------------------------------------------
+// One function per state
+//
+// Each is a row's `update` column. They take the frame, the gated input and the
+// resolved tap, and NOTHING ELSE -- checked before splitting them out, because a
+// case that reached for one of the dispatch's own locals would have needed a
+// wider signature and a worse one. None did.
+// ---------------------------------------------------------------------------
+
+void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
+#if VG_BENCH
+    // Synthetic worst case: a full complement of fighters, all manoeuvring,
+    // trailing and shooting, plus the player's own rack cycling. Reproduces
+    // the primitive load of a heavy match without anyone touching the board.
+    {
+        int alive = 0;
+        for (int i = 0; i < MAX_ENEMIES; i++) if (vg.enemy[i].alive) alive++;
+        if (alive < MAX_ENEMIES) {
+            for (int i = 0; i < MAX_ENEMIES; i++)
+                if (!vg.enemy[i].alive) {
+                    vg_spawn_enemy(i, (ShipClass)(i % SHIP_CLASSES), ENEMY_SKILL,
+                                0.1f + 0.45f * (float)i);
+                    break;
+                }
+        }
+        for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+        vg_update_lock(dt);
+        if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+        vg_update_reload(dt);
+        if (vg.wpn.locked) vg_player_fire();
+        vg.health = vg.health_max;      // never let the load generator "die"
+    }
+#endif
+    if (tap->up) {
+        vg_entry_reset();
+        vg_state_go(VG_ENTRY);
+    }
+}
+
+void vg_upd_entry(float dt, const VgInput* in, const Tap* tap) {
+    if (vg_entry_update(in, tap->up, tap->x, tap->y)) {
+        vg_state_go(VG_SELECT);
+    }
+}
+
+void vg_upd_repair(float dt, const VgInput* in, const Tap* tap) {
+    if (vg_repair_update(in, tap->up, tap->x, tap->y)) vg_state_go(VG_BRACKET);
+}
+
+void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
+    // The +/- key cycles as well as the cards, since it is already wired and
+    // is the fastest way to feel the difference between classes.
+    if (in->alt_edge)
+        vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
+    if (tap->up) {
+        int card = vg_select_card_at(tap->x, tap->y);
+        if (card >= 0) {
+            vg_game_select_ship((ShipClass)card);
+        } else if (vg_select_confirm_at(tap->x, tap->y)) {
+            // The draw is made HERE, so the course that follows has a
+            // tournament to return to and the player flies it in the airframe
+            // they actually picked.
+            vg_tournament_begin(vg.ship);
+            vg_bracket_focus_player();
+            vg_state_cut(VG_COURSE);
+        }
+    }
+}
+
+void vg_upd_intro(float dt, const VgInput* in, const Tap* tap) {
+    // The shot itself lives in vg_cine.cpp. What belongs here is only the
+    // handover: the cutscene has spent seventeen seconds turning and
+    // drifting the viewpoint for the sake of framing, and relocating
+    // between setups moved it again -- so where it ended up relative to the
+    // arena is not something a match should have to inherit. Both the arena
+    // and the opponent are re-established from scratch, which makes a bad
+    // start structurally impossible rather than merely unlikely.
+    //
+    // Free to do because the handover is a hard cut to black with the
+    // instruments rebooting over it. None of the snap is visible.
+    // The broadcast introduces each fighter over its own shot. The cutscene
+    // already hard-cuts between them, so the cues are the shot boundaries.
+    if (vg.state_t > INTRO_DRIFT && !(vg.ift_fired & (1u << IFT_INTRO_YOU))) {
+        vg.ift_fired |= (1u << IFT_INTRO_YOU);
+        vg_ift_line(IFT_INTRO_YOU);
+    }
+    if (vg.state_t > INTRO_OPP_START && !(vg.ift_fired & (1u << IFT_INTRO_OPP))) {
+        vg.ift_fired |= (1u << IFT_INTRO_OPP);
+        vg_ift_line(IFT_INTRO_OPP);
+    }
+
+    if (vg_cine_update(dt, tap->up)) {
+        // Both halves have names now. The cutscene's own teardown is INTRO's
+        // leave hook and runs inside vg_state_go; the match set-up is
+        // vg_begin_flight, which is called by name because VG_HIT re-enters
+        // VG_PLAYING and must not repeat any of it.
+        vg_begin_flight();
+        vg_state_go(VG_PLAYING);
+    }
+}
+
+void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
+    // Flying, and nothing else. No opponent, no missiles, no purse. The wall
+    // is still lethal because that is one of the things worth learning here.
+    vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
+    vg_course_update(dt);
+    collide_player();
+
+    if (vg_player_was_hit()) {
+        // A crash costs the streak and nothing else. Full hull, back in the
+        // tube, count at zero -- this is a practice range, and ending a
+        // tournament that has not started would be absurd.
+        vg_clear_player_hit();
+        vg.health      = vg.health_max;
+        vg_course.hits = 0;
+        vg_arena_init(ARENA_TORUS);
+        vg.wall_clear  = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+        vg_ift_line(IFT_COURSE_MISS);
+        vg_course_reset_streak();
+    }
+
+    // Finishing is a MOMENT, not an exit condition. The gate is already gone
+    // and the player keeps flying while the broadcast marks it, exactly as a
+    // kill does -- see COURSE_DONE_BEAT.
+    if (vg_course.done) {
+        vg_course.end_t += dt;
+        if (vg_course.end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
+    }
+
+
+}
+
+void vg_upd_kill(float dt, const VgInput* in, const Tap* tap) {
+    // The world keeps running -- wreckage still tumbles, their last trail
+    // still fades -- but nothing can touch the player. The only job of this
+    // state is to let the dead pilot finish talking.
+    vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
+    vg_update_missiles(dt);
+    vg_update_threat();
+    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+    // After the last transmission, not over it. KILL_SPEECH is exactly how
+    // long the dying pilot holds the other slot, so this lands in the silence
+    // that follows and runs on into the bracket redraw.
+    if (vg.state_t > KILL_SPEECH && !(vg.ift_fired & (1u << IFT_MATCH_END))) {
+        vg.ift_fired |= (1u << IFT_MATCH_END);
+        vg_ift_line(IFT_MATCH_END);
+    }
+    if (vg.state_t > KILL_BEAT) {
+        award_purse();
+        vg_state_go(VG_ROUND_WON);
+    }
+}
+
+void vg_upd_bracket(float dt, const VgInput* in, const Tap* tap) {
+    if (in->menu_held) vg_bracket_pan(in->menu_dx, in->menu_dy);
+    if (tap->up) {
+        if (vg_bracket_ready_at(tap->x, tap->y)) {
+            vg_state_cut(VG_INTRO);
+        } else if (vg_bracket_course_at(tap->x, tap->y)) {
+            vg_state_cut(VG_COURSE);
+        } else if (vg_bracket_repair_at(tap->x, tap->y)) {
+            vg_repair_reset();
+            vg_state_go(VG_REPAIR);
+        }
+    }
+}
+
+void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
+    // No world step: paused means paused.
+    const bool from_course = (vg.pause_from == VG_COURSE);
+    const VgState back     = from_course ? VG_COURSE : VG_PLAYING;
+    (void)dt;
+
+    // PWR again, which is what paused it. NOT the + key -- that is the roll
+    // control, and a paused player leaning on it would be thrown back into
+    // the fight mid-roll.
+    if (vg.pause_page == 1) {
+        // Dragged, not tapped: held rather than on release, so the fill
+        // follows the finger instead of jumping when it lifts.
+        if (in->menu_held) {
+            if (vg_pause_music_at(in->menu_x, in->menu_y))
+                vg_vol.music = vg_pause_slider_value(in->menu_x);
+            else if (vg_pause_sfx_at(in->menu_x, in->menu_y))
+                vg_vol.sfx = vg_pause_slider_value(in->menu_x);
+        }
+        if (tap->up && vg_pause_back_at(tap->x, tap->y)) {
+            vg.pause_page = 0;
+            vg_save_store();        // settings outlive the session
+        }
+        return;   // was a break out of the switch: this frame is done
+    }
+
+    if (tap->up) {
+        switch (vg_pause_item_at(tap->x, tap->y, from_course)) {
+        case PAUSE_RESUME:
+            vg_state_resume(back);
+            break;
+        case PAUSE_AUDIO:
+            vg.pause_page = 1;
+            break;
+        case PAUSE_SKIP:
+            // Refused while the briefing runs: the player may pause over it,
+            // read it and think about it, but not walk out of it.
+            if (vg_course.named) vg_state_cut(VG_BRACKET);
+            break;
+        case PAUSE_QUIT:
+            vg_state_cut(VG_ATTRACT);
+            break;
+        default: break;
+        }
+    }
+}
+
+void vg_upd_round_won(float dt, const VgInput* in, const Tap* tap) {
+    if (vg.state_t > 2.4f) {
+        vg_tourney_resolve(true);
+        if (vt.complete) {
+            vg.champion = true;
+            // Back out of combat, so back to the menu sky. The bracket
+            // gets this from enter_bracket; the winner's card does not
+            // pass through it.
+            vg_use_menu_sky();
+            vg_state_go(VG_WON);
+            vg_save_store();      // the name sticks from here on
+        } else {
+            vg_state_go(VG_BRACKET);
+        }
+    }
+}
+
+void vg_upd_won(float dt, const VgInput* in, const Tap* tap) {
+    // Returns on its own. The sequence ends by handing the player back to
+    // the title card, where the crawl now says the rumour is about them --
+    // so the payoff is not the win screen, it is the menu behind it having
+    // quietly changed. A prompt would invite a tap that skips exactly that.
+    //
+    // Tapping is allowed only once the name is fully up, so an impatient
+    // hand cannot cut the one moment the whole story was built toward.
+    //
+    // A CUT, not the enter hook. This called vg_enter_attract() directly, which is
+    // ATTRACT's own entry in the state table -- so it built the attract scene and
+    // never changed vg.state. The game stayed in WON for ever: the title card had no
+    // crawl, because the crawl belongs to ATTRACT, and nothing answered a tap,
+    // because vg_upd_won answers nothing else. Beating the game bricked the session.
+    //
+    // vg_state_cut is what VG_OVER already uses for the same journey, and it is safe
+    // to call every frame -- it returns early while a transition is running, which
+    // matters here because this condition stays true until the state actually changes.
+    if (vg.state_t > WON_RETURN ||
+        (vg.state_t > WON_NAME_IN + 2.6f && tap->up)) vg_state_cut(VG_ATTRACT);
+}
+
+void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
+    const bool playing = (vg.state == VG_PLAYING);
+
+    vg_clear_player_hit();
+
+    vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
+
+    // BEFORE THE AI AND THE COLLISIONS, and after the world has moved. The amplitude this sets
+    // is the arena both of them are about to be tested against, so setting it later would spend
+    // a frame steering and colliding against last frame's boundary. At an onset ramp of a
+    // couple of seconds that is invisible, and it is still wrong.
+    //
+    // FROZEN ONCE THE OPPONENT IS DOWN. VG_KILL is the broadcast's own moment -- the loser
+    // transmits and then the IFT sums up the round -- and the match is decided by then, so the
+    // weather has nothing left to say. Stepped through VG_HIT, which is right: the arena does
+    // not care that the player was hit. Called from here rather than vg_upd_*, so it holds still
+    // during VG_PAUSE for free, that function not being called there.
+    vg_anomaly_step(dt, vg.state == VG_KILL);
+
+    const uint32_t t_ai = micros();
+    for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
+    const uint32_t t_cbt = micros();
+    g_upd_ai += t_cbt - t_ai;
+
+    // After they have moved, or the range being tested is a frame stale --
+    // which at a combined 800 units a second is sixteen units of error.
+    vg_update_passes();
+
+    vg_update_missiles(dt);
+    vg_update_lock(dt);
+    vg_update_threat();
+    g_upd_combat += micros() - t_cbt;
+
+    // No hull regeneration. Damage taken here is carried for the rest of the
+    // tournament and only credits will undo it, which is what makes the
+    // repair economy the difficulty curve rather than a side system.
+
+    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+    vg_update_reload(dt);
+    if (in->fire_edge) vg_player_fire();
+
+    // Unprompted chatter, on a long timer and only when the radio is idle.
+    // Taunts are flavour; letting one interrupt a hit or a kill would turn
+    // the most informative channel on the HUD into noise.
+    //
+    // AND NOT UNTIL THE PANEL IS LIT. The countdown is held, not merely suppressed: an
+    // opponent's opening line is the first thing you learn about them, and it was landing
+    // while the cockpit was still coming online -- so it played to a dark screen and the
+    // timer had already moved on by the time there was a panel to read it on. Held, the
+    // opening remark arrives on a lit panel however long the boot took.
+    if (vg.ready) {
+        vg.taunt_t -= dt;
+        if (vg.taunt_t <= 0.0f) {
+            vg.taunt_t = vg_frand(12.0f, 21.0f);
+            if (vg.comms.t <= 0.0f) {
+                for (int i = 0; i < MAX_ENEMIES; i++)
+                    if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
+            }
+        }
+    }
+
+#if ENABLE_ASTEROIDS
+    // Keep the field topped up as a speed cue.
+    int alive_ast = 0;
+    for (int i = 0; i < MAX_ASTEROIDS; i++) if (vg.ast[i].alive) alive_ast++;
+    vg.spawn_t -= dt;
+    if (alive_ast < AST_TARGET_COUNT && vg.spawn_t <= 0) {
+        vg_spawn_asteroid();
+        vg.spawn_t = vg_frand(0.5f, 1.4f);
+    }
+#endif
+
+    if (playing) {
+        collide_player();
+
+        // Player death is resolved FIRST, which is what makes a mutual kill
+        // a loss: you died, so you do not advance, regardless of whether the
+        // opponent went down in the same frame.
+        if (vg_player_was_hit()) {
+            vg_state_go((vg.health > 0.0f) ? VG_HIT : VG_OVER);
+            // THE TITLE CHANGES HANDS, and the player stops being anybody.
+            //
+            // Dying as the champion is not a lost round, it is the end of a legend.
+            // The narrative has no room for a PHANTOM who is still flying around
+            // having been killed, so the run does not resume from a worse position --
+            // it starts again as somebody else, with nothing.
+            //
+            // WHOEVER KILLED YOU TAKES THE NAME. Attributed to the round's opponent
+            // rather than to the specific round or collision that did it, because a
+            // tournament match is one pilot against one pilot: if you did not come out
+            // of it, they did, and the reason is between you and the wall. That also
+            // means a kamikaze, a stray missile and a boundary hit all settle the same
+            // way, which is the same rule the bracket already uses.
+            if (vg.state == VG_OVER && vg.champion) vg_title_lost();
+            if (vg.state == VG_OVER) {
+                // Your own ship, left drifting just ahead of the camera.
+                // There is no third-person view in a renderer where the
+                // player IS the origin, so the wreck is placed in front and
+                // the camera set tumbling around it -- which reads as being
+                // thrown clear, and gives the scene something to be about.
+                Ship* c = &vg.cine.ship;
+                c->alive    = true;
+                c->spec     = vg.spec;
+                c->hue      = vg.trail_hue;
+                c->pos      = v3(vg_frand(-70.0f, 70.0f),
+                                 vg_frand(-50.0f, 50.0f), 640.0f);
+                c->fwd      = vnorm(v3(0.35f, 0.12f, 1.0f));
+                c->up       = v3(0, 1, 0);
+                c->speed    = 0.0f;
+                c->scale    = 84.0f;
+                c->roll_vis = 0.4f;
+                c->trail_n  = 0;
+                c->hit_flash = 0.0f;
+                vg.cine.on  = true;
+                // The player's own wreck, and the biggest eruption in the
+                // game. Scaled off c->scale (84) rather than a ship's own
+                // size: this one is deliberately staged large and close, and
+                // an explosion tuned for a distant fighter looked like a
+                // spark next to it.
+                vg_spawn_blast(c->pos, 62.0f, 11, 0, 2.2f);
+                vg_spawn_shrapnel(c->pos, 40.0f, 72.0f, 44, 4.8f, 2.0f);
+            }
+            return;   // was a break out of the switch: this frame is done
+        }
+
+        bool opponent_alive = false;
+        bool opponent_met   = false;
+        for (int i = 0; i < MAX_ENEMIES; i++) {
+            if (vg.enemy[i].alive) opponent_alive = true;
+            if (vg.enemy[i].engaged) opponent_met = true;
+        }
+
+        // An opponent who dies without ever reaching the player does not end
+        // the match. Send the next one instead.
+        //
+        // Nothing should reach this now: the distance cull that deleted them
+        // is gone, and the only remaining ways to die are a missile and a
+        // collision, both of which require the two ships to be together. It
+        // stays because the failure it prevents is the worst kind -- a
+        // tournament round won without a fight, with no wreck and nobody
+        // saying anything, which reads as a broken game rather than a
+        // lucky one.
+        if (!opponent_alive && !opponent_met) {
+            vg_spawn_opponent();
+            opponent_alive = true;
+        }
+
+        if (!opponent_alive) {
+            // Not straight to the scorecard. They are still talking, and
+            // cutting to a purse over the top of a dying pilot is the whole
+            // difference between a tournament and a spreadsheet.
+            vg_state_go(VG_KILL);
+        }
+    } else if (vg.state_t > 1.2f) {
+        vg_state_go(VG_PLAYING);
+    }
+}
+
+void vg_upd_over(float dt, const VgInput* in, const Tap* tap) {
+    // Dead men do not steer. Input is ignored entirely and the camera
+    // tumbles on all three axes around the wreck it was thrown from --
+    // slowly, and slowing further, like something that has stopped being a
+    // ship and started being debris.
+    const float decay = 1.0f / (1.0f + vg.state_t * 0.55f);
+    vg_world_step(dt,
+               0.16f * decay * sinf(vg.state_t * 0.63f),
+               0.21f * decay * sinf(vg.state_t * 0.41f + 1.1f),
+               0.30f * decay * dt,
+               0.0f);
+    vg_update_missiles(dt);
+
+    // The image never settles. Camera jitter under the screen-space tearing
+    // gives the failure somewhere physical to come from -- one alone reads
+    // as an effect, the two together read as a machine coming apart.
+    vg.shake_x += vg_frand(-3.4f, 3.4f);
+    vg.shake_y += vg_frand(-3.4f, 3.4f);
+
+    // Knocked out is knocked out: back to the main menu, not a restart.
+    if (vg.state_t > 2.2f && tap->up) { vg_cine_clear(); vg_state_cut(VG_ATTRACT); }
 }

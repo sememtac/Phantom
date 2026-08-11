@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "vg_game.h"
 #include "vg_voice.h"
 
@@ -92,6 +92,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
                    float throttle_in);
 
 // The idle camera: a long lazy arc that holds the centreline of the tube.
+// Put a fighter in slot `i`. Public only because vg_upd_attract's VG_BENCH load
+// generator spawns a full complement, and the handlers now live in vg_states.cpp.
+void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue);
+
 void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in);
 
 // Put the bracket's current opponent into the world.
