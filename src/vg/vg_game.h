@@ -509,8 +509,7 @@ struct VgGame {
     // forwards without a finger on the panel to remind them why.
     bool        rear_view;
 
-
-   float       taunt_t;   // countdown to the next unprompted remark
+    float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around
     // a fixed camera, so a hard turn sweeps your own track into view -- you can
