@@ -38,6 +38,14 @@ DESIGN.md
 # Everything else under captures/ stays out: those are recordings of a moment, not a test.
 captures/*
 !captures/regress.phr
+# AND THE SECOND CANONICAL SESSION, for the same reason and at a real cost: 2.8 MB on
+# disk, 630 KB packed. It is kept because it is the only recording that contains an
+# ANOMALY, and because regress.phr is 5,444 frames while phantom_regress samples out to
+# 16,000 -- five of the nine sample points had never been reachable until this file.
+#
+# regress.phr stays. It is the short one, and a change that only needs a four minute
+# check should not have to pay a sixteen minute render.
+!captures/phantom-20260809-221925.phr
 # The second tracked session, and for the same reason. regress.phr is a COURSE run: its
 # fight is thin and its ordnance barely moves, so it cannot answer anything about combat.
 # This one is 150 s of a deliberately missile-heavy match -- 8,442 frames, 6,264 distinct
