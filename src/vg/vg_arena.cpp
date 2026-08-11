@@ -88,6 +88,9 @@ static inline float warp_hash(int i, int j) {
 static inline float warp_smooth(float t) { return t * t * (3.0f - 2.0f * t); }
 
 float vg_arena_warp(float u, float v) {
+    // TORUS ONLY, and deliberately -- see the note on ARENA_SPHERE in the header. A sphere's
+    // v does not wrap, so the periodic field would tear it at the poles. Returning 0 is the
+    // right answer for a shape this field does not describe, not a gap to be filled in.
     if (s_warp_k <= 0.0f || vg_arena.kind != ARENA_TORUS) return 0.0f;
 
     const float TAU = 6.28318531f;

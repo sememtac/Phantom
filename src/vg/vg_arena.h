@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <stdint.h>
 #include "vg_vec.h"
 #include "vg_config.h"
@@ -25,6 +25,21 @@
 //
 // Kept on purpose, and worth keeping: it is the second shape, so it is what proves the
 // arena code is not secretly torus-only. Anything added here should still satisfy both.
+//
+// AND THE WARP DOES NOT, which is worth stating rather than leaving to be discovered.
+// The sphere answers for every other query -- init, surf_t, nearest, clearance and inward
+// all handle it, and surf_t already applies a radial displacement to it. vg_arena_warp is
+// the one thing that refuses, and it refuses for a geometric reason and not an oversight:
+//
+// The field is PERIODIC IN BOTH PARAMETERS by construction, which is what makes the tunnel
+// join itself. A torus has that: u and v both run the full turn and both wrap. A sphere
+// does not. Its v is asinf(y), so it spans half a turn and never wraps, and at the two
+// poles every u names the SAME POINT while the field still varies with u -- so a displaced
+// sphere would tear open at both poles. Fixing that needs a field that collapses to one
+// value there, which is a different field, not this one with another radius on it.
+//
+// So the rule above holds with one recorded exception, and the exception is the newest
+// thing the arena grew. If a third shape arrives, this is the question to ask of it first.
 enum ArenaKind : uint8_t {
     ARENA_SPHERE = 0,   // inside a big hollow sphere -- implemented, never selected
     ARENA_TORUS,        // inside the tube of a doughnut: a closed-loop tunnel
