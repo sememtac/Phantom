@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_states.h"
 #include "vg_shake.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
@@ -131,6 +132,9 @@ void vg_game_init(void) {
     // carrying the gates of whatever was flown before it -- which a replay would not
     // reproduce, and which nothing else would have reported.
     vg_course_clear();
+    // Same reason as the two above: the transition's three fields left VgGame, so the
+    // memset no longer reaches them and a recording must not start mid-cut.
+    vg_tv_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -911,7 +915,7 @@ void vg_game_update(float dt, const VgInput* in) {
     // started the transition is still live when the new screen appears and gets
     // spent on whatever happens to be under the finger.
     VgInput gated;
-    if (vg.tv.phase != TV_NONE) {
+    if (vg_tv.phase != TV_NONE) {
         gated = *in;
         gated.fire_edge = gated.alt_edge = gated.menu_edge = false;
         in = &gated;
@@ -932,11 +936,11 @@ void vg_game_update(float dt, const VgInput* in) {
     // ran the whole way out into the black and only stopped once the next scene
     // had already been built. Nothing flies during a transition.
     const uint8_t sf  = vg_state_flags(vg.state);
-    const bool alive  = (vg.tv.phase == TV_NONE) && (sf & VGS_LIVE);
+    const bool alive  = (vg_tv.phase == TV_NONE) && (sf & VGS_LIVE);
     // The engine runs a little wider: through VG_KILL the ship is still flying,
     // and cutting the hum the instant the opponent dies would be the loudest
     // thing about that moment.
-    const bool flying = (vg.tv.phase == TV_NONE) && (sf & VGS_ENGINE);
+    const bool flying = (vg_tv.phase == TV_NONE) && (sf & VGS_ENGINE);
 
     // Looking aft is a look and nothing else -- it takes no input away from the
     // ship and changes no state the simulation reads. Only while there is a
@@ -956,7 +960,7 @@ void vg_game_update(float dt, const VgInput* in) {
     // Outlasts the last transmission rather than ending with it: the loser stops
     // talking and the tone is still there, which is the silence doing the work.
     // On the player's own death it simply does not stop until they tap away.
-    vg_sfx_flatline(vg.tv.phase == TV_NONE
+    vg_sfx_flatline(vg_tv.phase == TV_NONE
                  && ((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
                   || (vg.state == VG_OVER)));
 

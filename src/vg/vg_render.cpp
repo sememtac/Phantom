@@ -1,4 +1,5 @@
 ﻿#include "vg_render.h"
+#include "vg_states.h"
 #include <Arduino.h>
 #include "vg_sky.h"
 #include "vg_draw.h"
@@ -294,9 +295,9 @@ void vg_render_frame(const VgInput* in, float fps) {
     // up as it goes -- so the last thing on screen is the band and not a shrunken
     // copy of the scene. IN: the band is already lit, holds a moment, then opens
     // while the picture comes back up underneath it.
-    if (vg.tv.phase == TV_NONE) {
+    if (vg_tv.phase == TV_NONE) {
         vg_rast_tv(1.0f, 1.0f, 0.0f, 0.0f);
-    } else if (vg.tv.phase == TV_HOLD) {
+    } else if (vg_tv.phase == TV_HOLD) {
         vg_rast_tv(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
     } else {
         // ONE CURVE, RUN BOTH WAYS. `c` is how far the set is toward being off:
@@ -321,8 +322,8 @@ void vg_render_frame(const VgInput* in, float fps) {
         // Handing the horizontal its own stretch of the curve -- more than a
         // third of it -- is what makes a dot something the eye can follow out of
         // the middle of the screen, and it costs the collapse nothing.
-        const float c = (vg.tv.phase == TV_OUT) ? (vg.tv.t / TV_OUT_TIME)
-                                                : (1.0f - vg.tv.t / TV_IN_TIME);
+        const float c = (vg_tv.phase == TV_OUT) ? (vg_tv.t / TV_OUT_TIME)
+                                                : (1.0f - vg_tv.t / TV_IN_TIME);
         vg_rast_tv(1.0f - smoothstep(0.05f, 0.62f, c),
                    1.0f - smoothstep(0.62f, 1.00f, c),
                    // Lit for essentially the whole of it. The kill at the very end

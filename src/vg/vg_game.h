@@ -212,30 +212,8 @@ enum VgState : uint8_t {
 // the whole reason this is two phases and not one animation: the old scene has
 // to be gone before the new one is built, or the wipe closes on one picture and
 // opens on the same one.
-enum TvPhase : uint8_t {
-    TV_NONE = 0,
-    TV_OUT,        // old scene fading and collapsing to the band
-    TV_HOLD,       // dead air: black, nothing at all
-    TV_IN          // new scene opening back up out of it
-};
-
-// What to do at the join. A plain target state is not enough -- every one of
-// these carries setup that has to run at the moment of the switch.
-// What the transition arrives at is simply a state, held in `tv_to`.
-//
-// It used to be a TvAction: four named destinations, each with a case in the
-// join that did that destination's set-up. So a state could only be reached
-// through the set if somebody had added an action for it, and the set-up for
-// arriving there lived in the transition rather than in the state. Both of
-// those are gone -- the join now just enters the state, and any state can be
-// the far side of a cut.
-
-#define TV_OUT_TIME 0.40f
-// Dead air. Without it the set goes out and comes straight back, and the turning
-// ON -- which is the half worth watching -- has nothing to arrive out of. A
-// second of nothing is what makes the next thing an arrival rather than a wipe.
-#define TV_HOLD_TIME 1.00f
-#define TV_IN_TIME  0.55f
+// The TV transition's types, timing and state moved to vg_states.h -- see the note
+// at the top of it. What stayed here is vg_state_go and vg_state_cut, below.
 
 // --- launch cutscene schedule ----------------------------------------------
 // Camera adrift, then each fighter flown across the view in turn, with a hard
@@ -536,11 +514,6 @@ struct VgGame {
     // forwards without a finger on the panel to remind them why.
     bool        rear_view;
 
-    struct {
-        uint8_t phase;   // TvPhase
-        uint8_t to;      // VgState, entered at the join
-        float   t;
-    } tv;
 
    float       taunt_t;   // countdown to the next unprompted remark
 
