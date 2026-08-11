@@ -12,11 +12,23 @@ executed. It includes:
 - ship names and taglines (`src/vg/vg_ship.*`)
 - the backstory crawl, menu copy, and every string the player sees in the game
   (`src/vg/vg_screens.cpp`, `src/vg/vg_overlay.cpp`, `src/vg/vg_game.cpp`)
-- `DESIGN.md`, the working design document
+- `DESIGN.md` and everything under `design/notes/`, the working design document
 
 `DESIGN.md` is **not tracked by git** and must stay that way. It is the working
 design document, for us, and it is listed in `.gitignore`. Keep it updated as the
 game changes; do not add it back to the repository.
+
+It is a DIRECTORY now. `DESIGN.md` is a short index and the document itself lives in
+five parts under `design/notes/` -- `design.md`, `performance.md`, `features.md`,
+`systems.md` and `refactor.md`. Both paths are in `.gitignore`, and both lines are
+needed, because `design/` itself IS tracked: the canopy drawings and `HUD.af` are
+build inputs and they ride in that directory.
+
+The index says which part takes what. The short version: a measured number goes to
+`performance.md`, a session log goes to `refactor.md` with a date on it, and a
+decision about what the game IS goes to `design.md` and is the author's. It was one
+file of 155 KB, and it got that way because those three kinds of writing have very
+different lifetimes and were interleaved.
 
 The author keeps full creative control of all of it. If a line there reads
 oddly, that is a decision until the author says otherwise. Ask; do not tidy.
