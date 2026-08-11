@@ -76,3 +76,25 @@ void vg_sfx_silence(void);
 // exactly one frame's worth. Otherwise the captured audio is stretched against
 // its own picture by whatever the link happened to be doing.
 void vg_sfx_update(float dt);
+
+// THE MIX. Two settings, saved and adjustable, and they belong to the audio module
+// rather than to VgGame -- which is where they were, because until now the struct
+// every file includes was the only place a module could put state other files read.
+//
+// Kept whether or not anything is listening yet. The board has an ES8311 and a
+// speaker; having the settings saved and adjustable first means sound arrives as a
+// mix rather than as a feature that then needs a menu built around it.
+//
+// `music` HAS NO CONSUMER YET, and that is worth saying plainly rather than leaving
+// to be discovered: it is set at boot, moved by the pause slider, drawn on that
+// screen and written to flash, and nothing in the mixer reads it. `sfx` is live.
+//
+// NOT ZEROED BY ANY CLEAR, unlike the course and the transition. vg_game_init
+// assigns both outright a few lines after its memset, so these never depended on
+// being covered by it and nothing has to be added to keep a recording honest.
+struct VgVolume {
+    float music;
+    float sfx;
+};
+
+extern VgVolume vg_vol;

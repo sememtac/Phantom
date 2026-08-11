@@ -152,8 +152,8 @@ void vg_game_init(void) {
     vg.trail_hue   = 0.52f;          // cyan by default: nothing else on screen is
     // Not full. A first run should be able to get louder as well as quieter, and
     // a mix that starts at the ceiling can only ever be turned down.
-    vg.vol_music   = 0.70f;
-    vg.vol_sfx     = 0.85f;
+    vg_vol.music   = 0.70f;
+    vg_vol.sfx     = 0.85f;
     vg.ship        = SHIP_AEGIS;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
@@ -646,9 +646,9 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
         // follows the finger instead of jumping when it lifts.
         if (in->menu_held) {
             if (vg_pause_music_at(in->menu_x, in->menu_y))
-                vg.vol_music = vg_pause_slider_value(in->menu_x);
+                vg_vol.music = vg_pause_slider_value(in->menu_x);
             else if (vg_pause_sfx_at(in->menu_x, in->menu_y))
-                vg.vol_sfx = vg_pause_slider_value(in->menu_x);
+                vg_vol.sfx = vg_pause_slider_value(in->menu_x);
         }
         if (tap->up && vg_pause_back_at(tap->x, tap->y)) {
             vg.pause_page = 0;

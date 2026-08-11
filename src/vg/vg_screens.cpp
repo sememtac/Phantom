@@ -1,4 +1,5 @@
 ﻿#include "vg_screens.h"
+#include "vg_sfx.h"
 #include "vg_course.h"
 #include "vg_draw.h"
 #include "vg_game.h"
@@ -182,8 +183,8 @@ void vg_draw_pause(void) {
 
     if (vg.pause_page == 1) {
         centred(120, "AUDIO", INK_MAX, 5);
-        volume_slider(PAU_SLD_MUSIC_Y, "MUSIC", vg.vol_music);
-        volume_slider(PAU_SLD_SFX_Y,   "SFX",   vg.vol_sfx);
+        volume_slider(PAU_SLD_MUSIC_Y, "MUSIC", vg_vol.music);
+        volume_slider(PAU_SLD_SFX_Y,   "SFX",   vg_vol.sfx);
         vg_button(PAU_BTN_X, PAU_BACK_Y, PAU_BTN_W, PAU_BTN_H, "BACK", true, true);
         return;
     }

@@ -7,6 +7,8 @@
 #include "vg_capture.h"
 #include "vg_replay.h"
 
+VgVolume vg_vol;
+
 // ===========================================================================
 // THE CATALOGUE
 //
@@ -336,8 +338,8 @@ static void sfx_render_due(int n, bool paced) {
     // The player's setting, squared: a linear volume slider spends most of its
     // travel doing very little, because loudness is not linear and a slider that
     // behaves as if it were feels broken at the bottom.
-    if (vg.vol_sfx < 0.999f) {
-        const float mix = vg.vol_sfx * vg.vol_sfx;
+    if (vg_vol.sfx < 0.999f) {
+        const float mix = vg_vol.sfx * vg_vol.sfx;
         for (int i = 0; i < n; i++) s_buf[i] = (int16_t)((float)s_buf[i] * mix);
     }
     if (paced) vg_audio_write_paced(s_buf, n);
