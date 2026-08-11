@@ -50,6 +50,53 @@
 // after it. Short, because the waiting has already been done.
 #define COURSE_GREET       0.35f
 
+// WHERE THE COURSE'S STATE LIVES, and it is here rather than in VgGame because the
+// module that steps it is the module that should own it. Every field below was a
+// member of `vg` and 48 of its 62 uses were already inside vg_course.cpp -- the
+// struct was carrying a subsystem's private working set through a header every file
+// in the game includes.
+//
+// One gate at a time, in VIEW space like every other object, so the world step
+// carries it without the course needing to know how the world moves.
+//
+// prev_d is the signed distance from the player to the ring's plane on the PREVIOUS
+// frame. A sign change is the crossing, which is what makes the gate passable from
+// either side -- there is no front and no back, only the moment the plane goes by
+// and whether you were inside the circle when it did.
+struct RingCourse {
+    bool    ring_alive;
+    Vec3    ring_pos;
+    Vec3    ring_norm;
+    float   ring_prev_d;
+    uint8_t hits;        // consecutive, 0..COURSE_TARGET
+    uint8_t index;       // rings placed this run, for the wall-hugger
+    bool    done;
+    // The course holds its first gate back until the briefing is over. See
+    // vg_course_update.
+    bool    briefing;
+    // The pilot has been identified: the WELCOME line is up. Skip unlocks here
+    // rather than at the end of the briefing -- once the broadcast has said the
+    // player's name, the check-in has happened and the rest is ceremony.
+    bool    named;
+    float   wait;
+    float   greet;   // until the briefing starts
+    // Time since the course was finished. The finish gets a beat of its own rather
+    // than cutting straight out; see VG_COURSE.
+    float   end_t;
+};
+
+// Read by the flight step, the HUD, the broadcast and the pause screen, so it is
+// public the same way vg_arena is. Named to match its functions.
+extern RingCourse vg_course;
+
+// EVERYTHING BACK TO ZERO, and it exists because this state left VgGame.
+//
+// vg_game_init memsets `vg` whole, which used to cover the course for free. It no
+// longer does, and vg_game_init is what begin_record calls to restart the game
+// before a recording -- so without this a session would start carrying the course
+// state of whatever was flown before it, and the replay would not reproduce.
+void vg_course_clear(void);
+
 void vg_course_begin(void);
 // Streak back to zero and a fresh gate, without restarting the run. Used after a
 // crash, which costs the streak and nothing else.

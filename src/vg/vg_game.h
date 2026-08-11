@@ -542,37 +542,7 @@ struct VgGame {
         float   t;
     } tv;
 
-    // --- ring course -------------------------------------------------------
-    // One gate at a time, in VIEW space like every other object, so the world
-    // step carries it without the course needing to know how the world moves.
-    //
-    // prev_d is the signed distance from the player to the ring's plane on the
-    // PREVIOUS frame. A sign change is the crossing, which is what makes the gate
-    // passable from either side -- there is no front and no back, only the moment
-    // the plane goes by and whether you were inside the circle when it did.
-    struct {
-        bool    ring_alive;
-        Vec3    ring_pos;
-        Vec3    ring_norm;
-        float   ring_prev_d;
-        uint8_t hits;        // consecutive, 0..COURSE_TARGET
-        uint8_t index;       // rings placed this run, for the wall-hugger
-        bool    done;
-        // The course holds its first gate back until the briefing is over. See
-        // vg_course_update.
-        bool    briefing;
-        // The pilot has been identified: the WELCOME line is up. Skip unlocks
-        // here rather than at the end of the briefing -- once the broadcast has
-        // said the player's name, the check-in has happened and the rest is
-        // ceremony.
-        bool    named;
-        float   wait;
-        float   greet;   // until the briefing starts
-        // Time since the course was finished. The finish gets a beat of its own
-        // rather than cutting straight out; see VG_COURSE.
-        float   end_t;
-    } course;
-    float       taunt_t;   // countdown to the next unprompted remark
+   float       taunt_t;   // countdown to the next unprompted remark
 
     // The player's own ribbon. Visible because the world counter-rotates around
     // a fixed camera, so a hard turn sweeps your own track into view -- you can

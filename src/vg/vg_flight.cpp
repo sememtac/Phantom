@@ -1,6 +1,7 @@
 ﻿#include "vg_sim.h"
 #include "vg_shake.h"
 #include "vg_arena.h"
+#include "vg_course.h"
 #include "vg_sky.h"
 #include "vg_prof.h"
 #include <Arduino.h>
@@ -287,10 +288,10 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
 
     // The gate is world geometry like anything else: it counter-rotates and
     // recedes, so the course needs no idea how flight works.
-    if (vg.course.ring_alive) {
-        vg.course.ring_pos  = mat3_apply(R, vg.course.ring_pos);
-        vg.course.ring_norm = vnorm(mat3_apply(R, vg.course.ring_norm));
-        vg.course.ring_pos.z -= dz;
+    if (vg_course.ring_alive) {
+        vg_course.ring_pos  = mat3_apply(R, vg_course.ring_pos);
+        vg_course.ring_norm = vnorm(mat3_apply(R, vg_course.ring_norm));
+        vg_course.ring_pos.z -= dz;
     }
 
     UPD_MARK(g_upd_enemy);

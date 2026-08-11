@@ -125,6 +125,12 @@ void vg_game_init(void) {
     // The attract loop and every menu fly a round tube. Set here so nothing has to
     // remember to clear it on the way out of a match.
     vg_anomaly_clear();
+    // AND THE COURSE, for a reason worth stating: its state left VgGame, so the memset
+    // at the top of this function no longer reaches it. begin_record calls vg_game_init
+    // to restart the game before a recording, and without this a session would open
+    // carrying the gates of whatever was flown before it -- which a replay would not
+    // reproduce, and which nothing else would have reported.
+    vg_course_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -227,7 +233,7 @@ void vg_match_start(void) {
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive  = false;
 
-    vg.course.ring_alive  = false;      // no gate follows the player into a round
+    vg_course.ring_alive  = false;      // no gate follows the player into a round
     // Every round is its own broadcast, so the announcer's one-shot flags clear
     // here rather than at boot. Clearing them at boot only would have introduced
     // the fighters once and then gone quiet for the rest of the tournament.
@@ -569,7 +575,7 @@ void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
         // tournament that has not started would be absurd.
         vg_clear_player_hit();
         vg.health      = vg.health_max;
-        vg.course.hits = 0;
+        vg_course.hits = 0;
         vg_arena_init(ARENA_TORUS);
         vg.wall_clear  = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
         vg_ift_line(IFT_COURSE_MISS);
@@ -579,9 +585,9 @@ void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
     // Finishing is a MOMENT, not an exit condition. The gate is already gone
     // and the player keeps flying while the broadcast marks it, exactly as a
     // kill does -- see COURSE_DONE_BEAT.
-    if (vg.course.done) {
-        vg.course.end_t += dt;
-        if (vg.course.end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
+    if (vg_course.done) {
+        vg_course.end_t += dt;
+        if (vg_course.end_t > COURSE_DONE_BEAT) vg_state_cut(VG_BRACKET);
     }
 
 
@@ -658,7 +664,7 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
         case PAUSE_SKIP:
             // Refused while the briefing runs: the player may pause over it,
             // read it and think about it, but not walk out of it.
-            if (vg.course.named) vg_state_cut(VG_BRACKET);
+            if (vg_course.named) vg_state_cut(VG_BRACKET);
             break;
         case PAUSE_QUIT:
             vg_state_cut(VG_ATTRACT);

@@ -97,7 +97,7 @@ void vg_ift_line(IftSlot slot) {
     }
 
     case IFT_COURSE_PASS:
-        snprintf(s_buf, sizeof(s_buf), fmt, (int)vg.course.hits, COURSE_TARGET);
+        snprintf(s_buf, sizeof(s_buf), fmt, (int)vg_course.hits, COURSE_TARGET);
         break;
 
     // The course opening: three beats, not one line. The IFT reads the player in
