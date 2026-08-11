@@ -511,14 +511,8 @@ struct VgGame {
 
     float       taunt_t;   // countdown to the next unprompted remark
 
-    // The player's own ribbon. Visible because the world counter-rotates around
-    // a fixed camera, so a hard turn sweeps your own track into view -- you can
-    // see the arc you just flew.
-    float    trail_acc;
-    uint8_t  trail_n;
-    uint8_t  trail_head;
-    uint8_t  trail_p[SHIP_TRAIL];
-    Vec3     trail[SHIP_TRAIL];
+    // The player's ribbon moved to vg_flight.h as PlayerTrail. trail_hue did NOT:
+    // it is identity, and RpSave carries it into every recording.
 
     // A ship nobody is flying: the one shown crossing the view during the
     // launch cutscene, and the wreck the camera tumbles around after a death.

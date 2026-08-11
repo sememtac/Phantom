@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_flight.h"
 #include "vg_states.h"
 #include "vg_ift.h"
 #include "vg_prof.h"
@@ -63,9 +64,9 @@ static void enter_attract(void) {
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive   = false;
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
 
-    vg.trail_n     = 0;
-    vg.trail_head  = 0;
-    vg.trail_acc   = 0;
+    vg_trail.n     = 0;
+    vg_trail.head  = 0;
+    vg_trail.acc   = 0;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
     vg.threat.on      = false;

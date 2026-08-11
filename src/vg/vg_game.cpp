@@ -14,6 +14,7 @@
 #include "vg_prof.h"
 #include "vg_canopy_set.h"
 #include "vg_anomaly.h"
+#include "vg_flight.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -134,6 +135,7 @@ void vg_game_init(void) {
     // Same reason as the two above: the transition's three fields left VgGame, so the
     // memset no longer reaches them and a recording must not start mid-cut.
     vg_tv_clear();
+    vg_trail_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -259,9 +261,9 @@ void vg_match_start(void) {
     vg_canopy_intro_reset();
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
-    vg.trail_n     = 0;
-    vg.trail_head  = 0;
-    vg.trail_acc   = 0;
+    vg_trail.n     = 0;
+    vg_trail.head  = 0;
+    vg_trail.acc   = 0;
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
     // THE INPUT'S THROTTLE TOO, not just the simulation's. vg.throttle is a follower --

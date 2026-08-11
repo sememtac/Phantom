@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_flight.h"
 #include "vg_shake.h"
 #include "vg_arena.h"
 #include "vg_course.h"
@@ -6,6 +7,12 @@
 #include "vg_prof.h"
 #include <Arduino.h>
 #include <math.h>
+
+PlayerTrail vg_trail;
+
+void vg_trail_clear(void) {
+    vg_trail = PlayerTrail{};
+}
 
 // The flight model and the per-frame world transform.
 
@@ -191,20 +198,20 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // Trails are world geometry, so every stored point rides the same transform
     // the objects do -- otherwise a ribbon would smear sideways the moment you
     // manoeuvred instead of staying pinned to the track that was actually flown.
-    vg.trail_acc += dt;
-    for (int t = 0; t < vg.trail_n; t++) {
-        int idx = (vg.trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
-        vg.trail[idx] = mat3_apply(R, vg.trail[idx]);
-        vg.trail[idx].z -= dz;
+    vg_trail.acc += dt;
+    for (int t = 0; t < vg_trail.n; t++) {
+        int idx = (vg_trail.head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
+        vg_trail.pt[idx] = mat3_apply(R, vg_trail.pt[idx]);
+        vg_trail.pt[idx].z -= dz;
     }
-    if (vg.trail_acc >= SHIP_TRAIL_DT) {
-        vg.trail_acc = 0;
-        vg.trail_head = (uint8_t)((vg.trail_head + 1) % SHIP_TRAIL);
+    if (vg_trail.acc >= SHIP_TRAIL_DT) {
+        vg_trail.acc = 0;
+        vg_trail.head = (uint8_t)((vg_trail.head + 1) % SHIP_TRAIL);
         // The player is nailed to the origin, so their track is seeded there and
         // is carried backwards by the transform above like everything else.
-        vg.trail[vg.trail_head]   = v3(0, 0, 0);
-        vg.trail_p[vg.trail_head] = (uint8_t)(vg.throttle * 255.0f);
-        if (vg.trail_n < SHIP_TRAIL) vg.trail_n++;
+        vg_trail.pt[vg_trail.head]   = v3(0, 0, 0);
+        vg_trail.p[vg_trail.head] = (uint8_t)(vg.throttle * 255.0f);
+        if (vg_trail.n < SHIP_TRAIL) vg_trail.n++;
     }
 
     // The cutscene ship rides the ROTATION but not the translation. During the

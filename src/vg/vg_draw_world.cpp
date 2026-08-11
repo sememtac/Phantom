@@ -1,4 +1,5 @@
 ﻿#include "vg_draw.h"
+#include "vg_flight.h"
 #include "vg_game.h"
 #include "vg_prof.h"
 #include <Arduino.h>
@@ -681,7 +682,7 @@ void vg_draw_world(const VgCam& cam) {
         // flew. In the repeater it is dead astern by definition, so it is a
         // permanent bright smear straight down the middle of the one instrument
         // meant to show what is behind you.
-        draw_ship_trail(cam, vg.trail, vg.trail_p, vg.trail_n, vg.trail_head,
+        draw_ship_trail(cam, vg_trail.pt, vg_trail.p, vg_trail.n, vg_trail.head,
                         v3(0, 0, 0), vg.trail_hue);
     }
 
