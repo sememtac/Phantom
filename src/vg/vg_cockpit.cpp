@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_weapons.h"
 #include "vg_sfx.h"
 #include "vg_raster.h"
 
@@ -48,9 +49,9 @@ void vg_update_alerts(float dt, bool alive) {
         vg.alerts.msl_lit = vg.alerts.wall_lit = false;
         return;
     }
-    const bool msl = vg.threat.on && vg.threat.range <= MSL_ALERT_RANGE;
+    const bool msl = vg_threat.on && vg_threat.range <= MSL_ALERT_RANGE;
     alert_step(&vg.alerts.msl_ph, &vg.alerts.msl_lit, msl,
-               msl ? (1.0f - vg.threat.range / MSL_ALERT_RANGE) : 0.0f,
+               msl ? (1.0f - vg_threat.range / MSL_ALERT_RANGE) : 0.0f,
                dt, SFX_MSL_ALERT);
 
     const bool wall = (vg.wall_clear <= ARENA_ALERT_RANGE);

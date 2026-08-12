@@ -15,6 +15,7 @@
 #include "vg_canopy_set.h"
 #include "vg_anomaly.h"
 #include "vg_flight.h"
+#include "vg_weapons.h"
 #include <Arduino.h>
 #include "vg_replay.h"
 #include <math.h>
@@ -137,6 +138,8 @@ void vg_game_init(void) {
     vg_tv_clear();
     vg_trail_clear();
     vg_cine_reset();
+    vg_wpn_clear();
+    vg_threat_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -162,8 +165,8 @@ void vg_game_init(void) {
     vg.health      = vg.health_max;
     vg.throttle    = 0.45f;
     vg.speed       = vg.spec->speed_min;
-    vg.wpn.rounds    = vg.spec->magazine;
-    vg.wpn.target = -1;
+    vg_wpn.rounds    = vg.spec->magazine;
+    vg_wpn.target = -1;
 
     // Last, so anything restored overwrites the defaults just set rather than
     // being overwritten by them.
@@ -179,7 +182,7 @@ void vg_game_select_ship(ShipClass c) {
     vg.spec       = vg_spec(vg.ship);
     vg.health_max = vg.spec->hull;
     vg.health     = vg.health_max;
-    vg.wpn.rounds   = vg.spec->magazine;
+    vg_wpn.rounds   = vg.spec->magazine;
 }
 
 void vg_tournament_begin(ShipClass c) {
@@ -228,7 +231,7 @@ void vg_title_lost(void) {
     vg.spec        = vg_spec(vg.ship);
     vg.health_max  = vg.spec->hull;
     vg.health      = vg.health_max;
-    vg.wpn.rounds  = vg.spec->magazine;
+    vg_wpn.rounds  = vg.spec->magazine;
     vg_save_store();
 }
 
@@ -291,12 +294,12 @@ void vg_match_start(void) {
     vg.bank        = 0;
     vg_shake_clear();
     vg.hit_flash   = 0;
-    vg.wpn.rounds    = vg.spec->magazine;
-    vg.wpn.reload_t    = 0.0f;          // a full rack is not reloading
-    vg.wpn.fire_gap    = 0;
-    vg.wpn.target = -1;
-    vg.wpn.lock_t      = 0;
-    vg.wpn.locked      = false;
+    vg_wpn.rounds    = vg.spec->magazine;
+    vg_wpn.reload_t    = 0.0f;          // a full rack is not reloading
+    vg_wpn.fire_gap    = 0;
+    vg_wpn.target = -1;
+    vg_wpn.lock_t      = 0;
+    vg_wpn.locked      = false;
     vg.spawn_t     = 0;
 
     // Torus only for now. A tunnel gives depth, a sense of place, and a line to

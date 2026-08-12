@@ -423,15 +423,7 @@ struct VgGame {
     // The player's weapons. `rounds` rather than `missiles`, because the plural of
     // the thing and the count of the thing being the same word is how you end up
     // reading `vg.missiles` next to `vg.msl[]` and having to stop.
-    struct {
-        int   rounds;      // remaining in the rack
-        float reload_t;
-        float fire_gap;
-        int   target;      // enemy index, or -1
-        float lock_t;      // time held inside the nose cone
-        float lock_need;   // time required at the current speed
-        bool  locked;
-    } wpn;
+    // The rack and the lock moved to vg_weapons.h as Weapons.
 
     MslEvent msl_event;
     float    msl_event_t;  // counts down; the banner shows while positive
@@ -562,14 +554,7 @@ struct VgGame {
     // clearance comes out of a torus solve that moves with the whole world transform.
     float    wall_rate;
 
-    // Threat state, recomputed each frame for the HUD. `on` rather than a bare
-    // `threat` because the group is the noun now and the flag is one of its
-    // fields -- vg.threat.on says which, where vg.threat did not.
-    struct {
-        bool  on;
-        float range;
-        Vec3  pos;
-    } threat;
+    // The missile threat moved to vg_weapons.h as Threat.
 
     float    spawn_t;
 

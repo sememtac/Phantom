@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_weapons.h"
 #include "vg_flight.h"
 #include "vg_states.h"
 #include "vg_ift.h"
@@ -69,9 +70,9 @@ static void enter_attract(void) {
     vg_trail.acc   = 0;
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
-    vg.threat.on      = false;
-    vg.wpn.target = -1;
-    vg.wpn.locked      = false;
+    vg_threat.on      = false;
+    vg_wpn.target = -1;
+    vg_wpn.locked      = false;
     vg.hit_flash   = 0;
     vg_shake_clear();
 }
@@ -549,9 +550,9 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
         }
         for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
         vg_update_lock(dt);
-        if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+        if (vg_wpn.fire_gap > 0) vg_wpn.fire_gap -= dt;
         vg_update_reload(dt);
-        if (vg.wpn.locked) vg_player_fire();
+        if (vg_wpn.locked) vg_player_fire();
         vg.health = vg.health_max;      // never let the load generator "die"
     }
 #endif
@@ -661,7 +662,7 @@ void vg_upd_kill(float dt, const VgInput* in, const Tap* tap) {
     vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
     vg_update_missiles(dt);
     vg_update_threat();
-    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+    if (vg_wpn.fire_gap > 0) vg_wpn.fire_gap -= dt;
     // After the last transmission, not over it. KILL_SPEECH is exactly how
     // long the dying pilot holds the other slot, so this lands in the silence
     // that follows and runs on into the bracket redraw.
@@ -811,7 +812,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     // tournament and only credits will undo it, which is what makes the
     // repair economy the difficulty curve rather than a side system.
 
-    if (vg.wpn.fire_gap > 0) vg.wpn.fire_gap -= dt;
+    if (vg_wpn.fire_gap > 0) vg_wpn.fire_gap -= dt;
     vg_update_reload(dt);
     if (in->fire_edge) vg_player_fire();
 

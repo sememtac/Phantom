@@ -1,4 +1,5 @@
 ﻿#include "vg_draw.h"
+#include "vg_weapons.h"
 #include "vg_game.h"
 #include "vg_voice.h"
 #include "vg_course.h"
@@ -681,7 +682,7 @@ static void draw_radar(void) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
-        bool is_lock = (i == vg.wpn.target && vg.wpn.locked);
+        bool is_lock = (i == vg_wpn.target && vg_wpn.locked);
         // The blip stays red whatever its lock state; the lock reads as a box
         // around it, so colour always means "what is it" and never "what am I
         // doing about it".
@@ -712,8 +713,8 @@ void vg_draw_steer_indicator(const VgInput* in) {
 // Corner brackets around the tracked enemy: dim and wide while acquiring, tight
 // and bright once locked. Carries the target's hull bar.
 void vg_draw_lock_box(const VgCam& cam) {
-    if (vg.wpn.target < 0) return;
-    const Ship* s = &vg.enemy[vg.wpn.target];
+    if (vg_wpn.target < 0) return;
+    const Ship* s = &vg.enemy[vg_wpn.target];
     if (!s->alive) return;
 
     // No reach: the bracket is drawn around a point, so there is nothing to
@@ -725,8 +726,8 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
-    float need = (vg.wpn.lock_need > 0.01f) ? vg.wpn.lock_need : vg.spec->lock_time;
-    float prog = vg.wpn.lock_t / need;
+    float need = (vg_wpn.lock_need > 0.01f) ? vg_wpn.lock_need : vg.spec->lock_time;
+    float prog = vg_wpn.lock_t / need;
     if (prog > 1.0f) prog = 1.0f;
 
     float base = sp.rpx;
@@ -736,8 +737,8 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Monochrome hierarchy: a lock reads as maximum brightness plus blink, never
     // as a different hue.
-    uint16_t col = vg.wpn.locked ? INK_MAX : INK_TRACE;
-    if (vg.wpn.locked && fmodf(vg.state_t, 0.5f) > 0.38f) col = INK;
+    uint16_t col = vg_wpn.locked ? INK_MAX : INK_TRACE;
+    if (vg_wpn.locked && fmodf(vg.state_t, 0.5f) > 0.38f) col = INK;
 
     const float xs[2] = { cx - r, cx + r };
     const float ys[2] = { cy - r, cy + r };
@@ -773,7 +774,7 @@ void vg_draw_lock_box(const VgCam& cam) {
     // What you are up against decides whether to close or extend, so name it.
     vg_text(bx, by - 12, s->spec->name, INK_FAINT, 1);
 
-    if (vg.wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
+    if (vg_wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
 }
 
 // Triangle sitting on a ring around the crosshair, pointing outward along `ang`.
@@ -821,7 +822,7 @@ void vg_draw_target_markers(const VgCam& cam) {
         if (!s->alive) continue;
         if (vlen(s->pos) > vg.spec->lock_range) continue;
 
-        uint16_t col = (i == vg.wpn.target) ? INK_MAX : COL_HUD;
+        uint16_t col = (i == vg_wpn.target) ? INK_MAX : COL_HUD;
 
         float sx = 0, sy = 0, ang = 0;
         bool infront  = screen_dir(cam, s->pos, &sx, &sy, &ang);
@@ -907,11 +908,11 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
 // -- exactly when you most need to know. Sits on a wider ring than the bogey
 // markers so the two never read as the same thing.
 void vg_draw_threat_indicator(const VgCam& cam) {
-    if (!vg.threat.on) return;
+    if (!vg_threat.on) return;
     if (fmodf(vg.state_t, 0.42f) > 0.28f) return;   // blink
 
     float sx = 0, sy = 0, ang = 0;
-    screen_dir(cam, vg.threat.pos, &sx, &sy, &ang);
+    screen_dir(cam, vg_threat.pos, &sx, &sy, &ang);
     draw_ring_arrow(ang, 196.0f, 16.0f, COL_DANGER, 3);
 }
 
@@ -966,14 +967,14 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     // divisions entirely. It cannot be read as rounds arriving because it is
     // visibly not made of rounds, and it fills from the bottom, mirroring the
     // direction the rack empties.
-    const float rl = (vg.wpn.reload_t > 0.0f && vg.spec->reload > 0.0f)
-                   ? (1.0f - vg.wpn.reload_t / vg.spec->reload) : 0.0f;
+    const float rl = (vg_wpn.reload_t > 0.0f && vg.spec->reload > 0.0f)
+                   ? (1.0f - vg_wpn.reload_t / vg.spec->reload) : 0.0f;
 
     hud_panel(SCR_W - 40, 140, 30, mag * pitch + 8, "MSL");
 
     for (int i = 0; i < mag; i++) {
         int y = 148 + i * pitch;
-        if (i < vg.wpn.rounds) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
+        if (i < vg_wpn.rounds) vg_fill_rect(SCR_W - 34, y, 18, cell, INK_BRIGHT);
         else                 vg_rect(SCR_W - 34, y, 18, cell, INK_TRACE);
     }
 
