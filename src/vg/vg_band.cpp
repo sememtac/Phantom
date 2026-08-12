@@ -286,8 +286,22 @@ static inline void plot_delta(uint16_t* band, int by0, int by1,
     *p = (uint16_t)((o >> 8) | (o << 8));                      // and back
 }
 
-static void band_line_delta(uint16_t* band, int by0, int by1,
-                            int x0, int y0, int x1, int y1, uint16_t colour, bool add) {
+// ALWAYS_INLINE, AND THE BENCH AT THE BOTTOM OF THIS FILE IS WHY.
+//
+// This had exactly one caller and GCC inlined it into the flush path for free. Giving the
+// blend bench a second call site was enough to flip that heuristic: the function came out
+// of line, and vg_rast_flush lost 198 bytes to a call the frame never used to make.
+//
+// A copy for the bench to call instead does NOT fix it -- -fipa-icf folds a byte-identical
+// copy straight back into this one and outlines the merged result, which is how that was
+// found. So the property is pinned here rather than left to a heuristic that a change
+// somewhere else can move. It is what the compiler was already doing.
+//
+// Checked by symbol diff against HEAD, not by eye: vg_rast_flush back to 0x1715, and no
+// standalone band_line_delta.
+static __attribute__((always_inline)) inline
+void band_line_delta(uint16_t* band, int by0, int by1,
+                     int x0, int y0, int x1, int y1, uint16_t colour, bool add) {
     // The delta is carried as an ordinary colour and converted once per line, the same
     // trick that makes the antialiased path affordable.
     const uint16_t d = (uint16_t)((colour >> 8) | (colour << 8));
@@ -2103,27 +2117,39 @@ static void canopy_rows(uint16_t* band, int by0, int r0, int r1) {
 // Endpoints are generated inside one band and across the full width, from a fixed sequence,
 // so the set covers shallow, steep and diagonal alike and is the same set every run. Both
 // banks are compared: a faster walk that puts a pixel in a different place is not faster.
+//
+// SHARED WITH THE BLEND BENCH BELOW, and it is worth saying why rather than each keeping
+// its own. A second copy cost 3 KB of the scarce internal SRAM for a table that would hold
+// the same 256 segments from the same seed -- and two fans that were meant to be the same
+// set are two fans that can drift apart, which would quietly make the opaque and blended
+// numbers describe different workloads.
+struct BenchSeg { int16_t x0, y0, x1, y1; };
+static BenchSeg s_bseg[256];
+static int      s_nbseg = 0;
+
+static void bench_fan(void) {
+    if (s_nbseg) return;
+    uint32_t r = 12345u;
+    const int H = BAND_H - 1;
+    for (int i = 0; i < 256; i++) {
+        r = r * 1664525u + 1013904223u;
+        s_bseg[i].x0 = (int16_t)((r >> 16) % SCR_W);
+        r = r * 1664525u + 1013904223u;
+        s_bseg[i].y0 = (int16_t)((r >> 16) % (H + 1));
+        r = r * 1664525u + 1013904223u;
+        s_bseg[i].x1 = (int16_t)((r >> 16) % SCR_W);
+        r = r * 1664525u + 1013904223u;
+        s_bseg[i].y1 = (int16_t)((r >> 16) % (H + 1));
+    }
+    s_nbseg = 256;
+}
+
 void vg_line_bench(VgLineCost* out) {
     if (!s_band[0] || !s_band[1]) { *out = VgLineCost{}; return; }
 
-    struct Seg { int16_t x0, y0, x1, y1; };
-    static Seg seg[256];
-    static int nseg = 0;
-    if (!nseg) {
-        uint32_t r = 12345u;
-        const int H = BAND_H - 1;
-        for (int i = 0; i < 256; i++) {
-            r = r * 1664525u + 1013904223u;
-            seg[i].x0 = (int16_t)((r >> 16) % SCR_W);
-            r = r * 1664525u + 1013904223u;
-            seg[i].y0 = (int16_t)((r >> 16) % (H + 1));
-            r = r * 1664525u + 1013904223u;
-            seg[i].x1 = (int16_t)((r >> 16) % SCR_W);
-            r = r * 1664525u + 1013904223u;
-            seg[i].y1 = (int16_t)((r >> 16) % (H + 1));
-        }
-        nseg = 256;
-    }
+    bench_fan();
+    const BenchSeg* seg = s_bseg;
+    const int nseg = s_nbseg;
 
     uint32_t ca = 0, cb = 0;
     long px = 0;
@@ -2152,6 +2178,167 @@ void vg_line_bench(VgLineCost* out) {
     out->lines  = nseg * 4;
     out->px     = px * 4;
     out->same   = memcmp(s_band[0], s_band[1], SCR_W * BAND_H * 2) == 0;
+}
+
+// ===========================================================================
+// THE BLENDED PATH, PRICED
+//
+// performance.md has carried this as an open target since 2026-08-04: blend_px and
+// plot_delta still do the naive form -- extract three channels, add or subtract each with
+// a compare, shift all three back, swap twice -- which is exactly what px_add replaced in
+// the canopy for 14.7%. They are also two verbatim copies of the same body, one with
+// bounds checks.
+//
+// It was left undone ON PURPOSE, and the note says why: "there is no bench for the line
+// path, so it could only be reasoned about, and reasoning about this loop is what produced
+// every wrong conclusion above." Every wrong conclusion in that section came from an
+// estimate. So this is the bench, and it is built BEFORE the change rather than after it.
+//
+// NOTHING BELOW IS REACHED BY THE GAME. The candidates are copies that live here so the
+// question "what would it buy" can be answered in microseconds instead of adjectives. If
+// the number justifies it, the shipping bodies get replaced and these become the _ref.
+// ===========================================================================
+
+// The delta pre-split into the two fields px_add wants, in NATIVE bit positions. The
+// shipping path splits it per pixel; a caller can do it once a line, which is part of
+// what is being priced here.
+struct Delta2 { uint32_t rb, g; };
+static inline Delta2 delta2(uint16_t d_native) {
+    return Delta2{ (uint32_t)(d_native & 0xF81Fu), (uint32_t)(d_native & 0x07E0u) };
+}
+
+// blend_px done with the branchless pair. px_add takes and returns PANEL order and does
+// both swaps itself, so the native round trip the shipping body writes out disappears.
+static inline void blend_px_fast(uint16_t* p, Delta2 d, bool add) {
+    *p = (uint16_t)(add ? px_add(*p, d.rb, d.g) : px_sub(*p, d.rb, d.g));
+}
+
+static inline void plot_delta_fast(uint16_t* band, int by0, int by1,
+                                   int x, int y, Delta2 d, bool add) {
+    if (y < by0 || y > by1) return;
+    if ((unsigned)x >= (unsigned)SCR_W) return;
+    uint16_t* p = &band[(y - by0) * SCR_W + x];
+    *p = (uint16_t)(add ? px_add(*p, d.rb, d.g) : px_sub(*p, d.rb, d.g));
+}
+
+// The same Bresenham walk as band_line_delta, so what the bench reports is the difference
+// in the pixel operation and not in the traversal.
+static void band_line_delta_fast(uint16_t* band, int by0, int by1,
+                                 int x0, int y0, int x1, int y1, uint16_t colour, bool add) {
+    const uint16_t dn = (uint16_t)((colour >> 8) | (colour << 8));
+    const Delta2   d  = delta2(dn);
+
+    int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    int x = x0, y = y0;
+    for (;;) {
+        plot_delta_fast(band, by0, by1, x, y, d, add);
+        if (x == x1 && y == y1) break;
+        const int e2 = err << 1;
+        if (e2 >= dy) { err += dy; x += sx; }
+        if (e2 <= dx) { err += dx; y += sy; }
+    }
+}
+
+// THE BANK, AND WHY IT IS NOT ZEROED.
+//
+// A blend bench over a black band measures nothing: subtraction from black cannot borrow
+// and addition to black cannot saturate, so every branch the shipping body pays for would
+// predict perfectly and the naive form would come out looking free. Filled with a varying
+// pattern instead, so some pixels are near white, some near black, and the clip is reached
+// in both directions.
+static void blend_fill_pattern(uint16_t* band) {
+    for (int i = 0; i < SCR_W * BAND_H; i++) {
+        const uint32_t v = (uint32_t)((uint32_t)i * 2654435761u) >> 16;
+        const uint16_t n = (uint16_t)(v & 0xFFFFu);
+        band[i] = (uint16_t)((n >> 8) | (n << 8));   // the band holds panel order
+    }
+}
+
+// Four deltas, two that saturate their fields and two that do not, each used both ways --
+// so neither the branchy form nor the guard-bit form gets an easy set. Derived from the
+// index rather than stored: they are a pure function of it, and a table would be 3 KB of
+// internal SRAM to hold what an AND can say.
+static inline uint16_t bench_delta(int i) {
+    static const uint16_t COLS[4] = { 0xF81F, 0x0841, 0x7BEF, 0x2104 };
+    return COLS[i & 3];
+}
+static inline bool bench_adds(int i) { return ((i >> 2) & 1) != 0; }
+
+void vg_blend_bench(VgBlendCost* out) {
+    *out = VgBlendCost{};
+    if (!s_band[0] || !s_band[1]) return;
+
+    bench_fan();
+    const BenchSeg* seg = s_bseg;
+    const int nseg = s_nbseg;
+
+    uint32_t la = 0, lb = 0, sa = 0, sb = 0;
+    long lpx = 0;
+
+    // ---- the lit line: plot_delta against plot_delta_fast ----
+    blend_fill_pattern(s_band[0]);
+    blend_fill_pattern(s_band[1]);
+    for (int rep = 0; rep < 4; rep++) {
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < nseg; i++)
+            band_line_delta(s_band[0], 0, BAND_H - 1,
+                            seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1,
+                            bench_delta(i), bench_adds(i));
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        for (int i = 0; i < nseg; i++)
+            band_line_delta_fast(s_band[1], 0, BAND_H - 1,
+                                 seg[i].x0, seg[i].y0, seg[i].x1, seg[i].y1,
+                                 bench_delta(i), bench_adds(i));
+        const uint32_t t2 = esp_cpu_get_cycle_count();
+        la += t1 - t0;
+        lb += t2 - t1;
+    }
+    const bool line_same = memcmp(s_band[0], s_band[1], SCR_W * BAND_H * 2) == 0;
+    for (int i = 0; i < nseg; i++) {
+        const int a = abs(seg[i].x1 - seg[i].x0), b = abs(seg[i].y1 - seg[i].y0);
+        lpx += (a > b ? a : b) + 1;
+    }
+
+    // ---- the member: the span loop out of band_tri, both ways ----
+    //
+    // Full-width rows rather than triangle spans. band_tri's edge interpolation is common
+    // to both bodies, and timing it would only dilute the thing that differs.
+    blend_fill_pattern(s_band[0]);
+    blend_fill_pattern(s_band[1]);
+    for (int rep = 0; rep < 4; rep++) {
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        for (int y = 0; y < BAND_H; y++) {
+            uint16_t* row = &s_band[0][y * SCR_W];
+            const uint16_t c = bench_delta(y & 255);
+            const uint16_t dn = (uint16_t)((c >> 8) | (c << 8));
+            const bool add = bench_adds(y & 255);
+            for (int x = 0; x < SCR_W; x++) blend_px(&row[x], dn, add);
+        }
+        const uint32_t t1 = esp_cpu_get_cycle_count();
+        for (int y = 0; y < BAND_H; y++) {
+            uint16_t* row = &s_band[1][y * SCR_W];
+            const uint16_t c = bench_delta(y & 255);
+            const uint16_t dn = (uint16_t)((c >> 8) | (c << 8));
+            const Delta2 d = delta2(dn);
+            const bool add = bench_adds(y & 255);
+            for (int x = 0; x < SCR_W; x++) blend_px_fast(&row[x], d, add);
+        }
+        const uint32_t t2 = esp_cpu_get_cycle_count();
+        sa += t1 - t0;
+        sb += t2 - t1;
+    }
+    const bool span_same = memcmp(s_band[0], s_band[1], SCR_W * BAND_H * 2) == 0;
+
+    out->line_ref_us = la / 240u;
+    out->line_now_us = lb / 240u;
+    out->span_ref_us = sa / 240u;
+    out->span_now_us = sb / 240u;
+    out->lines       = nseg * 4;
+    out->line_px     = lpx * 4;
+    out->span_px     = (long)SCR_W * BAND_H * 4;
+    out->same        = line_same && span_same;
 }
 
 // THE GLYPH NEST, AS IT WAS, kept only so the bench has something to be faster than.

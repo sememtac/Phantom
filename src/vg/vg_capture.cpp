@@ -362,6 +362,28 @@ void vg_capture_poll(void) {
                               (unsigned long)k.ref_us, (unsigned long)k.now_us,
                               k.lines, k.px, k.same ? "IDENTICAL" : "DIFFERENT");
             }
+        } else if (c == 'm' && !vg_link_busy()) {
+            // WHAT THE BLENDED PATH COSTS, and what the branchless pair would buy.
+            //
+            // 'l' above benches the OPAQUE walk. This is the other one: lit HUD lines
+            // through plot_delta and canopy members through blend_px, both of which still
+            // do the naive per-channel form that px_add replaced in the canopy for 14.7%.
+            //
+            // `now` here is NOT what ships -- it is a candidate held inside the bench, so
+            // this prices the open target without the game running a line of it. Read
+            // IDENTICAL as the licence to adopt it: it is a memcmp of both banks after a
+            // fan that saturates and borrows in every field, and a faster blend that moves
+            // one pixel is not faster.
+            VgBlendCost k{};
+            vg_blend_bench(&k);
+            if (!vg_link_busy()) {
+                Serial.printf("blend: line ref %lu us now %lu us | span ref %lu us now %lu us"
+                              " | %d lines %ld line px %ld span px, %s\n",
+                              (unsigned long)k.line_ref_us, (unsigned long)k.line_now_us,
+                              (unsigned long)k.span_ref_us, (unsigned long)k.span_now_us,
+                              k.lines, k.line_px, k.span_px,
+                              k.same ? "IDENTICAL" : "DIFFERENT");
+            }
         } else if (c == 'A') {
             // ASKED FOR, never assumed. Audio in the capture stream is an extra
             // chunk inside each frame, and a host that predates it treats an

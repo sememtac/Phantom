@@ -227,6 +227,24 @@ void vg_glyph_bench(VgGlyphCost* out);
 struct VgLineCost { uint32_t ref_us, now_us; int lines; long px; bool same; };
 void vg_line_bench(VgLineCost* out);
 
+// THE BLENDED PATH, which is a different loop from the one above and had no bench.
+//
+// `ref` is what ships. `now` is the same drawing done with px_add/px_sub, the branchless
+// four-constant pair the canopy already uses -- held INSIDE the bench and reaching no
+// shipping code, so this prices the open target in performance.md without committing to it.
+//
+// Lines and spans are timed apart because they are different customers with different
+// bound checks: a lit HUD line goes through plot_delta and pays three compares a pixel, a
+// canopy member is a span fill and pays none. `same` is a memcmp of the two banks over both.
+struct VgBlendCost {
+    uint32_t line_ref_us, line_now_us;
+    uint32_t span_ref_us, span_now_us;
+    int      lines;
+    long     line_px, span_px;
+    bool     same;
+};
+void vg_blend_bench(VgBlendCost* out);
+
 // Per-type breakdown of the prim stage, and the tint on its own. Diagnostic:
 // which KIND of primitive the band raster is spending its time on.
 uint32_t vg_rast_aa_us(void);
