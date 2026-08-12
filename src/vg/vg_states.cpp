@@ -874,7 +874,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
                 // player IS the origin, so the wreck is placed in front and
                 // the camera set tumbling around it -- which reads as being
                 // thrown clear, and gives the scene something to be about.
-                Ship* c = &vg.cine.ship;
+                Ship* c = &vg_cine.ship;
                 c->alive    = true;
                 c->spec     = vg.spec;
                 c->hue      = vg.trail_hue;
@@ -887,7 +887,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
                 c->roll_vis = 0.4f;
                 c->trail_n  = 0;
                 c->hit_flash = 0.0f;
-                vg.cine.on  = true;
+                vg_cine.on  = true;
                 // The player's own wreck, and the biggest eruption in the
                 // game. Scaled off c->scale (84) rather than a ship's own
                 // size: this one is deliberately staged large and close, and

@@ -4,6 +4,12 @@
 #include "vg_sky.h"
 #include <math.h>
 
+CineState vg_cine;
+
+void vg_cine_reset(void) {
+    vg_cine = CineState{};
+}
+
 // The whole shot rests on one property of this renderer: the player IS the
 // origin, so there is no camera to move or aim. Both are done by steering the
 // world instead -- which is exactly what a camera operator does, and is why a
@@ -13,12 +19,12 @@
 static float s_turn = 0.0f;    // lazy arc on the ship, set per shot
 
 void vg_cine_clear(void) {
-    vg.cine.on         = false;
-    vg.cine.gate_t          = 0.0f;
-    vg.cine.hold       = 0.0f;
-    vg.cine.ship.trail_n    = 0;
-    vg.cine.ship.trail_head = 0;
-    vg.cine.ship.trail_acc  = 0;
+    vg_cine.on         = false;
+    vg_cine.gate_t          = 0.0f;
+    vg_cine.hold       = 0.0f;
+    vg_cine.ship.trail_n    = 0;
+    vg_cine.ship.trail_head = 0;
+    vg_cine.ship.trail_acc  = 0;
 }
 
 // A fly-by past a fixed position, the way a rally camera is planted at the
@@ -35,7 +41,7 @@ void vg_cine_clear(void) {
 // across at any distance the near plane allows, which is fine for a contact and
 // useless for a subject.
 static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
-    Ship* c = &vg.cine.ship;
+    Ship* c = &vg_cine.ship;
     const float sx = mirror ? -1.0f : 1.0f;
 
     c->alive = true;
@@ -58,14 +64,14 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     // wherever the world has rotated it to by then.
     Vec3 r = vcross(v3(0, 1, 0), c->fwd);
     if (vlen2(r) < 1e-4f) r = vcross(v3(1, 0, 0), c->fwd);
-    vg.cine.gate_r   = vnorm(r);
-    vg.cine.gate_u   = vnorm(vcross(c->fwd, vg.cine.gate_r));
-    vg.cine.gate_pos = c->pos;
-    vg.cine.gate_hue = hue;
-    vg.cine.gate_t   = GATE_TIME;
+    vg_cine.gate_r   = vnorm(r);
+    vg_cine.gate_u   = vnorm(vcross(c->fwd, vg_cine.gate_r));
+    vg_cine.gate_pos = c->pos;
+    vg_cine.gate_hue = hue;
+    vg_cine.gate_t   = GATE_TIME;
 
-    vg.cine.hold = GATE_EMERGE;
-    vg.cine.on   = false;      // nothing to see until the gate has opened
+    vg_cine.hold = GATE_EMERGE;
+    vg_cine.on   = false;      // nothing to see until the gate has opened
 }
 
 // Move the whole shot somewhere else. The two fighters launch from separate
@@ -103,7 +109,7 @@ static void cine_relocate(void) {
 // Advance along its own track and lay ribbon. Runs AFTER the world step, which
 // has already turned both the ship and the background by this frame's pan.
 static void cine_fly(float dt) {
-    Ship* c = &vg.cine.ship;
+    Ship* c = &vg_cine.ship;
 
     const Mat3 T = mat3_euler(-0.04f * dt, s_turn * dt, 0.0f);
     c->fwd = vnorm(mat3_apply(T, c->fwd));
@@ -140,7 +146,7 @@ bool vg_cine_update(float dt, bool skip) {
     // somewhere arriving rather than of somewhere already there.
     vg_sky_set_reveal(t / (INTRO_DRIFT * 0.85f));
 
-    const bool subject = vg.cine.on || vg.cine.gate_t > 0.0f;
+    const bool subject = vg_cine.on || vg_cine.gate_t > 0.0f;
 
     // Zoom is driven by RANGE, not by a timeline. Holding focal length
     // proportional to distance keeps the ship a constant size, so the operator
@@ -150,7 +156,7 @@ bool vg_cine_update(float dt, bool skip) {
     // inside about 1350 units the lens has nothing left to give and the ship is
     // finally allowed to get big, right as it goes by.
     if (subject) {
-        float z = vlen(vg.cine.on ? vg.cine.ship.pos : vg.cine.gate_pos) / 2400.0f;
+        float z = vlen(vg_cine.on ? vg_cine.ship.pos : vg_cine.gate_pos) / 2400.0f;
         if (z < 0.74f) z = 0.74f;
         if (z > 2.40f) z = 2.40f;
         float k = dt * 4.0f;
@@ -186,15 +192,15 @@ bool vg_cine_update(float dt, bool skip) {
     // Release the ship once the gate has opened and been held. Seated straight
     // off the plane rather than from its stored position, so it emerges from
     // wherever the gate has rotated to -- aligned, with nothing to drift.
-    if (vg.cine.hold > 0.0f) {
-        vg.cine.hold -= dt;
-        if (vg.cine.hold <= 0.0f) {
-            Ship* c = &vg.cine.ship;
-            c->pos = vg.cine.gate_pos;
-            c->fwd = vnorm(vcross(vg.cine.gate_r, vg.cine.gate_u));
+    if (vg_cine.hold > 0.0f) {
+        vg_cine.hold -= dt;
+        if (vg_cine.hold <= 0.0f) {
+            Ship* c = &vg_cine.ship;
+            c->pos = vg_cine.gate_pos;
+            c->fwd = vnorm(vcross(vg_cine.gate_r, vg_cine.gate_u));
             Vec3 u = vsub(c->up, vmul(c->fwd, vdot(c->up, c->fwd)));
-            c->up  = (vlen2(u) > 1e-6f) ? vnorm(u) : vg.cine.gate_u;
-            vg.cine.on = true;
+            c->up  = (vlen2(u) > 1e-6f) ? vnorm(u) : vg_cine.gate_u;
+            vg_cine.on = true;
         }
     }
 
@@ -202,7 +208,7 @@ bool vg_cine_update(float dt, bool skip) {
     if (subject) {
         // Aim at whichever exists. Before the ship is out, the gate is the
         // subject, and holding on it is what tells the viewer where to look.
-        const Vec3 w = vnorm(vg.cine.on ? vg.cine.ship.pos : vg.cine.gate_pos);
+        const Vec3 w = vnorm(vg_cine.on ? vg_cine.ship.pos : vg_cine.gate_pos);
         yaw_in   =  w.x * 3.2f;
         pitch_in = -w.y * 3.2f;
     } else {
@@ -233,7 +239,7 @@ bool vg_cine_update(float dt, bool skip) {
     // rotates everything by the pan, which is what carries the arena and the
     // starfield across behind the subject.
     vg_world_step(dt, pitch_in, yaw_in, 0.0f, 0.0f);
-    if (vg.cine.on) cine_fly(dt);
+    if (vg_cine.on) cine_fly(dt);
 
     if (t > INTRO_END || skip) {
         s_shot = 0;

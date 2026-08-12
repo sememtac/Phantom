@@ -521,19 +521,7 @@ struct VgGame {
     // Grouped, and the ship inside it is `ship`. It was a bare `cine` next to
     // cine_on, cine_hold and five gate_ fields that all belonged to it, so the
     // group had to take the noun and the Ship had to be named.
-    struct {
-        Ship  ship;
-        bool  on;
-
-    // Entry gate: a lit plane in the pilot's own colour that the cutscene ship
-    // emerges through. Held as a centre and two in-plane axes rather than as a
-    // normal, so it rides the world rotation the same way everything else does
-    // and never has to be rebuilt from a basis.
-        Vec3  gate_pos, gate_r, gate_u;
-        float gate_t;    // counts down; the plane is drawn while positive
-        float gate_hue;
-        float hold;      // >0 while the ship is still waiting behind the gate
-    } cine;
+    // The launch cutscene's state moved to vg_cine.h as CineState.
 
     float    hud_boot;     // >0 while the instruments are coming up
     // THE BOOT IS A CHAIN NOW, and these two are the links.

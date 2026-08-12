@@ -136,6 +136,7 @@ void vg_game_init(void) {
     // memset no longer reaches them and a recording must not start mid-cut.
     vg_tv_clear();
     vg_trail_clear();
+    vg_cine_reset();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -249,7 +250,7 @@ void vg_match_start(void) {
     vg.roll        = 0;          // the menu leaves the world tumbling; fly level
     vg.roll_rate   = 0;
     vg.bank        = 0;
-    vg.cine.on     = false;
+    vg_cine.on     = false;
     vg.hud_boot    = 0;
     // THE BOOT CHAIN, disarmed. This runs from enter_intro, at the top of the CUTSCENE, so it is
     // seconds ahead of the player taking the seat -- and the raster side has to be disarmed with
