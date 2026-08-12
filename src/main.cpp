@@ -9,15 +9,18 @@
 
 uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
 int      vg_fire_live(void);          // live fireballs, defined in vg_game.cpp
-// Defined here, declared in vg_prof.h, which both writers include.
-uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
-uint32_t g_arena_hoop, g_arena_rail;                        // the grid's two loops
-uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
-uint32_t g_in_touch, g_in_lock;                             // the frame's last I2C
-uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
-uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;  // `world`
+// THE PROFILING COUNTERS ARE NOT DEFINED HERE ANY MORE. Each is defined by the
+// module that writes it, which is what the other nine already did -- g_hud_radar
+// in vg_hud.cpp, g_synth_peak in vg_synth.cpp, g_upd_* in vg_game.cpp.
+//
+// They lived here, and this file exists only for the standalone build. Every one
+// is written unconditionally from src/vg/, so a launcher that dropped main.cpp
+// took 21 undefined symbols with it and the four-function contract at the top of
+// this file did not hold. Nothing was failing -- there is no embedded build yet --
+// but the promise was not one this file could keep.
+//
+// This one stays: it is main's own accumulator, not a counter anyone else writes.
 static uint32_t g_sfx_us;   // the synth, also inside the submit phase
-uint32_t g_sfx_render_us;   // just the mixer, to tell it from the I2S write
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "vg/vg_port.h"

@@ -9,6 +9,10 @@
 // Everything with a position in the world: stars, dust, rocks, fighters,
 // missiles, wreckage.
 
+// `world`'s five parts plus the fireballs, defined beside the loops that time them.
+// Read the RANGE of these rather than any one -- see g_w_motes in vg_prof.h.
+uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
+
 void vg_draw_starfield(const VgCam& cam) {
     static const uint16_t shades[3] = { COL_STAR_DIM, COL_STAR_MID, COL_STAR_BRIGHT };
     for (int i = 0; i < NUM_STARS; i++) {

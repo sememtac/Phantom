@@ -13,6 +13,13 @@
 #include <stdio.h>
 #include <math.h>
 
+// THE SUBMIT COUNTERS, defined here because this file writes every one of them.
+// Declared in vg_prof.h, which says what each measures and what it may not be read
+// as -- g_sub_hud in particular brackets vg_draw_hud alone and is not group B's total.
+uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
+uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
+uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
+
 // Frame orchestration only. Every actual drawing routine lives in a vg_draw_*
 // or vg_hud/vg_overlay module; what remains here is the part that is genuinely
 // global -- the draw ORDER, and which layers get the spherical warp.

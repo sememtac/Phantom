@@ -196,6 +196,11 @@ void vg_title_lost(void);
 void vg_update_alerts(float dt, bool alive);
 
 // The panel's own timers: hit flash, boot sweep, damage glitch, blast flash.
+//
+// Named for what it decays, not for the file it is in -- see the note on the
+// vg_hud_ prefix in vg_raster.h. It belongs to the cockpit and it is under the
+// cockpit banner above: it also drives the canopy intro and the per-region beeps,
+// which is panel work rather than anything vg_hud.cpp draws.
 void vg_hud_decay(float dt);
 
 // One frame of each state, one function per STATES row. VG_PLAYING and VG_HIT

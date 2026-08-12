@@ -19,6 +19,19 @@
 bool vg_rast_init(void);
 void vg_rast_begin_frame(void);
 
+// THE vg_hud_ PREFIX NAMES WHAT IS ACTED ON, NOT WHERE THE CODE LIVES, and the
+// three functions below are the reason that is worth stating. They warp and shift
+// the HUD; they are implemented in vg_raster.cpp because the state they set is the
+// per-core rasteriser substate, which is private to that file. None of them is in
+// vg_hud.cpp, and vg_hud.cpp's own functions are all called vg_draw_*.
+//
+// So a grep for vg_hud_ finds these and vg_hud_decay in vg_cockpit.cpp, and finds
+// none of the 1000-odd lines that actually draw the panel. That is the cost of the
+// convention and it is paid here rather than fixed: moving these three would mean
+// publishing Sub and sub() to give two setters a different address, and moving
+// vg_hud_warp_at away from warp_pt is exactly what would let the two formulas
+// drift -- which the note on it below says must not happen.
+
 // While enabled, every submitted primitive is bent onto a virtual spherical
 // surface (see HUD_WARP_K) and subdivided so the curve is actually visible.
 // Applied here rather than at the call sites so the whole HUD curves at once

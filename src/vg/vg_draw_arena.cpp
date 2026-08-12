@@ -7,6 +7,10 @@ extern "C" unsigned long micros(void);
 #include "vg_arena.h"
 #include <math.h>
 
+// The grid's two loops, which are the two cores' shares rather than parts of one
+// total -- vg_prof.h explains why they must not be added together.
+uint32_t g_arena_hoop, g_arena_rail;
+
 // The boundary wireframe. Kept apart from the world objects because it is
 // generated rather than drawn from stored geometry, and its cost profile is
 // completely different: hundreds of procedurally generated segments a frame, all

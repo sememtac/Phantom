@@ -649,6 +649,11 @@ bool vg_touch_init(void) {
     return true;
 }
 
+// The frame's last I2C, defined beside the reads that bill it. These ACCUMULATE
+// across a frame rather than being set -- main.cpp zeroes them once it has printed.
+uint32_t g_in_touch = 0;
+uint32_t g_in_lock  = 0;
+
 int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (!s_touch_ok) return 0;
     const uint32_t t_touch = micros();

@@ -9,6 +9,10 @@
 
 VgVolume vg_vol;
 
+// Just the mixer, to tell it from the I2S write. Defined here because this is the
+// file that stops the clock on it.
+uint32_t g_sfx_render_us;
+
 // ===========================================================================
 // THE CATALOGUE
 //
