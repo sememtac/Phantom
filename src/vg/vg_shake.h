@@ -53,16 +53,32 @@
 // The panel moves less than the view -- see HUD_SHAKE_MAX for why it moves at all.
 #define SHAKE_HUD_RATIO      0.22f
 
+// THIS FRAME'S VIEW OFFSET, in pixels, which the camera reads. It was on VgGame and
+// the level behind it was already here -- so the published output lived apart from
+// the thing that computes it, for no reason except that this module had a header and
+// nobody moved the two fields into it.
+//
+// REPUBLISHED ONLY BY vg_shake_update, and that runs from vg_world_step -- so out of
+// flight nothing rewrites these while vg_render_frame still reads them every frame in
+// every state. That is why vg_shake_clear exists and why the state changes call it.
+struct Shake {
+    float x, y;
+};
+
+extern Shake vg_shake;
+
 void vg_shake_hit(float amount);
 
 // A sustained condition, for THIS frame. Must be called every frame it holds.
 void vg_shake_rumble(float amount);
 
-// Decay both channels and publish this frame's view offset into
-// vg.shake_x / vg.shake_y, which the camera already reads.
+// Decay both channels and publish this frame's view offset into vg_shake,
+// which the camera already reads.
 void vg_shake_update(float dt);
 
-// Everything to zero. For a state change, where a knock must not survive.
+// Everything to zero -- both channels and the published offset. For a state change,
+// where a knock must not survive, and for vg_game_init, which is what begin_record
+// restarts the game through before a recording.
 void vg_shake_clear(void);
 
 

@@ -4,6 +4,8 @@
 #include "vg_glitch.h"
 #include <math.h>
 
+Shake vg_shake;
+
 static float s_hit  = 0.0f;   // impact channel
 static float s_want = 0.0f;   // rumble REQUESTED this frame, consumed by update
 static float s_rum  = 0.0f;   // rumble as actually felt, eased toward s_want
@@ -22,7 +24,7 @@ void vg_shake_rumble(float amount) {
 
 void vg_shake_clear(void) {
     s_hit = s_want = s_rum = 0.0f;
-    vg.shake_x = vg.shake_y = 0.0f;
+    vg_shake.x = vg_shake.y = 0.0f;
 }
 
 
@@ -54,10 +56,10 @@ void vg_shake_update(float dt) {
         // Re-rolled every frame rather than swept, which is what makes it read as
         // being struck instead of as a wobble. The buzz and the VG_OVER tumble add
         // themselves on top of this in vg_world_step.
-        vg.shake_x = vg_frand(-amp, amp);
-        vg.shake_y = vg_frand(-amp, amp);
+        vg_shake.x = vg_frand(-amp, amp);
+        vg_shake.y = vg_frand(-amp, amp);
     } else {
-        vg.shake_x = vg.shake_y = 0.0f;
+        vg_shake.x = vg_shake.y = 0.0f;
     }
 }
 

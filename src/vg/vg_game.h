@@ -411,9 +411,7 @@ struct VgGame {
     // yaw instead of merely rotating the finished image. Accumulated because the
     // backdrop is not carried by that transform and has to be told the total.
     float    roll;
-    // This frame's view offset in pixels. The LEVEL behind it lives in
-    // vg_shake.cpp, because many things contribute and none of them owns it.
-    float    shake_x, shake_y;
+    // The view offset moved to vg_shake.h as Shake, beside the level behind it.
     float    hit_flash;
     // Light from an explosion nearby, 0..1, raised by vg_spawn_blast and decayed
     // in vg_world_step. Distinct from hit_flash: that one means YOU were hit and

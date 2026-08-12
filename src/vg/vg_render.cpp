@@ -207,7 +207,7 @@ static void await_instruments(void) {
 }
 
 void vg_render_frame(const VgInput* in, float fps) {
-    VgCam cam = vg_cam_make(vg.bank, vg.shake_x, vg.shake_y, vg.cam_zoom);
+    VgCam cam = vg_cam_make(vg.bank, vg_shake.x, vg_shake.y, vg.cam_zoom);
 
     // Looking aft fills the main window. The patch is the button as well as the
     // repeater, so the picture the player is already watching is the one that

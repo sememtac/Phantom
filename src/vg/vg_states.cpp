@@ -949,8 +949,8 @@ void vg_upd_over(float dt, const VgInput* in, const Tap* tap) {
     // The image never settles. Camera jitter under the screen-space tearing
     // gives the failure somewhere physical to come from -- one alone reads
     // as an effect, the two together read as a machine coming apart.
-    vg.shake_x += vg_frand(-3.4f, 3.4f);
-    vg.shake_y += vg_frand(-3.4f, 3.4f);
+    vg_shake.x += vg_frand(-3.4f, 3.4f);
+    vg_shake.y += vg_frand(-3.4f, 3.4f);
 
     // Knocked out is knocked out: back to the main menu, not a restart.
     if (vg.state_t > 2.2f && tap->up) { vg_cine_clear(); vg_state_cut(VG_ATTRACT); }

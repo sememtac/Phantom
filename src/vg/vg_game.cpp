@@ -140,6 +140,7 @@ void vg_game_init(void) {
     vg_cine_reset();
     vg_wpn_clear();
     vg_threat_clear();
+    vg_shake_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 

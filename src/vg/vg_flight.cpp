@@ -374,8 +374,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // scaled by the airframe -- see vg.buzz in the world step.
     if (vg.buzz > 0.0f) {
         const float a = SPEED_SHAKE_MAX * vg.buzz;
-        vg.shake_x += vg_frand(-a, a);
-        vg.shake_y += vg_frand(-a, a);
+        vg_shake.x += vg_frand(-a, a);
+        vg_shake.y += vg_frand(-a, a);
     }
 
     // THE TAIL IS NOT THE WORLD STEP. What follows are four different modules'
