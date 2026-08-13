@@ -35,9 +35,14 @@ enum VgCrumb : uint8_t {
     CRUMB_SLOTS
 };
 
-// Where the frame is now, and which game state it is in. Called four times a
-// frame; keep it cheap.
-void vg_crumb(uint8_t where, uint8_t state);
+// Where the frame is now, and ONE BYTE OF DETAIL WHOSE MEANING DEPENDS ON WHERE:
+// the game state for the main-loop phases, the band index for FDRAW/FSCAN/FPUSH,
+// and nothing at all for BOOT and FWAIT. The parameter is not called `state` any
+// more because that name is what got it printed as one -- see detail_str in the
+// .cpp, and the two crash records it made unreadable.
+//
+// Called four times a frame; keep it cheap.
+void vg_crumb(uint8_t where, uint8_t detail);
 
 // A frame that took far longer than a frame should. A freeze is NOT a crash --
 // nothing resets, so the reset reason and the breadcrumb both stay silent about

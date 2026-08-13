@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <esp_attr.h>
 #include <esp_system.h>
+#include <stdio.h>
 
 // RTC_NOINIT_ATTR is the whole trick: RTC slow memory, and the startup code is
 // told NOT to zero it. It survives a panic, a watchdog, a brownout and a
@@ -63,6 +64,45 @@ static const char* const STATE_NAME[] = {
 };
 #define STATE_COUNT ((int)(sizeof(STATE_NAME) / sizeof(STATE_NAME[0])))
 
+static const char* state_name(uint32_t s);
+
+// THE SECOND BYTE MEANS TWO DIFFERENT THINGS, and printing it as one is what made
+// two crash records unreadable.
+//
+// vg_crumb.h has always said so -- "the state byte carries the band index for these,
+// not the state" -- and the writers have always honoured it. Only the report did not:
+// it sent the byte through state_name() whatever the phase, and STATE_NAME has exactly
+// fourteen entries, ATTRACT..WON. So a crash while pushing band 14 of 15 printed
+// "state ?(14)", which reads as a corrupt state and is nothing of the kind.
+//
+// It cost more than one confusing line. The record kept from an earlier playtest --
+// "died in flush-push, state ?(14), frame 38137" -- was read as an unknown state and
+// filed as a curiosity. It was band 14. A second crash then landed on band 14 as well,
+// and TWO crashes agreeing on the last band's push is a real clue that was sitting in
+// plain sight behind a wrong label.
+//
+// Nothing about what is STORED changes here, so records already in RTC and in flash
+// start reading correctly the moment this ships.
+//
+// FWAIT is the exception among the flush phases: it waits on the previous transfer and
+// is not per-band, so its writer passes a literal 0 and there is nothing to name.
+static void detail_str(char* buf, size_t n, uint32_t where, uint32_t val) {
+    switch (where) {
+        case CRUMB_FDRAW:
+        case CRUMB_FSCAN:
+        case CRUMB_FPUSH:
+            snprintf(buf, n, ", band %u", (unsigned)val);
+            break;
+        case CRUMB_FWAIT:
+        case CRUMB_BOOT:
+            buf[0] = '\0';                     // neither, and 0 is not ATTRACT
+            break;
+        default:
+            snprintf(buf, n, ", state %s(%u)", state_name(val), (unsigned)val);
+            break;
+    }
+}
+
 static const char* where_name(uint32_t w) {
     return (w < CRUMB_SLOTS) ? CRUMB_NAME[w] : "?";
 }
@@ -120,10 +160,10 @@ void vg_crumb_reset(void) {
     crash_store();
 }
 
-void vg_crumb(uint8_t where, uint8_t state) {
+void vg_crumb(uint8_t where, uint8_t detail) {
     s_magic = CRUMB_MAGIC;
     s_where = where;
-    s_state = state;
+    s_state = detail;
     if (where == CRUMB_POLL) s_frame++;
 }
 
@@ -170,10 +210,11 @@ void vg_crumb_report(void) {
 
     if (s_crash_valid) {
         // The line that matters. Everything else in this file exists to print it.
-        Serial.printf("CRUMB: LAST CRASH reason %lu, died in %s, state %s(%u), frame %lu\n",
+        char det[40];
+        detail_str(det, sizeof(det), s_crash_where, s_crash_state);
+        Serial.printf("CRUMB: LAST CRASH reason %lu, died in %s%s, frame %lu\n",
                       (unsigned long)s_crash_reason,
-                      where_name(s_crash_where),
-                      state_name(s_crash_state), (unsigned)s_crash_state,
+                      where_name(s_crash_where), det,
                       (unsigned long)s_crash_frame);
     } else if (!cold) {
         Serial.printf("crumb: no crash on record (last run reached frame %lu)\n",
@@ -183,6 +224,9 @@ void vg_crumb_report(void) {
     // Reported separately and ALWAYS, because a freeze is not a crash: nothing
     // resets, so everything above stays silent about it while the player watches
     // a dead screen and reasonably calls it a crash.
+    // NOT routed through detail_str, and that is not an oversight. The stall's writer
+    // passes vg.state explicitly (see main.cpp), so this byte is always a state even when
+    // the phase beside it is a flush sub-phase. Only the CRASH record borrows the field.
     if (s_stall_ms > 0)
         Serial.printf("CRUMB: worst frame %lu ms, in state %s, phase %s\n",
                       (unsigned long)s_stall_ms, state_name(s_stall_state),
