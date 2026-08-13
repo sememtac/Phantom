@@ -385,5 +385,5 @@ uint16_t vg_mix(uint16_t a, uint16_t b, float t);
 //   wash  how far the lit part is still raw white rather than resolved picture
 //   dim   how far the rest of it has gone to black
 // All 0..1, and (1, 1, 0, 0) is a normal picture. See the note in vg_band.cpp.
-void vg_rast_tv(float open, float wide, float wash, float dim);
-bool vg_rast_tv_active(void);
+// The broadcast transition is vg_tv.h now, as vg_tv_set and vg_tv_active. It was declared
+// here because it was defined in vg_band.cpp; both moved together.

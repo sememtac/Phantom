@@ -9,6 +9,7 @@
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_shake.h"
+#include "vg_tv.h"
 #include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
 #include <stdio.h>
 #include <math.h>
@@ -303,9 +304,9 @@ void vg_render_frame(const VgInput* in, float fps) {
     // copy of the scene. IN: the band is already lit, holds a moment, then opens
     // while the picture comes back up underneath it.
     if (vg_tv.phase == TV_NONE) {
-        vg_rast_tv(1.0f, 1.0f, 0.0f, 0.0f);
+        vg_tv_set(1.0f, 1.0f, 0.0f, 0.0f);
     } else if (vg_tv.phase == TV_HOLD) {
-        vg_rast_tv(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
+        vg_tv_set(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
     } else {
         // ONE CURVE, RUN BOTH WAYS. `c` is how far the set is toward being off:
         // 0 is a picture, 1 is a dot about to vanish. Going out it runs forward,
@@ -331,7 +332,7 @@ void vg_render_frame(const VgInput* in, float fps) {
         // the middle of the screen, and it costs the collapse nothing.
         const float c = (vg_tv.phase == TV_OUT) ? (vg_tv.t / TV_OUT_TIME)
                                                 : (1.0f - vg_tv.t / TV_IN_TIME);
-        vg_rast_tv(1.0f - smoothstep(0.05f, 0.62f, c),
+        vg_tv_set(1.0f - smoothstep(0.05f, 0.62f, c),
                    1.0f - smoothstep(0.62f, 1.00f, c),
                    // Lit for essentially the whole of it. The kill at the very end
                    // is what makes the dot go OUT rather than merely get small.
