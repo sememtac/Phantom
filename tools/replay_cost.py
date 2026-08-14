@@ -104,6 +104,10 @@ def run(port, path, limit):
     # The cost is that the device idles briefly between batches, so a run takes a little
     # longer than the frames themselves do. That is the whole price of never crashing.
     CHUNK = 16
+    # Both in units of the 1.0 s read timeout below.
+    FORGIVE_AFTER = 3     # a partial batch this quiet has lost the rest; carry on
+    GIVE_UP       = 40    # ...but total silence past the device's own 30 s is the end
+    lost = [0]
     link.ser.timeout = 1.0
     started = time.time()
     sent = shown = 0
@@ -114,8 +118,23 @@ def run(port, path, limit):
             link.replay_send(ses.frames[sent + i])
         sent += k
 
-        # Exactly k bytes back, one per frame drawn. A short read is the device still
-        # working, not an error -- only a long silence is.
+        # One byte back per frame drawn. A short read is the device still working, not an
+        # error -- only a long silence is.
+        #
+        # A LOST ACK MUST NOT END THE RUN, and it used to. The ack is FLOW CONTROL, not
+        # data: its only job is to stop the host putting more than the device's 2048 byte
+        # ring can hold. The frame it refers to has already been drawn and its cost
+        # counted on the device. So one byte lost to a corrupted link cost nothing real,
+        # and the old loop waited for it for ever -- host blocked reading, device blocked
+        # waiting for the next record, and the device's 30 s timeout fired ten seconds
+        # after this loop had already given up and exited.
+        #
+        # Measured, not guessed: the device reported END 768 frames while this counted
+        # 767. Exactly one byte, on a link that corrupts a band or three every run.
+        #
+        # So a quiet window now FORGIVES the missing acks and carries on. The accounting
+        # drifts by however many were lost, which costs at most a few extra records
+        # outstanding against a ring that holds 23.
         got = 0
         quiet = 0
         while got < k:
@@ -125,8 +144,14 @@ def run(port, path, limit):
                 quiet = 0
             else:
                 quiet += 1
-                # 20 s with nothing at all, when a frame takes tens of milliseconds.
-                if quiet > 20:
+                if quiet == FORGIVE_AFTER and got > 0:
+                    lost[0] += k - got
+                    break
+                # Nothing at all for a long time. The device gives up at 30 s, so this
+                # must be LONGER than that or its explanation is generated after this
+                # loop has stopped listening -- which is what made three runs in a row
+                # report "it said nothing at all" when it had said exactly why.
+                if quiet > GIVE_UP:
                     # ASK IT WHY BEFORE GIVING UP. The device ends a replay for six distinct
                     # reasons and prints which -- see s_why in vg_replay.cpp -- but it prints
                     # that when the replay ENDS, which is exactly the moment this loop used
@@ -154,6 +179,9 @@ def run(port, path, limit):
             print("  ...%d/%d  %.0f fps  %.0fs left"
                   % (sent, n, rate, (n - sent) / max(rate, 1e-6)))
 
+    if lost[0]:
+        print("  %d ack(s) lost to the link, forgiven -- the frames were drawn"
+              % lost[0])
     print("  device drew %d frames in %.1fs" % (n, time.time() - started))
     link.ser.timeout = 8
 

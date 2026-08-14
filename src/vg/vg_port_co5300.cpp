@@ -34,6 +34,7 @@
 #include <ESP_I2S.h>
 extern "C" {
 #include "../third_party/es8311.h"
+#include "esp_task_wdt.h"
 }
 
 // ---- Board pin map (Waveshare ESP32-S3-Touch-AMOLED-2.16) ----
@@ -169,6 +170,8 @@ static int s_tx_slot    = 0;
 static int s_outstanding = 0;
 
 // Reap exactly one. The driver returns them in the order they were queued.
+uint32_t g_panel_wedges = 0;
+
 static void panel_reap(void) {
     if (s_outstanding <= 0) return;
     spi_transaction_t* done = nullptr;
@@ -176,12 +179,32 @@ static void panel_reap(void) {
     // whatever wedged it -- then took the whole game with it: watchdog reset,
     // "died in flush". Two seconds is a thousand times the longest legitimate
     // transfer; past that the transfer is abandoned and the frame degrades
-    // instead of the game dying. The counter is printed by the caller's
-    // telemetry, so a wedge is visible the second it starts.
+    // instead of the game dying.
     if (spi_device_get_trans_result(s_spi, &done, pdMS_TO_TICKS(2000)) != ESP_OK) {
-        static uint32_t s_wedges = 0;
-        Serial.printf("vg_panel: DMA wait timed out (%lu)\n",
-                      (unsigned long)++s_wedges);
+        // COUNTED HERE AND PRINTED BY THE TELEMETRY, which is what the note here used to
+        // claim and was not true: the counter was a function-local static and a printf,
+        // and nothing else could see it.
+        //
+        // THE PRINTF WAS A HAZARD, THOUGH NOT THE BUG IT WAS FIRST BLAMED FOR. It was
+        // removed on the theory that it explained the timed replay dying; it did not, and
+        // the device turned out not to be crashing at all. Kept out anyway, because the
+        // reasoning against it stands on its own. This runs inside flush-push. During a
+        // replay the link is BLOCKING --
+        // vg_link_blocking(true) sets a 5000 ms TX timeout -- and the host is writing
+        // records rather than reading, so the CDC buffer is full and a printf from here
+        // stops the loop task for up to five seconds. Two of them is the 10 s task
+        // watchdog, and the crash record said "died in flush-push" twice without ever
+        // saying why, because the thing it would have said was the thing that killed it.
+        //
+        // It was also writing English into a binary protocol, which is its own fault: the
+        // host reads one ack byte per frame and a printf lands in the middle of that.
+        //
+        // AND THE DOG IS FED. A reap that has just spent two seconds waiting is the one
+        // moment this function is guaranteed to be near the watchdog, and abandoning the
+        // transfer is the code deciding to degrade rather than die -- so it must not then
+        // die anyway on the way out.
+        g_panel_wedges++;
+        esp_task_wdt_reset();
     }
     s_outstanding--;
 }

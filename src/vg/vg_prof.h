@@ -288,3 +288,9 @@ extern uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
 //
 // `in` minus touch is the partitioning and gesture work, which is pure arithmetic.
 extern uint32_t g_in_touch, g_in_lock;
+
+// PANEL DMA TRANSFERS ABANDONED after a two second wait. Should be 0 for ever; anything
+// else means the SPI engine is not keeping up and the picture is being degraded to keep
+// the game alive. Counted rather than printed at the point of failure -- see panel_reap
+// for what printing it from there cost.
+extern uint32_t g_panel_wedges;

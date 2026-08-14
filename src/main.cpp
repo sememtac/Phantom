@@ -657,6 +657,12 @@ void loop(void) {
         // gives one window's full breakdown. See vg_capture_want_detail.
         const bool deep = vg_capture_want_detail();
         if (deep)
+        // A WEDGE IS VISIBLE THE SECOND IT STARTS, which is what panel_reap's note has
+        // always claimed and could not deliver while it was a printf inside the flush.
+        if (g_panel_wedges)
+            Serial.printf("        PANEL: %lu DMA transfer(s) abandoned -- the picture is "
+                          "being degraded to keep the frame alive\n",
+                          (unsigned long)g_panel_wedges);
         Serial.printf("        i2c  = touch %lu (lock %lu) of in %lu | denied %lu\n",
                       (unsigned long)(acc_touch / frames),
                       (unsigned long)(acc_lock  / frames),
