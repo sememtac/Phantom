@@ -4,6 +4,7 @@
 #include "vg_draw.h"
 #include "vg_ift.h"
 #include <math.h>
+#include "vg_cockpit.h"
 
 RingCourse vg_course;
 
@@ -90,9 +91,9 @@ void vg_course_update(float dt) {
     // the panel's power-on cue. Moving the HUD cue only moved the collision: two independent timers
     // agreeing is coincidence, not ordering.
     //
-    // vg.ready is the gate, one second after that cue, and the opponent's taunts already waited on
+    // vg_cockpit.ready is the gate, one second after that cue, and the opponent's taunts already waited on
     // it. The broadcast does now too, so the order holds however the sequence above is retuned.
-    if (vg.ready && vg_course.greet > 0.0f) {
+    if (vg_cockpit.ready && vg_course.greet > 0.0f) {
         vg_course.greet -= dt;
         if (vg_course.greet <= 0.0f) vg_ift_line(IFT_COURSE_START);
     }

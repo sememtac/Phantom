@@ -9,6 +9,7 @@
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_shake.h"
+#include "vg_cockpit.h"
 #include "vg_surge.h"
 #include "vg_tv.h"
 #include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
@@ -610,9 +611,9 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // comes off vg.state_t, which RESETS on every state change and then runs. So pausing mid-boot
     // left the instruments strobing through a fresh pattern over a stopped world, forever. Held
     // solid instead: a paused picture should be a still.
-    bool draw_instruments = vg.hud_cued;
-    if (vg.hud_cued && vg.hud_boot > 0.0f && live) {
-        const float p = 1.0f - vg.hud_boot / HUD_BOOT_TIME;   // 0..1 settled
+    bool draw_instruments = vg_cockpit.cued;
+    if (vg_cockpit.cued && vg_cockpit.boot > 0.0f && live) {
+        const float p = 1.0f - vg_cockpit.boot / HUD_BOOT_TIME;   // 0..1 settled
         // Bucketed so the flicker has a rate of its own instead of strobing at
         // whatever the frame rate happens to be.
         const uint32_t bucket = (uint32_t)(vg.state_t * 40.0f);
@@ -753,8 +754,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // rather than as a rendering fault.
     // Not while paused, for the reason the flicker above is not: hud_boot is frozen but state_t
     // is not, so the bar would go on sweeping a panel that has stopped booting.
-    if (vg.hud_boot > 0.0f && live) {
-        const float p  = 1.0f - vg.hud_boot / HUD_BOOT_TIME;
+    if (vg_cockpit.boot > 0.0f && live) {
+        const float p  = 1.0f - vg_cockpit.boot / HUD_BOOT_TIME;
         const int   sy = (int)(fmodf(vg.state_t * 620.0f, (float)SCR_H));
         vg_fill_rect(0, sy, SCR_W, 2, vg_dim(INK_BRIGHT, 1.0f - p));
     }

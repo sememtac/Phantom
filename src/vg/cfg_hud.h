@@ -309,7 +309,7 @@
 //
 // Measured from the SOUND, not from the end of the instruments' flicker, and that is the author's
 // specification: one second after the panel's power-on cue, comms may begin. It is a single gate
-// -- vg.ready -- and BOTH channels wait on it, the broadcast and the opponent alike.
+// -- vg_cockpit.ready -- and BOTH channels wait on it, the broadcast and the opponent alike.
 //
 // That last part is the fix. The opponent's taunt was gated and the broadcast was not: the course
 // briefing ran off a fixed 2.2 s countdown from the top of the match, so it landed wherever it

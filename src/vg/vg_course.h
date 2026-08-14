@@ -46,7 +46,7 @@
 // power-on cue and every retune of the sequence moved the collision somewhere
 // new.
 //
-// vg.ready is the gate now, one second after that cue, and this is only the beat
+// vg_cockpit.ready is the gate now, one second after that cue, and this is only the beat
 // after it. Short, because the waiting has already been done.
 #define COURSE_GREET       0.35f
 

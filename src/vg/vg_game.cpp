@@ -1,6 +1,7 @@
 ﻿#include "vg_sim.h"
 #include "vg_states.h"
 #include "vg_shake.h"
+#include "vg_cockpit.h"
 #include "vg_surge.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
@@ -143,6 +144,7 @@ void vg_game_init(void) {
     vg_wpn_clear();
     vg_threat_clear();
     vg_shake_clear();
+    vg_cockpit_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -257,14 +259,14 @@ void vg_match_start(void) {
     vg.roll_rate   = 0;
     vg.bank        = 0;
     vg_cine.on     = false;
-    vg.hud_boot    = 0;
+    vg_cockpit.boot    = 0;
     // THE BOOT CHAIN, disarmed. This runs from enter_intro, at the top of the CUTSCENE, so it is
     // seconds ahead of the player taking the seat -- and the raster side has to be disarmed with
     // the game side or the cue stays latched from the previous match and fires over the cutscene.
-    vg.hud_cued    = false;
-    vg.ready       = false;
-    vg.radio_t     = 0;
-    vg.regions_lit = 0;
+    vg_cockpit.cued    = false;
+    vg_cockpit.ready       = false;
+    vg_cockpit.radio_t     = 0;
+    vg_cockpit.regions_lit = 0;
     vg_canopy_intro_reset();
     vg.msl_event   = MSL_NONE;
     vg.msl_event_t = 0;
@@ -333,7 +335,7 @@ void vg_match_start(void) {
     // They open the match. The first thing you learn about an opponent should
     // be what kind of person they are, not what they are flying.
     //
-    // The countdown does not start until vg.ready, so this is measured from a LIT PANEL rather
+    // The countdown does not start until vg_cockpit.ready, so this is measured from a LIT PANEL rather
     // than from the top of the match -- which is why it can afford to be a real pause now
     // instead of the 1.4 s it was when it had to beat the boot.
     vg.comms.line = nullptr;

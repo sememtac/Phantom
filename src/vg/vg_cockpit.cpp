@@ -3,6 +3,18 @@
 #include "vg_sfx.h"
 #include "vg_raster.h"
 
+Cockpit vg_cockpit;
+
+// The boot chain to zero. Called from vg_game_init, which is what begin_record restarts
+// the game through before a recording -- see the note in vg_cockpit.h.
+void vg_cockpit_clear(void) {
+    vg_cockpit.boot        = 0.0f;
+    vg_cockpit.cued        = false;
+    vg_cockpit.radio_t     = 0.0f;
+    vg_cockpit.regions_lit = 0;
+    vg_cockpit.ready       = false;
+}
+
 // What the cockpit does about things that have already happened: the caution
 // annunciators, and the panel's own decay timers.
 //
@@ -71,7 +83,7 @@ void vg_hud_decay(float dt) {
         if (vg.blast_flash < 0) vg.blast_flash = 0;
     }
     if (vg.hit_flash     > 0) vg.hit_flash     -= dt;
-    if (vg.hud_boot      > 0) vg.hud_boot      -= dt;
+    if (vg_cockpit.boot      > 0) vg_cockpit.boot      -= dt;
     if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
     // The cockpit arriving, which belongs here for the same reason the rest does: it is what the
     // panel is doing, not what the ship is doing. It carries the ramp that follows the sequence
@@ -90,9 +102,9 @@ void vg_hud_decay(float dt) {
     // different number of them.
     {
         const int lit = vg_canopy_intro_lit();
-        while ((int)vg.regions_lit < lit) {
-            vg_sfx_play(SFX_PANEL_ON, 1.0f + 0.10f * (float)vg.regions_lit);
-            vg.regions_lit++;
+        while ((int)vg_cockpit.regions_lit < lit) {
+            vg_sfx_play(SFX_PANEL_ON, 1.0f + 0.10f * (float)vg_cockpit.regions_lit);
+            vg_cockpit.regions_lit++;
         }
     }
 
@@ -108,18 +120,18 @@ void vg_hud_decay(float dt) {
     // TITLE SCREEN -- it is reached from vg_world_step, which the attract loop and the cutscene
     // both drive. A comparison against a progress value that reads 1.0 when nothing is running is
     // satisfied by default, and the cockpit's power-on sound played over the menu.
-    if (!vg.hud_cued && vg_canopy_intro_cued()) {
-        vg.hud_cued = true;
-        vg.hud_boot = HUD_BOOT_TIME;
-        vg.radio_t  = BOOT_RADIO_WAIT;
+    if (!vg_cockpit.cued && vg_canopy_intro_cued()) {
+        vg_cockpit.cued = true;
+        vg_cockpit.boot = HUD_BOOT_TIME;
+        vg_cockpit.radio_t  = BOOT_RADIO_WAIT;
         vg_sfx_play(SFX_READY, 1.0f);
     }
     // ...and the radio opens BOOT_RADIO_WAIT after that sound -- from the cue, not from the end of
     // the flicker. The author's specification is one second after the panel's power-on cue, and
     // measuring it from the sound is what makes that true no matter how long HUD_BOOT_TIME is or
     // where in the cockpit sequence the cue falls.
-    if (vg.hud_cued && !vg.ready) {
-        vg.radio_t -= dt;
-        if (vg.radio_t <= 0.0f) { vg.radio_t = 0.0f; vg.ready = true; }
+    if (vg_cockpit.cued && !vg_cockpit.ready) {
+        vg_cockpit.radio_t -= dt;
+        if (vg_cockpit.radio_t <= 0.0f) { vg_cockpit.radio_t = 0.0f; vg_cockpit.ready = true; }
     }
 }

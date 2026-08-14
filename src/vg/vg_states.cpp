@@ -15,6 +15,7 @@
 #include "vg_course.h"
 #include "vg_sfx.h"
 #include "vg_shake.h"
+#include "vg_cockpit.h"
 #include "vg_surge.h"
 #include "vg_replay.h"
 #include "vg_raster.h"
@@ -150,9 +151,9 @@ static void enter_course(void) {
     // more, nor is SFX_READY played: the view sits dark, the cockpit arrives a region at a time,
     // and vg_hud_decay cues the instruments off its progress. Starting all three at once is what
     // made them overlap too tightly to read.
-    vg.hud_cued    = false;
-    vg.ready       = false;
-    vg.regions_lit = 0;
+    vg_cockpit.cued    = false;
+    vg_cockpit.ready       = false;
+    vg_cockpit.regions_lit = 0;
     // WHICH COCKPIT, before the sequence that lights it. vg_canopy_use drops the colour table
     // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
     // itself from the drawing's region count -- so the order here is not cosmetic.
@@ -231,9 +232,9 @@ void vg_begin_flight(void) {
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
     vg_spawn_opponent();
 
-    vg.hud_cued    = false;         // the boot chain again -- see enter_course
-    vg.ready       = false;
-    vg.regions_lit = 0;
+    vg_cockpit.cued    = false;         // the boot chain again -- see enter_course
+    vg_cockpit.ready       = false;
+    vg_cockpit.regions_lit = 0;
     // WHICH COCKPIT, before the sequence that lights it. vg_canopy_use drops the colour table
     // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
     // itself from the drawing's region count -- so the order here is not cosmetic.
@@ -828,7 +829,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     // while the cockpit was still coming online -- so it played to a dark screen and the
     // timer had already moved on by the time there was a panel to read it on. Held, the
     // opening remark arrives on a lit panel however long the boot took.
-    if (vg.ready) {
+    if (vg_cockpit.ready) {
         vg.taunt_t -= dt;
         if (vg.taunt_t <= 0.0f) {
             vg.taunt_t = vg_frand(12.0f, 21.0f);

@@ -513,22 +513,10 @@ struct VgGame {
     // group had to take the noun and the Ship had to be named.
     // The launch cutscene's state moved to vg_cine.h as CineState.
 
-    float    hud_boot;     // >0 while the instruments are coming up
-    // THE BOOT IS A CHAIN NOW, and these two are the links.
-    //
-    // A match used to start everything at once: the instruments caught, the cockpit came
-    // online and the opponent opened the radio, all inside the same second and a half. The
-    // author's word for it was that the three "overlap too tightly", and the fix is to make
-    // each one wait for the one before it.
-    //
-    // So: the view sits dark, the cockpit arrives a region at a time, and only when that is
-    // nearly done does `hud_cued` fire and start hud_boot. `ready` follows once the
-    // instruments are actually in, and the radio waits for it -- an opponent talking over a
-    // panel that is not lit yet is talking to nobody.
-    bool     hud_cued;     // the cockpit sequence has called for the instruments
-    float    radio_t;      // >0 while the radio is still held shut after SFX_READY
-    uint8_t  regions_lit;  // how many cockpit regions have already been beeped for
-    bool     ready;        // the radio may open -- BOTH the broadcast and the opponent wait on it
+    // THE BOOT CHAIN MOVED to vg_cockpit.h as Cockpit vg_cockpit. It was left here by
+    // item 2 for having no dominant owner, which was measured by counting all references
+    // rather than the ones that write -- and the renderer reads this group constantly
+    // because drawing is what it does.
     // >0 while the systems are visibly hurt. Same failure language as the death
     // screen, briefly and at lower severity -- damage and destruction are the
     // same event at different scales, so they read as the same thing happening.

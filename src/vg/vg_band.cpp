@@ -11,6 +11,7 @@
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <math.h>
+#include "vg_cockpit.h"
 
 // The raster half. Everything here runs NUM_BANDS times per frame but is hidden
 // under the panel DMA, so work moved into this file is close to free -- right up
@@ -1728,7 +1729,7 @@ void vg_canopy_intro_begin(void) {
     // regions and no zone map to hold the world black with. So it does not play.
     //
     // The cue is latched anyway, and that is the part that matters: the instruments hang off it
-    // -- draw_instruments is vg.hud_cued -- so returning early here left a hull with no canopy
+    // -- draw_instruments is vg_cockpit.cued -- so returning early here left a hull with no canopy
     // showing no cockpit AND no instruments, for ever. The chain degrades to what the game did
     // before there were canopies: the panel catches, then the player is ready, then the radio.
     if (!s_can) {
