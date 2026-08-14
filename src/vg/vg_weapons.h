@@ -68,3 +68,22 @@ extern Threat vg_threat;
 // the HUD still reads `on` -- so a stale true would put a threat arrow over the
 // attract loop of a fresh recording.
 void vg_threat_clear(void);
+
+// --- MOVED FROM vg_sim.h -------------------------------------------------
+//
+// The rest of the module, which this header said would come in its own commit
+// rather than riding underneath a state move. This is that commit.
+
+// One frame of the player's weapons. Called from the state dispatch, which is
+// what decides whether a state is allowed to shoot at all -- these do not check.
+void vg_update_lock(float dt);
+void vg_update_reload(float dt);
+void vg_player_fire(void);
+// Nearest live enemy missile tracking the player, for the threat warning.
+void vg_update_threat(void);
+
+void vg_damage_player(float amount);
+// Any collision. Always fatal, and not subject to the post-hit grace period.
+void vg_kill_player(void);
+bool vg_player_was_hit(void);
+void vg_clear_player_hit(void);

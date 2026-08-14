@@ -37,3 +37,16 @@ extern PlayerTrail vg_trail;
 // straight into ATTRACT, so without this a recording made after flying would open
 // trailing the previous run's ribbon.
 void vg_trail_clear(void);
+
+// --- MOVED FROM vg_sim.h -------------------------------------------------
+
+// The roll command as an angle for this frame. Public because the three states
+// that fly all pass it INTO vg_world_step, and it depends on the smoothed
+// throttle -- roll authority should lag a shove of the slider exactly as speed
+// does.
+float vg_roll_angle(const VgInput* in, float dt);
+
+// The close-aboard knock: a fighter crossing inside ten ship lengths. Separate
+// from the world step because only a live match calls it -- there is nothing to
+// pass in the course or the attract loop.
+void vg_update_passes(void);
