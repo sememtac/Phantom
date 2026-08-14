@@ -144,60 +144,12 @@
 // so that turning the demonstration off cannot disturb the difficulty curve.
 #define ARENA_WARP_COURSE    0.0f
 
-// ---------------------------------------------------------------------------
-// THE ANOMALY
-//
-// The arena is a different place in space every round, and something can be wrong with the
-// place. A match either has a disturbance or it does not, and if it does it arrives partway
-// through rather than being there at the start -- the tunnel the player launched into is the
-// one they thought they knew.
-//
-// Nothing explains it. The broadcast announces it and announces when it passes, and the
-// broadcast does not know what it is either. See IFT_ANOMALY.
-//
-// The roll is made from the recorded random stream, so a replay reproduces the same weather.
+// The episodic match events moved to cfg_events.h, which vg_config.h includes. They were
+// here because the anomaly warps the arena and the arena is this file's subject -- but an
+// event's schedule is not arena tuning, and a second event proved it: the surge touches the
+// cockpit and has no business in a file about the world.
 // ---------------------------------------------------------------------------
 
-// The chance a match has any disturbance at all, at round 0 and at the final. A quiet match is
-// part of the mechanic: if it happened every time it would be scenery rather than an event.
-// PROTOTYPE VALUES, and the low end is deliberately generous so it can be seen while it is
-// being judged -- a real curve probably starts nearer 0.25.
-#define ANOM_CHANCE_ROUND0   0.70f
-#define ANOM_CHANCE_FINAL    0.90f
-// A match that has one can have a second. Rolled once at the start, so the pacing of a match
-// is decided before it begins and not drifted into.
-#define ANOM_CHANCE_SECOND   0.35f
-// Seconds of quiet before an episode. The first is short enough to be met while the fight is
-// still fresh; a later one waits longer.
-#define ANOM_WAIT_MIN        14.0f
-#define ANOM_WAIT_MAX        40.0f
-// How long it stays once it has arrived.
-#define ANOM_HOLD_MIN        16.0f
-#define ANOM_HOLD_MAX        34.0f
-// The arrival and the departure are NOT symmetrical, and that asymmetry is the whole read of
-// it. Coming on fast enough to notice mid-turn is what makes it an event; going away slowly is
-// what makes it feel like something passing rather than something switched off.
-#define ANOM_ONSET_S         1.8f
-#define ANOM_FADE_S          6.0f
-// An episode does not always reach the round's full strength. Scaled by this, so two matches in
-// the same round are not the same weather. The floor is high: the variation is there to keep two
-// episodes from being identical, not to produce a disturbance nobody notices.
-#define ANOM_PEAK_MIN        0.75f
-#define ANOM_PEAK_MAX        1.00f
-
-// THE AIRFRAME FEELS IT TOO, and this is the half that makes it cost the player something. The
-// moving wall takes away room; the rumble takes away the shot. Guns are aimed down the nose, so
-// a view that will not sit still is a real handicap for as long as it lasts -- which is the
-// point, and also why this number is nothing like the others on the bus.
-//
-// Far below every other rumble source (PASS_RUMBLE 1.50, FIRE_RUMBLE 1.15) because those are
-// MOMENTS -- a fighter crossing the nose, flying through a wreck -- and this is a condition that
-// holds for half a minute. At 0.35 it is about 2 px of continuous view movement: enough to spoil
-// a long shot and to be felt the whole time, not enough to be punishing to look at.
-//
-// It rides the same eased ramp as the geometry, so the shaking arrives with the ground moving
-// and leaves with it.
-#define ANOM_RUMBLE          0.35f
 
 #define ARENA_HOOP_SPACING   480.0f
 #define ARENA_HOOP_SPAN      5200.0f

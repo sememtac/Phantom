@@ -1,6 +1,7 @@
 ﻿#include "vg_sim.h"
 #include "vg_states.h"
 #include "vg_shake.h"
+#include "vg_surge.h"
 #include "vg_arena.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
@@ -127,6 +128,7 @@ void vg_game_init(void) {
     // The attract loop and every menu fly a round tube. Set here so nothing has to
     // remember to clear it on the way out of a match.
     vg_anomaly_clear();
+    vg_surge_clear();
     // AND THE COURSE, for a reason worth stating: its state left VgGame, so the memset
     // at the top of this function no longer reaches it. begin_record calls vg_game_init
     // to restart the game before a recording, and without this a session would open
@@ -292,6 +294,10 @@ void vg_match_start(void) {
     // that already holds the bracket, and an event module that reached for vt would be coupling
     // the venue's weather to the tournament's shape for the sake of one division.
     vg_anomaly_begin_match((vt.round < 3) ? (float)vt.round / 3.0f : 1.0f);
+    // THE SAME RAMP, and rolled straight after the anomaly so the order of the draws from
+    // the recorded stream is fixed and documented rather than incidental. See vg_event.h:
+    // this ordering IS the behaviour, and moving it changes every recording.
+    vg_surge_begin_match((vt.round < 3) ? (float)vt.round / 3.0f : 1.0f);
     vg.bank        = 0;
     vg_shake_clear();
     vg.hit_flash   = 0;

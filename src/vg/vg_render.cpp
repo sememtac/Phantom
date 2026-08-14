@@ -9,6 +9,7 @@
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_shake.h"
+#include "vg_surge.h"
 #include "vg_tv.h"
 #include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
 #include <stdio.h>
@@ -520,6 +521,11 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     if (sn > 1.0f) sn = 1.0f;
 
     float warp = HUD_WARP_SPEED_MIN + (1.0f - HUD_WARP_SPEED_MIN) * sn;
+    // THE SURGE BOWS THE PANEL FURTHER, added before the quantiser rather than after it so
+    // the bend still lands on one of HUD_WARP_STEPS levels -- an unquantised warp
+    // re-subdivides every instrument primitive on a value that moves every frame, which is
+    // what the quantiser was put here to stop. See vg_surge.h.
+    warp += SURGE_HUD_WARP * vg_surge.level;
     warp = floorf(warp * HUD_WARP_STEPS + 0.5f) / HUD_WARP_STEPS;
 
     // THE CANOPY RELAXES AS THE SHIP ACCELERATES -- inverted against the instruments, and
@@ -556,7 +562,10 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     const bool live = (vg.state != VG_PAUSE);
 
     const float flex = vg_canopy_intro_flex();
-    if (live) vg_canopy_warp((1.0f - sn) * flex);
+    // The frame flexes with the surge as well as with the throttle. ADDED, not substituted:
+    // a cockpit that stopped responding to speed the moment the instruments failed would
+    // read as the effect replacing the flight model rather than sitting on top of it.
+    if (live) vg_canopy_warp((1.0f - sn) * flex + SURGE_FRAME_FLEX * vg_surge.level);
     // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
     // what the frame should be late to -- the ship is already late to it itself, and lagging a
     // lag reads as sludge.
@@ -667,6 +676,17 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         vg_shake_hud(&kx, &ky);
         jx += kx;
         jy += ky;
+        // AND THE SURGE SHAKES THE PANEL ITSELF, on its own clock. Its own frequency too --
+        // SURGE_JITTER_HZ is kept well away from the damage glitch's 47.0, because two
+        // offsets at neighbouring frequencies beat against each other into a slow throb that
+        // reads as neither of them.
+        if (vg_surge.level > 0.0f) {
+            float sx, sy;
+            vg_glitch_offset(vg.state_t, SURGE_JITTER_HZ,
+                             SURGE_HUD_JITTER * vg_surge.level, &sx, &sy);
+            jx += sx;
+            jy += sy;
+        }
     }
 
     // THE FRAME, BEFORE THE INSTRUMENTS AND WHETHER OR NOT THEY DRAW.

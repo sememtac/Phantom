@@ -60,6 +60,12 @@ static const char* const IFT_FMT[IFT_SLOTS] = {
     // in whatever glance is going spare.
     "ANOMALY DETECTED",     // IFT_ANOMALY
     "ANOMALY RECEDES",      // IFT_ANOMALY_END
+    // PLACEHOLDERS, and they are the author's to write. Both are inside the 22 characters a
+    // scale 3 line fits beside the IFT mark, which is the only constraint the code imposes;
+    // everything else about them is a voice decision. The anomaly's pair above is the model
+    // -- the broadcast reporting something it does not understand either.
+    "INSTRUMENT SURGE",     // IFT_SURGE
+    "PANEL RESTORED",       // IFT_SURGE_END
 };
 
 // One buffer, because only one line is ever up: the slot is single and a new line
@@ -117,6 +123,8 @@ void vg_ift_line(IftSlot slot) {
     case IFT_COURSE_DONE:
     case IFT_ANOMALY:
     case IFT_ANOMALY_END:
+    case IFT_SURGE:
+    case IFT_SURGE_END:
         snprintf(s_buf, sizeof(s_buf), "%s", fmt);
         break;
 

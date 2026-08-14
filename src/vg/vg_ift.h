@@ -43,6 +43,8 @@ enum IftSlot : unsigned char {
     IFT_COURSE_DONE,
     IFT_ANOMALY,         // the arena has started to distort, mid-fight
     IFT_ANOMALY_END,     // ...and it is passing
+    IFT_SURGE,           // the instruments have stopped being trustworthy
+    IFT_SURGE_END,       // ...and they have come back
     IFT_SLOTS
 };
 

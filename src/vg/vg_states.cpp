@@ -15,6 +15,7 @@
 #include "vg_course.h"
 #include "vg_sfx.h"
 #include "vg_shake.h"
+#include "vg_surge.h"
 #include "vg_replay.h"
 #include "vg_raster.h"
 #include "vg_canopy_set.h"
@@ -46,6 +47,7 @@ void vg_use_menu_sky(void) {
     // enter hooks: this function already means "the venue is not a venue any more", and that is
     // the same sentence. See ANOM_CHANCE_ROUND0.
     vg_anomaly_clear();
+    vg_surge_clear();
 }
 
 // STATIC, so that this cannot be called as though it were a transition.
@@ -793,6 +795,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     // not care that the player was hit. Called from here rather than vg_upd_*, so it holds still
     // during VG_PAUSE for free, that function not being called there.
     vg_anomaly_step(dt, vg.state == VG_KILL);
+    vg_surge_step(dt, vg.state == VG_KILL);
 
     const uint32_t t_ai = micros();
     for (int i = 0; i < MAX_ENEMIES; i++) vg_update_enemy(&vg.enemy[i], i, dt);
