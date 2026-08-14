@@ -471,18 +471,7 @@ struct VgGame {
     // has to be spun up and has to be allowed to stop.
     float       roll_rate;
 
-    // The caution annunciators, decided in the update rather than in the draw.
-    //
-    // They used to be fmodf(state_t, period) inside the HUD, and a modulo of an
-    // ever-growing clock by a CHANGING period does not merely change rate -- the
-    // phase jumps every time the period moves. The faster the range changed, the
-    // more it scrambled, so the blink rate tracked the SHIP'S SPEED instead of
-    // the distance, and flying away from a wall beeped exactly as fast as flying
-    // into one. A phase that is advanced by dt cannot do that.
-    struct {
-        float msl_ph,  wall_ph;
-        bool  msl_lit, wall_lit;
-    } alerts;
+    // The caution annunciators moved to vg_cockpit.h, inside Cockpit.
 
     // How hard the airframe is working, 0 at rest and 1 at the reference speed
     // -- and past 1 for a light ship at full. Computed once in the world step
@@ -523,22 +512,8 @@ struct VgGame {
     float    damage_glitch;
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it
 
-    float    wall_clear;   // distance to the arena boundary, recomputed each frame
-    // HOW FAST THE WALL IS ARRIVING, units a second, positive while closing.
-    //
-    // Distance alone cannot say ''you are about to hit this''. A ship holding station a
-    // hundred units off the boundary is safe indefinitely; the same hundred units with the
-    // nose pointed at it is a second of life. So the warning reads BOTH: the colour comes
-    // from the clearance and the flashing comes from this.
-    //
-    // The RATE and not the speed, deliberately. Speed would cry wolf every time a fast hull
-    // ran parallel to the wall, which is most of a tunnel fight, and it would say nothing
-    // about a slow drift straight into it. This is d(clearance)/dt, so it is only large when
-    // the clearance is actually being spent.
-    //
-    // Smoothed: one frame''s difference of two clearances is mostly noise, because the
-    // clearance comes out of a torus solve that moves with the whole world transform.
-    float    wall_rate;
+    // The boundary pair moved to vg_flight.h as Wall vg_wall. Only the world step
+    // maintains it; the five other writes were the same reseed line copied.
 
     // The missile threat moved to vg_weapons.h as Threat.
 

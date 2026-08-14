@@ -2,6 +2,7 @@
 #include "vg_weapons.h"
 #include "vg_sfx.h"
 #include "vg_raster.h"
+#include "vg_flight.h"
 
 Cockpit vg_cockpit;
 
@@ -57,18 +58,18 @@ static void alert_step(float* phase, bool* lit, bool active, float k, float dt,
 
 void vg_update_alerts(float dt, bool alive) {
     if (!alive) {
-        vg.alerts.msl_ph = vg.alerts.wall_ph = 0.0f;
-        vg.alerts.msl_lit = vg.alerts.wall_lit = false;
+        vg_cockpit.alerts.msl_ph = vg_cockpit.alerts.wall_ph = 0.0f;
+        vg_cockpit.alerts.msl_lit = vg_cockpit.alerts.wall_lit = false;
         return;
     }
     const bool msl = vg_threat.on && vg_threat.range <= MSL_ALERT_RANGE;
-    alert_step(&vg.alerts.msl_ph, &vg.alerts.msl_lit, msl,
+    alert_step(&vg_cockpit.alerts.msl_ph, &vg_cockpit.alerts.msl_lit, msl,
                msl ? (1.0f - vg_threat.range / MSL_ALERT_RANGE) : 0.0f,
                dt, SFX_MSL_ALERT);
 
-    const bool wall = (vg.wall_clear <= ARENA_ALERT_RANGE);
-    alert_step(&vg.alerts.wall_ph, &vg.alerts.wall_lit, wall,
-               wall ? (1.0f - vg.wall_clear / ARENA_ALERT_RANGE) : 0.0f,
+    const bool wall = (vg_wall.clearance <= ARENA_ALERT_RANGE);
+    alert_step(&vg_cockpit.alerts.wall_ph, &vg_cockpit.alerts.wall_lit, wall,
+               wall ? (1.0f - vg_wall.clearance / ARENA_ALERT_RANGE) : 0.0f,
                dt, SFX_WALL_ALERT);
 }
 

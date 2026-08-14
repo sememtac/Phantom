@@ -6,6 +6,7 @@ extern "C" unsigned long micros(void);
 #include "vg_game.h"
 #include "vg_arena.h"
 #include <math.h>
+#include "vg_flight.h"
 
 // The grid's two loops, which are the two cores' shares rather than parts of one
 // total -- vg_prof.h explains why they must not be added together.
@@ -50,8 +51,8 @@ static void arena_seg(const VgCam& cam, Vec3 a, Vec3 b, uint16_t base) {
     // Blend toward red as the ship closes on the boundary, weighted by this
     // segment's own distance so only the wall you are actually approaching lights
     // up. A uniform tint would say "danger" without saying "that way".
-    if (vg.wall_clear < ARENA_DANGER_RANGE) {
-        float danger = 1.0f - vg.wall_clear / ARENA_DANGER_RANGE;
+    if (vg_wall.clearance < ARENA_DANGER_RANGE) {
+        float danger = 1.0f - vg_wall.clearance / ARENA_DANGER_RANGE;
         float near_w = 1.0f - d / (ARENA_DANGER_RANGE * 2.2f);
         if (danger > 0.0f && near_w > 0.0f)
             col = vg_mix(col, COL_DANGER, danger * near_w);

@@ -48,6 +48,22 @@ struct Cockpit {
     float   radio_t;      // >0 while the radio is still held shut after SFX_READY
     uint8_t regions_lit;  // how many cockpit regions have already been beeped for
     bool    ready;        // the radio may open
+
+    // THE CAUTION ANNUNCIATORS, decided in the update and not in the draw.
+    //
+    // They used to be fmodf(state_t, period) inside the HUD, and a modulo of an
+    // ever-growing clock by a CHANGING period does not merely change rate -- the phase
+    // jumps every time the period moves. The faster the range changed the more it
+    // scrambled, so the blink rate tracked the SHIP'S SPEED instead of the distance, and
+    // flying away from a wall beeped exactly as fast as flying into one. A phase advanced
+    // by dt cannot do that.
+    //
+    // Kept nested rather than flattened into the five above: they are a different clock
+    // with a different owner-within-the-owner, and vg_cockpit.alerts.wall_lit says which.
+    struct {
+        float msl_ph,  wall_ph;
+        bool  msl_lit, wall_lit;
+    } alerts;
 };
 
 extern Cockpit vg_cockpit;

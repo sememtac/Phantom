@@ -10,6 +10,16 @@
 #include <math.h>
 
 PlayerTrail vg_trail;
+Wall vg_wall;
+
+void vg_wall_seed(void) {
+    vg_wall.clearance = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+}
+
+void vg_wall_clear(void) {
+    vg_wall.clearance = 0.0f;
+    vg_wall.rate      = 0.0f;
+}
 
 void vg_trail_clear(void) {
     vg_trail = PlayerTrail{};
@@ -124,14 +134,14 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
 
     // The arena is static in the world, so it rides exactly the same transform.
     vg_arena_step(R, dz);
-    const float wall_was = vg.wall_clear;
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
-    // See vg.wall_rate. Positive while the clearance is being spent.
+    const float wall_was = vg_wall.clearance;
+    vg_wall_seed();
+    // See vg_wall.rate. Positive while the clearance is being spent.
     if (dt > 0.0f) {
-        const float now = (wall_was - vg.wall_clear) / dt;
+        const float now = (wall_was - vg_wall.clearance) / dt;
         float k = dt * WALL_RATE_LERP;
         if (k > 1.0f) k = 1.0f;
-        vg.wall_rate += (now - vg.wall_rate) * k;
+        vg_wall.rate += (now - vg_wall.rate) * k;
     }
 
     // The backdrop is at infinity, so only rotation moves it -- and it does NOT

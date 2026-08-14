@@ -193,7 +193,7 @@
 //
 // Segments behind the near plane reject on a single z compare, so the extra
 // length is nearly free until it is actually on screen.
-// How quickly vg.wall_rate follows the clearance it is the derivative of. Low enough that
+// How quickly vg_wall.rate follows the clearance it is the derivative of. Low enough that
 // one noisy frame cannot fire the alarm, high enough that turning into the wall is reported
 // within a few frames rather than after the fact.
 // WHERE THE THROTTLE STARTS, every match and every course run.

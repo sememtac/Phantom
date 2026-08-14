@@ -325,7 +325,7 @@
 // red means you are out of room, so the whole thing reads as decoration.
 //
 //   the COLOUR comes from the clearance   -- how near the boundary is
-//   the FLASHING comes from vg.wall_rate  -- how soon you reach it at this rate
+//   the FLASHING comes from vg_wall.rate  -- how soon you reach it at this rate
 //
 // So holding station near the wall is red and calm, and diving at it flashes from further
 // out. A BALLISTA at full throttle trips it earlier than a CHARIOT easing along, without

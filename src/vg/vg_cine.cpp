@@ -3,6 +3,7 @@
 #include "vg_arena.h"
 #include "vg_sky.h"
 #include <math.h>
+#include "vg_flight.h"
 
 CineState vg_cine;
 
@@ -96,7 +97,7 @@ static void cine_relocate(void) {
     if (vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0))) < ARENA_ATTRACT_MARGIN)
         vg_arena_step(I, -dz);
 
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    vg_wall_seed();
 
     for (int i = 0; i < NUM_STARS; i++) vg.star[i] = mat3_apply(R, vg.star[i]);
     // Near-field dust has no business surviving a jump.

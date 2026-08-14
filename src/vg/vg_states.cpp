@@ -111,7 +111,7 @@ void vg_menu_world(float dt) {
 
 static void enter_course(void) {
     vg_arena_init(ARENA_TORUS);
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    vg_wall_seed();
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES; i++) vg.msl[i].alive  = false;
     for (int i = 0; i < MAX_DEBRIS;   i++) vg.deb[i].alive  = false;
@@ -226,7 +226,7 @@ static void leave_intro(void) {
 // over it: none of the snap is visible.
 void vg_begin_flight(void) {
     vg_arena_init(ARENA_TORUS);
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    vg_wall_seed();
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive  = false;
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive  = false;
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive = false;
@@ -451,7 +451,7 @@ void vg_tv_update(float dt) {
 static void collide_player(void) {
     // Boundary contact is fatal, so there is no bouncing the player back inside
     // any more -- the run is simply over.
-    if (vg.wall_clear < SHIP_RADIUS) {
+    if (vg_wall.clearance < SHIP_RADIUS) {
         // The player's own airframe against the boundary. Right on top of the
         // cockpit, so the flash vg_spawn_blast raises off the range is the
         // brightest one in the game -- which is correct for hitting a wall.
@@ -642,7 +642,7 @@ void vg_upd_course(float dt, const VgInput* in, const Tap* tap) {
         vg.health      = vg.health_max;
         vg_course.hits = 0;
         vg_arena_init(ARENA_TORUS);
-        vg.wall_clear  = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+        vg_wall_seed();
         vg_ift_line(IFT_COURSE_MISS);
         vg_course_reset_streak();
     }

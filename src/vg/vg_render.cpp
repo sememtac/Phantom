@@ -15,6 +15,7 @@
 #include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
 #include <stdio.h>
 #include <math.h>
+#include "vg_flight.h"
 
 // THE SUBMIT COUNTERS, defined here because this file writes every one of them.
 // Declared in vg_prof.h, which says what each measures and what it may not be read
@@ -246,8 +247,8 @@ void vg_render_frame(const VgInput* in, float fps) {
     // somewhere free is the reason one gate in four is placed against the
     // boundary.
     if ((vg_state_flags(vg.state) & VGS_LIVE) &&
-        vg.wall_clear < ARENA_TINT_RANGE) {
-        tint = 1.0f - vg.wall_clear / ARENA_TINT_RANGE;
+        vg_wall.clearance < ARENA_TINT_RANGE) {
+        tint = 1.0f - vg_wall.clearance / ARENA_TINT_RANGE;
     }
     // THE WARNING IS ON THE COCKPIT, and the ring is the FALLBACK. Measured at the
     // boundary: sky 3060 -> 1824 us and 53.1 -> 59.7 fps, because the ring tints the
@@ -268,15 +269,15 @@ void vg_render_frame(const VgInput* in, float fps) {
     // AND IT FLASHES once the wall is close enough that turning is urgent -- see
     // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
     // SECONDS TO IMPACT AT THE CURRENT CLOSING RATE, and only while the clearance is
-    // actually being spent -- see vg.wall_rate. RATE_MIN keeps a ship holding station from
+    // actually being spent -- see vg_wall.rate. RATE_MIN keeps a ship holding station from
     // strobing on numerical noise.
     //
     // The colour stays what the clearance asked for. What the countdown drives is the
     // STROBE: white for CANOPY_ALARM_ON_SECS, then back to the red, faster as the seconds
     // run out. Two signals from two facts -- see the note in cfg_hud.h.
     bool white = false;
-    if (tint > 0.0f && vg.wall_rate > CANOPY_ALARM_RATE_MIN) {
-        const float ttc = vg.wall_clear / vg.wall_rate;
+    if (tint > 0.0f && vg_wall.rate > CANOPY_ALARM_RATE_MIN) {
+        const float ttc = vg_wall.clearance / vg_wall.rate;
         if (ttc < CANOPY_ALARM_SECS) {
             // 0 at the threshold, 1 where the rate tops out.
             float u = (CANOPY_ALARM_SECS - ttc)

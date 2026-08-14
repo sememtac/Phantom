@@ -50,3 +50,50 @@ float vg_roll_angle(const VgInput* in, float dt);
 // from the world step because only a live match calls it -- there is nothing to
 // pass in the course or the attract loop.
 void vg_update_passes(void);
+
+// ===========================================================================
+// THE BOUNDARY, AS THIS AIRFRAME EXPERIENCES IT
+//
+// Not the arena -- that is vg_arena.h, and it is geometry that exists whether or not
+// anyone is flying. This is the pair that says how THIS ship stands against it, and it
+// lives with the flight model because the world step is the only thing that maintains it.
+//
+// ITEM 2 CALLED THIS GROUP OWNERLESS and it looked that way: six writes across five
+// files. But five of them are the same line copied -- a bare reseed of the clearance on a
+// state entry -- and only vg_flight.cpp MAINTAINS the pair, because only it has the
+// previous clearance to take a derivative of. Seeding is not owning, the same way
+// resetting was not owning for the cockpit's boot chain.
+struct Wall {
+    // Distance to the arena boundary, recomputed every frame of the world step.
+    float clearance;
+    // HOW FAST THE WALL IS ARRIVING, units a second, positive while closing.
+    //
+    // Distance alone cannot say "you are about to hit this". A ship holding station a
+    // hundred units off the boundary is safe indefinitely; the same hundred units with the
+    // nose pointed at it is a second of life. So the warning reads BOTH: the colour comes
+    // from the clearance and the flashing comes from this.
+    //
+    // The RATE and not the speed, deliberately. Speed would cry wolf every time a fast
+    // hull ran parallel to the wall, which is most of a tunnel fight, and it would say
+    // nothing about a slow drift straight into it. This is d(clearance)/dt, so it is only
+    // large when the clearance is actually being spent.
+    //
+    // Smoothed: one frame's difference of two clearances is mostly noise, because the
+    // clearance comes out of a torus solve that moves with the whole world transform.
+    float rate;
+};
+
+extern Wall vg_wall;
+
+// Recompute the clearance for where the ship is NOW, leaving the rate alone.
+//
+// This was six verbatim copies of one expression, in five files. They are all the same
+// thing -- a state entry that must not let the alarm fire off a clearance measured in the
+// last venue -- and now they say so. The world step calls it too, having first kept the
+// old clearance to difference against.
+void vg_wall_seed(void);
+
+// Both to zero, for vg_game_init. They relied on the memset like everything else that has
+// left VgGame, and a stale clearance at boot is an alarm on the title screen.
+void vg_wall_clear(void);
+

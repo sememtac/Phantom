@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <stdio.h>
 #include <math.h>
+#include "vg_cockpit.h"
 
 uint32_t g_hud_radar = 0, g_hud_throttle = 0;
 
@@ -125,7 +126,7 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
 static void draw_missile_alert(void) {
     // Decided in the update -- range, cadence and beep together. See
     // update_alerts() in vg_game.cpp.
-    if (!vg.alerts.msl_lit) return;
+    if (!vg_cockpit.alerts.msl_lit) return;
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);
 }
@@ -136,7 +137,7 @@ static void draw_missile_alert(void) {
 // being ignored ends the run rather than costing some hull.
 static void draw_boundary_alert(void) {
     // Decided in the update, alongside the beep, so the two cannot drift apart.
-    if (!vg.alerts.wall_lit) return;
+    if (!vg_cockpit.alerts.wall_lit) return;
     hud_annunciator(128, "BOUNDARY", 2, COL_DANGER);
 }
 

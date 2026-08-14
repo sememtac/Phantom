@@ -145,6 +145,7 @@ void vg_game_init(void) {
     vg_threat_clear();
     vg_shake_clear();
     vg_cockpit_clear();
+    vg_wall_clear();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -325,7 +326,7 @@ void vg_match_start(void) {
     const uint32_t venue_seed = vg_replay_rand();
     vg_sky_generate((SkyKind)(venue_kind % (uint32_t)SKY_KINDS), venue_seed);
     vg_sky_set_reveal(0.0f);
-    vg.wall_clear = vg_arena_clearance(vg_arena_local_of(v3(0, 0, 0)));
+    vg_wall_seed();
 
     // One opponent, taken from the bracket. A match is strictly one on one --
     // the old "keep a fight going" respawn belonged to an endless survival mode
