@@ -31,6 +31,7 @@
 // the binary, and that would multiply by every hull the artist adds.
 // ===========================================================================
 #include "generated/canopy_set.h"
+#include "vg_canopy_draw.h"
 
 static const VgCanopy* const SET[SHIP_CLASSES] = {
     VG_CANOPY_SET_ROWS

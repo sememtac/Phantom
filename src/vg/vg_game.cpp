@@ -22,6 +22,7 @@
 #include "vg_replay.h"
 #include <math.h>
 #include <string.h>
+#include "vg_canopy_draw.h"
 
 // State machine, world step, spawning, player weapons and collisions. Geometry,
 // seeker guidance and enemy behaviour live in vg_models / vg_missile / vg_ai.

@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "vg_flight.h"
+#include "vg_canopy_draw.h"
 
 // THE SUBMIT COUNTERS, defined here because this file writes every one of them.
 // Declared in vg_prof.h, which says what each measures and what it may not be read

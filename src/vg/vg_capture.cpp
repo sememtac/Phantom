@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
+#include "vg_canopy_draw.h"
 
 // Off, or streaming. There used to be two capture modes the host could arm
 // directly and both are gone, because neither could hold 60fps and 60fps is the

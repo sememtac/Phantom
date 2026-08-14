@@ -21,6 +21,7 @@
 #include "vg_raster.h"
 #include "vg_canopy_set.h"
 #include <math.h>
+#include "vg_canopy_draw.h"
 
 // The state machine: the table, what arriving at each state sets up, the three
 // ways of getting to one, and the set turning on and off in between.

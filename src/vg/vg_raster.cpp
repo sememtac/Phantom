@@ -5,6 +5,7 @@
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 #include <math.h>
+#include "vg_canopy_draw.h"
 
 // The submit half. Everything here runs ONCE per frame and costs frame time
 // directly -- unlike the band raster in vg_band.cpp, which hides under DMA. Work

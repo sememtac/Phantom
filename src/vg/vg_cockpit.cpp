@@ -3,6 +3,7 @@
 #include "vg_sfx.h"
 #include "vg_raster.h"
 #include "vg_flight.h"
+#include "vg_canopy_draw.h"
 
 Cockpit vg_cockpit;
 

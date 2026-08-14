@@ -59,3 +59,7 @@ bool        vg_band_init(void);
 
 // How many band buffers there are, for the init report. See BAND_BUFS.
 int vg_band_bufs(void);
+
+// WHERE A BAND IS CUT for the two-core row split. Shared: the canopy, the scanlines and
+// the backdrop all take half a band each, and the canopy is in another unit now.
+enum { ROW_SPLIT = BAND_H / 2 };
