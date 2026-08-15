@@ -2,6 +2,120 @@
 #include "cfg_display.h"
 #include <string.h>
 
+#include "vg_states.h"
+#include "vg_sfx.h"
+
+TvState vg_tv;
+
+// SMOOTHSTEP, copied from vg_render.cpp rather than shared. It is four operations and a
+// clamp; publishing a header for it would be more coupling than the duplication costs.
+static inline float tv_smoothstep(float e0, float e1, float x) {
+    if (x <= e0) return 0.0f;
+    if (x >= e1) return 1.0f;
+    const float t = (x - e0) / (e1 - e0);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+void vg_tv_begin(uint8_t to) {
+    vg_tv.phase = TV_OUT;
+    vg_tv.to    = to;
+    vg_tv.t     = 0.0f;
+}
+
+void vg_tv_clear(void) {
+    vg_tv.phase = TV_NONE;
+    vg_tv.to    = 0;
+    vg_tv.t     = 0.0f;
+}
+
+bool vg_tv_step(float dt, void (*join)(uint8_t to)) {
+    bool joined = false;
+    if (vg_tv.phase == TV_NONE) return false;
+    vg_tv.t += dt;
+
+    if (vg_tv.phase == TV_OUT) {
+        if (vg_tv.t >= TV_OUT_TIME) { vg_tv.phase = TV_HOLD; vg_tv.t = 0.0f; }
+        return false;
+    }
+    if (vg_tv.phase == TV_HOLD) {
+        // THE SWITCH HAPPENS AT THE END OF THE DEAD AIR, not the start of it.
+        //
+        // Joining at the start would let the new scene run for a whole second
+        // behind a black screen -- and the first thing a scene does is start
+        // talking. The opening line of the ring course would have been a third
+        // spent before the picture existed to show it, which is a mistake already
+        // made once in this file's history and not worth making twice.
+        if (vg_tv.t >= TV_HOLD_TIME) {
+            // BEFORE the phase advances and before the sound, which is where
+            // tv_join() sat when this lived in vg_states.cpp. A state's enter hook runs
+            // inside this call, and moving it after TV_IN would let that hook see a
+            // different phase than it always has.
+            joined = true;
+            if (join) join(vg_tv.to);
+            vg_tv.phase = TV_IN;
+            vg_tv.t     = 0.0f;
+            // With the picture, not before it: the thump and the dot are the
+            // same moment, and hearing it during the dead air would put the
+            // sound of the set striking over a screen that is still black.
+            vg_sfx_play(SFX_TV_ON, 1.0f);
+        }
+        return joined;
+    }
+    if (vg_tv.t >= TV_IN_TIME) {
+        vg_tv.phase = TV_NONE;
+        vg_tv.t     = 0.0f;
+    }
+    return joined;
+}
+
+void vg_tv_apply(void) {
+    // Both directions are the same two phases, but
+    // they are not mirror images and each control has its own timing, which is
+    // why this is three curves and not one progress number.
+    //
+    // OUT: the picture fades, the aperture closes on it, and the scan band comes
+    // up as it goes -- so the last thing on screen is the band and not a shrunken
+    // copy of the scene. IN: the band is already lit, holds a moment, then opens
+    // while the picture comes back up underneath it.
+    if (vg_tv.phase == TV_NONE) {
+        vg_tv_set(1.0f, 1.0f, 0.0f, 0.0f);
+    } else if (vg_tv.phase == TV_HOLD) {
+        vg_tv_set(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
+    } else {
+        // ONE CURVE, RUN BOTH WAYS. `c` is how far the set is toward being off:
+        // 0 is a picture, 1 is a dot about to vanish. Going out it runs forward,
+        // coming back it runs in reverse, so the two are the same shape by
+        // construction rather than by two sets of numbers agreeing.
+        //
+        // They were separate before, and the turn-on had drifted into something
+        // else entirely -- the white resolving away before the bar had finished
+        // opening, which reads as two bands travelling apart rather than as one
+        // line growing out of the middle.
+        //
+        // Phases, in the order they happen going OUT:
+        //   the picture darkens                  dim  rises first
+        //   it collapses to the centre line      open falls, 0.05..0.62
+        //   what is left whitens                 wash rises
+        //   the line shortens to a dot and goes  wide falls, 0.62..1.00
+        //
+        // THE TWO SHRINKS DO NOT OVERLAP. They used to: the line began losing its
+        // width while it was still losing its height, so the dot phase was over
+        // in a couple of frames and read as a flash rather than as a motion.
+        // Handing the horizontal its own stretch of the curve -- more than a
+        // third of it -- is what makes a dot something the eye can follow out of
+        // the middle of the screen, and it costs the collapse nothing.
+        const float c = (vg_tv.phase == TV_OUT) ? (vg_tv.t / TV_OUT_TIME)
+                                                : (1.0f - vg_tv.t / TV_IN_TIME);
+        vg_tv_set(1.0f - tv_smoothstep(0.05f, 0.62f, c),
+                   1.0f - tv_smoothstep(0.62f, 1.00f, c),
+                   // Lit for essentially the whole of it. The kill at the very end
+                   // is what makes the dot go OUT rather than merely get small.
+                   tv_smoothstep(0.20f, 0.55f, c) * (1.0f - tv_smoothstep(0.985f, 1.0f, c)),
+                   tv_smoothstep(0.00f, 0.50f, c));
+    }
+}
+
+
 // The set turning on and off
 //
 // A picture that cuts straight from the menu to the cockpit is a scene change.

@@ -22,6 +22,7 @@
 #include "vg_canopy_set.h"
 #include <math.h>
 #include "vg_canopy_draw.h"
+#include "vg_tv.h"
 
 // The state machine: the table, what arriving at each state sets up, the three
 // ways of getting to one, and the set turning on and off in between.
@@ -34,11 +35,7 @@
 // every time, so the title screen is a place rather than a random wash. See
 // vg_sky_menu -- it is free unless a venue has displaced it, so moving between
 // the title, the bracket and the repair screen costs nothing.
-TvState vg_tv;
-
-void vg_tv_clear(void) {
-    vg_tv = TvState{};
-}
+// TvState vg_tv and vg_tv_clear moved to vg_tv.cpp, with the clock that drives them.
 
 void vg_use_menu_sky(void) {
     vg_sky_menu();
@@ -374,9 +371,7 @@ void vg_state_cut(VgState to) {
     // never does either.
     vg_ift_clear();
     vg_sfx_play(SFX_TV_OFF, 1.0f);
-    vg_tv.phase = TV_OUT;
-    vg_tv.to    = (uint8_t)to;
-    vg_tv.t     = 0.0f;
+    vg_tv_begin((uint8_t)to);
 }
 
 // Runs at the JOIN, with the screen black. The set-up a state needs happens here
@@ -394,41 +389,13 @@ void vg_state_update(float dt, const VgInput* in, const Tap* tap) {
     if (d->update) d->update(dt, in, tap);
 }
 
-static void tv_join(void) {
-    vg_state_go((VgState)vg_tv.to);
+static void tv_join(uint8_t to) {
+    vg_state_go((VgState)to);
 }
 
 void vg_tv_update(float dt) {
-    if (vg_tv.phase == TV_NONE) return;
-    vg_tv.t += dt;
-
-    if (vg_tv.phase == TV_OUT) {
-        if (vg_tv.t >= TV_OUT_TIME) { vg_tv.phase = TV_HOLD; vg_tv.t = 0.0f; }
-        return;
-    }
-    if (vg_tv.phase == TV_HOLD) {
-        // THE SWITCH HAPPENS AT THE END OF THE DEAD AIR, not the start of it.
-        //
-        // Joining at the start would let the new scene run for a whole second
-        // behind a black screen -- and the first thing a scene does is start
-        // talking. The opening line of the ring course would have been a third
-        // spent before the picture existed to show it, which is a mistake already
-        // made once in this file's history and not worth making twice.
-        if (vg_tv.t >= TV_HOLD_TIME) {
-            tv_join();
-            vg_tv.phase = TV_IN;
-            vg_tv.t     = 0.0f;
-            // With the picture, not before it: the thump and the dot are the
-            // same moment, and hearing it during the dead air would put the
-            // sound of the set striking over a screen that is still black.
-            vg_sfx_play(SFX_TV_ON, 1.0f);
-        }
-        return;
-    }
-    if (vg_tv.t >= TV_IN_TIME) {
-        vg_tv.phase = TV_NONE;
-        vg_tv.t     = 0.0f;
-    }
+    // The transition owns its clock; the join is a state change and that is ours.
+    vg_tv_step(dt, tv_join);
 }
 
 // ===========================================================================

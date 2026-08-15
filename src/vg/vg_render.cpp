@@ -299,50 +299,10 @@ void vg_render_frame(const VgInput* in, float fps) {
     // paying twice for a problem that is being solved once.
     vg_canopy_alarm(tint, white);
 
-    // The set turning on and off. Both directions are the same two phases, but
-    // they are not mirror images and each control has its own timing, which is
-    // why this is three curves and not one progress number.
-    //
-    // OUT: the picture fades, the aperture closes on it, and the scan band comes
-    // up as it goes -- so the last thing on screen is the band and not a shrunken
-    // copy of the scene. IN: the band is already lit, holds a moment, then opens
-    // while the picture comes back up underneath it.
-    if (vg_tv.phase == TV_NONE) {
-        vg_tv_set(1.0f, 1.0f, 0.0f, 0.0f);
-    } else if (vg_tv.phase == TV_HOLD) {
-        vg_tv_set(0.0f, 0.0f, 0.0f, 1.0f);      // dead air
-    } else {
-        // ONE CURVE, RUN BOTH WAYS. `c` is how far the set is toward being off:
-        // 0 is a picture, 1 is a dot about to vanish. Going out it runs forward,
-        // coming back it runs in reverse, so the two are the same shape by
-        // construction rather than by two sets of numbers agreeing.
-        //
-        // They were separate before, and the turn-on had drifted into something
-        // else entirely -- the white resolving away before the bar had finished
-        // opening, which reads as two bands travelling apart rather than as one
-        // line growing out of the middle.
-        //
-        // Phases, in the order they happen going OUT:
-        //   the picture darkens                  dim  rises first
-        //   it collapses to the centre line      open falls, 0.05..0.62
-        //   what is left whitens                 wash rises
-        //   the line shortens to a dot and goes  wide falls, 0.62..1.00
-        //
-        // THE TWO SHRINKS DO NOT OVERLAP. They used to: the line began losing its
-        // width while it was still losing its height, so the dot phase was over
-        // in a couple of frames and read as a flash rather than as a motion.
-        // Handing the horizontal its own stretch of the curve -- more than a
-        // third of it -- is what makes a dot something the eye can follow out of
-        // the middle of the screen, and it costs the collapse nothing.
-        const float c = (vg_tv.phase == TV_OUT) ? (vg_tv.t / TV_OUT_TIME)
-                                                : (1.0f - vg_tv.t / TV_IN_TIME);
-        vg_tv_set(1.0f - smoothstep(0.05f, 0.62f, c),
-                   1.0f - smoothstep(0.62f, 1.00f, c),
-                   // Lit for essentially the whole of it. The kill at the very end
-                   // is what makes the dot go OUT rather than merely get small.
-                   smoothstep(0.20f, 0.55f, c) * (1.0f - smoothstep(0.985f, 1.0f, c)),
-                   smoothstep(0.00f, 0.50f, c));
-    }
+    // The set turning on and off. The curve that turns the schedule into the four
+    // controls moved to vg_tv.cpp -- it was forty lines of transition presentation in the
+    // renderer, and the renderer's business is the ORDER things are drawn in.
+    vg_tv_apply();
 
     vg_rast_begin_frame();
 
