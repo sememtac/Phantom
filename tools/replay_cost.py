@@ -200,14 +200,28 @@ def run(port, path, limit):
     # Four bytes, because a replay in progress is not reading commands: vg_replay_next owns
     # the stream and reads a four-byte record tag, so a lone 'E' left the device waiting out
     # a 30-second timeout before it would end.
-    link.ser.write(b"EEEE")
-    link.ser.flush()
-    time.sleep(0.5)
+    # NOT SENT FROM HERE ANY MORE. This handle has just carried about eleven thousand
+    # operations and the LAST WRITE on it is where this tool actually crashed -- proved by
+    # a run whose log ends on the line above and never reaches the next stage.
+    #
+    # os._exit was tried first, on the theory that pyserial's teardown was the fault. It is
+    # not: the process never got as far as teardown. The four bytes go from the fetch
+    # process instead, which opens a fresh handle moments later and has carried nothing.
 
-    # COLLECTED BY A SEPARATE PROCESS, not here. See fetch() for why -- in short, this
-    # handle has just carried eleven thousand operations and cannot be read afterwards.
-    link.close()
-    return None
+    # AND GO WITHOUT CLOSING IT. The handle has just carried about eleven thousand
+    # operations, and pyserial's teardown on one that large is where this tool segfaulted --
+    # after every frame was drawn, so the run was complete and the exit code said otherwise.
+    #
+    # fetch()'s docstring has said since it was written that "the interpreter dies on exit"
+    # and that a fresh process is the only thing that reliably reads a device afterwards.
+    # os._exit was the fix, and it was applied to the FETCH branch only -- the half that had
+    # carried a few hundred operations rather than eleven thousand.
+    #
+    # So this half gets it too, and the port is released by the process ending rather than
+    # by the serial layer unwinding. The OS closes the handle either way; only one of the
+    # two routes crashes.
+    sys.stdout.flush()
+    os._exit(0)
 
 
 def fetch(port):
@@ -229,6 +243,20 @@ def fetch(port):
     the port, the open does not reset and the answer is there.
     """
     ser = open_quiet(port, timeout=0.5)
+
+    # END THE REPLAY FROM HERE, on a handle that has carried nothing.
+    #
+    # Any four bytes that are not "PHRP" end it; the device tests the mismatch, not the
+    # content. A lone 'E' is one quarter of a record tag, so the device would sit out its
+    # thirty second timeout before deciding the session was over.
+    #
+    # This must not reset the board -- a reset clears the sums this is here to collect --
+    # and it does not, because the run process closed the port moments ago. That timing is
+    # the same one fetch() has always depended on.
+    ser.write(b"EEEE")
+    ser.flush()
+    time.sleep(0.5)
+
     ser.reset_input_buffer()
     ser.write(b"c")
     ser.flush()
@@ -308,14 +336,55 @@ def main():
                     help="stop after this many frames (default: the whole session)")
     ap.add_argument("--save", metavar="FILE", help="write the result")
     ap.add_argument("--against", metavar="FILE", help="compare with a saved result")
+    ap.add_argument("--run-only", action="store_true",
+                    help=argparse.SUPPRESS)   # internal: the half that drives the session
     ap.add_argument("--fetch", action="store_true",
                     help="do not run; just read the last run's result off the device")
     a = ap.parse_args()
 
     if a.fetch:
         r = fetch(a.port)
+    elif a.run_only:
+        run(a.port, a.session, a.frames)   # never returns; see the end of run()
+        return
     else:
-        run(a.port, a.session, a.frames)
+        # THREE PROCESSES, AND EACH ONE EXISTS FOR A CRASH.
+        #
+        # This one never opens the port at all. It starts the run, waits for it, then asks
+        # for the answer -- so the only process that touches a handle carrying a full
+        # session is one whose whole job is to die immediately afterwards.
+        #
+        # It was two processes, and the parent did the run itself. That parent then had to
+        # unwind pyserial on an exhausted handle, which is a segfault about one run in four:
+        # every frame drawn, the report never printed, exit code 139.
+        # -u ON THE CHILD, and it is not a nicety.
+        #
+        # Its stdout is a pipe, so Python block-buffers it: the progress lines sat in the
+        # child's buffer for the whole five minutes and this process printed NOTHING until
+        # the child exited. A run that emits nothing for five minutes looks dead to
+        # anything supervising it, and gets reaped -- which showed up as rc=127 with an
+        # empty log, only ever on FULL runs in the background. A 400-frame run finished
+        # before it mattered; the two-process design printed progress from here and never
+        # hit it at all.
+        argv = [sys.executable, "-u", os.path.abspath(__file__),
+                a.session, "--port", a.port, "--run-only"]
+        if a.frames:
+            argv += ["--frames", str(a.frames)]
+        # PIPED AND RE-EMITTED, not inherited. Inheriting this process's stdout is the
+        # obvious way to keep the progress line live, and it works from a terminal and
+        # fails when something else owns the handle -- a background runner, a redirect
+        # set up by a harness -- where the child cannot inherit it and dies before it
+        # starts. That showed up as five identical runs exiting 127 with empty logs,
+        # which reads exactly like "python not found" and is not that at all.
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+        rc = proc.wait()
+        if rc != 0:
+            sys.exit(rc)
+
         # A FRESH PROCESS FOR THE ANSWER. Re-running this file with --fetch is the only
         # thing that reliably reads a device after a full session; doing it in-process
         # crashes, whether on the same handle or a reopened one.
