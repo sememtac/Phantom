@@ -7,6 +7,7 @@
 #include "vg_glitch.h"
 #include <stdio.h>
 #include <math.h>
+#include "vg_comms.h"
 
 // Full-screen state overlays: the title card, the damage vignette, and the
 // between-states text. Deliberately separate from the HUD -- these appear and
@@ -372,8 +373,8 @@ void vg_draw_overlays(void) {
         //
         // An unwritten slot sets its bit and posts nothing, so the card appears at
         // once -- which is the right behaviour for a line that does not exist yet.
-        const bool said_you = (vg.ift_fired & (1u << IFT_INTRO_YOU)) && vg.ift_t <= 0.0f;
-        const bool said_opp = (vg.ift_fired & (1u << IFT_INTRO_OPP)) && vg.ift_t <= 0.0f;
+        const bool said_you = (vg_bcast.ift_fired & (1u << IFT_INTRO_YOU)) && vg_bcast.ch[BC_IFT].t <= 0.0f;
+        const bool said_opp = (vg_bcast.ift_fired & (1u << IFT_INTRO_OPP)) && vg_bcast.ch[BC_IFT].t <= 0.0f;
 
         if (said_you && t > INTRO_DRIFT && t < INTRO_YOU_END) {
             centred(360, vg.callsign, INK_MAX, 5);

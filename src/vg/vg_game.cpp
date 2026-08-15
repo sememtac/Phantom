@@ -24,6 +24,7 @@
 #include <string.h>
 #include "vg_canopy_draw.h"
 #include "vg_tv.h"
+#include "vg_comms.h"
 
 // State machine, world step, spawning, player weapons and collisions. Geometry,
 // seeker guidance and enemy behaviour live in vg_models / vg_missile / vg_ai.
@@ -148,6 +149,7 @@ void vg_game_init(void) {
     vg_shake_clear();
     vg_cockpit_clear();
     vg_wall_clear();
+    vg_bcast_clear_all();
     vg_sky_init();
     vg_sky_menu();   // we boot straight into the menu, and the menu has a sky
 
@@ -254,7 +256,7 @@ void vg_match_start(void) {
     // Every round is its own broadcast, so the announcer's one-shot flags clear
     // here rather than at boot. Clearing them at boot only would have introduced
     // the fighters once and then gone quiet for the rest of the tournament.
-    vg.ift_fired   = 0;
+    vg_bcast.ift_fired   = 0;
     // Properly, queue included. This used to zero the timer and leave the
     // indices, which is the case vg_ift_queue's self-heal was written for.
     vg_ift_clear();
@@ -341,9 +343,9 @@ void vg_match_start(void) {
     // The countdown does not start until vg_cockpit.ready, so this is measured from a LIT PANEL rather
     // than from the top of the match -- which is why it can afford to be a real pause now
     // instead of the 1.4 s it was when it had to beat the boot.
-    vg.comms.line = nullptr;
-    vg.comms.t    = 0;
-    vg.comms.pri  = 0;
+    vg_bcast.ch[BC_PILOT].line = nullptr;
+    vg_bcast.ch[BC_PILOT].t    = 0;
+    vg_bcast.ch[BC_PILOT].pri  = 0;
     vg.taunt_t    = BOOT_FIRST_TAUNT;
 
     for (int i = 0; i < AST_TARGET_COUNT; i++) vg_spawn_asteroid();

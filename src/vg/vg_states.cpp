@@ -23,6 +23,7 @@
 #include <math.h>
 #include "vg_canopy_draw.h"
 #include "vg_tv.h"
+#include "vg_comms.h"
 
 // The state machine: the table, what arriving at each state sets up, the three
 // ways of getting to one, and the set turning on and off in between.
@@ -576,12 +577,12 @@ void vg_upd_intro(float dt, const VgInput* in, const Tap* tap) {
     // instruments rebooting over it. None of the snap is visible.
     // The broadcast introduces each fighter over its own shot. The cutscene
     // already hard-cuts between them, so the cues are the shot boundaries.
-    if (vg.state_t > INTRO_DRIFT && !(vg.ift_fired & (1u << IFT_INTRO_YOU))) {
-        vg.ift_fired |= (1u << IFT_INTRO_YOU);
+    if (vg.state_t > INTRO_DRIFT && !(vg_bcast.ift_fired & (1u << IFT_INTRO_YOU))) {
+        vg_bcast.ift_fired |= (1u << IFT_INTRO_YOU);
         vg_ift_line(IFT_INTRO_YOU);
     }
-    if (vg.state_t > INTRO_OPP_START && !(vg.ift_fired & (1u << IFT_INTRO_OPP))) {
-        vg.ift_fired |= (1u << IFT_INTRO_OPP);
+    if (vg.state_t > INTRO_OPP_START && !(vg_bcast.ift_fired & (1u << IFT_INTRO_OPP))) {
+        vg_bcast.ift_fired |= (1u << IFT_INTRO_OPP);
         vg_ift_line(IFT_INTRO_OPP);
     }
 
@@ -637,8 +638,8 @@ void vg_upd_kill(float dt, const VgInput* in, const Tap* tap) {
     // After the last transmission, not over it. KILL_SPEECH is exactly how
     // long the dying pilot holds the other slot, so this lands in the silence
     // that follows and runs on into the bracket redraw.
-    if (vg.state_t > KILL_SPEECH && !(vg.ift_fired & (1u << IFT_MATCH_END))) {
-        vg.ift_fired |= (1u << IFT_MATCH_END);
+    if (vg.state_t > KILL_SPEECH && !(vg_bcast.ift_fired & (1u << IFT_MATCH_END))) {
+        vg_bcast.ift_fired |= (1u << IFT_MATCH_END);
         vg_ift_line(IFT_MATCH_END);
     }
     if (vg.state_t > KILL_BEAT) {
@@ -801,7 +802,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
         vg.taunt_t -= dt;
         if (vg.taunt_t <= 0.0f) {
             vg.taunt_t = vg_frand(12.0f, 21.0f);
-            if (vg.comms.t <= 0.0f) {
+            if (vg_bcast.ch[BC_PILOT].t <= 0.0f) {
                 for (int i = 0; i < MAX_ENEMIES; i++)
                     if (vg.enemy[i].alive) { vg_comms_say(&vg.enemy[i], VOICE_TAUNT); break; }
             }

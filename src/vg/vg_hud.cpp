@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "vg_cockpit.h"
+#include "vg_comms.h"
 
 uint32_t g_hud_radar = 0, g_hud_throttle = 0;
 
@@ -76,26 +77,26 @@ static void draw_health(void) {
 // throttle covers anything down there. Nobody grips a screen by its top edge,
 // so the upper half is the part that is reliably visible.
 static void draw_comms(void) {
-    if (!vg.comms.line || vg.comms.t <= 0.0f) return;
+    if (!vg_bcast.ch[BC_PILOT].line || vg_bcast.ch[BC_PILOT].t <= 0.0f) return;
 
     // +4 so the tag block's top edge, not its baseline, lines up with the strip.
     const int   y  = THROTTLE_TOP + 4;
-    const bool  badge = vg.comms.mark;
-    const int   tw = badge ? vg_text_width(vg.comms.tag, 2) : 0;
+    const bool  badge = vg_bcast.ch[BC_PILOT].mark;
+    const int   tw = badge ? vg_text_width(vg_bcast.ch[BC_PILOT].tag, 2) : 0;
     const int   gap = badge ? 14 : 0;
-    const int   mw = vg_text_width(vg.comms.line, 2);
+    const int   mw = vg_text_width(vg_bcast.ch[BC_PILOT].line, 2);
     const int   x  = (SCR_W - (tw + gap + mw)) / 2;
 
     // A last transmission blinks. Brightness and blink are the whole vocabulary
     // here, and a death is the one line worth interrupting the player for.
-    const bool  dying = (vg.comms.pri == (uint8_t)VOICE_DEATH);
-    if (dying && fmodf(vg.comms.t, 0.44f) < 0.16f) return;
+    const bool  dying = (vg_bcast.ch[BC_PILOT].pri == (uint8_t)VOICE_DEATH);
+    if (dying && fmodf(vg_bcast.ch[BC_PILOT].t, 0.44f) < 0.16f) return;
 
     if (badge) {
         vg_fill_rect(x - 5, y - 4, tw + 10, 22, dying ? INK_MAX : INK);
-        vg_text(x, y, vg.comms.tag, INK_ONFILL, 2);
+        vg_text(x, y, vg_bcast.ch[BC_PILOT].tag, INK_ONFILL, 2);
     }
-    vg_text(x + tw + gap, y, vg.comms.line, dying ? INK_MAX : INK_BRIGHT, 2);
+    vg_text(x + tw + gap, y, vg_bcast.ch[BC_PILOT].line, dying ? INK_MAX : INK_BRIGHT, 2);
 }
 
 // A caution annunciator: a solid block with the label knocked out of it.
@@ -160,7 +161,7 @@ static void draw_boundary_alert(void) {
 // attract loop, where there is no HUD, and a mess in an actual match. This sits in
 // the clear band between the reticle at 240 and the radar.
 void vg_draw_ift(void) {
-    if (!vg.ift_line || vg.ift_t <= 0.0f) return;
+    if (!vg_bcast.ch[BC_IFT].line || vg_bcast.ch[BC_IFT].t <= 0.0f) return;
 
     const int y = 300;
     const int h = 46;
@@ -177,7 +178,7 @@ void vg_draw_ift(void) {
     // This works because the game is a duel. There is no third party and no
     // crowded channel: whoever started talking is still talking, and the only
     // question a badge ever answers is who just started.
-    const bool badge = vg.ift_mark;
+    const bool badge = vg_bcast.ch[BC_IFT].mark;
     const int mark_end = badge ? (8 + vg_text_width("IFT", 2) + 10 + 6) : 8;
 
     // Fit against the space the line can ACTUALLY use, which is everything right
@@ -189,9 +190,9 @@ void vg_draw_ift(void) {
     const int clear = SCR_W - mark_end - 10;
 
     int scale = 3;
-    if (vg_text_width(vg.ift_line, scale) > clear) scale = 2;
+    if (vg_text_width(vg_bcast.ch[BC_IFT].line, scale) > clear) scale = 2;
 
-    const int mw = vg_text_width(vg.ift_line, scale);
+    const int mw = vg_text_width(vg_bcast.ch[BC_IFT].line, scale);
 
     // Centred on the whole width while it fits, because that is where a caption
     // belongs. A line long enough to reach the mark is re-centred in the clear
@@ -212,7 +213,7 @@ void vg_draw_ift(void) {
     vg_fill_rect(0, y + h - HUD_STROKE, SCR_W, HUD_STROKE, COL_IFT);
     // Vertically centred on the band whichever size it ended up at: a glyph is
     // 7 rows tall before scaling.
-    vg_text(mx, y + (h - 7 * scale) / 2, vg.ift_line, COL_IFT, scale);
+    vg_text(mx, y + (h - 7 * scale) / 2, vg_bcast.ch[BC_IFT].line, COL_IFT, scale);
 
     // The mark, inverse-video at the left, where a callsign block sits on the
     // pilots' channel. First line of a run only.

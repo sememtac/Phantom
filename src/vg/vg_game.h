@@ -431,32 +431,10 @@ struct VgGame {
     MslEvent msl_queue[6];
     uint8_t  msl_qn;
 
-    // Radio. One line at a time, held by priority so a death cry is never
-    // stepped on by the next round going wide.
-    struct {
-        char        tag[4];
-        const char* line;
-        float       t;
-        uint8_t     pri;
-        bool        mark;    // this line opens a run, so it is badged
-        float       since;   // seconds since the last transmission began
-    } comms;
+    // The radio moved to vg_comms.h as Broadcast vg_bcast, on channels. It was three
+    // blocks of fields here with three sets of rules; adding a fourth voice is now an enum
+    // entry and a table row.
 
-    // The broadcast voice, on its OWN slot rather than sharing the pilots'.
-    //
-    // Sharing was the obvious thing and it breaks at the one moment that matters:
-    // after a kill the dying pilot holds the comms slot for KILL_SPEECH, which is
-    // exactly when the IFT is supposed to be summing up. Two slots let them
-    // overlap on purpose, and a loser still talking under the summary is the tone
-    // of the whole tournament.
-    //
-    // No priority field. The IFT never interrupts itself -- it speaks between
-    // fights, never during one, so a later line simply replaces an earlier one.
-    const char* ift_line;
-    float       ift_t;
-    // One bit per IftSlot, so each line fires once per match rather than every
-    // frame its cue is true.
-    uint8_t     ift_fired;
 
     // What PAUSE suspended. Pause is reachable from more than one state now, so
     // resuming has to put the player back where they were rather than assuming a
@@ -478,10 +456,6 @@ struct VgGame {
     // and read by both the camera and the panel, so the two cannot drift apart.
     float       buzz;
 
-    // Whether this line is the one that OPENS a run of speech, and so carries
-    // the speaker's badge. A continuation does not: see the note on draw_comms()
-    // in vg_hud.cpp.
-    bool        ift_mark;
 
     // Looking aft. Held, never toggled: a pilot craning round is doing something
     // continuous and effortful, and a latch would leave a player flying blind

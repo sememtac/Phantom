@@ -1,4 +1,5 @@
 ﻿#include "vg_sim.h"
+#include "vg_comms.h"
 #include "vg_sfx.h"
 #include "vg_tourney.h"
 #include <stdio.h>
@@ -11,22 +12,92 @@
 // module rather than two is that both are QUEUES WITH PRIORITY served by a single
 // tick, and every bug either of them has ever had was about what displaces what.
 
+
+Broadcast vg_bcast;
+
+// ONE ROW PER CHANNEL, in BcastChan order. A new voice is a row here and an entry in the
+// enum -- which is the shape vg_event.h proved at two instances and the reason this is a
+// table rather than three sets of habits.
+const BcastSpec vg_bcast_spec[BC_CHANNELS] = {
+    // hold   arbitrate  badge
+    {  2.4f,  true,      true  },   // BC_PILOT -- two of them talk at once, so priority decides
+    {  0.0f,  false,     true  },   // BC_IFT   -- one speaker who waits his turn; callers set the hold
+    {  3.0f,  false,     true  },   // BC_MATCH -- reserved; the mechanism only
+};
+
+// THE GENERIC HALF, AND IT IS DELIBERATELY THIN.
+//
+// Arbitration, the slot, and the clock. What it does NOT do is decide whether a line opens
+// a run: that rule is different for every voice -- a pilot's last transmission is never a
+// continuation however fast it followed the last one -- and generalising it is exactly how
+// "the callsign never appears again after the first" comes back. Callers decide `mark` and
+// hand it in.
+bool vg_bcast_post(BcastChan c, const char* line, const char* tag, float hold, uint8_t pri) {
+    if (c >= BC_CHANNELS || !line) return false;
+    BcastSlot* sl = &vg_bcast.ch[c];
+    const BcastSpec* sp = &vg_bcast_spec[c];
+
+    // Strict '>' so an equal event still refreshes: two hits in a row should read as two.
+    if (sp->arbitrate && sl->t > 0.0f && sl->pri > pri) return false;
+
+    sl->line  = line;
+    sl->t     = (hold > 0.0f) ? hold : sp->hold;
+    sl->pri   = sp->arbitrate ? pri : 0;
+    sl->since = 0.0f;
+    if (tag) {
+        sl->tag[0] = tag[0]; sl->tag[1] = tag[1]; sl->tag[2] = tag[2]; sl->tag[3] = 0;
+    } else {
+        sl->tag[0] = 0;
+    }
+    return true;
+}
+
+void vg_bcast_clear(BcastChan c) {
+    if (c >= BC_CHANNELS) return;
+    vg_bcast.ch[c] = BcastSlot{};
+}
+
+// Everything off the air. For vg_game_init, which begin_record restarts the game through --
+// these slots relied on the memset of vg until they left it.
+void vg_bcast_clear_all(void) {
+    for (int i = 0; i < BC_CHANNELS; i++) vg_bcast.ch[i] = BcastSlot{};
+    vg_bcast.ift_fired = 0;
+}
+
+bool vg_bcast_live(BcastChan c) {
+    return c < BC_CHANNELS && vg_bcast.ch[c].line && vg_bcast.ch[c].t > 0.0f;
+}
+
+// Every channel's clock, in one place. `since` runs whether or not the channel is speaking,
+// because it measures the gap BETWEEN lines and that is what run detection needs.
+void vg_bcast_step(float dt) {
+    for (int i = 0; i < BC_CHANNELS; i++) {
+        BcastSlot* sl = &vg_bcast.ch[i];
+        sl->since += dt;
+        if (sl->t > 0.0f) {
+            sl->t -= dt;
+            if (sl->t <= 0.0f) { sl->line = nullptr; sl->pri = 0; }
+        }
+    }
+}
+
 void vg_comms_say(const Ship* s, VoiceEvent ev) {
     if (!s) return;
     // VoiceEvent is ordered by weight -- taunt, fire, hurt, death -- so the
     // enum value doubles as the priority and a strict '>' means an equal event
     // still refreshes. Two hits in a row should read as two.
-    if (vg.comms.t > 0.0f && vg.comms.pri > (uint8_t)ev) return;
+    if (vg_bcast.ch[BC_PILOT].t > 0.0f && vg_bcast.ch[BC_PILOT].pri > (uint8_t)ev) return;
 
     const uint32_t pick = (uint32_t)(vg_frand01() * 997.0f);
+    const char* line = nullptr;
 
     // Once the name is yours, rivals sometimes stop taunting and start
     // recognising. Taunts only -- a pilot bleeding out does not pause to admire
     // your reputation, and their own last words matter more than your legend.
     if (ev == VOICE_TAUNT && vg.champion && (pick & 1u))
-        vg.comms.line = vg_voice_champion_line(pick >> 1);
+        line = vg_voice_champion_line(pick >> 1);
     else
-        vg.comms.line = vg_voice_line(s->voice, ev, pick);
+        line = vg_voice_line(s->voice, ev, pick);
     // Badge this line unless it is genuinely CARRYING ON from the last one.
     //
     // The test used to be "is the previous line still on screen", and a pilot's
@@ -44,22 +115,20 @@ void vg_comms_say(const Ship* s, VoiceEvent ev) {
     // the one reliably losing it. It is not the end of a sentence somebody was
     // already saying. It is a different kind of statement, and it is the last
     // thing that pilot ever says.
-    const bool same_voice = (vg.comms.tag[0] == s->tag[0]
-                          && vg.comms.tag[1] == s->tag[1]
-                          && vg.comms.tag[2] == s->tag[2]);
-    vg.comms.mark  = (ev == VOICE_DEATH)
-                  || !(same_voice && vg.comms.since < 0.7f);
-    vg.comms.since = 0.0f;
-
-    vg.comms.tag[0] = s->tag[0];
-    vg.comms.tag[1] = s->tag[1];
-    vg.comms.tag[2] = s->tag[2];
-    vg.comms.tag[3] = 0;
-    vg.comms.pri = (uint8_t)ev;
+    const bool same_voice = (vg_bcast.ch[BC_PILOT].tag[0] == s->tag[0]
+                          && vg_bcast.ch[BC_PILOT].tag[1] == s->tag[1]
+                          && vg_bcast.ch[BC_PILOT].tag[2] == s->tag[2]);
+    // DECIDED HERE AND APPLIED AFTER THE POST. vg_bcast_post does the slot, the clock and
+    // the arbitration; whether a line opens a run is pilot policy -- a last transmission
+    // never continues anything -- and generalising it is how the callsign went missing.
+    const bool opens = (ev == VOICE_DEATH)
+                    || !(same_voice && vg_bcast.ch[BC_PILOT].since < 0.7f);
     // A last transmission is left up far longer. It is the only line the player
     // cannot provoke a second time, and the round is already decided -- there is
     // nothing it can be competing with.
-    vg.comms.t = (ev == VOICE_DEATH) ? KILL_SPEECH : 2.4f;
+    vg_bcast_post(BC_PILOT, line, s->tag,
+                  (ev == VOICE_DEATH) ? KILL_SPEECH : 0.0f, (uint8_t)ev);
+    vg_bcast.ch[BC_PILOT].mark = opens;
 
     // The radio opening, not the words. A last transmission gets a lower blip --
     // the only thing distinguishing it by ear, and it should not sound routine.
@@ -89,9 +158,9 @@ static float s_ift_gap = 0.0f;   // silence owed before the next line
 
 static void ift_pop(bool opens_run) {
     if (s_ift_i >= s_ift_n) { s_ift_n = s_ift_i = 0; return; }
-    vg.ift_line = s_ift_q[s_ift_i];
-    vg.ift_t    = s_ift_hold[s_ift_i];
-    vg.ift_mark = opens_run;
+    vg_bcast.ch[BC_IFT].line = s_ift_q[s_ift_i];
+    vg_bcast.ch[BC_IFT].t    = s_ift_hold[s_ift_i];
+    vg_bcast.ch[BC_IFT].mark = opens_run;
     // EVERY line is announced, because every line is a system message. The
     // opener gets the full double beat and the lines continuing it get the short
     // form -- the distinction the badge draws visually, drawn again by ear.
@@ -101,12 +170,12 @@ static void ift_pop(bool opens_run) {
 
 // Off the air: the line showing, the gap owed, and everything still queued.
 //
-// The whole queue, not just the timer. Zeroing vg.ift_t alone leaves the
+// The whole queue, not just the timer. Zeroing vg_bcast.ch[BC_IFT].t alone leaves the
 // indices saying there is more to read, and the next caller to queue anything
 // inherits the leftovers.
 void vg_ift_clear(void) {
-    vg.ift_line = nullptr;
-    vg.ift_t    = 0.0f;
+    vg_bcast.ch[BC_IFT].line = nullptr;
+    vg_bcast.ch[BC_IFT].t    = 0.0f;
     s_ift_gap   = 0.0f;
     s_ift_n = s_ift_i = 0;
 }
@@ -117,9 +186,9 @@ void vg_ift_say(const char* line, float hold, bool badge) {
     // An immediate line cuts off anything queued. A broadcast that has moved on
     // must not have the tail of the last announcement surface behind it.
     s_ift_n = s_ift_i = 0;
-    vg.ift_line = line;
-    vg.ift_t    = hold;
-    vg.ift_mark = badge;
+    vg_bcast.ch[BC_IFT].line = line;
+    vg_bcast.ch[BC_IFT].t    = hold;
+    vg_bcast.ch[BC_IFT].mark = badge;
     // Same rule as the badge: an unbadged line is a caption on somebody else's
     // ship, and captions do not announce themselves.
     if (badge) vg_sfx_play(SFX_IFT, 1.0f);
@@ -132,7 +201,7 @@ void vg_ift_say(const char* line, float hold, bool badge) {
 int vg_ift_progress(void) { return s_ift_i; }
 
 bool vg_ift_busy(void) {
-    return (vg.ift_line && vg.ift_t > 0.0f) || s_ift_gap > 0.0f || s_ift_i < s_ift_n;
+    return (vg_bcast.ch[BC_IFT].line && vg_bcast.ch[BC_IFT].t > 0.0f) || s_ift_gap > 0.0f || s_ift_i < s_ift_n;
 }
 
 // Queued lines are COPIED. A caller composing each line in its own scratch
@@ -153,7 +222,7 @@ void vg_ift_queue(const char* line, float hold) {
     // A PENDING GAP IS NOT A DEAD RUN. Mid-announcement the channel is silent by
     // design, and without this second test the gap between two lines would look
     // exactly like abandonment and throw away the rest of what was being said.
-    if (vg.ift_t <= 0.0f && s_ift_gap <= 0.0f && s_ift_i < s_ift_n)
+    if (vg_bcast.ch[BC_IFT].t <= 0.0f && s_ift_gap <= 0.0f && s_ift_i < s_ift_n)
         s_ift_n = s_ift_i = 0;
 
     if (s_ift_n >= IFT_QUEUE_MAX) return;   // silently, rather than shouting over
@@ -162,7 +231,7 @@ void vg_ift_queue(const char* line, float hold) {
     s_ift_n++;
     // Nothing up and nothing owed, so this one starts talking -- and starting is
     // what earns the badge.
-    if (vg.ift_t <= 0.0f && s_ift_gap <= 0.0f) ift_pop(true);
+    if (vg_bcast.ch[BC_IFT].t <= 0.0f && s_ift_gap <= 0.0f) ift_pop(true);
 }
 
 // Everything the radio is doing this frame: the pilot channel timing out, the
@@ -194,18 +263,16 @@ void vg_comms_step(float dt) {
         }
     }
 
-    vg.comms.since += dt;
+    // EVERY channel's clock, in one call. The IFT's own queue still needs its gap handled
+    // below, which is the one thing the generic step cannot know about.
+    const bool ift_was_up = vg_bcast.ch[BC_IFT].t > 0.0f;
+    vg_bcast_step(dt);
 
-    if (vg.comms.t > 0) {
-        vg.comms.t -= dt;
-        if (vg.comms.t <= 0) { vg.comms.line = nullptr; vg.comms.pri = 0; }
-    }
-    if (vg.ift_t > 0) {
-        vg.ift_t -= dt;
+    if (ift_was_up) {
         // Down, then a beat of silence before whatever is next -- so a queued
         // announcement reads as consecutive beats rather than one paragraph.
-        if (vg.ift_t <= 0) {
-            vg.ift_line = nullptr;
+        if (vg_bcast.ch[BC_IFT].t <= 0) {
+            vg_bcast.ch[BC_IFT].line = nullptr;
             s_ift_gap   = (s_ift_i < s_ift_n) ? IFT_GAP : 0.0f;
         }
     } else if (s_ift_gap > 0.0f) {
