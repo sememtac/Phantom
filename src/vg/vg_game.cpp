@@ -273,8 +273,8 @@ void vg_match_start(void) {
     vg_cockpit.radio_t     = 0;
     vg_cockpit.regions_lit = 0;
     vg_canopy_intro_reset();
-    vg.msl_event   = MSL_NONE;
-    vg.msl_event_t = 0;
+    vg_cockpit.banner.ev   = MSL_NONE;
+    vg_cockpit.banner.t = 0;
     vg_trail.n     = 0;
     vg_trail.head  = 0;
     vg_trail.acc   = 0;

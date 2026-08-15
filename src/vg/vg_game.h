@@ -100,15 +100,7 @@ struct Ship {
     Vec3    trail[SHIP_TRAIL];
 };
 
-// What a player missile did, shown briefly in the middle of the screen. A
-// proximity-fused seeker is otherwise ambiguous -- a detonation nearby looks
-// identical whether it took a third of their hull or nothing at all.
-enum MslEvent : uint8_t {
-    MSL_NONE = 0,
-    MSL_MISSED,
-    MSL_HIT,
-    MSL_DESTROYED
-};
+// MslEvent moved to vg_cockpit.h with the banner it drives.
 
 // How long an outcome holds. Shortened when others are waiting, so a burst of
 // four resolves in about two and a half seconds rather than five.
@@ -418,18 +410,8 @@ struct VgGame {
     // is red, this one means something went off next to you and is not.
     float    blast_flash;
 
-    // The player's weapons. `rounds` rather than `missiles`, because the plural of
-    // the thing and the count of the thing being the same word is how you end up
-    // reading `vg.missiles` next to `vg.msl[]` and having to stop.
-    // The rack and the lock moved to vg_weapons.h as Weapons.
-
-    MslEvent msl_event;
-    float    msl_event_t;  // counts down; the banner shows while positive
-    // Every round the player fires must resolve into something the player is
-    // told. A single slot dropped outcomes whenever two shots landed close
-    // together, so pending ones queue behind the one on screen instead.
-    MslEvent msl_queue[6];
-    uint8_t  msl_qn;
+    // The missile banner moved to vg_cockpit.h. It is not a broadcast: it is the ship
+    // telling its own pilot what happened to a round, which is an instrument reading.
 
     // The radio moved to vg_comms.h as Broadcast vg_bcast, on channels. It was three
     // blocks of fields here with three sets of rules; adding a fourth voice is now an enum

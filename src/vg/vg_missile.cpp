@@ -2,6 +2,7 @@
 #include "vg_sfx.h"
 #include "vg_arena.h"
 #include <math.h>
+#include "vg_cockpit.h"
 
 // Seeker guidance. The whole missile duel rests on one rule -- a missile can only
 // pull so many degrees per second -- and on the seeker cone that turns falling
@@ -70,13 +71,13 @@ static void report(MslEvent e) {
     // happened -- the click belongs to the banner appearing, and a queued outcome
     // clicks when its turn comes.
     vg_sfx_play(SFX_MSL_EVENT, (e == MSL_DESTROYED) ? 0.7f : 1.0f);
-    if (vg.msl_event_t <= 0.0f) {
-        vg.msl_event   = e;
-        vg.msl_event_t = MSL_BANNER;
+    if (vg_cockpit.banner.t <= 0.0f) {
+        vg_cockpit.banner.ev   = e;
+        vg_cockpit.banner.t = MSL_BANNER;
         return;
     }
-    if (vg.msl_qn < (uint8_t)(sizeof(vg.msl_queue) / sizeof(vg.msl_queue[0])))
-        vg.msl_queue[vg.msl_qn++] = e;
+    if (vg_cockpit.banner.qn < (uint8_t)(sizeof(vg_cockpit.banner.queue) / sizeof(vg_cockpit.banner.queue[0])))
+        vg_cockpit.banner.queue[vg_cockpit.banner.qn++] = e;
 }
 
 static void detonate(Missile* m, bool hit) {

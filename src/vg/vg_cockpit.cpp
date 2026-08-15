@@ -4,6 +4,7 @@
 #include "vg_raster.h"
 #include "vg_flight.h"
 #include "vg_canopy_draw.h"
+#include "vg_cockpit.h"
 
 Cockpit vg_cockpit;
 
@@ -78,6 +79,25 @@ void vg_update_alerts(float dt, bool alive) {
 // happened. None of it is simulation -- the hull is not healing here, a light is
 // going out.
 void vg_hud_decay(float dt) {
+    // THE MISSILE BANNER, working through its own backlog. Here because it is exactly what
+    // this function is for -- what the panel is doing about something that already
+    // happened -- and it spent its life in the radio module for want of anywhere better.
+    if (vg_cockpit.banner.t > 0) {
+        vg_cockpit.banner.t -= dt;
+        if (vg_cockpit.banner.t <= 0) {
+            if (vg_cockpit.banner.qn > 0) {
+                vg_cockpit.banner.ev = vg_cockpit.banner.queue[0];
+                for (int i = 1; i < vg_cockpit.banner.qn; i++) vg_cockpit.banner.queue[i - 1] = vg_cockpit.banner.queue[i];
+                vg_cockpit.banner.qn--;
+                // Held briefly when more are stacked up, so a salvo reports
+                // itself out promptly instead of trailing the fight.
+                vg_cockpit.banner.t = vg_cockpit.banner.qn ? MSL_BANNER_FAST : MSL_BANNER;
+            } else {
+                vg_cockpit.banner.ev = MSL_NONE;
+            }
+        }
+    }
+
     // Faster than the damage vignette. A flash is the arrival of light, not a
     // state the cockpit sits in.
     if (vg.blast_flash > 0) {

@@ -247,21 +247,8 @@ void vg_ift_queue(const char* line, float hold) {
 // promoted, and a salvo therefore reports itself out promptly instead of
 // trailing the fight.
 void vg_comms_step(float dt) {
-    if (vg.msl_event_t > 0) {
-        vg.msl_event_t -= dt;
-        if (vg.msl_event_t <= 0) {
-            if (vg.msl_qn > 0) {
-                vg.msl_event = vg.msl_queue[0];
-                for (int i = 1; i < vg.msl_qn; i++) vg.msl_queue[i - 1] = vg.msl_queue[i];
-                vg.msl_qn--;
-                // Held briefly when more are stacked up, so a salvo reports
-                // itself out promptly instead of trailing the fight.
-                vg.msl_event_t = vg.msl_qn ? MSL_BANNER_FAST : MSL_BANNER;
-            } else {
-                vg.msl_event = MSL_NONE;
-            }
-        }
-    }
+    // The banner's countdown moved to vg_hud_decay: it is a panel timer, and this module
+    // stopped owning the panel when the banner stopped being a broadcast.
 
     // EVERY channel's clock, in one call. The IFT's own queue still needs its gap handled
     // below, which is the one thing the generic step cannot know about.

@@ -70,8 +70,8 @@ static void enter_attract(void) {
     vg_trail.n     = 0;
     vg_trail.head  = 0;
     vg_trail.acc   = 0;
-    vg.msl_event   = MSL_NONE;
-    vg.msl_event_t = 0;
+    vg_cockpit.banner.ev   = MSL_NONE;
+    vg_cockpit.banner.t = 0;
     vg_threat.on      = false;
     vg_wpn.target = -1;
     vg_wpn.locked      = false;

@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <string.h>
 #include <math.h>
+#include "vg_cockpit.h"
 
 // ===========================================================================
 // THE CANOPY, LIFTED WHOLE OUT OF vg_band.cpp

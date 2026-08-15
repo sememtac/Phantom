@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "vg_comms.h"
+#include "vg_cockpit.h"
 
 // Full-screen state overlays: the title card, the damage vignette, and the
 // between-states text. Deliberately separate from the HUD -- these appear and
@@ -103,11 +104,11 @@ static void draw_glitch_title(const char* s, int y, int scale, float a) {
 // their hull or nothing at all, and with damage now scaling by how close it went
 // off, "nothing at all" is a real outcome the player needs to see.
 static void draw_missile_banner(void) {
-    if (vg.msl_event == MSL_NONE || vg.msl_event_t <= 0.0f) return;
+    if (vg_cockpit.banner.ev == MSL_NONE || vg_cockpit.banner.t <= 0.0f) return;
 
     const char* s;
     uint16_t    col;
-    switch (vg.msl_event) {
+    switch (vg_cockpit.banner.ev) {
     case MSL_DESTROYED: s = "DESTROYED"; col = INK_MAX;    break;
     case MSL_HIT:       s = "HIT";       col = INK_BRIGHT; break;
     default:            s = "MISSED";    col = INK;        break;
@@ -115,8 +116,8 @@ static void draw_missile_banner(void) {
 
     // Blinks for the first moment, then holds. Inversion and blink are how this
     // interface shouts, so a kill announces itself without spending a hue.
-    if (vg.msl_event > MSL_MISSED && vg.msl_event_t > 0.75f &&
-        fmodf(vg.msl_event_t, 0.16f) < 0.08f)
+    if (vg_cockpit.banner.ev > MSL_MISSED && vg_cockpit.banner.t > 0.75f &&
+        fmodf(vg_cockpit.banner.t, 0.16f) < 0.08f)
         return;
 
     // Solid block with the label knocked out of it, the way an aircraft caution

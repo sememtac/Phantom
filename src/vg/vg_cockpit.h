@@ -1,6 +1,16 @@
 #pragma once
 #include "vg_game.h"
 
+// What a player missile did, shown briefly in the middle of the screen. A
+// proximity-fused seeker is otherwise ambiguous -- a detonation nearby looks
+// identical whether it took a third of their hull or nothing at all.
+enum MslEvent : uint8_t {
+    MSL_NONE = 0,
+    MSL_MISSED,
+    MSL_HIT,
+    MSL_DESTROYED
+};
+
 // ===========================================================================
 // THE COCKPIT'S OWN CLOCK
 //
@@ -64,6 +74,23 @@ struct Cockpit {
         float msl_ph,  wall_ph;
         bool  msl_lit, wall_lit;
     } alerts;
+
+    // WHAT HAPPENED TO THE LAST ROUND THE PLAYER FIRED.
+    //
+    // Not a broadcast, and it used to live with them. Nothing speaks here: the ship is
+    // telling its own pilot how a shot resolved, which is an instrument reading emitted BY
+    // the panel rather than received by it. Author's call, and it is the distinction that
+    // decides where every future readout goes.
+    //
+    // EVERY ROUND MUST RESOLVE INTO SOMETHING THE PLAYER IS TOLD. A single slot dropped
+    // outcomes whenever two shots landed close together, so pending ones queue behind the
+    // one on screen instead.
+    struct {
+        MslEvent ev;
+        float    t;          // counts down; the banner shows while positive
+        MslEvent queue[6];
+        uint8_t  qn;
+    } banner;
 };
 
 extern Cockpit vg_cockpit;
