@@ -57,10 +57,25 @@ WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
 
+# THE TREE, NOT JUST THE COMMIT.
+#
+# `git rev-parse HEAD` describes the last commit, not the build that was flashed, and three
+# separate measurements this week recorded a commit that did not contain what was measured:
+# a baseline stamped 32d84b6 for a build containing the surge, and a cost comparison that
+# printed "b9ad6ec -> b9ad6ec" because both runs read HEAD while the work sat uncommitted.
+#
+# Each one looks authoritative and names a build that never existed. A `+dirty` suffix is
+# not precise -- it cannot say WHICH changes -- but it is honest, and it is the difference
+# between a number you can trust and one you have to remember the provenance of.
 def git_commit():
     try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
-                                       stderr=subprocess.DEVNULL).decode().strip()
+        h = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                    stderr=subprocess.DEVNULL).decode().strip()
+        if not h:
+            return "unknown"
+        dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "src"],
+                                        stderr=subprocess.DEVNULL).decode().strip()
+        return h + ("+dirty" if dirty else "")
     except Exception:
         return "unknown"
 
