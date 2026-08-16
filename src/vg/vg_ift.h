@@ -33,6 +33,12 @@
 // the one register it has left, which is that it does not know either.
 // ===========================================================================
 
+// KEEP THIS UNDER NINE ENTRIES, or widen Broadcast::ift_fired with it.
+//
+// That field is one bit per slot in a uint8_t, and it is only ever used for the three lines
+// that must fire once per match -- so adding a tenth slot did not break anything and did not
+// warn either. `1u << IFT_SURGE` was 1 << 9 for as long as those two existed: it would have
+// silently done nothing had anyone used the bitmask on them.
 enum IftSlot : unsigned char {
     IFT_INTRO_YOU = 0,   // over the player's shot in the cutscene
     IFT_INTRO_OPP,       // over the opponent's shot
@@ -43,8 +49,6 @@ enum IftSlot : unsigned char {
     IFT_COURSE_DONE,
     IFT_ANOMALY,         // the arena has started to distort, mid-fight
     IFT_ANOMALY_END,     // ...and it is passing
-    IFT_SURGE,           // the instruments have stopped being trustworthy
-    IFT_SURGE_END,       // ...and they have come back
     IFT_SLOTS
 };
 

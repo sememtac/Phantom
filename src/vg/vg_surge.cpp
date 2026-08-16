@@ -1,6 +1,5 @@
 #include "vg_surge.h"
 #include "vg_event.h"
-#include "vg_ift.h"
 #include "vg_config.h"
 
 Surge vg_surge;
@@ -16,15 +15,19 @@ static void surge_apply(float amp) {
     vg_surge.level = amp;
 }
 
-// THE SECOND THING TO EARN THE BROADCAST A VOICE MID-FIGHT, and it earns it the same
-// narrow way the anomaly does: the player cannot read this off the instruments, because
-// the instruments are the thing that has gone wrong. A pilot would not say it either --
-// from inside the cockpit a bowing horizon and a real turn are the same picture.
+// IT SAYS NOTHING, and that is the author's decision about what the broadcast IS.
 //
-// The line text is the author's, in vg_ift.cpp. See IFT_SURGE.
-static void surge_announce(bool arriving) {
-    vg_ift_line(arriving ? IFT_SURGE : IFT_SURGE_END);
-}
+// It had a pair of lines and they were wrong. The IFT reports on the VENUE -- the arena
+// itself distorting is information the player cannot get anywhere else, and cannot read off
+// the instruments. A ship's own panel failing is not news: it is the player's problem, and
+// announcing it makes the broadcast an authority on the inside of somebody's cockpit.
+//
+// It also stopped a real annoyance. The two events are independent, so a match with both
+// produced four announcements over one fight, and the anomaly's two -- the only ones that
+// carry information -- were competing with two that did not.
+//
+// vg_event allows this: `announce` may be null for an event nobody announces. Nothing in
+// the mechanism had to change to make an event silent, which is the interface working.
 
 // Thirteen numbers in MatchEventSpec's order, all of them from cfg_events.h. Laid out on
 // the same lines as ANOM_SPEC in vg_anomaly.cpp so the two can be read side by side and a
@@ -38,7 +41,7 @@ static const MatchEventSpec SURGE_SPEC = {
     SURGE_ONSET_S,   SURGE_FADE_S,
     SURGE_PEAK_MIN,  SURGE_PEAK_MAX,
     surge_apply,
-    surge_announce,
+    nullptr,        // says nothing -- see above
 };
 
 static MatchEvent s_surge;
