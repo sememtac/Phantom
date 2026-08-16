@@ -23,9 +23,10 @@ void vg_tv_begin(uint8_t to) {
 }
 
 void vg_tv_clear(void) {
-    vg_tv.phase = TV_NONE;
-    vg_tv.to    = 0;
-    vg_tv.t     = 0.0f;
+    // The whole struct. A clear written as a list of fields does not complain when the
+    // struct grows past it -- Cockpit went three commits with three groups uncleared for
+    // exactly that reason.
+    vg_tv = TvState{};
 }
 
 bool vg_tv_step(float dt, void (*join)(uint8_t to)) {

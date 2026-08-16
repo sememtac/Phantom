@@ -24,7 +24,7 @@ void vg_shake_rumble(float amount) {
 
 void vg_shake_clear(void) {
     s_hit = s_want = s_rum = 0.0f;
-    vg_shake.x = vg_shake.y = 0.0f;
+    vg_shake = Shake{};   // the whole published half; see the note on vg_tv_clear
 }
 
 

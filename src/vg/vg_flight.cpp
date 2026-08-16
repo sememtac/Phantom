@@ -17,8 +17,7 @@ void vg_wall_seed(void) {
 }
 
 void vg_wall_clear(void) {
-    vg_wall.clearance = 0.0f;
-    vg_wall.rate      = 0.0f;
+    vg_wall = Wall{};   // the whole struct; see the note on vg_tv_clear
 }
 
 void vg_trail_clear(void) {
@@ -366,7 +365,7 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
             // touched. Flying through a fireball should look like it costs you
             // something even when it does not.
             const float g = DAMAGE_GLITCH * FIRE_GLITCH_K * deep;
-            if (g > vg.damage_glitch) vg.damage_glitch = g;
+            if (g > vg_cockpit.flash.glitch) vg_cockpit.flash.glitch = g;
         }
     }
 

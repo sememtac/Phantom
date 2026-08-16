@@ -91,6 +91,24 @@ struct Cockpit {
         MslEvent queue[6];
         uint8_t  qn;
     } banner;
+
+    // WHAT THE PANEL DOES WHEN THE SHIP IS HIT.
+    //
+    // Raised as events by whatever caused them and decayed here, which is the same shape the
+    // banner has and the reason all four ended up in one place: the raising is somebody
+    // else's business, the FADE is the panel's. See vg_hud_decay -- the hull is not healing
+    // there, a light is going out.
+    struct {
+        // You were hit, and it is red.
+        float hit;
+        // Light from an explosion NEARBY, 0..1. Distinct from `hit` on purpose: that one
+        // means you took it, this one means something went off next to you and is not red.
+        // Faster than the damage vignette too -- a flash is the arrival of light, not a
+        // state the cockpit sits in.
+        float blast;
+        // The picture tearing with damage.
+        float glitch;
+    } flash;
 };
 
 extern Cockpit vg_cockpit;

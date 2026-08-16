@@ -75,7 +75,7 @@ static void enter_attract(void) {
     vg_threat.on      = false;
     vg_wpn.target = -1;
     vg_wpn.locked      = false;
-    vg.hit_flash   = 0;
+    vg_cockpit.flash.hit   = 0;
     vg_shake_clear();
 }
 

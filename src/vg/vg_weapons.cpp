@@ -177,8 +177,8 @@ void vg_kill_player(void) {
     vg_sfx_play(SFX_EXPLODE, 0.8f);
     vg_sfx_play(SFX_HIT, 1.0f);
     vg.health        = 0.0f;
-    vg.hit_flash     = 0.6f;
-    vg.damage_glitch = DAMAGE_GLITCH;
+    vg_cockpit.flash.hit     = 0.6f;
+    vg_cockpit.flash.glitch = DAMAGE_GLITCH;
     vg_shake_hit(1.35f);   // a kill lands harder than a wound
     s_player_hit     = true;
 }
@@ -194,8 +194,8 @@ void vg_damage_player(float amount) {
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
     vg_sfx_play(SFX_HIT, 1.0f);
-    vg.hit_flash     = 0.6f;
-    vg.damage_glitch = DAMAGE_GLITCH;
+    vg_cockpit.flash.hit     = 0.6f;
+    vg_cockpit.flash.glitch = DAMAGE_GLITCH;
     vg_shake_hit(1.0f);    // THE reference knock: everything else is scaled to it
     s_player_hit = true;
 }

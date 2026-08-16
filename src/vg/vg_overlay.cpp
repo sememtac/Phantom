@@ -28,8 +28,8 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
 // to a rectangle of colour, and the one thing worth seeing at that moment is the
 // fireball itself.
 static void draw_blast_flash(void) {
-    if (vg.blast_flash <= 0) return;
-    float f = vg.blast_flash;
+    if (vg_cockpit.flash.blast <= 0) return;
+    float f = vg_cockpit.flash.blast;
     if (f > 1.0f) f = 1.0f;
     // Squared: the falloff already gives distant blasts a low value, and a
     // linear ramp let those sit as a permanent faint glow at the edges.
@@ -43,8 +43,8 @@ static void draw_blast_flash(void) {
 }
 
 static void draw_damage_vignette(void) {
-    if (vg.hit_flash <= 0) return;
-    float f = vg.hit_flash / 0.6f;
+    if (vg_cockpit.flash.hit <= 0) return;
+    float f = vg_cockpit.flash.hit / 0.6f;
     if (f > 1.0f) f = 1.0f;
     uint16_t c = vg_dim(COL_DANGER, f);
     const int t = 9;

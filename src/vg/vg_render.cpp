@@ -609,8 +609,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
 
     float hurt = 0.0f;
     if (live) {
-        if (vg.damage_glitch > 0.0f)
-            hurt = (vg.damage_glitch / DAMAGE_GLITCH) * (0.30f + 0.70f * wound);
+        if (vg_cockpit.flash.glitch > 0.0f)
+            hurt = (vg_cockpit.flash.glitch / DAMAGE_GLITCH) * (0.30f + 0.70f * wound);
         if (wound > DAMAGE_CHRONIC) {
             const float chronic = (wound - DAMAGE_CHRONIC)
                                 / (1.0f - DAMAGE_CHRONIC) * 0.34f;

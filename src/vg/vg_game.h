@@ -403,12 +403,9 @@ struct VgGame {
     // yaw instead of merely rotating the finished image. Accumulated because the
     // backdrop is not carried by that transform and has to be told the total.
     float    roll;
-    // The view offset moved to vg_shake.h as Shake, beside the level behind it.
-    float    hit_flash;
-    // Light from an explosion nearby, 0..1, raised by vg_spawn_blast and decayed
-    // in vg_world_step. Distinct from hit_flash: that one means YOU were hit and
-    // is red, this one means something went off next to you and is not.
-    float    blast_flash;
+    // hit_flash and blast_flash moved to vg_cockpit.h as flash.hit and flash.blast. They
+    // are what the PANEL does about a hit, not what the hull is; vg_hud_decay already
+    // faded them.
 
     // The missile banner moved to vg_cockpit.h. It is not a broadcast: it is the ship
     // telling its own pilot what happened to a round, which is an instrument reading.
@@ -446,26 +443,6 @@ struct VgGame {
 
     float       taunt_t;   // countdown to the next unprompted remark
 
-    // The player's ribbon moved to vg_flight.h as PlayerTrail. trail_hue did NOT:
-    // it is identity, and RpSave carries it into every recording.
-
-    // A ship nobody is flying: the one shown crossing the view during the
-    // launch cutscene, and the wreck the camera tumbles around after a death.
-    // Kept apart from the enemy array so neither the AI nor the collision pass
-    // can ever see it.
-    // Grouped, and the ship inside it is `ship`. It was a bare `cine` next to
-    // cine_on, cine_hold and five gate_ fields that all belonged to it, so the
-    // group had to take the noun and the Ship had to be named.
-    // The launch cutscene's state moved to vg_cine.h as CineState.
-
-    // THE BOOT CHAIN MOVED to vg_cockpit.h as Cockpit vg_cockpit. It was left here by
-    // item 2 for having no dominant owner, which was measured by counting all references
-    // rather than the ones that write -- and the renderer reads this group constantly
-    // because drawing is what it does.
-    // >0 while the systems are visibly hurt. Same failure language as the death
-    // screen, briefly and at lower severity -- damage and destruction are the
-    // same event at different scales, so they read as the same thing happening.
-    float    damage_glitch;
     float    cam_zoom;     // 1.0 in flight; only the cutscene moves it
 
     // The boundary pair moved to vg_flight.h as Wall vg_wall. Only the world step

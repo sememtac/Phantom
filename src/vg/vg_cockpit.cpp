@@ -11,11 +11,18 @@ Cockpit vg_cockpit;
 // The boot chain to zero. Called from vg_game_init, which is what begin_record restarts
 // the game through before a recording -- see the note in vg_cockpit.h.
 void vg_cockpit_clear(void) {
-    vg_cockpit.boot        = 0.0f;
-    vg_cockpit.cued        = false;
-    vg_cockpit.radio_t     = 0.0f;
-    vg_cockpit.regions_lit = 0;
-    vg_cockpit.ready       = false;
+    // THE WHOLE STRUCT, not a list of fields, and the list is why.
+    //
+    // This cleared five boot fields when the boot chain was all that lived here. Then the
+    // annunciators arrived, then the missile banner, then the three flashes -- and none of
+    // them was added, because a clear written as a list does not complain when the struct
+    // grows past it. Three groups went uncleared for three commits.
+    //
+    // It matters where the clear rule always matters: begin_record restarts the game
+    // through vg_game_init before every recording, so a match that ended with a banner up
+    // would have opened the next recording showing one. That reads as "the simulation is
+    // not deterministic" rather than as a field that stopped being zeroed.
+    vg_cockpit = Cockpit{};
 }
 
 // What the cockpit does about things that have already happened: the caution
@@ -100,13 +107,13 @@ void vg_hud_decay(float dt) {
 
     // Faster than the damage vignette. A flash is the arrival of light, not a
     // state the cockpit sits in.
-    if (vg.blast_flash > 0) {
-        vg.blast_flash -= dt * 4.2f;
-        if (vg.blast_flash < 0) vg.blast_flash = 0;
+    if (vg_cockpit.flash.blast > 0) {
+        vg_cockpit.flash.blast -= dt * 4.2f;
+        if (vg_cockpit.flash.blast < 0) vg_cockpit.flash.blast = 0;
     }
-    if (vg.hit_flash     > 0) vg.hit_flash     -= dt;
+    if (vg_cockpit.flash.hit     > 0) vg_cockpit.flash.hit     -= dt;
     if (vg_cockpit.boot      > 0) vg_cockpit.boot      -= dt;
-    if (vg.damage_glitch > 0) vg.damage_glitch -= dt;
+    if (vg_cockpit.flash.glitch > 0) vg_cockpit.flash.glitch -= dt;
     // The cockpit arriving, which belongs here for the same reason the rest does: it is what the
     // panel is doing, not what the ship is doing. It carries the ramp that follows the sequence
     // as well, so it has to be called past the end of it -- which is why the return is ignored.

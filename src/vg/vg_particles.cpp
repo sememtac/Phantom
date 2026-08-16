@@ -118,7 +118,7 @@ void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k) 
     const float rng = vlen(at);
     float lit = radius * 6.0f / (rng + 60.0f);
     if (lit > 0.85f) lit = 0.85f;
-    if (lit > vg.blast_flash) vg.blast_flash = lit;
+    if (lit > vg_cockpit.flash.blast) vg_cockpit.flash.blast = lit;
 
     // AND SO DOES THE PRESSURE. Its own curve rather than reusing the light's:
     // a flash carries much further than a knock does, so this falls off harder
@@ -135,7 +135,7 @@ void vg_spawn_blast(Vec3 at, float radius, int balls, int shards, float life_k) 
     // to be inside OF.
     if (knock > 0.75f) {
         const float g = DAMAGE_GLITCH * (knock - 0.75f) * 2.2f;
-        if (g > vg.damage_glitch) vg.damage_glitch = g;
+        if (g > vg_cockpit.flash.glitch) vg_cockpit.flash.glitch = g;
     }
 }
 

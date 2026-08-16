@@ -307,7 +307,7 @@ void vg_match_start(void) {
     vg_surge_begin_match((vt.round < 3) ? (float)vt.round / 3.0f : 1.0f);
     vg.bank        = 0;
     vg_shake_clear();
-    vg.hit_flash   = 0;
+    vg_cockpit.flash.hit   = 0;
     vg_wpn.rounds    = vg.spec->magazine;
     vg_wpn.reload_t    = 0.0f;          // a full rack is not reloading
     vg_wpn.fire_gap    = 0;
