@@ -4,6 +4,7 @@
 #include "vg_port.h"
 #include "vg_canopy.h"
 #include "vg_config.h"
+#include "vg_sim.h"   // vg_frand01
 #include <Arduino.h>
 #include <string.h>
 #include <math.h>
@@ -74,6 +75,10 @@ static bool     s_can_ready = false;
 // boot so it never happens in practice, but "never happens in practice" is not something to
 // dereference a pointer on -- and a missing cockpit should be a missing cockpit, not a crash.
 static const VgCanopy* s_can = nullptr;
+// The panel being looked through, worked out from the zone map when a drawing is selected
+// and never faulted. Beside s_can because it is a property OF the drawing -- see
+// canopy_find_centre.
+static int8_t s_centre_z = -1;
 
 // IS THE ARRIVAL SEQUENCE RUNNING. Declared HERE, beside the drawing, and not down with the
 // rest of the intro's state where it used to live -- because the two are coupled and the
@@ -447,6 +452,7 @@ static bool    s_warp_on = false;
 void vg_canopy_use(const VgCanopy* c) {
     if (c == s_can) return;
     s_can           = c;
+    s_centre_z      = -1;   // worked out lazily; this drawing's panels are elsewhere
     s_can_ready     = false;
     s_colcost_ready = false;
     s_wq            = -1;
@@ -775,6 +781,160 @@ static const uint8_t BAYER4[16] = {
 // A held pixel takes the zone's fill -- black before its flash, white during it -- so the same
 // loop serves both. That is the whole reason the flash is affordable across a region rather than
 // only across the frame: a flat fill is the cheapest thing this file does.
+// ---------------------------------------------------------------------------
+// A PANEL TAKING A HIT
+//
+// Per panel, one float. The gate below already fills a region's screen pixels with a
+// colour, dithered as it dissolves -- so the flash costs nothing new, and the static is
+// the same walk with a different value per pixel.
+// ---------------------------------------------------------------------------
+
+static float    s_hit_t[VG_CANOPY_MAX_ZONES];   // seconds left on this panel
+static bool     s_gate_on = false;              // the intro is running, or a panel is hit
+static uint32_t s_hit_seed = 0x9E3779B9u;       // advanced per frame, so static crawls
+
+// WHITE FOR THE FIRST PART, STATIC FOR THE REST, as a fraction of the hit's life. The
+// flash says WHERE and the static says the panel is still hurt -- one is a moment and the
+// other is a condition, and a flash that lasted the whole time would read as a lamp.
+#define CANOPY_HIT_TIME   1.60f
+#define CANOPY_HIT_FLASH  0.82f
+
+static inline uint32_t hit_hash(uint32_t x, uint32_t y, uint32_t s) {
+    uint32_t h = x * 0x9E3779B9u ^ y * 0x85EBCA6Bu ^ s;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
+    return h;
+}
+
+// ---------------------------------------------------------------------------
+// FAULTY PANELS
+// ---------------------------------------------------------------------------
+
+// How many panels are failing, worst first. A panel that has failed stays failed for the
+// match: the hull does not heal, so neither does the cockpit.
+static uint8_t s_fault_n   = 0;
+static uint8_t s_fault_z[VG_CANOPY_MAX_ZONES];
+
+// WHICH PANEL IS THE MIDDLE ONE, from the zone map, once per drawing.
+//
+// The centroid of each region against the centre of the screen. The artist paints regions
+// and never has to say which is the windscreen -- and a drawing whose panels move gets the
+// right answer without anyone remembering to update a constant.
+static void canopy_find_centre(void) {
+    s_centre_z = -1;
+    if (!s_can || s_can->zones <= 0) return;
+
+    uint32_t n[VG_CANOPY_MAX_ZONES] = { 0 };
+    uint32_t sx[VG_CANOPY_MAX_ZONES] = { 0 }, sy[VG_CANOPY_MAX_ZONES] = { 0 };
+
+    for (int lx = 0; lx < SCR_H; lx++) {
+        const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
+        const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
+        while (p + 3 <= e) {
+            const uint8_t h  = p[0];
+            const int     y0 = ((h & 1) << 8) | p[1];
+            const int     ln = ((h & 2) << 7) | p[2];
+            const int     z  = (h >> 2) & 15;
+            p += 3;
+            if (z >= s_can->zones || ln <= 0) continue;
+            n[z]  += (uint32_t)ln;
+            sx[z] += (uint32_t)lx * (uint32_t)ln;
+            sy[z] += (uint32_t)(y0 + ln / 2) * (uint32_t)ln;
+        }
+    }
+
+    float best = 1e30f;
+    for (int z = 0; z < s_can->zones; z++) {
+        if (!n[z]) continue;
+        const float cx = (float)sx[z] / (float)n[z] - (float)SCR_H * 0.5f;
+        const float cy = (float)sy[z] / (float)n[z] - (float)SCR_W * 0.5f;
+        const float d  = cx * cx + cy * cy;
+        if (d < best) { best = d; s_centre_z = (int8_t)z; }
+    }
+}
+
+// HOW BROKEN THE HULL HAS TO BE before a panel goes, and how many go by the end.
+//
+// Nothing until the hull is genuinely in trouble: a cockpit that starts failing at the
+// first scratch spends the whole match crying wolf, and the player stops reading it.
+#define CANOPY_FAULT_START  0.55f    // hull fraction at which the first panel goes
+#define CANOPY_FAULT_END    0.12f    // ...and at which as many as can be are gone
+
+void vg_canopy_damage(float hull_frac) {
+    if (!s_can || s_can->zones <= 0) return;
+    if (s_centre_z < 0) canopy_find_centre();
+
+    // Everything but the middle one may fail.
+    const int usable = (s_can->zones > 1) ? s_can->zones - 1 : 0;
+    if (!usable) return;
+
+    float t = (CANOPY_FAULT_START - hull_frac)
+            / (CANOPY_FAULT_START - CANOPY_FAULT_END);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    // ROUNDED UP, so the first panel fails AT the threshold rather than a third of the way
+    // past it. With four zones and one reserved, (int)(t * 3) needs t >= 1/3 before it
+    // reaches one -- which put the first failure at 41% hull while the constant said 55%.
+    int want = (int)(t * (float)usable + 0.9999f);
+    if (t <= 0.0f) want = 0;
+
+    // MONOTONIC. Panels are added and never removed, because repairs happen between
+    // matches and the hull fraction wobbles upward inside one for no reason the player
+    // would credit.
+    while (s_fault_n < want && s_fault_n < usable) {
+        int free_z[VG_CANOPY_MAX_ZONES];
+        int n = 0;
+        for (int z = 0; z < s_can->zones; z++) {
+            if (z == s_centre_z) continue;
+            bool taken = false;
+            for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) taken = true;
+            if (!taken) free_z[n++] = z;
+        }
+        if (!n) break;
+        s_fault_z[s_fault_n++] = (uint8_t)free_z[(int)(vg_frand01() * (float)n) % n];
+        s_gate_on = true;
+    }
+}
+
+void vg_canopy_hit_clear(void) {
+    s_fault_n  = 0;
+    s_centre_z = -1;
+    for (int i = 0; i < VG_CANOPY_MAX_ZONES; i++) s_hit_t[i] = 0.0f;
+    s_gate_on = s_intro_on;
+}
+
+void vg_canopy_hit(void) {
+    if (!s_can || s_can->zones <= 0) return;
+    // NOT ALREADY MARKED. Refreshing a panel that is already out would waste the hit and
+    // read as nothing happening; spreading it is what makes a second hit cost more view
+    // than the first.
+    int free_z[VG_CANOPY_MAX_ZONES];
+    int n = 0;
+    for (int z = 0; z < s_can->zones; z++)
+        if (s_hit_t[z] <= 0.0f) free_z[n++] = z;
+    if (!n) return;
+    const int z = free_z[(int)(vg_frand01() * (float)n) % n];
+    s_hit_t[z] = CANOPY_HIT_TIME;
+    s_gate_on  = true;
+}
+
+void vg_canopy_hit_step(float dt) {
+    bool any = false;
+    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) {
+        if (s_hit_t[z] > 0.0f) {
+            s_hit_t[z] -= dt;
+            if (s_hit_t[z] < 0.0f) s_hit_t[z] = 0.0f;
+            else                   any = true;
+        }
+    }
+    // Crawls rather than holding still: a static field that does not move is a texture.
+    s_hit_seed = s_hit_seed * 1664525u + 1013904223u;
+    // FAULTS COUNT TOO, and leaving them out was a bug that made the whole progression
+    // invisible: vg_canopy_damage set this true when a panel failed, this line cleared it
+    // on the very next frame, and the while loop in there never ran again because the fault
+    // was already recorded. A faulty panel drew for one frame and then never again.
+    s_gate_on  = any || s_intro_on || (s_fault_n > 0);
+}
+
 static __attribute__((noinline))
 void canopy_gate(uint16_t* row, int lx, int py) {
     const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
@@ -787,6 +947,50 @@ void canopy_gate(uint16_t* row, int lx, int py) {
         const int     z  = (h >> 2) & 15;
         p += 3;
         if (z >= s_can->zones) continue;
+
+        // A HIT PANEL IS DRAWN INSTEAD OF THE REGION'S NORMAL STATE, and takes the whole
+        // run: white while the flash lasts, then static that thins as it heals. The world
+        // behind it is simply gone for that long, which is the point -- the player has lost
+        // that piece of the view.
+        // A FAULTY PANEL, which is a condition rather than an event: mostly it works, and
+        // then it does not. The flicker is on the panel's OWN phase so two faulty panels do
+        // not blink together, which would read as the whole cockpit strobing.
+        bool faulty = false;
+        for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) faulty = true;
+        if (faulty) {
+            const uint32_t ph = hit_hash((uint32_t)z, 0u, s_hit_seed & ~0xFFu);
+            // Out for a short slice of each cycle, and occasionally for a long one.
+            const uint32_t beat = (s_hit_seed >> 3) + ph;
+            const bool out = ((beat & 0x3Fu) < 7u) || ((beat & 0x3FFu) < 40u);
+            if (out) {
+                uint16_t* qf = &row[y0];
+                for (int i = 0; i < n; i++) {
+                    const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
+                    if ((r & 0xFFu) < 190u)
+                        qf[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                }
+                continue;
+            }
+        }
+
+        const float ht = s_hit_t[z];
+        if (ht > 0.0f) {
+            uint16_t* qh = &row[y0];
+            if (ht > CANOPY_HIT_TIME * CANOPY_HIT_FLASH) {
+                for (int i = 0; i < n; i++) qh[i] = 0xFFFF;
+            } else {
+                // Thinning: as the hit heals, fewer pixels are taken, so the view comes
+                // back through the static rather than switching back on.
+                const uint32_t keep = (uint32_t)(255.0f * (ht / (CANOPY_HIT_TIME * CANOPY_HIT_FLASH)));
+                for (int i = 0; i < n; i++) {
+                    const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
+                    if ((r & 0xFFu) < keep)
+                        qh[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                }
+            }
+            continue;
+        }
+
         const uint32_t rev  = s_izon[z];
         if (rev >= 255u) continue;                  // this region is all the way in
         const uint16_t fill = s_ifill[z];
@@ -848,7 +1052,11 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // already drawn by the time this primitive runs and the instruments come after it, so
         // this is the one point in the band where blacking the view hides the world without
         // touching the panel. Rigid, so it uses the raw column and lands where the frame does.
-        if (INTRO) canopy_gate(row, SCR_H - 1 - py, py);
+        // RUNTIME, NOT THE TEMPLATE PARAMETER. The gate is wanted during the intro and
+        // whenever a panel is hit, and a hit happens while the warp is on -- which the
+        // intro never is. Keying it off INTRO would have needed a fourth instantiation of
+        // this template for warp-and-gate; one predictable branch a row is cheaper.
+        if (s_gate_on) canopy_gate(row, SCR_H - 1 - py, py);
         // The gate ran; the frame does not. See s_can_rear -- in rear view the world still
         // has to arrive region by region, and the cockpit still has to be absent.
         if (INTRO && s_can_rear) continue;
@@ -1126,7 +1334,7 @@ void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     // Aft with no sequence running: there is no frame to draw and no world to hold back, so
     // the whole pass is skipped. Checked here rather than at the submit site, because the
     // primitive still has to exist for the intro's gate to run.
-    if (s_can_rear && !s_intro_on) return;
+    if (s_can_rear && !s_gate_on) return;
     if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
     else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
     else                canopy_rows_t<false, false>(band, by0, r0, r1);

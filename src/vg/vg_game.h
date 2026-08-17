@@ -227,6 +227,12 @@ enum VgState : uint8_t {
 // How long the panel shows a hit. Long enough to be startling, short enough
 // that it is never the reason a second hit lands.
 #define DAMAGE_GLITCH   0.85f
+// HOW MUCH LOUDER THE SCREEN ARTIFACT IS ON A HIT, against the ambient damage tearing.
+//
+// The artifact is what makes a hit LAST. A struck canopy panel flashes white and then sits
+// there as static for over a second, and DAMAGE_GLITCH on its own was finished in a blink --
+// so the two halves of one event ran on completely different clocks.
+#define HIT_GLITCH_AMP  2.6f
 
 // Below this fraction of hull the systems never fully recover: the panel keeps
 // a low, permanent fault instead of settling between hits. This is the hull bar

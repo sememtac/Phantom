@@ -118,6 +118,11 @@ void vg_hud_decay(float dt) {
     // panel is doing, not what the ship is doing. It carries the ramp that follows the sequence
     // as well, so it has to be called past the end of it -- which is why the return is ignored.
     vg_canopy_intro_update(dt);
+    // The hit panels heal on the same clock as the rest of the panel's timers.
+    vg_canopy_hit_step(dt);
+    // AND THE HULL'S OWN STATE, not an event. A ship that limps into a match already broken
+    // looks it, which a damage-event hook could not do.
+    vg_canopy_damage(vg.health_max > 0.0f ? vg.health / vg.health_max : 1.0f);
 
     // A BEEP PER REGION, one for each that has latched since the last frame.
     //

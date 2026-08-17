@@ -148,6 +148,7 @@ void vg_game_init(void) {
     vg_threat_clear();
     vg_shake_clear();
     vg_cockpit_clear();
+    vg_canopy_hit_clear();
     vg_wall_clear();
     vg_bcast_clear_all();
     vg_sky_init();

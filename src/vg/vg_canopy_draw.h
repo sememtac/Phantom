@@ -34,6 +34,49 @@ void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1);
 int vg_canopy_split_at(int band_index);
 
 // ---------------------------------------------------------------------------
+// TAKING A HIT, ONE PANEL AT A TIME
+//
+// The drawing already carries a per-pixel map of which activation region every pixel of the
+// SCREEN belongs to -- the artist paints the regions in the green channel and the baker
+// turns them into run lists. The intro uses it to bring the cockpit up a region at a time.
+// A hit uses the same map to take one back.
+//
+// HOW MANY REGIONS THERE ARE IS THE ARTIST'S. The baker finds them; sixteen is the format's
+// ceiling, not a design choice. More regions means a hit claims a smaller share of the
+// view, which is the whole difference between a panel cracking and a quarter of the
+// canopy going out.
+// ---------------------------------------------------------------------------
+
+// A round struck the ship: pick a panel and mark it. Chooses one that is NOT already
+// marked, so successive hits spread across the canopy and stack up rather than refreshing
+// one spot -- which is what makes a run of bad luck progressively blind the player.
+//
+// Does nothing if every panel is already taken; the view is busy enough by then.
+void vg_canopy_hit(void);
+
+// Advance every panel's hit, and the static's own clock. Safe every frame of every state.
+void vg_canopy_hit_step(float dt);
+
+// Nothing struck, nothing flashing, nothing faulty. For vg_game_init.
+void vg_canopy_hit_clear(void);
+
+// ---------------------------------------------------------------------------
+// A PANEL THAT NEVER COMES BACK
+//
+// A hit is an event and heals; damage is a CONDITION and does not. As the hull goes, panels
+// start failing for good -- flickering, dropping into static, coming back wrong. The player
+// is flying a cockpit that is falling apart around them rather than one that occasionally
+// gets hit.
+//
+// NEVER THE MIDDLE ONE. The central panel is the one being looked through, and taking it out
+// is not atmosphere, it is a blindfold. Which panel is central is worked out from the zone
+// map when a drawing is selected -- the artist does not have to mark it.
+//
+// Driven from the hull fraction rather than from damage events, so a ship that limps into a
+// match already broken looks it.
+void vg_canopy_damage(float hull_frac);
+
+// ---------------------------------------------------------------------------
 // Selecting, colouring and bending the drawing
 // ---------------------------------------------------------------------------
 

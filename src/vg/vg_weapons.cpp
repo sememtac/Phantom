@@ -2,6 +2,7 @@
 #include "vg_weapons.h"
 #include "vg_shake.h"
 #include "vg_sfx.h"
+#include "vg_canopy_draw.h"
 
 Weapons vg_wpn;
 
@@ -178,7 +179,13 @@ void vg_kill_player(void) {
     vg_sfx_play(SFX_HIT, 1.0f);
     vg.health        = 0.0f;
     vg_cockpit.flash.hit     = 0.6f;
-    vg_cockpit.flash.glitch = DAMAGE_GLITCH;
+    // AMPED AND LINGERING, because the tearing is what carries the hit after the flash has
+    // gone. DAMAGE_GLITCH alone was a blink; the panel going out lasts over a second and
+    // the screen artifact used to be finished long before it.
+    vg_cockpit.flash.glitch = DAMAGE_GLITCH * HIT_GLITCH_AMP;
+    // AND A PANEL OF THE CANOPY GOES. Which one is the drawing's business -- see
+    // vg_canopy_hit -- and it will not pick one that is already out.
+    vg_canopy_hit();
     vg_shake_hit(1.35f);   // a kill lands harder than a wound
     s_player_hit     = true;
 }
@@ -195,7 +202,13 @@ void vg_damage_player(float amount) {
     if (vg.health < 0.0f) vg.health = 0.0f;
     vg_sfx_play(SFX_HIT, 1.0f);
     vg_cockpit.flash.hit     = 0.6f;
-    vg_cockpit.flash.glitch = DAMAGE_GLITCH;
+    // AMPED AND LINGERING, because the tearing is what carries the hit after the flash has
+    // gone. DAMAGE_GLITCH alone was a blink; the panel going out lasts over a second and
+    // the screen artifact used to be finished long before it.
+    vg_cockpit.flash.glitch = DAMAGE_GLITCH * HIT_GLITCH_AMP;
+    // AND A PANEL OF THE CANOPY GOES. Which one is the drawing's business -- see
+    // vg_canopy_hit -- and it will not pick one that is already out.
+    vg_canopy_hit();
     vg_shake_hit(1.0f);    // THE reference knock: everything else is scaled to it
     s_player_hit = true;
 }
