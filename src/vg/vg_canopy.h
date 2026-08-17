@@ -38,7 +38,15 @@
 //
 // The baker refuses a drawing with more and says so, rather than letting the
 // extras alias onto region 7 and flash at the wrong time.
-#define VG_CANOPY_MAX_ZONES 8
+// SIXTEEN, which is what the FORMAT can carry: the zone tag is bits 5..2 of a block
+// header and of a zone-map run, so 16 is the ceiling until that changes. It was 8, which
+// was half of what the data could already express.
+//
+// The artist decides how many a drawing has -- paint the regions, the baker finds them.
+// What each one costs is not uniform: a zone needs four bytes of gate state, which is
+// nothing, and a 256-entry colour table ONLY because the intro glows each region
+// separately. The table is the 512 bytes; the flash and the dissolve are the four.
+#define VG_CANOPY_MAX_ZONES 16
 
 struct VgCanopy {
     const uint16_t* ofs;        // flight table: column -> byte offset, cols+1 entries

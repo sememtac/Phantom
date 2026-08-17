@@ -28,7 +28,30 @@ import sys
 from PIL import Image
 
 PANEL = 480          # the display is 480 x 480
-TOL = 6              # ignore a pixel this close to the background
+TOL = 20             # ignore a pixel this close to the background
+#
+# TWENTY, NOT SIX, AND THE DIFFERENCE IS THE WHOLE COST OF A DRAWING.
+#
+# This threshold decides how much of the picture is painted at all, and painted AREA is
+# essentially the entire bill -- 95% of it, by the fitted model at the end of this file. A
+# sweep of QUANT across 8x moved the estimate 2% because it merges levels and leaves the
+# area alone; a sweep of this moved it from 90% of budget to 56%.
+#
+# At 6 the CHARIOT painted 54,415 pixels a frame and cost 103% of the budget measured on
+# the device -- over it, so the raster set the frame rate instead of the wire, and the game
+# ran at 45 fps. At 20 it paints 16,493 and measures 67%.
+#
+# It costs the faintest shading, which disappears rather than banding. That is a judgement
+# about the picture, and the reason 20 is defensible as a DEFAULT is that it barely touches
+# a drawing which does not rely on faint shading: the AEGIS loses 6% of its pixels at this
+# setting and the CHARIOT loses 70%. The threshold is not taking something from a careful
+# drawing; it is declining to paint what is nearly invisible.
+#
+# IT IS ALSO THE MIRROR TOLERANCE, which is a second job it was quietly doing. A drawing is
+# stored half-width and mirrored when its two halves agree within this -- and the CHARIOT's
+# halves differ by at most 8, which is antialiasing, so at 6 it was stored whole for 62.8 KB
+# instead of mirrored for 21.0. That saves flash and not frame time: a mirrored drawing
+# stores half and draws both halves, and the pixels are the cost.
 QUANT = 4            # snap levels to this, so flat areas become one block
 MINFLAT = 4          # shorter than this is cheaper stored pixel by pixel
 
@@ -483,7 +506,7 @@ def bake(src, out, name="CANOPY"):
 # MUST MATCH VG_CANOPY_MAX_ZONES in src/vg/vg_canopy.h. The firmware keeps a 256-entry colour
 # table per activation region so each can run its own glow, and internal SRAM is the scarce
 # memory on this part -- not flash. Eight of them is 4 KB of it.
-MAX_ZONES = 8
+MAX_ZONES = 16       # the format's ceiling: the zone tag is 4 bits. See vg_canopy.h.
 
 # Set by --name=. A list so the argument loop can write to it.
 NAME = ["CANOPY"]
@@ -537,6 +560,25 @@ if __name__ == "__main__":
         # ordinary use -- the default is the setting that is actually fast.
         if a.startswith("--minflat="):
             MINFLAT = int(a.split("=", 1)[1])
+        # TOL, the threshold below which a pixel is not worth painting at all.
+        # THIS is the knob that moves the cost, because it moves the PIXEL COUNT. QUANT
+        # merges levels and leaves the area alone; a sweep of it across 8x moved the
+        # estimate 2%. Area is the cost -- canopy_cost.py says so in its first line.
+        #
+        # What it costs is the faintest shading, which vanishes rather than banding.
+        # That is a judgement about the picture and belongs to whoever drew it.
+        if a.startswith("--tol="):
+            TOL = int(a.split("=", 1)[1])
+        # QUANT, which decides how hard levels are snapped together before runs are
+        # found. Raising it turns gradient into flat runs: a literal pixel carries its
+        # own level and a flat block carries one for a whole run, so a drawing that
+        # shades softly is expensive at a fine quantisation and cheap at a coarse one.
+        #
+        # It is a knob for FITTING a drawing to the budget, not a default to change.
+        # The cost of raising it is banding in the shading, which is a judgement about
+        # the picture and belongs to whoever drew it.
+        if a.startswith("--quant="):
+            QUANT = int(a.split("=", 1)[1])
         # The C name of the object the header defines. One per drawing, because the
         # firmware holds them all at once and selects per ship.
         if a.startswith("--name="):

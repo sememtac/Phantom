@@ -59,12 +59,21 @@ def main():
         # It cost a measurement here: two canopies were compared and came back identical to
         # one microsecond, which looked like a beautifully repeatable harness and was
         # actually the same table twice.
-        want = hashlib.sha256(open(png, "rb").read()).hexdigest()[:16]
+        # THE BAKER GOES INTO THE HASH TOO, and the reason is the same failure one level
+        # up. This guarded the SOURCE and nothing else, so changing how the drawing is
+        # baked -- TOL, QUANT, MINFLAT, or the algorithm itself -- left every header on
+        # disk looking fresh. A canopy retuned from 90% of budget to 56% was silently
+        # discarded the next time anything ran, because the png had not moved.
+        #
+        # It is the same shape as the incident above: a cache that answers "has the input
+        # changed" when the question is "is this output still what the tools would produce".
+        want = hashlib.sha256(open(png, "rb").read()
+                              + open(baker, "rb").read()).hexdigest()[:16]
         fresh = False
         if os.path.isfile(out):
             with open(out) as fh:
                 head = fh.read(2048)
-            m = re.search(r"source sha256 ([0-9a-f]{16})", head)
+            m = re.search(r"source(?:\+baker)? sha256 ([0-9a-f]{16})", head)
             fresh = bool(m and m.group(1) == want)
         if not fresh:
             print("-- baking %s" % os.path.basename(png))
@@ -76,8 +85,8 @@ def main():
             with open(out) as fh:
                 body = fh.read()
             with open(out, "w") as fh:
-                fh.write("// source sha256 %s -- tools/canopy_set.py rebakes when this "
-                         "changes.\n" % want)
+                fh.write("// source+baker sha256 %s -- tools/canopy_set.py rebakes when "
+                         "either changes.\n" % want)
                 fh.write(body)
         else:
             print("-- %s is up to date" % os.path.basename(out))
