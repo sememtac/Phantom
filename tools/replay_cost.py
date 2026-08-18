@@ -60,6 +60,12 @@ BKEYS = ["join", "wait", "push", "res", "over_n", "over_us", "sky", "scan"]
 # all, so this line is read as "which of these are over", not as a profile.
 BANDS = re.compile(r"vg_replay: BANDS/(\d+) = ([0-9 ]+)")
 
+# The submit split. `wait` is the rendezvous gap -- core 1 idle while core 0 finishes.
+SUB = re.compile(
+    r"vg_replay: SUB a (\d+)/(\d+) \| b (\d+)/(\d+) \| wait (\d+)/(\d+) \| "
+    r"arena (\d+)/(\d+) \| star (\d+)/(\d+) \| hud (\d+)/(\d+)")
+SKEYS = ["A(world)", "B(instr)", "wait", "arena", "star", "hud"]
+
 WORLD = re.compile(
     r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
@@ -317,6 +323,11 @@ def fetch(port):
             if bd:
                 out["band_window"] = int(bd.group(1))
                 out["bands"] = [int(x) for x in bd.group(2).split()]
+            sb = SUB.search(txt)
+            if sb:
+                gs = [int(x) for x in sb.groups()]
+                for j, k2 in enumerate(SKEYS):
+                    out[k2] = {"mean": gs[j * 2], "worst": gs[j * 2 + 1]}
             b = BLIT.search(txt)
             if b:
                 gb = [int(x) for x in b.groups()]
@@ -346,6 +357,10 @@ def show(r):
         print("  -- inside `blit`; push is idle CPU, over_us is frame time lost --")
         for k in BKEYS:
             print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
+    if all(k in r for k in SKEYS):
+        print("  -- inside `sub`; wait is core 1 idle at the rendezvous --")
+        for k in SKEYS:
+            print("  %-9s %7d %10d" % (k, r[k]["mean"], r[k]["worst"]))
     if r.get("bands"):
         w = r.get("band_window", 768)
         over = [(i, v) for i, v in enumerate(r["bands"]) if v > w]

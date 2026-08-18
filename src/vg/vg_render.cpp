@@ -22,6 +22,7 @@
 // Declared in vg_prof.h, which says what each measures and what it may not be read
 // as -- g_sub_hud in particular brackets vg_draw_hud alone and is not group B's total.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
+uint32_t g_sub_wait = 0;
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
 
@@ -388,8 +389,12 @@ void vg_render_frame(const VgInput* in, float fps) {
     // wait costs is exactly the gap between the halves, which is the thing being measured.
     g_sub_a = micros() - t_half_a;
 
+    const uint32_t t_wait = micros();
     if (async) await_instruments();
     else       submit_instruments(cam, in, fps);
+    // Only the async path is a WAIT. The serial fallback is core 1 doing B's work itself,
+    // which is not a gap and would read as an enormous one.
+    g_sub_wait = async ? (micros() - t_wait) : 0u;
 
     // THE FRAME COUNTER LAST, AND ON THIS THREAD, because it prints the primitive
     // count INTO THE FRAME and that count is only whole once both halves are in.

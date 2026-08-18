@@ -171,6 +171,16 @@ extern uint32_t g_arena_hoop, g_arena_rail;
 // those two readings were different STATES, not two moments of one fight.
 extern uint32_t g_sub_a, g_sub_b;
 
+// WHAT THE RENDEZVOUS COSTS, which is core 1 standing still.
+//
+// g_sub_a closes before the await and g_sub_b is the other half's own total, so the gap
+// between them was never measured -- and the note below says B is the slower half in 38 of
+// 62 fight windows, which means core 1 waits routinely and nothing said how long for.
+//
+// It is not the same as g_sub_b - g_sub_a. That difference is negative when A is slower and
+// tells you nothing about when each half STARTED; this brackets the wait itself.
+extern uint32_t g_sub_wait;
+
 // THE UPDATE, WHICH HAD NEVER BEEN MEASURED AT ALL.
 //
 // `upd` is about 760 us and it was ONE number for the whole simulation. Submit has had a

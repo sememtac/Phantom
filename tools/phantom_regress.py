@@ -63,6 +63,34 @@ def git_commit():
         return "unknown"
 
 
+# WHAT THE DEVICE SAYS WHEN THE RENDER STOPS, and this tool used to throw it away.
+#
+# vg_replay_command('E') prints RESYNC, WHY and END. The END line carries the
+# device's own write counts: bytes, short, stall, mismatch. Those counts are the
+# only evidence that says which end of the link lost the bands. Without them a
+# checksum failure is equally explained by a device that under-wrote and a host
+# that under-read, and the two need different fixes.
+#
+# replay_cost.py learned the same lesson: whichever end explains a failure must
+# be the end that waits longer. This one sent EEEE and closed the port in the
+# next statement, so the report was always made after its reader had gone.
+def device_report(link, wait=8.0):
+    """Read the device's end-of-replay report. Returns the lines it printed."""
+    # The stream is still binary here: the device finishes the frame it is in
+    # before it reads the EEEE tag. So take the whole buffer and keep the text.
+    seen = bytearray()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        with link._rx_lock:
+            seen += link._rx
+            del link._rx[:]
+        if b"vg_replay: END" in seen:
+            break
+        time.sleep(0.05)
+    return [ln.strip() for ln in seen.decode("utf-8", "replace").splitlines()
+            if "vg_replay:" in ln]
+
+
 def render(port, path, wanted, out_dir):
     ses = Session.load(path)
     n = len(ses.frames)
@@ -78,7 +106,12 @@ def render(port, path, wanted, out_dir):
     reset_board(port, settle=6.0)
     link = PhantomLink(port)
     link.open()
-    link.replay_start(ses.hdr)
+    # NO AUDIO. This tool hashes pixels and throws the samples away one line
+    # after it reads them. The device sends about 730 bytes of sound with every
+    # frame, which is 3% of the run, and the link corrupts at a rate for each
+    # byte. Bytes nobody reads can still lose a band. See replay_cost.py, which
+    # asks for no audio for the same reason.
+    link.replay_start(ses.hdr, audio=False)
 
     DEPTH = 2
     for fr in ses.frames[:DEPTH]:
@@ -134,8 +167,10 @@ def render(port, path, wanted, out_dir):
             if i >= last:
                 break
     finally:
+        said = []
         try:
             link.session_end()
+            said = device_report(link)
         except Exception:
             pass
         link.close()
@@ -143,9 +178,15 @@ def render(port, path, wanted, out_dir):
     if desyncs:
         print(f"\n{desyncs} band(s) failed to decode during this run. The link "
               f"corrupted; the numbers below are only as good as that.")
+        for line in said:
+            print(f"  device: {line}")
+        print("  Read `stall` above. It counts the writes the device could not "
+              "place because the host was not reading. The device only drops "
+              "bytes after 3000 of them in one band, so a small `stall` means "
+              "the device sent every byte and the HOST lost them.")
     if bad:
         print(f"frames that could not be hashed: {bad}")
-    return got
+    return got, bad
 
 
 def main():
@@ -178,7 +219,22 @@ def main():
             spec = ",".join(sorted(json.load(fh)["frames"], key=int))
         print(f"frames from {ref}: {spec}")
     wanted = sorted(int(x) for x in (spec or DEFAULT_FRAMES).split(",") if x.strip())
-    got = render(args.port, args.session, wanted, args.dir)
+    got, bad = render(args.port, args.session, wanted, args.dir)
+
+    # A BASELINE WITH A HOLE IN IT IS PERMANENT.
+    #
+    # A frame the link corrupted is not in `got`, so the file used to be written
+    # without it and with no error. --against then takes its frame list FROM the
+    # baseline, so the missing frame is never asked for again and every later run
+    # prints "all N frames identical" over a corpus nobody chose. One bad band
+    # therefore deleted a frame from the test for good.
+    #
+    # This is the third time this tool has counted the wrong thing. Re-run
+    # instead: corruption lands on a different frame every time.
+    if args.save and bad:
+        sys.exit(f"\nNO BASELINE WRITTEN. The link corrupted {len(bad)} of the "
+                 f"{len(wanted)} wanted frames: {bad}. A baseline that is short "
+                 f"of a frame drops it from the test for ever. Run it again.")
 
     if args.save:
         with open(args.save, "w") as fh:
@@ -194,7 +250,11 @@ def main():
             base = json.load(fh)
         old = base["frames"]
         print(f"\nbaseline commit {base['commit']}, now {git_commit()}")
-        bad = 0
+        # `lost` are the frames the link corrupted. They are not in `got` at all,
+        # so a comparison that ignores them checks fewer frames than it was asked
+        # for and still reports a pass.
+        lost = [k for k in bad if str(k) in old]
+        diff = 0
         same = 0
         for k in sorted(got, key=int):
             a = old.get(str(k))
@@ -203,11 +263,11 @@ def main():
                 print(f"  {k:6d}  not in the baseline")
             elif a != b:
                 print(f"  {k:6d}  DIFFERENT")
-                bad += 1
+                diff += 1
             else:
                 same += 1
-        if bad:
-            print(f"\n{bad} of {bad + same} frames changed. If this change was "
+        if diff:
+            print(f"\n{diff} of {diff + same} frames changed. If this change was "
                   f"meant to keep the picture identical, it did not.")
             return 1
         # Count the frames that were really COMPARED, not the frames rendered. A
@@ -216,6 +276,14 @@ def main():
         if not same:
             print("\nNOTHING WAS COMPARED: no rendered frame is in the baseline. "
                   "This is not a pass.")
+            return 1
+        # A frame the link ate is a frame this run did not check. Saying
+        # "identical" about the rest is true and is not the answer that was
+        # asked for, so it does not pass.
+        if lost:
+            print(f"\n{same} frames identical, but the link corrupted {len(lost)} "
+                  f"more that the baseline holds: {lost}. THIS IS NOT A PASS. "
+                  f"Run it again; corruption moves to a different frame.")
             return 1
         print(f"\nall {same} frames identical.")
         return 0

@@ -100,6 +100,14 @@ void vg_replay_note_blit(uint32_t join, uint32_t wait, uint32_t push,
 // too expensive -- which is an art brief, and a far more useful one than "use less area".
 void vg_replay_note_bands(const uint32_t* band_us, int n);
 
+// The SUBMIT split. `sub` is the one stage of the frame never broken down, and it is now
+// the largest thing left: the raster is spent and this is not.
+//
+// `wait` is core 1 standing at the rendezvous while core 0 finishes group B. It is the
+// number that says whether the two halves are balanced, and nothing measured it before.
+void vg_replay_note_sub(uint32_t a, uint32_t b, uint32_t wait,
+                        uint32_t arena, uint32_t star, uint32_t hud);
+
 // PLAY: block for the next frame's record. False when the host says the
 // session is finished.
 bool vg_replay_next(float* dt, VgInput* in);

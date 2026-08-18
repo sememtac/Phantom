@@ -517,6 +517,8 @@ void loop(void) {
                             vg_rast_res_us(), (uint32_t)vg_rast_over_bands(),
                             vg_rast_over_us(), vg_rast_sky_us(), vg_rast_scan_us());
         vg_replay_note_bands(vg_rast_band_us(), NUM_BANDS);
+        vg_replay_note_sub(g_sub_a, g_sub_b, g_sub_wait,
+                           g_sub_arena, g_sub_star, g_sub_hud);
         // AND YIELD, because nothing else in this mode does.
         //
         // Every other way of running a frame blocks somewhere: gameplay waits on the panel,

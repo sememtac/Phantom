@@ -61,6 +61,7 @@ static uint32_t s_w_sum[7], s_w_max[7];
 static uint32_t s_b_sum[8], s_b_max[8];
 // Per band, and NUM_BANDS is fixed by the panel and BAND_H.
 static uint32_t s_bd_sum[NUM_BANDS];
+static uint32_t s_s_sum[6], s_s_max[6];
 
 void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
                           uint32_t ships, uint32_t msl, uint32_t fire,
@@ -94,6 +95,16 @@ void vg_replay_note_bands(const uint32_t* band_us, int n) {
     if (!s_timed || !band_us) return;
     if (n > NUM_BANDS) n = NUM_BANDS;
     for (int i = 0; i < n; i++) s_bd_sum[i] += band_us[i];
+}
+
+void vg_replay_note_sub(uint32_t a, uint32_t b, uint32_t wait,
+                        uint32_t arena, uint32_t star, uint32_t hud) {
+    if (!s_timed) return;
+    const uint32_t v[6] = { a, b, wait, arena, star, hud };
+    for (int i = 0; i < 6; i++) {
+        s_s_sum[i] += v[i];
+        if (v[i] > s_s_max[i]) s_s_max[i] = v[i];
+    }
 }
 
 bool vg_replay_timed(void) { return s_timed; }
@@ -153,6 +164,14 @@ bool vg_replay_report_cost(void) {
         row[k > 0 ? k - 1 : 0] = 0;
         Serial.printf("vg_replay: BANDS/%u = %s\n", (unsigned)vg_rast_band_window_us(), row);
     }
+    Serial.printf("vg_replay: SUB a %u/%u | b %u/%u | wait %u/%u | arena %u/%u | "
+                  "star %u/%u | hud %u/%u  (mean/worst)\n",
+                  (unsigned)(s_s_sum[0] / s_t_n), (unsigned)s_s_max[0],
+                  (unsigned)(s_s_sum[1] / s_t_n), (unsigned)s_s_max[1],
+                  (unsigned)(s_s_sum[2] / s_t_n), (unsigned)s_s_max[2],
+                  (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
+                  (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
+                  (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
     return true;
 }
 
