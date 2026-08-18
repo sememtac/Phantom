@@ -77,6 +77,28 @@ void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
                           uint32_t ships, uint32_t msl, uint32_t fire,
                           uint32_t total);
 
+// The same frame's BLIT split, kept the same way and reported on its own line.
+//
+// `blit` is join + wait + rast + push + res by construction, and only one of those is
+// work: `rast` is the bands being drawn, and `push` is the CPU STOPPED because the SPI
+// queue is full. A frame that spends its blit stalled has idle cores under a full wire,
+// and a frame that spends it rastering does not -- which is the difference between
+// submission being movable into the blit and it not being.
+//
+// `over` is the part that actually reaches the frame: a band under its 768 us window
+// costs nothing at all, and the amount by which one goes OVER is frame time. Carried as
+// bands and microseconds because the two say different things -- one heavy band in every
+// few frames means something the mean of a ratio cannot.
+void vg_replay_note_blit(uint32_t join, uint32_t wait, uint32_t push,
+                         uint32_t res, uint32_t over_n, uint32_t over_us);
+
+// EVERY BAND'S OWN MICROSECONDS, meaned over the session.
+//
+// The counters above say how much frame time the raster lost; this says WHERE. A band is
+// a strip of the screen, so a band over its window names a region of the picture that is
+// too expensive -- which is an art brief, and a far more useful one than "use less area".
+void vg_replay_note_bands(const uint32_t* band_us, int n);
+
 // PLAY: block for the next frame's record. False when the host says the
 // session is finished.
 bool vg_replay_next(float* dt, VgInput* in);

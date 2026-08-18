@@ -48,6 +48,17 @@ COST = re.compile(
 
 # The `world` split, on its own line. Optional, so a device built before this existed
 # still reports the first line and a run against one degrades rather than fails.
+# The blit split, on its own line, and optional for the same reason WORLD is: a device
+# built before it existed still answers the first two lines.
+BLIT = re.compile(
+    r"vg_replay: BLIT join (\d+)/(\d+) \| wait (\d+)/(\d+) \| push (\d+)/(\d+) \| "
+    r"res (\d+)/(\d+) \| overn (\d+)/(\d+) \| overus (\d+)/(\d+)")
+BKEYS = ["join", "wait", "push", "res", "over_n", "over_us"]
+
+# Per band, and the window they are measured against. A band under it costs nothing at
+# all, so this line is read as "which of these are over", not as a profile.
+BANDS = re.compile(r"vg_replay: BANDS/(\d+) = ([0-9 ]+)")
+
 WORLD = re.compile(
     r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
@@ -288,7 +299,9 @@ def fetch(port):
         # WAIT FOR BOTH LINES. The device prints WORLD after COST, so returning the moment
         # COST matched collected the frame costs and silently dropped the world split --
         # which is the half this was extended for.
-        if m and (WORLD.search(txt) or time.time() > deadline - 8.0):
+        # BLIT prints after WORLD, so it is the one to wait for -- returning on WORLD
+        # would drop the blit split exactly as returning on COST once dropped the world.
+        if m and (BLIT.search(txt) or time.time() > deadline - 8.0):
             ser.close()
             g = [int(x) for x in m.groups()]
             out = {"frames": g[0], "commit": git_commit(), "session": "(fetched)"}
@@ -299,6 +312,15 @@ def fetch(port):
                 gw = [int(x) for x in w.groups()]
                 for j, k2 in enumerate(WKEYS):
                     out[k2] = {"mean": gw[j * 2], "worst": gw[j * 2 + 1]}
+            bd = BANDS.search(txt)
+            if bd:
+                out["band_window"] = int(bd.group(1))
+                out["bands"] = [int(x) for x in bd.group(2).split()]
+            b = BLIT.search(txt)
+            if b:
+                gb = [int(x) for x in b.groups()]
+                for j, k2 in enumerate(BKEYS):
+                    out[k2] = {"mean": gb[j * 2], "worst": gb[j * 2 + 1]}
             return out
     ser.close()
     said = tail.decode("utf-8", "replace").strip()
@@ -315,6 +337,22 @@ def show(r):
         print("  -- inside `world`; the WORST column is the one that matters --")
         for k in WKEYS:
             print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
+    if all(k in r for k in BKEYS):
+        # `blit` is join + wait + rast + push + res by construction. Only two of those
+        # are interesting here: `push` is the CPU stopped against a full queue, which is
+        # idle time under a busy wire, and `over_us` is the raster that outran its band
+        # window, which is the only part of the raster that reaches the frame.
+        print("  -- inside `blit`; push is idle CPU, over_us is frame time lost --")
+        for k in BKEYS:
+            print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
+    if r.get("bands"):
+        w = r.get("band_window", 768)
+        over = [(i, v) for i, v in enumerate(r["bands"]) if v > w]
+        print("  -- each band against its %d us window; a band under it is free --" % w)
+        print("     " + " ".join(("%d*" % v) if v > w else str(v) for v in r["bands"]))
+        if over:
+            print("     %d of %d over, by %d us a frame (* marks them)"
+                  % (len(over), len(r["bands"]), sum(v - w for _, v in over)))
     rast = r["rast"]["mean"]
     room = WIRE_US - rast
     if room >= 0:

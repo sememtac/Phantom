@@ -1388,6 +1388,8 @@ uint32_t vg_rast_raster_us(void) { return s_raster_us; }
 uint32_t vg_rast_wait_us(void)   { return s_wait_us; }
 uint32_t vg_rast_push_us(void)   { return s_push_us; }
 int      vg_rast_over_bands(void){ return s_over_n; }
+// The window itself, so a reporter does not have to restate the formula.
+uint32_t vg_rast_band_window_us(void) { return BAND_DMA_US; }
 uint32_t vg_rast_over_us(void)   { return s_over_us; }
 const uint32_t* vg_rast_band_us(void) { return s_band_us; }
 uint32_t vg_rast_join_us(void)   { return s_join_us; }
