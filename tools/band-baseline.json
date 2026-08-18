@@ -1,0 +1,95 @@
+{
+  "frames": 5444,
+  "commit": "1317b0b+dirty",
+  "session": "(fetched)",
+  "can": {
+    "mean": 6532,
+    "worst": 9292
+  },
+  "rast": {
+    "mean": 13820,
+    "worst": 18264
+  },
+  "prim": {
+    "mean": 9886,
+    "worst": 14376
+  },
+  "sub": {
+    "mean": 3296,
+    "worst": 6727
+  },
+  "upd": {
+    "mean": 627,
+    "worst": 83287
+  },
+  "motes": {
+    "mean": 596,
+    "worst": 870
+  },
+  "rocks": {
+    "mean": 28,
+    "worst": 457
+  },
+  "trails": {
+    "mean": 90,
+    "worst": 243
+  },
+  "ships": {
+    "mean": 5,
+    "worst": 16
+  },
+  "msl": {
+    "mean": 3,
+    "worst": 10
+  },
+  "fire": {
+    "mean": 5,
+    "worst": 323
+  },
+  "TOTAL": {
+    "mean": 738,
+    "worst": 1202
+  },
+  "band_window": 768,
+  "bands": [
+    1007,
+    1171,
+    760,
+    792,
+    875,
+    794,
+    752,
+    1002,
+    789,
+    811,
+    907,
+    795,
+    1035,
+    1040,
+    746
+  ],
+  "join": {
+    "mean": 58,
+    "worst": 86
+  },
+  "wait": {
+    "mean": 20,
+    "worst": 41
+  },
+  "push": {
+    "mean": 980,
+    "worst": 6644
+  },
+  "res": {
+    "mean": 87,
+    "worst": 138
+  },
+  "over_n": {
+    "mean": 11,
+    "worst": 15
+  },
+  "over_us": {
+    "mean": 2257,
+    "worst": 6210
+  }
+}

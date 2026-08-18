@@ -819,8 +819,22 @@ static uint8_t s_fault_z[VG_CANOPY_MAX_ZONES];
 // The centroid of each region against the centre of the screen. The artist paints regions
 // and never has to say which is the windscreen -- and a drawing whose panels move gets the
 // right answer without anyone remembering to update a constant.
+// WHICH ZONES A COLUMN CONTAINS, one bit each, and WHICH ZONES WANT THE GATE.
+//
+// The gate was all-or-nothing: one faulty panel out of four and every column of every
+// frame walked the whole zone map to find it. The map covers the entire screen, so that
+// is a second full-screen pass to draw a quarter of one.
+//
+// A column that contains none of the interesting zones can be skipped outright. Built
+// from the same walk that finds the centre, because it is the same walk.
+static uint16_t s_colmask[SCR_H];
+static bool     s_colmask_ready = false;
+static uint16_t s_gate_mask     = 0;
+
 static void canopy_find_centre(void) {
     s_centre_z = -1;
+    s_colmask_ready = false;
+    for (int i = 0; i < SCR_H; i++) s_colmask[i] = 0;
     if (!s_can || s_can->zones <= 0) return;
 
     uint32_t n[VG_CANOPY_MAX_ZONES] = { 0 };
@@ -836,6 +850,7 @@ static void canopy_find_centre(void) {
             const int     z  = (h >> 2) & 15;
             p += 3;
             if (z >= s_can->zones || ln <= 0) continue;
+            s_colmask[lx] |= (uint16_t)(1u << z);
             n[z]  += (uint32_t)ln;
             sx[z] += (uint32_t)lx * (uint32_t)ln;
             sy[z] += (uint32_t)(y0 + ln / 2) * (uint32_t)ln;
@@ -850,6 +865,21 @@ static void canopy_find_centre(void) {
         const float d  = cx * cx + cy * cy;
         if (d < best) { best = d; s_centre_z = (int8_t)z; }
     }
+    s_colmask_ready = true;
+}
+
+// WHICH ZONES THE GATE HAS ANYTHING TO SAY ABOUT, as a bitmask over zones.
+//
+// Every zone during the intro -- the reveal touches all of them -- and otherwise only the
+// ones that are hit or faulty. Recomputed wherever s_gate_on is, because they answer the
+// same question at two resolutions.
+static void canopy_gate_mask(void) {
+    if (s_intro_on) { s_gate_mask = 0xFFFFu; return; }
+    uint16_t m = 0;
+    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++)
+        if (s_hit_t[z] > 0.0f) m |= (uint16_t)(1u << z);
+    for (int i = 0; i < s_fault_n; i++) m |= (uint16_t)(1u << s_fault_z[i]);
+    s_gate_mask = m;
 }
 
 // HOW BROKEN THE HULL HAS TO BE before a panel goes, and how many go by the end.
@@ -892,6 +922,7 @@ void vg_canopy_damage(float hull_frac) {
         if (!n) break;
         s_fault_z[s_fault_n++] = (uint8_t)free_z[(int)(vg_frand01() * (float)n) % n];
         s_gate_on = true;
+        canopy_gate_mask();
     }
 }
 
@@ -900,6 +931,7 @@ void vg_canopy_hit_clear(void) {
     s_centre_z = -1;
     for (int i = 0; i < VG_CANOPY_MAX_ZONES; i++) s_hit_t[i] = 0.0f;
     s_gate_on = s_intro_on;
+    canopy_gate_mask();
 }
 
 void vg_canopy_hit(void) {
@@ -915,6 +947,7 @@ void vg_canopy_hit(void) {
     const int z = free_z[(int)(vg_frand01() * (float)n) % n];
     s_hit_t[z] = CANOPY_HIT_TIME;
     s_gate_on  = true;
+    canopy_gate_mask();
 }
 
 void vg_canopy_hit_step(float dt) {
@@ -933,6 +966,7 @@ void vg_canopy_hit_step(float dt) {
     // on the very next frame, and the while loop in there never ran again because the fault
     // was already recorded. A faulty panel drew for one frame and then never again.
     s_gate_on  = any || s_intro_on || (s_fault_n > 0);
+    canopy_gate_mask();
 }
 
 static __attribute__((noinline))
@@ -1067,7 +1101,13 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // whenever a panel is hit, and a hit happens while the warp is on -- which the
         // intro never is. Keying it off INTRO would have needed a fourth instantiation of
         // this template for warp-and-gate; one predictable branch a row is cheaper.
-        if (s_gate_on) canopy_gate(row, SCR_H - 1 - py, py);
+        // ...AND ONLY FOR COLUMNS THAT CONTAIN A ZONE IT CARES ABOUT. One faulty panel
+        // used to cost a full-screen walk of the zone map every frame to find it. The
+        // mask is exact, so this skips nothing that would have drawn; until it is built
+        // the test passes and the behaviour is what it always was.
+        const int glx = SCR_H - 1 - py;
+        if (s_gate_on && (!s_colmask_ready || (s_colmask[glx] & s_gate_mask)))
+            canopy_gate(row, glx, py);
         // The gate ran; the frame does not. See s_can_rear -- in rear view the world still
         // has to arrive region by region, and the cockpit still has to be absent.
         if (INTRO && s_can_rear) continue;
@@ -1177,6 +1217,7 @@ void vg_canopy_intro_begin(void) {
     if (!s_can) {
         s_intro_on = false;
         s_gate_on  = false;   // nothing to reveal and nothing broken
+        s_gate_mask = 0;
         s_icued    = true;
         s_settle_t = -1.0f;
         for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
@@ -1186,6 +1227,7 @@ void vg_canopy_intro_begin(void) {
     }
     s_intro_on = true;
     s_gate_on  = true;   // the reveal IS the gate; set here so frame one has it
+    s_gate_mask = 0xFFFFu;
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
     s_icued    = false;
