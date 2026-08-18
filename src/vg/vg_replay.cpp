@@ -58,7 +58,7 @@ static uint32_t s_t_sum[5], s_t_max[5];
 // to", and these are "which part of it grows when the fight gets busy".
 static uint32_t s_w_sum[7], s_w_max[7];
 // And the blit split -- see vg_replay_note_blit for what each one means.
-static uint32_t s_b_sum[6], s_b_max[6];
+static uint32_t s_b_sum[8], s_b_max[8];
 // Per band, and NUM_BANDS is fixed by the panel and BAND_H.
 static uint32_t s_bd_sum[NUM_BANDS];
 
@@ -78,10 +78,13 @@ void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
 }
 
 void vg_replay_note_blit(uint32_t join, uint32_t wait, uint32_t push,
-                         uint32_t res, uint32_t over_n, uint32_t over_us) {
+                         uint32_t res, uint32_t over_n, uint32_t over_us,
+                         uint32_t sky, uint32_t scan) {
     if (!s_timed) return;
-    const uint32_t v[6] = { join, wait, push, res, over_n, over_us };
-    for (int i = 0; i < 6; i++) {
+    // `rast` is sky + prim + scan. Two of the three are reported elsewhere, so carrying
+    // these means the third needs no subtraction to find.
+    const uint32_t v[8] = { join, wait, push, res, over_n, over_us, sky, scan };
+    for (int i = 0; i < 8; i++) {
         s_b_sum[i] += v[i];
         if (v[i] > s_b_max[i]) s_b_max[i] = v[i];
     }
@@ -129,13 +132,16 @@ bool vg_replay_report_cost(void) {
     // A THIRD LINE, for the same reason there is a second: this one answers "is the wire
     // waiting on the CPU, or the CPU on the wire".
     Serial.printf("vg_replay: BLIT join %u/%u | wait %u/%u | push %u/%u | res %u/%u | "
-                  "overn %u/%u | overus %u/%u  (mean/worst)\n",
+                  "overn %u/%u | overus %u/%u | sky %u/%u | scan %u/%u"
+                  "  (mean/worst)\n",
                   (unsigned)(s_b_sum[0] / s_t_n), (unsigned)s_b_max[0],
                   (unsigned)(s_b_sum[1] / s_t_n), (unsigned)s_b_max[1],
                   (unsigned)(s_b_sum[2] / s_t_n), (unsigned)s_b_max[2],
                   (unsigned)(s_b_sum[3] / s_t_n), (unsigned)s_b_max[3],
                   (unsigned)(s_b_sum[4] / s_t_n), (unsigned)s_b_max[4],
-                  (unsigned)(s_b_sum[5] / s_t_n), (unsigned)s_b_max[5]);
+                  (unsigned)(s_b_sum[5] / s_t_n), (unsigned)s_b_max[5],
+                  (unsigned)(s_b_sum[6] / s_t_n), (unsigned)s_b_max[6],
+                  (unsigned)(s_b_sum[7] / s_t_n), (unsigned)s_b_max[7]);
     // AND WHICH BANDS. Means only -- the worst of a single band across a whole session is
     // one frame's accident, and what is wanted here is the shape of the drawing's cost.
     {

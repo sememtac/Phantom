@@ -495,12 +495,23 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
 // Halving is exactly a shift and a mask, and both pixels of a 32-bit word ride
 // through together, bringing it to ~5 ops per pixel.
 //
-// The green channel straddles the byte boundary, so the swap cannot be avoided
-// -- but it can at least be done for two pixels in one go.
+// THE SWAP CAN BE AVOIDED, and the comment that used to sit here said it could not.
+//
+// Halving every channel does not need the pixel in native order. It needs each field
+// halved IN PLACE, and only one field is inconvenient: stored, red is at 7..3, blue at
+// 12..8, and green is split, its high three bits at 2..0 and its low three at 15..13.
+// (That split is the way round vg_tv.cpp:167 says it is. The note further down this file
+// has it backwards and once made the tube flash pink.)
+//
+// Red, blue and green's high part halve under a plain shift. Green's low part is the only
+// thing that has to move across the byte boundary, and that is one shift: bit 0 to bit 15.
+// The masks drop the two bits that would bleed between lanes.
+//
+// Five operations against twelve, and BIT-IDENTICAL -- checked against the old function
+// over both lanes exhaustively and across lanes for a spread of high halves, 458,752
+// values, no mismatch. So the replay checksums do not move.
 static inline uint32_t scanline_pair(uint32_t v) {
-    uint32_t n = ((v >> 8) & 0x00FF00FFu) | ((v << 8) & 0xFF00FF00u);
-    n = (n >> 1) & 0x7BEF7BEFu;
-    return ((n >> 8) & 0x00FF00FFu) | ((n << 8) & 0xFF00FF00u);
+    return ((v >> 1) & 0x6F7B6F7Bu) | ((v << 15) & 0x80008000u);
 }
 
 // ---------------------------------------------------------------------------

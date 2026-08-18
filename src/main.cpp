@@ -515,7 +515,7 @@ void loop(void) {
         // waiting on the CPU or the CPU on the wire.
         vg_replay_note_blit(vg_rast_join_us(), vg_rast_wait_us(), vg_rast_push_us(),
                             vg_rast_res_us(), (uint32_t)vg_rast_over_bands(),
-                            vg_rast_over_us());
+                            vg_rast_over_us(), vg_rast_sky_us(), vg_rast_scan_us());
         vg_replay_note_bands(vg_rast_band_us(), NUM_BANDS);
         // AND YIELD, because nothing else in this mode does.
         //

@@ -90,7 +90,8 @@ void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
 // bands and microseconds because the two say different things -- one heavy band in every
 // few frames means something the mean of a ratio cannot.
 void vg_replay_note_blit(uint32_t join, uint32_t wait, uint32_t push,
-                         uint32_t res, uint32_t over_n, uint32_t over_us);
+                         uint32_t res, uint32_t over_n, uint32_t over_us,
+                         uint32_t sky, uint32_t scan);
 
 // EVERY BAND'S OWN MICROSECONDS, meaned over the session.
 //
