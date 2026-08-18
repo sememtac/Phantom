@@ -69,7 +69,7 @@ ITEM_W = 0.87        # a block header, in flat pixels
 LIT_W = 1.08         # a pixel that carries its own level
 
 
-def bake(src, out, name="CANOPY"):
+def bake(src, out, name="CANOPY", probe=False):
     # SWIZZLED, NOT GREY. Red carries the frame, green carries the activation mask.
     #
     # It used to open with .convert("L"), which on an RGB file is a luminance blend --
@@ -343,6 +343,13 @@ def bake(src, out, name="CANOPY"):
     used = flat_px + lit_px
     kb = (len(stream) + len(offsets) * 2) / 1024.0
 
+    # MEASURE WITHOUT WRITING, for the budget search below. Everything the search needs
+    # is known by this point: how many pixels the drawing paints, and whether the three
+    # streams fit the offset tables. Returning here skips only the file.
+    if probe:
+        return (used * (2 if mirror else 1),
+                max(len(stream), len(i_stream), len(zstream)))
+
     # REFUSED, not emitted. Every offset table below is uint16_t, so a stream longer than
     # 65535 bytes wraps and the header points into the wrong place. The C++ compiler does
     # catch it, but as several hundred narrowing-conversion errors that name a line number
@@ -527,6 +534,23 @@ MAX_ZONES = 16       # the format's ceiling: the zone tag is 4 bits. See vg_cano
 # Set by --name=. A list so the argument loop can write to it.
 NAME = ["CANOPY"]
 
+# HOW MANY PIXELS A CANOPY MAY PAINT IN ONE FRAME.
+#
+# Measured, not chosen. A band that finishes inside its 768 us DMA window costs the frame
+# nothing at all, because its CPU ran under the previous band's transfer. Only the amount
+# a band goes OVER is frame time. So the whole question is whether the raster fits under
+# the wire, and the canopy is the only part of it that does not.
+#
+# From tools/replay_cost.py over captures/regress.phr: the raster totals 13,806 us of
+# which the canopy is 6,525, and the wire floor is 11,520. That leaves the canopy 4,239 us.
+# Two measured points -- 32,986 px costing 6,525 us and 16,768 px costing 3,932 -- give
+# 0.16 us a pixel, so 4,239 us is about 18,700 pixels.
+#
+# This is 8.1% of the screen. It is not a target for the drawing to hit; it is the ceiling
+# the baker enforces by choosing a tolerance, so that a drawing of any weight produces a
+# frame that runs. See --budget-px.
+BUDGET_PX = 18700
+
 A_ITEM = 31.6        # decoding one block header
 A_FLAT = 36.3        # one pixel of a flat block
 A_LIT = 39.3         # one pixel that carries its own level
@@ -599,6 +623,44 @@ if __name__ == "__main__":
         # firmware holds them all at once and selects per ship.
         if a.startswith("--name="):
             NAME[0] = a.split("=", 1)[1]
+        # BUDGET-PX, which picks the tolerance instead of the caller picking it.
+        #
+        # The drawing is whatever the artist submits and its weight cannot be predicted,
+        # so the pipeline has to hold the frame rather than the brief. This searches for
+        # the FINEST tolerance whose painted area still fits the budget, which keeps as
+        # much of the drawing as the frame can afford. Pass 0 to switch it off and use
+        # --tol as given.
+        if a.startswith("--budget-px="):
+            BUDGET_PX = int(a.split("=", 1)[1])
     if len(argv) < 2:
         sys.exit(__doc__)
+
+    if BUDGET_PX > 0:
+        # Painted area falls as tolerance rises, so the lowest tolerance that fits is the
+        # best one. Bisection over whole tolerances; the probe writes no file.
+        base_px, _ = bake(argv[0], argv[1], NAME[0], probe=True)
+        lo, hi, best = 1, 96, None
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            TOL = mid
+            px, stream = bake(argv[0], argv[1], NAME[0], probe=True)
+            if px <= BUDGET_PX and stream <= 0xFFFF:
+                best = (mid, px)
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        if best is None:
+            TOL = 96
+            print("  %s: WILL NOT FIT. Even the coarsest tolerance paints more\n"
+                  "  than the %d pixel budget. The drawing covers too much of the\n"
+                  "  screen for the frame to carry it, and no bake setting changes that."
+                  % (argv[0], BUDGET_PX))
+        else:
+            TOL = best[0]
+            print("  budget %d px: tolerance %d, painting %d px"
+                  % (BUDGET_PX, best[0], best[1]))
+            if base_px > best[1]:
+                print("     the drawing offered %d px and %d were given up to fit"
+                      % (base_px, base_px - best[1]))
+
     bake(argv[0], argv[1], argv[2] if len(argv) > 2 else NAME[0])
