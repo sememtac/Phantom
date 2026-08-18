@@ -77,10 +77,9 @@ def main():
             fresh = bool(m and m.group(1) == want)
         if not fresh:
             print("-- baking %s" % os.path.basename(png))
-            # NO TOLERANCE PASSED. The baker holds the frame's budget and chooses the
-            # finest tolerance the drawing can be given at, because what a submitted
-            # drawing weighs cannot be predicted and the pipeline has to run whatever
-            # arrives. It prints what it had to give up.
+            # NO TOLERANCE PASSED, so the baker uses its own default. It also reports
+            # when a drawing costs more than the frame can carry, and it does NOT reduce
+            # it -- see the note above BUDGET_PX in the baker. The art is the input.
             r = subprocess.run([sys.executable, baker, png, out, "--name=" + name])
             if r.returncode != 0:
                 sys.exit("bake failed for %s" % png)

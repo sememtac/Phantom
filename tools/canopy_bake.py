@@ -533,6 +533,7 @@ MAX_ZONES = 16       # the format's ceiling: the zone tag is 4 bits. See vg_cano
 
 # Set by --name=. A list so the argument loop can write to it.
 NAME = ["CANOPY"]
+FIT  = [False]
 
 # HOW MANY PIXELS A CANOPY MAY PAINT IN ONE FRAME.
 #
@@ -546,9 +547,15 @@ NAME = ["CANOPY"]
 # Two measured points -- 32,986 px costing 6,525 us and 16,768 px costing 3,932 -- give
 # 0.16 us a pixel, so 4,239 us is about 18,700 pixels.
 #
-# This is 8.1% of the screen. It is not a target for the drawing to hit; it is the ceiling
-# the baker enforces by choosing a tolerance, so that a drawing of any weight produces a
-# frame that runs. See --budget-px.
+# This is 8.1% of the screen, and it is ADVISORY. It was briefly enforced, by searching
+# for the finest tolerance that fit, and enforcing it took about half the painted pixels
+# out of both drawings that exist. That is the wrong way round: the art is the input and
+# the frame is what engineering has to earn, so a tool that quietly spends the art to buy
+# frames is deciding something that is not its to decide.
+#
+# So the bake reports and does not reduce. --fit-budget opts into the search for the
+# tolerance that fits, which is worth having when a drawing is genuinely unaffordable and
+# somebody wants to see what it would take.
 BUDGET_PX = 18700
 
 A_ITEM = 31.6        # decoding one block header
@@ -632,10 +639,27 @@ if __name__ == "__main__":
         # --tol as given.
         if a.startswith("--budget-px="):
             BUDGET_PX = int(a.split("=", 1)[1])
+        # FIT-BUDGET, which turns the report into a reduction. Off by default and it
+        # should stay off: see the note above BUDGET_PX for why the tool does not get to
+        # spend the drawing.
+        if a == "--fit-budget":
+            FIT[0] = True
     if len(argv) < 2:
         sys.exit(__doc__)
 
-    if BUDGET_PX > 0:
+    if BUDGET_PX > 0 and not FIT[0]:
+        # REPORTED, NOT REDUCED. What it costs is stated in frames, because that is the
+        # thing being spent and a pixel count is not legible as a cost.
+        px, _ = bake(argv[0], argv[1], NAME[0], probe=True)
+        if px > BUDGET_PX:
+            over_us = (px - BUDGET_PX) * 0.16
+            print("  %s paints %d px a frame against a budget of %d."
+                  % (argv[0], px, BUDGET_PX))
+            print("     that is %.1f ms of raster over what the wire leaves free, and it"
+                  % (over_us / 1000.0))
+            print("     comes off the frame rate. --fit-budget shows what would fit.")
+
+    if BUDGET_PX > 0 and FIT[0]:
         # Painted area falls as tolerance rises, so the lowest tolerance that fits is the
         # best one. Bisection over whole tolerances; the probe writes no file.
         base_px, _ = bake(argv[0], argv[1], NAME[0], probe=True)
