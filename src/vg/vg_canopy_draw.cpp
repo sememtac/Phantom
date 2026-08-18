@@ -948,47 +948,58 @@ void canopy_gate(uint16_t* row, int lx, int py) {
         p += 3;
         if (z >= s_can->zones) continue;
 
-        // A HIT PANEL IS DRAWN INSTEAD OF THE REGION'S NORMAL STATE, and takes the whole
-        // run: white while the flash lasts, then static that thins as it heals. The world
-        // behind it is simply gone for that long, which is the point -- the player has lost
-        // that piece of the view.
-        // A FAULTY PANEL, which is a condition rather than an event: mostly it works, and
-        // then it does not. The flicker is on the panel's OWN phase so two faulty panels do
-        // not blink together, which would read as the whole cockpit strobing.
-        bool faulty = false;
-        for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) faulty = true;
-        if (faulty) {
-            const uint32_t ph = hit_hash((uint32_t)z, 0u, s_hit_seed & ~0xFFu);
-            // Out for a short slice of each cycle, and occasionally for a long one.
-            const uint32_t beat = (s_hit_seed >> 3) + ph;
-            const bool out = ((beat & 0x3Fu) < 7u) || ((beat & 0x3FFu) < 40u);
-            if (out) {
-                uint16_t* qf = &row[y0];
-                for (int i = 0; i < n; i++) {
-                    const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
-                    if ((r & 0xFFu) < 190u)
-                        qf[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+        // NOT WHILE THE COCKPIT IS ARRIVING.
+        //
+        // The intro owns every region until it finishes. A panel cannot crack before it
+        // exists, and both branches below run AHEAD of the reveal -- so a fault left over
+        // from the last match, or a round landing during the sequence, painted static over
+        // a region the intro had not lit yet and went on flashing behind it.
+        //
+        // The reveal is the only thing that draws while s_intro_on. Damage resumes the
+        // frame it ends.
+        if (!s_intro_on) {
+            // A FAULTY PANEL, which is a condition rather than an event: mostly it works,
+            // and then it does not. The flicker is on the panel's OWN phase so two faulty
+            // panels do not blink together, which would read as the whole cockpit strobing.
+            bool faulty = false;
+            for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) faulty = true;
+            if (faulty) {
+                const uint32_t ph = hit_hash((uint32_t)z, 0u, s_hit_seed & ~0xFFu);
+                // Out for a short slice of each cycle, and occasionally for a long one.
+                const uint32_t beat = (s_hit_seed >> 3) + ph;
+                const bool out = ((beat & 0x3Fu) < 7u) || ((beat & 0x3FFu) < 40u);
+                if (out) {
+                    uint16_t* qf = &row[y0];
+                    for (int i = 0; i < n; i++) {
+                        const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
+                        if ((r & 0xFFu) < 190u)
+                            qf[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                    }
+                    continue;
+                }
+            }
+
+            // A HIT PANEL IS DRAWN INSTEAD OF THE REGION'S NORMAL STATE, and takes the
+            // whole run: white while the flash lasts, then static that thins as it heals.
+            // The world behind it is simply gone for that long, which is the point -- the
+            // player has lost that piece of the view.
+            const float ht = s_hit_t[z];
+            if (ht > 0.0f) {
+                uint16_t* qh = &row[y0];
+                if (ht > CANOPY_HIT_TIME * CANOPY_HIT_FLASH) {
+                    for (int i = 0; i < n; i++) qh[i] = 0xFFFF;
+                } else {
+                    // Thinning: as the hit heals, fewer pixels are taken, so the view comes
+                    // back through the static rather than switching back on.
+                    const uint32_t keep = (uint32_t)(255.0f * (ht / (CANOPY_HIT_TIME * CANOPY_HIT_FLASH)));
+                    for (int i = 0; i < n; i++) {
+                        const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
+                        if ((r & 0xFFu) < keep)
+                            qh[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                    }
                 }
                 continue;
             }
-        }
-
-        const float ht = s_hit_t[z];
-        if (ht > 0.0f) {
-            uint16_t* qh = &row[y0];
-            if (ht > CANOPY_HIT_TIME * CANOPY_HIT_FLASH) {
-                for (int i = 0; i < n; i++) qh[i] = 0xFFFF;
-            } else {
-                // Thinning: as the hit heals, fewer pixels are taken, so the view comes
-                // back through the static rather than switching back on.
-                const uint32_t keep = (uint32_t)(255.0f * (ht / (CANOPY_HIT_TIME * CANOPY_HIT_FLASH)));
-                for (int i = 0; i < n; i++) {
-                    const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
-                    if ((r & 0xFFu) < keep)
-                        qh[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
-                }
-            }
-            continue;
         }
 
         const uint32_t rev  = s_izon[z];
@@ -1144,6 +1155,16 @@ static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
 // sorts the green values it found and stores each block's position in that order, so zone 0 is
 // simply first and this needs no table of its own.
 void vg_canopy_intro_begin(void) {
+    // AN INTACT CANOPY, because this is a new match and the last one's damage is not
+    // this one's. Faults never heal by design, so nothing else was ever going to clear
+    // them: vg_canopy_hit_clear ran once at boot, and a second match inherited the
+    // panels the first one lost -- flashing through the intro and carrying on after it
+    // over a hull at full health.
+    //
+    // Here rather than in the state code because both match-start paths call this, and a
+    // third would have had to remember.
+    vg_canopy_hit_clear();
+
     // NO COCKPIT, NO SEQUENCE -- BUT THE CHAIN STILL HAS TO RUN.
     //
     // The sequence is the cockpit arriving a region at a time, and with no drawing there are no
@@ -1155,6 +1176,7 @@ void vg_canopy_intro_begin(void) {
     // before there were canopies: the panel catches, then the player is ready, then the radio.
     if (!s_can) {
         s_intro_on = false;
+        s_gate_on  = false;   // nothing to reveal and nothing broken
         s_icued    = true;
         s_settle_t = -1.0f;
         for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
@@ -1163,6 +1185,7 @@ void vg_canopy_intro_begin(void) {
         return;
     }
     s_intro_on = true;
+    s_gate_on  = true;   // the reveal IS the gate; set here so frame one has it
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
     s_icued    = false;
@@ -1334,7 +1357,16 @@ void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     // Aft with no sequence running: there is no frame to draw and no world to hold back, so
     // the whole pass is skipped. Checked here rather than at the submit site, because the
     // primitive still has to exist for the intro's gate to run.
-    if (s_can_rear && !s_gate_on) return;
+    //
+    // THE INTRO, NOT THE GATE. Damage briefly widened this to s_gate_on, which meant a
+    // single faulty panel put the ENTIRE canopy back into the aft pass for the rest of the
+    // match -- the one view that had been free of it.
+    //
+    // The rear view is a button the player presses, and it is exempt: the damage is to the
+    // FORWARD of the ship, so looking back at what is chasing you is never obscured by a
+    // panel that broke in front of you. Hits are covered by the same rule and for the same
+    // reason.
+    if (s_can_rear && !s_intro_on) return;
     if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
     else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
     else                canopy_rows_t<false, false>(band, by0, r0, r1);

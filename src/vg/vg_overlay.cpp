@@ -462,12 +462,16 @@ void vg_draw_overlays(void) {
         break;
     }
 
+    // IT SAYS NOTHING, because the canopy already said it.
+    //
+    // A blinking DAMAGE and a hull percentage, over the middle of the view, at the exact
+    // moment the player most needs to see where the shot came from. The panel going white
+    // and dropping into static reports the same hit in the place the hit landed, and the
+    // hull is on the instruments where it always was.
+    //
+    // The state stays -- it is the invulnerable pause and the grace period, and neither
+    // was ever the text's doing.
     case VG_HIT:
-        if (fmodf(vg.state_t, 0.5f) < 0.3f)
-            centred(200, "DAMAGE", COL_DANGER, 5);
-        snprintf(buf, sizeof(buf), "HULL %d",
-                 (int)(vg.health / vg.health_max * 100.0f + 0.5f));
-        centred(258, buf, INK_MAX, 3);
         break;
 
     // No instruments -- there is no cockpit left to report from. What is on
