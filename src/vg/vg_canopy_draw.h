@@ -33,6 +33,11 @@ void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1);
 // nothing: measured, the midpoint gave 1.2 of the 1.9 ms it should have.
 int vg_canopy_split_at(int band_index);
 
+// Told what the last frame's canopy split actually cost, so the next one can move it. See
+// the note at the definition: the two cores are not equally fast, and only a measurement
+// knows by how much.
+void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us);
+
 // ---------------------------------------------------------------------------
 // TAKING A HIT, ONE PANEL AT A TIME
 //

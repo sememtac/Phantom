@@ -1387,11 +1387,50 @@ bool vg_canopy_intro_update(float dt) {
 // Three instantiations, not four. The intro is always rigid -- see the note above the intro
 // state -- so there is no warped intro path to build.
 // Which of the three balance points applies, for draw_band's two-core split.
+// BALANCING TIME, NOT PIXELS.
+//
+// The baked split puts the cut where the DRAWING costs the same either side, and measured
+// in a course run that still left core 1 finishing its half in 6,701 us and then standing
+// at the rendezvous for 2,217 while core 0 took 8,918 for an equal share of the picture.
+//
+// The two cores are not equally fast at the same work. Core 0 carries the audio task and
+// the system's own, so an even share of pixels is an uneven share of time, and a band costs
+// the SLOWER half. No table baked from the drawing can know that -- it is a property of what
+// else is running, and it moves.
+//
+// So it is measured. The bias nudges toward whichever side is waiting, one row at a time,
+// and settles wherever the two halves finish together. One row of 32 is about 3% of a band,
+// small enough that a wrong step costs nothing and slow enough that it does not chase noise.
+static int s_split_bias = 0;
+
+void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us) {
+    // Only while there is something to balance. A frame with no canopy reports both at zero
+    // and must not drag the bias anywhere.
+    if (!half_us) return;
+    // A FORTIETH of the half is the deadband. A tenth was tried first and parked the bias at
+    // 18 rows with 613 us still on the clock, because 613 was inside a 784 us deadband --
+    // it stopped while there was most of a row's worth left to win. One row is about 3% of a
+    // band, so the deadband has to be well under that to let the last step happen.
+    const uint32_t dead = half_us / 40u;
+    if (wait_us > dead) {
+        // This core waited: the other side is slower, so give it less by cutting later.
+        if (s_split_bias < BAND_H / 3) s_split_bias++;
+    } else if (wait_us < dead / 2u) {
+        // It did not wait at all, so this side is the slow one. Cut earlier.
+        if (s_split_bias > -BAND_H / 3) s_split_bias--;
+    }
+}
+
 int vg_canopy_split_at(int band_index) {
     if (!s_can)      return ROW_SPLIT;
     if (s_intro_on)  return ROW_SPLIT;   // the world gate dwarfs the frame; midpoint is right
-    if (s_warp_on)   return s_wsplit[band_index];
-    return s_can->split[band_index];
+    int at = s_warp_on ? (int)s_wsplit[band_index] : (int)s_can->split[band_index];
+    at += s_split_bias;
+    // Clamped well inside the band: a split at 0 or BAND_H is not a split, and the pass
+    // would silently go back to one core.
+    if (at < 2)              at = 2;
+    if (at > BAND_H - 2)     at = BAND_H - 2;
+    return at;
 }
 
 void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {

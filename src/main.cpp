@@ -26,6 +26,7 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include "vg/vg_port.h"
 #include "vg/vg_sky.h"
 #include "vg/vg_raster.h"
+#include "vg/vg_canopy_draw.h"
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
 #include "vg/vg_render.h"
@@ -176,6 +177,7 @@ void loop(void) {
     static uint32_t acc_over_us = 0, acc_over_n = 0;
     static uint32_t acc_join = 0, acc_res = 0;
     static uint32_t acc_can = 0;
+    static uint32_t acc_canh = 0, acc_canw = 0;
     static uint32_t acc_join_mm = 0, acc_join_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
@@ -444,6 +446,12 @@ void loop(void) {
     acc_gl     += vg_rast_gl_us();
     acc_fl     += vg_rast_fl_us();
     acc_can    += vg_rast_can_us();
+    acc_canh   += vg_rast_canhalf_us();
+    acc_canw   += vg_rast_canwait_us();
+    // AND THE SPLIT MOVES ITSELF. Read here because this is where the frame's counters are
+    // read once; the nudge is a row at a time, so it settles over a second or so and cannot
+    // chase a single heavy frame.
+    vg_canopy_split_nudge(vg_rast_canhalf_us(), vg_rast_canwait_us());
     // NOT MICROSECONDS. `tnt` is the wall warning's LEVEL, 0 to 100 -- its cost lives in
     // `sky` and cannot be separated from the fill it colours. See vg_rast_tint_us.
     acc_tint   += vg_rast_tint_us();
@@ -591,6 +599,7 @@ void loop(void) {
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
                       "| aa %lu ln %lu(%lupx %lun) tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
+                      "| canh %lu canw %lu cana %d "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
@@ -626,6 +635,9 @@ void loop(void) {
                       (unsigned long)(acc_can  / frames),
                       (unsigned long)(acc_tint / frames),
                       (unsigned long)(acc_mir  / frames),
+                      (unsigned long)(acc_canh / frames),
+                      (unsigned long)(acc_canw / frames),
+                      vg_rast_can_split(),
                       vg_rast_prim_count(),
                       vg_rast_prim_peak(),
                       vg_rast_tri_count(),
@@ -849,6 +861,7 @@ void loop(void) {
     acc_input = acc_update = acc_submit = acc_flush = 0;
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
+    acc_canh = acc_canw = 0;
         acc_join = acc_res = 0;
         acc_can = 0;
         acc_join_mm = acc_join_n = 0;

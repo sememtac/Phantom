@@ -682,12 +682,28 @@ static uint32_t s_cyc_can = 0;
 // with the change being measured. Points scale with speed, glyphs with how much the HUD has
 // to say, fills with the instruments drawn.
 static uint32_t s_cyc_pt = 0, s_cyc_gl = 0, s_cyc_fl = 0;
+
+// WHAT THE CANOPY'S OWN SPLIT IS ACTUALLY DOING.
+//
+// `can` is the whole case elapsed -- start, this core's half, and the wait for the other.
+// Measured, the split returns 15% against the bench's one-core figure when the frame is
+// rigid and 1% when it is warped, and a split that returns 1% is not splitting. These say
+// which half of that is true: how long THIS core's half took, how long it then stood at the
+// rendezvous, and where the split was put.
+//
+// half >> wait means this core is the slow side and the balance point is too high.
+// wait >> half means the helper is, and it is too low.
+// Both small against `can` means the rendezvous itself is the cost.
+static uint32_t s_can_half = 0, s_can_wait = 0, s_can_at = 0, s_can_n = 0;
 static uint32_t s_tint_us = 0;
 uint32_t vg_rast_aa_us(void)   { return s_cyc_aa  / 240u; }
 uint32_t vg_rast_ln_us(void)   { return s_cyc_ln  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return s_cyc_tri / 240u; }
 uint32_t vg_rast_oth_us(void)  { return s_cyc_oth / 240u; }
 uint32_t vg_rast_can_us(void)  { return s_cyc_can / 240u; }
+uint32_t vg_rast_canhalf_us(void) { return s_can_half / 240u; }
+uint32_t vg_rast_canwait_us(void) { return s_can_wait / 240u; }
+int      vg_rast_can_split(void)  { return s_can_n ? (int)(s_can_at / s_can_n) : -1; }
 uint32_t vg_rast_pt_us(void)   { return s_cyc_pt  / 240u; }
 uint32_t vg_rast_gl_us(void)   { return s_cyc_gl  / 240u; }
 uint32_t vg_rast_fl_us(void)   { return s_cyc_fl  / 240u; }
@@ -1298,8 +1314,14 @@ static void draw_band(int band_index, uint16_t* band) {
             // thing keeping the warp maps in this file.
             const int at = vg_canopy_split_at(band_index);
             const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
+            const uint32_t ch0 = esp_cpu_get_cycle_count();
             vg_canopy_rows(band, by0, 0, split ? at : BAND_H);
+            const uint32_t ch1 = esp_cpu_get_cycle_count();
             if (split) rowsplit_wait();
+            s_can_half += ch1 - ch0;
+            s_can_wait += esp_cpu_get_cycle_count() - ch1;
+            s_can_at   += (uint32_t)(split ? at : BAND_H);
+            s_can_n++;
             break;
         }
 
@@ -1433,6 +1455,7 @@ void vg_rast_flush(void) {
     s_sky_us = s_prim_us = s_scan_us = 0;
     s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = s_cyc_can = 0;
     s_cyc_pt = s_cyc_gl = s_cyc_fl = 0;
+    s_can_half = s_can_wait = s_can_at = s_can_n = 0;
     s_ln_px = s_ln_n = 0;
     s_tint_us = 0;
 
