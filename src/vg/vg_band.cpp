@@ -50,6 +50,12 @@ bool vg_band_init(void) {
     return true;
 }
 
+// DIAGNOSTIC SWITCH for the split's line path. 0 = exact per-pixel guard
+// (band_line_fast_ref), no seams; 1 = endpoint clamp (band_line_fast), a ±1 px
+// jog where a line crosses the split seam. Both are measured; the author
+// chooses with the numbers in hand.
+#define SPLIT_LINE_CLAMPED 1
+
 // ---------------------------------------------------------------------------
 // Primitives
 // ---------------------------------------------------------------------------
@@ -124,7 +130,12 @@ static inline bool clip_band_y(float* ax, float* ay, float* bx, float* by,
 // Without this, `ln` cannot be divided into the per-line setup -- clipping, rounding,
 // dispatch -- and the per-pixel walk, and a bench cannot know what line length to use. The
 // first line bench averaged 176 pixels a line, which is nothing like a hull edge or a trail.
-static uint32_t s_ln_px = 0, s_ln_n = 0;
+//
+// ONE SLOT PER CORE, because the primitive pass runs on both now. Two cores adding into
+// one word lose increments -- the S3 has no cached-RMW coherence to save them -- and a
+// counter that is only mostly right is worse than one that is wrong, because it is
+// believed. The readers sum the pair; the reset zeroes both.
+static uint32_t s_ln_px[2] = { 0, 0 }, s_ln_n[2] = { 0, 0 };
 
 static inline void band_line(uint16_t* band, int band_y0,
                              int x0, int y0, int x1, int y1, uint16_t color) {
@@ -134,8 +145,8 @@ static inline void band_line(uint16_t* band, int band_y0,
 
     uint16_t* p = &band[(y0 - band_y0) * SCR_W + x0];
     const int ystep = sy * SCR_W;
-    s_ln_px += (uint32_t)((dx > -dy ? dx : -dy) + 1);
-    s_ln_n++;
+    s_ln_px[xPortGetCoreID()] += (uint32_t)((dx > -dy ? dx : -dy) + 1);
+    s_ln_n[xPortGetCoreID()]++;
 
     // AND THE MAJOR AXIS STEPS EVERY TIME, so its test is not a test.
     //
@@ -346,8 +357,16 @@ static inline void band_line_fast(uint16_t* band, int by0, int by1,
     band_line(band, by0, x0, y0, x1, y1, color);
 }
 
-// AS IT WAS, for the bench to prove the above against.
-static void band_line_fast_ref(uint16_t* band, int by0, int by1,
+// AS IT WAS, for the bench to prove the above against -- and, under the row split, the
+// shipping opaque path again. The per-pixel guard the clamped form shed is exactly what
+// lets two cores walk the SAME line and each keep only its own rows, with no seam: the
+// walk's phase is set by the full-band endpoints, so the pixels are the single-core
+// pixels to the bit. SPLIT_LINE_CLAMPED picks between them.
+//
+// IRAM, like everything else the split runs: the first row-split attempt left this
+// flash-resident with both cores pulling it through the shared 16 KB icache, which is
+// the suspected mechanism of that attempt costing 1,206 us instead of saving it.
+static void IRAM_ATTR band_line_fast_ref(uint16_t* band, int by0, int by1,
                                int x0, int y0, int x1, int y1, uint16_t color) {
     int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -667,13 +686,19 @@ static uint32_t s_sky_us = 0, s_prim_us = 0, s_scan_us = 0;
 // is antialiased ring segments or asteroid fills decides which knife to reach
 // for, and guessing has burned this project before. Cheap enough to leave in:
 // one pair of ~3-cycle counter reads per primitive per band it overlaps.
-static uint32_t s_cyc_aa = 0, s_cyc_ln = 0, s_cyc_tri = 0, s_cyc_oth = 0;
+//
+// A SLOT PER CORE on every one of these, for the same reason as the line counters
+// above: the primitive loop runs on both cores now, and a shared word drops
+// increments. The accessors report the SUM -- CPU cycles spent, which with two
+// cores drawing at once can exceed the wall time of the pass. That is the number
+// that says what the work costs; the wall time is `prim` on the telemetry line.
+static uint32_t s_cyc_aa[2], s_cyc_ln[2], s_cyc_tri[2], s_cyc_oth[2];
 // The canopy on its OWN counter, because `oth` is a bucket -- glyphs, fills and points
 // live there too, and they grow with how busy the fight is. Four rounds of canopy
 // optimisation were read off `oth` and two of those readings were really the HUD's text
 // getting longer. A number that moves for reasons other than the thing being measured
 // is not a measurement.
-static uint32_t s_cyc_can = 0;
+static uint32_t s_cyc_can[2];
 
 //
 // `oth` is a bucket -- points, glyphs and rectangle fills -- and it is the largest item in
@@ -681,34 +706,34 @@ static uint32_t s_cyc_can = 0;
 // came out unattributable: any of the three can move for a reason that has nothing to do
 // with the change being measured. Points scale with speed, glyphs with how much the HUD has
 // to say, fills with the instruments drawn.
-static uint32_t s_cyc_pt = 0, s_cyc_gl = 0, s_cyc_fl = 0;
+static uint32_t s_cyc_pt[2], s_cyc_gl[2], s_cyc_fl[2];
 
-// WHAT THE CANOPY'S OWN SPLIT IS ACTUALLY DOING.
+// WHAT THE PRIMITIVE PASS'S SPLIT IS ACTUALLY DOING.
 //
-// `can` is the whole case elapsed -- start, this core's half, and the wait for the other.
-// Measured, the split returns 15% against the bench's one-core figure when the frame is
-// rigid and 1% when it is warped, and a split that returns 1% is not splitting. These say
-// which half of that is true: how long THIS core's half took, how long it then stood at the
-// rendezvous, and where the split was put.
+// These wrapped the canopy case alone when the canopy was the only primitive that
+// forked. The fork wraps the WHOLE primitive loop now, so they describe the whole
+// loop: how long THIS core's share took, how long it then stood at the rendezvous,
+// and where the split was put. Written only by the drawing core, outside the forked
+// code, so they stay single words.
 //
 // half >> wait means this core is the slow side and the balance point is too high.
 // wait >> half means the helper is, and it is too low.
-// Both small against `can` means the rendezvous itself is the cost.
+// Both small against `prim` means the rendezvous itself is the cost.
 static uint32_t s_can_half = 0, s_can_wait = 0, s_can_at = 0, s_can_n = 0;
 static uint32_t s_tint_us = 0;
-uint32_t vg_rast_aa_us(void)   { return s_cyc_aa  / 240u; }
-uint32_t vg_rast_ln_us(void)   { return s_cyc_ln  / 240u; }
-uint32_t vg_rast_tri_us(void)  { return s_cyc_tri / 240u; }
-uint32_t vg_rast_oth_us(void)  { return s_cyc_oth / 240u; }
-uint32_t vg_rast_can_us(void)  { return s_cyc_can / 240u; }
+uint32_t vg_rast_aa_us(void)   { return (s_cyc_aa[0]  + s_cyc_aa[1])  / 240u; }
+uint32_t vg_rast_ln_us(void)   { return (s_cyc_ln[0]  + s_cyc_ln[1])  / 240u; }
+uint32_t vg_rast_tri_us(void)  { return (s_cyc_tri[0] + s_cyc_tri[1]) / 240u; }
+uint32_t vg_rast_oth_us(void)  { return (s_cyc_oth[0] + s_cyc_oth[1]) / 240u; }
+uint32_t vg_rast_can_us(void)  { return (s_cyc_can[0] + s_cyc_can[1]) / 240u; }
 uint32_t vg_rast_canhalf_us(void) { return s_can_half / 240u; }
 uint32_t vg_rast_canwait_us(void) { return s_can_wait / 240u; }
 int      vg_rast_can_split(void)  { return s_can_n ? (int)(s_can_at / s_can_n) : -1; }
-uint32_t vg_rast_pt_us(void)   { return s_cyc_pt  / 240u; }
-uint32_t vg_rast_gl_us(void)   { return s_cyc_gl  / 240u; }
-uint32_t vg_rast_fl_us(void)   { return s_cyc_fl  / 240u; }
-uint32_t vg_rast_ln_px(void)   { return s_ln_px; }
-uint32_t vg_rast_ln_n(void)    { return s_ln_n; }
+uint32_t vg_rast_pt_us(void)   { return (s_cyc_pt[0]  + s_cyc_pt[1])  / 240u; }
+uint32_t vg_rast_gl_us(void)   { return (s_cyc_gl[0]  + s_cyc_gl[1])  / 240u; }
+uint32_t vg_rast_fl_us(void)   { return (s_cyc_fl[0]  + s_cyc_fl[1])  / 240u; }
+uint32_t vg_rast_ln_px(void)   { return s_ln_px[0] + s_ln_px[1]; }
+uint32_t vg_rast_ln_n(void)    { return s_ln_n[0]  + s_ln_n[1]; }
 
 // vg_rast_tint_us moved to vg_canopy_draw.cpp with the alarm level it reports.
 
@@ -724,16 +749,31 @@ uint32_t vg_rast_scan_us(void) { return s_scan_us; }
 // within one band the rows are independent, and core 0 spends ~15 ms of every
 // frame doing nothing.
 //
-// ONLY THE TWO PASSES THAT HAVE NO CROSS-ROW STATE go through here: the backdrop
-// fill and the scanline overlay. Both are per-pixel functions of the row index,
-// so splitting them is bit-identical and the replay proves it.
+// The backdrop fill and the scanline overlay go through here as per-pixel
+// functions of the row index, so splitting them is bit-identical and the replay
+// proves it.
 //
-// The primitives are NOT split, and that is a correctness decision rather than a
-// scheduling one. A line is a Bresenham or Wu walk whose phase is set by where
-// it was clipped, so clipping one at a mid-band row and rasterising the halves
-// separately does not reproduce the pixels a full-band walk produces -- it would
-// add fifteen more of the +-1px boundary jogs the band edges already make. That
-// is a change to the look, which is the author's call and not a free win.
+// THE PRIMITIVES GO THROUGH TOO NOW, and the thing that once made that a change
+// to the look is handled instead of avoided. A line is a Bresenham or Wu walk
+// whose phase is set by where it was clipped, so clipping one at a mid-band row
+// and rasterising the halves separately does not reproduce a full-band walk's
+// pixels. So the geometry is NOT clipped at the seam: both cores clip every line
+// against the whole band, walk the identical pixels, and each stores only the
+// rows it owns -- band_prims carries the band's true bounds for the clip beside
+// the core's own rows for the stores. Exact, at the price of each core stepping
+// through the other's rows; SPLIT_LINE_CLAMPED above buys those steps back with
+// a +-1 px seam jog, and the author chooses with both measured.
+//
+// A core's share arrives as an OFFSET band pointer with narrowed bounds, the
+// same shape every drawing helper already takes -- by0 both indexes and clips,
+// so (band + at*SCR_W, by0+at, by1) IS the bottom of the band as far as a
+// helper can tell, and no helper grew a parameter for the split.
+//
+// THIS WAS TRIED ONCE BEFORE and measured +1,206 us, from flash: both cores ran
+// the walkers concurrently through the shared 16 KB icache. The canopy pass
+// later measured -1,602 us just from moving to IRAM, which is why everything
+// the fork executes now carries IRAM_ATTR -- this build retests the split with
+// that mechanism removed.
 //
 // The split point must be EVEN: the backdrop walks rows in pairs and a pair that
 // straddled the boundary would be filled by one core and copied by the other.
@@ -744,10 +784,19 @@ static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair")
 // RS_PREP is not a row split at all -- it is a range of BANDS, and it reuses this
 // machinery because the handshake and the helper task are exactly what it needs. r0 and r1
 // carry the band range instead of a row range.
-enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2, RS_PREP = 3 };
+//
+// RS_PRIM reads the fields its own way too: band/by0 are already offset to the helper's
+// share, r1 is the band's last row INCLUSIVE rather than a count, and r0 carries the
+// band's TRUE top row -- band_prims needs it for the line clip, and it is the one field
+// nothing else was using.
+enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2, RS_PREP = 3, RS_PRIM = 4 };
 
-// Forward: the canopy pass is a third row-splittable job, and it is the largest of
-// them. Declared here because the helper task below dispatches to it.
+// Forward: the primitive loop is a row-splittable job too, and it is the largest of
+// them. Declared here because the helper task below dispatches to it. The attributes
+// ride on this declaration alone -- IRAM_ATTR names a fresh section each time it is
+// written out, so repeating it at the definition is a conflict, not a confirmation.
+static void IRAM_ATTR __attribute__((noinline))
+band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1);
 
 static SemaphoreHandle_t s_rs_go   = nullptr;
 static SemaphoreHandle_t s_rs_done = nullptr;
@@ -763,6 +812,7 @@ static void rowsplit_task(void*) {
         if      (s_rs.op == RS_SKY)    vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_CANOPY) vg_canopy_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_PREP)   vg_sky_prep_bands(s_rs.r0, s_rs.r1);
+        else if (s_rs.op == RS_PRIM)   band_prims(s_rs.band, s_rs.by0, s_rs.r1, s_rs.r0, s_rs.r1);
         else                           band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         xSemaphoreGive(s_rs_done);
     }
@@ -1212,7 +1262,177 @@ void vg_sky_bench(VgSkyCost* out) {
 
 // vg_canopy_bench moved to vg_canopy_draw.cpp, with the drawing it measures.
 
-static void draw_band(int band_index, uint16_t* band) {
+// THE ACTIVE LIST, built once per frame. Every band used to test every
+// primitive against its row range: fifteen bands times seven hundred
+// primitives is ten thousand rejections a frame, nearly a millisecond of
+// pure bookkeeping in the heaviest scenes. Classic scanline instead: each
+// primitive is bucketed by its first band, bands are drawn in order, and a
+// compacting active array carries primitives forward until their last row
+// passes. Each primitive is now touched once to insert and once per band it
+// actually spans.
+// Two active buffers, because the update is a MERGE. Survivors and the
+// band's new admissions are each sorted by primitive index -- submission
+// order, which is draw order, which is the painter's algorithm -- and
+// simply appending the new ones after the old would draw a late-submitted
+// primitive under an early one wherever their first bands differ. A trail
+// would poke through the comms badge. Merging keeps the order exact.
+// At file scope now rather than inside draw_band: draw_band builds the list and
+// band_prims reads it on BOTH cores. The merge finishes before the fork, and the
+// fork's semaphore give is the release fence that publishes it to the helper.
+static uint16_t s_active[2][MAX_PRIMS];
+static int      s_active_n = 0;
+static int      s_flip     = 0;
+static uint16_t s_bucket[MAX_PRIMS];
+static uint16_t s_bhead[NUM_BANDS + 1];
+
+// THE PRIMITIVE LOOP, run by both cores at once over one band.
+//
+// by0/by1 are the rows THIS core owns, and they arrive pre-narrowed: the caller
+// hands the helper an offset band pointer and a shifted by0, so to this loop and
+// to every helper under it a core's share simply IS a band -- by0 both indexes
+// and clips, which is why no helper grew a parameter for the split.
+//
+// cy0/cy1 are the band's TRUE bounds, and only the line clip reads them:
+// narrowing the geometry clip to the core's range would re-seed the Bresenham
+// and Wu phase at the seam and kink every line, so both cores clip identical
+// geometry against the whole band and each stores only its own rows.
+//
+// IRAM, and noinline so it stays there: inlined into rowsplit_task this would
+// execute from flash on the helper core, which is precisely the mechanism the
+// placement removes -- see the note at THE ROW SPLIT. Both attributes are on the
+// forward declaration above the helper task.
+static void band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1) {
+    const Prim* prims = vg_prim_list();
+    const int   core  = xPortGetCoreID();
+
+    const uint16_t* act = s_active[s_flip];
+    for (int ai = 0; ai < s_active_n; ai++) {
+        const Prim* p = &prims[act[ai]];
+        if (p->ymax < by0 || p->ymin > by1) continue;
+
+        const uint32_t c0 = esp_cpu_get_cycle_count();
+        switch (p->type) {
+        case PRIM_SKY:
+            vg_sky_fill_patch(band, by0, by1 - by0 + 1);
+            break;
+
+        case PRIM_CANOPY:
+            // The OUTER fork owns the split now: the rows here are already this
+            // core's share, so the pass runs straight through. No rowsplit pair in
+            // this case any more -- there is one helper task and one job slot, and
+            // a fork inside the fork would overwrite the descriptor the helper is
+            // reading. Where the cut lands is still the canopy's own balance
+            // point, asked for by draw_band before the fork -- see
+            // vg_canopy_split_at.
+            if (!vg_canopy_current()) break;
+            vg_canopy_rows(band, by0, 0, by1 - by0 + 1);
+            break;
+
+        case PRIM_POINT:
+            // The active list only places it in the BAND; the split needs the row
+            // test, or a store with no guard lands in the other core's share.
+            if (p->y0 < by0 || p->y0 > by1) break;
+            band[(p->y0 - by0) * SCR_W + p->x0] = p->color;
+            break;
+
+        case PRIM_LINE: {
+            float ax = p->x0, ay = p->y0, bx = p->x1, by = p->y1;
+#if SPLIT_LINE_CLAMPED
+            // The clamped variant re-clips the OPAQUE walk to this core's own rows
+            // and walks guard-free; the re-seeded phase is the +-1 px seam jog. The
+            // blended and antialiased walks keep their per-pixel guards and stay
+            // exact under either setting.
+            const bool guarded = (p->aa == LINE_ADD || p->aa == LINE_SUB
+#if VG_LINE_AA
+                                  || p->aa == LINE_AA
+#endif
+                                  );
+            const int clo = guarded ? cy0 : by0;
+            const int chi = guarded ? cy1 : by1;
+#else
+            const int clo = cy0, chi = cy1;
+#endif
+            if (!clip_band_y(&ax, &ay, &bx, &by, (float)clo, (float)chi)) break;
+
+            int ix0 = fast_lrintf(ax), iy0 = fast_lrintf(ay);
+            int ix1 = fast_lrintf(bx), iy1 = fast_lrintf(by);
+            // Guard against float rounding pushing an endpoint one row out.
+            if (iy0 < clo) iy0 = clo; else if (iy0 > chi) iy0 = chi;
+            if (iy1 < clo) iy1 = clo; else if (iy1 > chi) iy1 = chi;
+            if (ix0 < 0) ix0 = 0; else if (ix0 > SCR_W - 1) ix0 = SCR_W - 1;
+            if (ix1 < 0) ix1 = 0; else if (ix1 > SCR_W - 1) ix1 = SCR_W - 1;
+            // `aa` is a MODE, not a flag -- see LINE_* in vg_raster_int.h. It rides in
+            // what was padding, so the extra modes cost no memory and, more to the
+            // point, do not grow Prim past the 20 bytes the join's word copy assumes.
+            if (p->aa == LINE_ADD || p->aa == LINE_SUB) {
+                band_line_delta(band, by0, by1, ix0, iy0, ix1, iy1,
+                                p->color, p->aa == LINE_ADD);
+            }
+#if VG_LINE_AA
+            else if (p->aa == LINE_AA) band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+#endif
+            else {
+#if SPLIT_LINE_CLAMPED
+                band_line_fast(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+#else
+                // band_line's own counters are unreachable on this path, so the
+                // line is counted here -- by the core that owns its FIRST row, so a
+                // line crossing the seam is one line and not two.
+                if (iy0 >= by0 && iy0 <= by1) {
+                    const int adx = ix1 > ix0 ? ix1 - ix0 : ix0 - ix1;
+                    const int ady = iy1 > iy0 ? iy1 - iy0 : iy0 - iy1;
+                    s_ln_px[core] += (uint32_t)((adx > ady ? adx : ady) + 1);
+                    s_ln_n[core]++;
+                }
+                band_line_fast_ref(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
+#endif
+            }
+            break;
+        }
+
+        case PRIM_TRI:
+            band_tri(band, by0, by1, p->x0, p->y0, p->x1, p->y1, p->x2, p->y2,
+                     p->color, p->aa);
+            break;
+
+        case PRIM_FILL: {
+            int ry0 = p->y0 > by0 ? p->y0 : by0;
+            int rye = p->y0 + p->y1 - 1;
+            int ry1 = rye < by1 ? rye : by1;
+            for (int y = ry0; y <= ry1; y++) {
+                uint16_t* row = &band[(y - by0) * SCR_W + p->x0];
+                for (int x = 0; x < p->x1; x++) row[x] = p->color;
+            }
+            break;
+        }
+
+        case PRIM_GLYPH:
+            band_glyph(band, by0, by1, p);
+            break;
+        }
+        const uint32_t dc = esp_cpu_get_cycle_count() - c0;
+        // `aa` COUNTS EVERY BLENDED LINE, NOT ONLY SMOOTHED ONES. The field holds
+        // LINE_AA, LINE_ADD and LINE_SUB alike, so an additive line lands in this bucket
+        // and out of `ln`. That is worth knowing before reading the two against each
+        // other: making the ship trails additive moved them wholesale from one to the
+        // other, which looked like the line cost falling and antialiasing switching itself
+        // on, and was neither.
+        if      (p->type == PRIM_LINE && p->aa) s_cyc_aa[core]  += dc;
+        else if (p->type == PRIM_LINE)          s_cyc_ln[core]  += dc;
+        else if (p->type == PRIM_TRI)           s_cyc_tri[core] += dc;
+        else if (p->type == PRIM_CANOPY)        s_cyc_can[core] += dc;
+        else if (p->type == PRIM_POINT)         s_cyc_pt[core]  += dc;
+        else if (p->type == PRIM_GLYPH)         s_cyc_gl[core]  += dc;
+        else if (p->type == PRIM_FILL)          s_cyc_fl[core]  += dc;
+        else                                    s_cyc_oth[core] += dc;
+    }
+}
+
+// IRAM and noinline like the loop it forks, or the placement leaks: left to the
+// heuristic this whole function folds into vg_rast_flush and runs from flash --
+// which is where the first attempt's walkers lived, and what it died of.
+static void IRAM_ATTR __attribute__((noinline))
+draw_band(int band_index, uint16_t* band) {
     const int by0 = band_index * BAND_H;
     const int by1 = by0 + BAND_H - 1;
 
@@ -1236,26 +1456,6 @@ static void draw_band(int band_index, uint16_t* band) {
 
     const Prim* prims = vg_prim_list();
     const int   n     = vg_prim_live();
-
-    // THE ACTIVE LIST, built once per frame. Every band used to test every
-    // primitive against its row range: fifteen bands times seven hundred
-    // primitives is ten thousand rejections a frame, nearly a millisecond of
-    // pure bookkeeping in the heaviest scenes. Classic scanline instead: each
-    // primitive is bucketed by its first band, bands are drawn in order, and a
-    // compacting active array carries primitives forward until their last row
-    // passes. Each primitive is now touched once to insert and once per band it
-    // actually spans.
-    // Two active buffers, because the update is a MERGE. Survivors and the
-    // band's new admissions are each sorted by primitive index -- submission
-    // order, which is draw order, which is the painter's algorithm -- and
-    // simply appending the new ones after the old would draw a late-submitted
-    // primitive under an early one wherever their first bands differ. A trail
-    // would poke through the comms badge. Merging keeps the order exact.
-    static uint16_t s_active[2][MAX_PRIMS];
-    static int      s_active_n = 0;
-    static int      s_flip     = 0;
-    static uint16_t s_bucket[MAX_PRIMS];
-    static uint16_t s_bhead[NUM_BANDS + 1];
 
     if (band_index == 0) {
         // Counting sort of primitive indices by first band: counts, prefix,
@@ -1297,115 +1497,24 @@ static void draw_band(int band_index, uint16_t* band) {
         s_active_n = dn;
     }
 
-    const uint16_t* act = s_active[s_flip];
-    for (int ai = 0; ai < s_active_n; ai++) {
-        const Prim* p = &prims[act[ai]];
-        if (p->ymax < by0 || p->ymin > by1) continue;
-
-        const uint32_t c0 = esp_cpu_get_cycle_count();
-        switch (p->type) {
-        case PRIM_SKY:
-            vg_sky_fill_patch(band, by0);
-            break;
-
-        case PRIM_CANOPY: {
-            // HALF ON EACH CORE, and this is where it pays most: during the primitive
-            // phase core 0 has nothing to do at all -- the backdrop is finished and the
-            // scanlines have not started -- so the whole pass is being done by one core
-            // while the other waits. The rendezvous is the same one the backdrop and
-            // the scanlines already use.
-            // Split where this band's pixels actually balance, not at its midpoint. A
-            // band costs the SLOWER half, so an even-looking split of uneven work
-            // returns almost nothing -- measured, the midpoint gave 1.2 of the 1.9 ms
-            // it should have. The baker computes the point; it is fifteen bytes.
-            // Warped, the baked balance point is for a distribution that no longer applies.
-            // During the intro neither applies: the world gate blacks out whole columns of
-            // screen and dwarfs the frame, and its work is spread evenly enough across a band
-            // that the midpoint is the right guess.
-            if (!vg_canopy_current()) break;
-            // ASKED FOR, not read. The three cases above are the canopy's own state --
-            // baked, warped, or mid-intro -- and draw_band knowing which was the last
-            // thing keeping the warp maps in this file.
-            const int at = vg_canopy_split_at(band_index);
-            const bool split = rowsplit_start(RS_CANOPY, band, by0, at, BAND_H);
-            const uint32_t ch0 = esp_cpu_get_cycle_count();
-            vg_canopy_rows(band, by0, 0, split ? at : BAND_H);
-            const uint32_t ch1 = esp_cpu_get_cycle_count();
-            if (split) rowsplit_wait();
-            s_can_half += ch1 - ch0;
-            s_can_wait += esp_cpu_get_cycle_count() - ch1;
-            s_can_at   += (uint32_t)(split ? at : BAND_H);
-            s_can_n++;
-            break;
-        }
-
-        case PRIM_POINT:
-            band[(p->y0 - by0) * SCR_W + p->x0] = p->color;
-            break;
-
-        case PRIM_LINE: {
-            float ax = p->x0, ay = p->y0, bx = p->x1, by = p->y1;
-            if (!clip_band_y(&ax, &ay, &bx, &by, (float)by0, (float)by1)) break;
-
-            int ix0 = fast_lrintf(ax), iy0 = fast_lrintf(ay);
-            int ix1 = fast_lrintf(bx), iy1 = fast_lrintf(by);
-            // Guard against float rounding pushing an endpoint one row out.
-            if (iy0 < by0) iy0 = by0; else if (iy0 > by1) iy0 = by1;
-            if (iy1 < by0) iy1 = by0; else if (iy1 > by1) iy1 = by1;
-            if (ix0 < 0) ix0 = 0; else if (ix0 > SCR_W - 1) ix0 = SCR_W - 1;
-            if (ix1 < 0) ix1 = 0; else if (ix1 > SCR_W - 1) ix1 = SCR_W - 1;
-            // `aa` is a MODE, not a flag -- see LINE_* in vg_raster_int.h. It rides in
-            // what was padding, so the extra modes cost no memory and, more to the
-            // point, do not grow Prim past the 20 bytes the join's word copy assumes.
-            if (p->aa == LINE_ADD || p->aa == LINE_SUB) {
-                band_line_delta(band, by0, by1, ix0, iy0, ix1, iy1,
-                                p->color, p->aa == LINE_ADD);
-            }
-#if VG_LINE_AA
-            else if (p->aa == LINE_AA) band_line_aa(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
-            else                       band_line_fast(band, by0, by1, ix0, iy0, ix1, iy1, p->color);
-#else
-            else band_line(band, by0, ix0, iy0, ix1, iy1, p->color);
-#endif
-            break;
-        }
-
-        case PRIM_TRI:
-            band_tri(band, by0, by1, p->x0, p->y0, p->x1, p->y1, p->x2, p->y2,
-                     p->color, p->aa);
-            break;
-
-        case PRIM_FILL: {
-            int ry0 = p->y0 > by0 ? p->y0 : by0;
-            int rye = p->y0 + p->y1 - 1;
-            int ry1 = rye < by1 ? rye : by1;
-            for (int y = ry0; y <= ry1; y++) {
-                uint16_t* row = &band[(y - by0) * SCR_W + p->x0];
-                for (int x = 0; x < p->x1; x++) row[x] = p->color;
-            }
-            break;
-        }
-
-        case PRIM_GLYPH:
-            band_glyph(band, by0, by1, p);
-            break;
-        }
-        const uint32_t dc = esp_cpu_get_cycle_count() - c0;
-        // `aa` COUNTS EVERY BLENDED LINE, NOT ONLY SMOOTHED ONES. The field holds
-        // LINE_AA, LINE_ADD and LINE_SUB alike, so an additive line lands in this bucket
-        // and out of `ln`. That is worth knowing before reading the two against each
-        // other: making the ship trails additive moved them wholesale from one to the
-        // other, which looked like the line cost falling and antialiasing switching itself
-        // on, and was neither.
-        if      (p->type == PRIM_LINE && p->aa) s_cyc_aa  += dc;
-        else if (p->type == PRIM_LINE)          s_cyc_ln  += dc;
-        else if (p->type == PRIM_TRI)           s_cyc_tri += dc;
-        else if (p->type == PRIM_CANOPY)        s_cyc_can += dc;
-        else if (p->type == PRIM_POINT)         s_cyc_pt  += dc;
-        else if (p->type == PRIM_GLYPH)         s_cyc_gl  += dc;
-        else if (p->type == PRIM_FILL)          s_cyc_fl  += dc;
-        else                                    s_cyc_oth += dc;
-    }
+    // THE FORK. The helper takes the rows below the cut through an offset band
+    // pointer -- to band_prims its share simply IS a band -- while this core
+    // takes the rows above it. The cut is the canopy's balance point because
+    // that is where this fork grew from, and the brackets below still feed
+    // vg_canopy_split_nudge: it balances the WHOLE primitive pass now, by TIME
+    // and not pixels -- the two cores are not equally fast at the same work, and
+    // only a measurement knows by how much. r0 carries the band's true top row
+    // for the line clip; see RS_PRIM at the op enum.
+    const int at = vg_canopy_split_at(band_index);
+    const bool split = rowsplit_start(RS_PRIM, band + at * SCR_W, by0 + at, by0, by1);
+    const uint32_t ch0 = esp_cpu_get_cycle_count();
+    band_prims(band, by0, split ? by0 + at - 1 : by1, by0, by1);
+    const uint32_t ch1 = esp_cpu_get_cycle_count();
+    if (split) rowsplit_wait();
+    s_can_half += ch1 - ch0;
+    s_can_wait += esp_cpu_get_cycle_count() - ch1;
+    s_can_at   += (uint32_t)(split ? at : BAND_H);
+    s_can_n++;
 
     s_prim_us += micros() - t_prim;
 }
@@ -1467,10 +1576,12 @@ void vg_rast_flush(void) {
     s_push_us = s_over_us = 0;
     s_over_n  = 0;
     s_sky_us = s_prim_us = s_scan_us = 0;
-    s_cyc_aa = s_cyc_ln = s_cyc_tri = s_cyc_oth = s_cyc_can = 0;
-    s_cyc_pt = s_cyc_gl = s_cyc_fl = 0;
+    for (int c = 0; c < 2; c++) {
+        s_cyc_aa[c] = s_cyc_ln[c] = s_cyc_tri[c] = s_cyc_oth[c] = s_cyc_can[c] = 0;
+        s_cyc_pt[c] = s_cyc_gl[c] = s_cyc_fl[c] = 0;
+        s_ln_px[c] = s_ln_n[c] = 0;
+    }
     s_can_half = s_can_wait = s_can_at = s_can_n = 0;
-    s_ln_px = s_ln_n = 0;
     s_tint_us = 0;
 
     // THE WHOLE FRAME'S CHART, BOTH CORES, BEFORE ANY BAND IS DRAWN.

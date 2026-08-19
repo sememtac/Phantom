@@ -1311,7 +1311,7 @@ void vg_sky_fill_band(uint16_t* band, int band_y0) {
     // wide, so the whole pass is a few thousand pixels against the 230,400 above
     // it, and at this scale a texel covers three pixels instead of ten -- eight
     // would be sampling coarser than the texture.
-void vg_sky_fill_patch(uint16_t* band, int band_y0) {
+void vg_sky_fill_patch(uint16_t* band, int band_y0, int rows) {
     if (!s_ready || s_px1 < s_px0) return;
 
     float su, sv, sky_roll;
@@ -1331,9 +1331,11 @@ void vg_sky_fill_patch(uint16_t* band, int band_y0) {
     const float cb = cosf(bank_eff), sb = sinf(bank_eff);
 
     {
+        // Clamped to the CALLER'S rows, not BAND_H: under the row split each core
+        // owns part of a band, and the patch rectangle knows nothing about that.
         int r0 = s_py0 - band_y0, r1 = s_py1 - band_y0;
         if (r0 < 0) r0 = 0;
-        if (r1 > BAND_H - 1) r1 = BAND_H - 1;
+        if (r1 > rows - 1) r1 = rows - 1;
 
         if (r1 >= r0) {
             const float ps = s_scale / REAR_FOCAL_K;

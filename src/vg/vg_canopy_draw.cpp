@@ -1469,6 +1469,13 @@ bool vg_canopy_intro_update(float dt) {
 // So it is measured. The bias nudges toward whichever side is waiting, one row at a time,
 // and settles wherever the two halves finish together. One row of 32 is about 3% of a band,
 // small enough that a wrong step costs nothing and slow enough that it does not chase noise.
+//
+// IT BALANCES THE WHOLE PRIMITIVE PASS NOW, not the canopy alone. draw_band's fork grew
+// from the canopy case to take every primitive of the band, and the half/wait pair feeding
+// this comes off brackets around that whole fork -- so the bias settles where the two
+// cores' shares of ALL the drawing finish together. The baked table still supplies the
+// starting cut, because the canopy remains the heaviest and most uneven item in the pass;
+// the bias absorbs everything else, the same way it already absorbed the other core's load.
 static int s_split_bias = 0;
 
 void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us) {

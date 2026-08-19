@@ -84,8 +84,11 @@ void vg_sky_set_rear(bool on);
 void vg_sky_set_patch(int x, int y, int w, int h);
 
 // Paint the patch's aft backdrop into this band. Called from the band raster
-// when it meets a PRIM_SKY, so that it lands in submission order.
-void vg_sky_fill_patch(uint16_t* band, int band_y0);
+// when it meets a PRIM_SKY, so that it lands in submission order. `rows` is how
+// many rows the caller actually owns from band_y0 down: the row split hands each
+// core part of a band, and this fill derives its rows from the patch rectangle,
+// so without the count it would overrun the share it was given.
+void vg_sky_fill_patch(uint16_t* band, int band_y0, int rows);
 
 // Fill one band from the texture. Replaces the memset entirely.
 void vg_sky_fill_band(uint16_t* band, int band_y0);
