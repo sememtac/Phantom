@@ -78,6 +78,13 @@ def bake(src, out, name="CANOPY", probe=False):
     rgb = Image.open(src).convert("RGB")
     sw, sh = rgb.size
     im, gm, _ = rgb.split()
+
+    # The canopy ground is 50% grey: 128. Values of 127 and 129 also count as ground.
+    # Generative tools and image editors can shift a flat area by one level, and a
+    # one-level shift must not move the background the tolerance measures from. Found
+    # when a flat cover painted at 127 over art that fades to 129 moved the detected
+    # background two levels and pulled thousands of border pixels over the threshold.
+    im = im.point(lambda v: 128 if abs(v - 128) <= 1 else v)
     px = im.load()
     gp = gm.load()
 

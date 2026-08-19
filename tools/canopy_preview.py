@@ -27,6 +27,9 @@ def load(src):
     """The drawing's own channel, and the background value the baker would pick."""
     rgb = Image.open(src).convert("RGB")
     im = rgb.split()[0]
+    # The same ground rule as the baker: 128 is the ground and 127..129 count as it.
+    # This tool must drop exactly what the baker drops, or the preview lies.
+    im = im.point(lambda v: 128 if abs(v - 128) <= 1 else v)
     px = im.load()
     sw, sh = im.size
     hist = {}

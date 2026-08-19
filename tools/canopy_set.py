@@ -29,6 +29,18 @@ GEN = os.path.join(ROOT, "src", "vg", "generated")
 # between the directory and the firmware.
 HULLS = ["aegis", "lance", "chariot", "ballista"]
 
+# Per-hull bake options. This is where the author fits a heavy drawing to a budget,
+# one drawing at a time, after looking at what the fit removes (tools/canopy_preview.py
+# renders it). A hull not listed here bakes at the default tolerance and is never
+# reduced, however heavy it is -- the report states the cost and the decision to fit is
+# made here or not at all.
+#
+# Empty is a decision, not a default. AEGIS was fitted to 33,000 px -- CHARIOT's flown
+# weight, which runs the course at 58.9 fps -- flown on 2026-08-19, and the author judged
+# the loss on the glass and rejected it: the drawing at full weight is the look, and its
+# ~55 fps is what that look costs. The mechanism stays for the two hulls not yet drawn.
+FIT = {}
+
 
 def main():
     if not os.path.isdir(SRC):
@@ -67,20 +79,26 @@ def main():
         #
         # It is the same shape as the incident above: a cache that answers "has the input
         # changed" when the question is "is this output still what the tools would produce".
+        # The hash covers the drawing, the baker, AND this hull's fit options. A fit
+        # added or changed in FIT must rebake, and without the options in the hash it
+        # silently did not -- the stale header passed the check and the new budget never
+        # applied.
         want = hashlib.sha256(open(png, "rb").read()
-                              + open(baker, "rb").read()).hexdigest()[:16]
+                              + open(baker, "rb").read()
+                              + " ".join(FIT.get(hull, [])).encode()).hexdigest()[:16]
         fresh = False
         if os.path.isfile(out):
             with open(out) as fh:
                 head = fh.read(2048)
-            m = re.search(r"source(?:\+baker)? sha256 ([0-9a-f]{16})", head)
+            m = re.search(r"source(?:\+baker(?:\+fit)?)? sha256 ([0-9a-f]{16})", head)
             fresh = bool(m and m.group(1) == want)
         if not fresh:
             print("-- baking %s" % os.path.basename(png))
             # NO TOLERANCE PASSED, so the baker uses its own default. It also reports
             # when a drawing costs more than the frame can carry, and it does NOT reduce
             # it -- see the note above BUDGET_PX in the baker. The art is the input.
-            r = subprocess.run([sys.executable, baker, png, out, "--name=" + name])
+            r = subprocess.run([sys.executable, baker, png, out, "--name=" + name]
+                               + FIT.get(hull, []))
             if r.returncode != 0:
                 sys.exit("bake failed for %s" % png)
             # The stamp the check above reads. Written here rather than by the baker so
