@@ -208,6 +208,111 @@ static inline float shape(float d, float dead, float full) {
     return d > 0 ? v : -v;
 }
 
+// ---------------------------------------------------------------------------
+// THE INPUT PROBE: the whole update, off the frame thread. PROBE -- see below.
+//
+// vg_input_update costs the frame ~680 us, ~600 of it the blocking touch read, and it
+// is the one frame phase with no data hazard against the band loop. This task runs it
+// on core 0 every 8 ms and publishes through the same seqlock shape the IMU uses. The
+// frame takes the freshest sample instead of doing the work.
+//
+// Two things do not survive latest-wins sampling and are carried differently:
+//
+//   EDGES are counters. A press that lands between two frame reads must not vanish,
+//   so the task counts them and the consumer fires an edge when the count moved.
+//
+//   MENU DRAG is a cumulative sum. The consumer takes the difference since its last
+//   read, and zeroes it on the press frame exactly as the field's contract says.
+//
+// The update keeps per-call statics, so it must belong to ONE thread. Once this task
+// starts, the inline path is never used again -- the first frame or two before the
+// task publishes get a neutral input, which is one 8 ms tick of a centred stick at
+// boot. If the task cannot start, the inline path is used forever and the probe
+// simply is not running.
+// ---------------------------------------------------------------------------
+
+struct InputPub {
+    VgInput rec;
+    uint8_t fire_n, alt_n, pwr_n, menu_n;
+    float   cum_dx, cum_dy;
+};
+static InputPub s_inp;
+static uint32_t s_inp_seq  = 0;
+static int      s_inp_mode = 0;    // 0 inline (task never started), 1 task owns the update
+
+static void input_task(void*) {
+    InputPub acc = {};
+    uint32_t last = micros();
+    for (;;) {
+        const uint32_t now = micros();
+        float dt = (float)(now - last) * 1e-6f;
+        last = now;
+        if (dt < 1e-4f) dt = 1e-4f;
+        if (dt > 0.05f) dt = 0.05f;   // a stall must not become a giant smoothing step
+
+        vg_input_update(dt, &acc.rec);
+        if (acc.rec.fire_edge) acc.fire_n++;
+        if (acc.rec.alt_edge)  acc.alt_n++;
+        if (acc.rec.pwr_edge)  acc.pwr_n++;
+        if (acc.rec.menu_edge) acc.menu_n++;
+        acc.cum_dx += acc.rec.menu_dx;
+        acc.cum_dy += acc.rec.menu_dy;
+
+        const uint32_t q = __atomic_load_n(&s_inp_seq, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_inp_seq, q + 1, __ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        s_inp = acc;
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        __atomic_store_n(&s_inp_seq, q + 2, __ATOMIC_RELEASE);
+
+        vTaskDelay(pdMS_TO_TICKS(8));
+    }
+}
+
+bool vg_input_probe_start(void) {
+    if (s_inp_mode) return true;
+    if (xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, 2, nullptr, 0)
+        != pdPASS) return false;
+    s_inp_mode = 1;
+    return true;
+}
+
+bool vg_input_take(VgInput* out) {
+    if (!s_inp_mode) return false;   // task never started: caller uses the inline path
+
+    InputPub v;
+    bool got = false;
+    for (int tries = 0; tries < 8; tries++) {
+        const uint32_t a = __atomic_load_n(&s_inp_seq, __ATOMIC_ACQUIRE);
+        if (a == 0 || (a & 1u)) continue;
+        v = s_inp;
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&s_inp_seq, __ATOMIC_RELAXED) == a) { got = true; break; }
+    }
+    if (!got) {
+        // Started but nothing published yet: a centred stick for the boot tick. Never
+        // fall through to the inline update -- the statics belong to the task now.
+        *out = VgInput{};
+        return true;
+    }
+
+    static uint8_t lf = 0, la = 0, lp = 0, lm = 0;
+    static float   lx = 0.0f, ly = 0.0f;
+    *out = v.rec;
+    out->fire_edge = (v.fire_n != lf); lf = v.fire_n;
+    out->alt_edge  = (v.alt_n  != la); la = v.alt_n;
+    out->pwr_edge  = (v.pwr_n  != lp); lp = v.pwr_n;
+    out->menu_edge = (v.menu_n != lm); lm = v.menu_n;
+    if (out->menu_edge) {
+        // The contract: zero movement on the press frame.
+        out->menu_dx = 0.0f; out->menu_dy = 0.0f;
+    } else {
+        out->menu_dx = v.cum_dx - lx; out->menu_dy = v.cum_dy - ly;
+    }
+    lx = v.cum_dx; ly = v.cum_dy;
+    return true;
+}
+
 void vg_input_update(float dt, VgInput* out) {
     // STARTED HERE, LAZILY, rather than in vg_input_init. The game is meant to drop
     // into another firmware whose launcher calls the four per-frame functions and

@@ -53,8 +53,8 @@ COST = re.compile(
 BLIT = re.compile(
     r"vg_replay: BLIT join (\d+)/(\d+) \| wait (\d+)/(\d+) \| push (\d+)/(\d+) \| "
     r"res (\d+)/(\d+) \| overn (\d+)/(\d+) \| overus (\d+)/(\d+) \| "
-    r"sky (\d+)/(\d+) \| scan (\d+)/(\d+)")
-BKEYS = ["join", "wait", "push", "res", "over_n", "over_us", "sky", "scan"]
+    r"sky (\d+)/(\d+) \| scan (\d+)/(\d+) \| idle0 (\d+)/(\d+)")
+BKEYS = ["join", "wait", "push", "res", "over_n", "over_us", "sky", "scan", "idle0"]
 
 # Per band, and the window they are measured against. A band under it costs nothing at
 # all, so this line is read as "which of these are over", not as a profile.

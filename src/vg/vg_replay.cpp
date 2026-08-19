@@ -62,6 +62,7 @@ static uint32_t s_b_sum[8], s_b_max[8];
 // Per band, and NUM_BANDS is fixed by the panel and BAND_H.
 static uint32_t s_bd_sum[NUM_BANDS];
 static uint32_t s_s_sum[6], s_s_max[6];
+static uint32_t s_i0_sum = 0, s_i0_max = 0;
 
 void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
                           uint32_t ships, uint32_t msl, uint32_t fire,
@@ -107,6 +108,12 @@ void vg_replay_note_sub(uint32_t a, uint32_t b, uint32_t wait,
     }
 }
 
+void vg_replay_note_idle0(uint32_t us) {
+    if (!s_timed) return;
+    s_i0_sum += us;
+    if (us > s_i0_max) s_i0_max = us;
+}
+
 bool vg_replay_timed(void) { return s_timed; }
 
 // THE LAST TIMED RUN'S COST, printed again on demand.
@@ -143,7 +150,7 @@ bool vg_replay_report_cost(void) {
     // A THIRD LINE, for the same reason there is a second: this one answers "is the wire
     // waiting on the CPU, or the CPU on the wire".
     Serial.printf("vg_replay: BLIT join %u/%u | wait %u/%u | push %u/%u | res %u/%u | "
-                  "overn %u/%u | overus %u/%u | sky %u/%u | scan %u/%u"
+                  "overn %u/%u | overus %u/%u | sky %u/%u | scan %u/%u | idle0 %u/%u"
                   "  (mean/worst)\n",
                   (unsigned)(s_b_sum[0] / s_t_n), (unsigned)s_b_max[0],
                   (unsigned)(s_b_sum[1] / s_t_n), (unsigned)s_b_max[1],
@@ -152,7 +159,8 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_b_sum[4] / s_t_n), (unsigned)s_b_max[4],
                   (unsigned)(s_b_sum[5] / s_t_n), (unsigned)s_b_max[5],
                   (unsigned)(s_b_sum[6] / s_t_n), (unsigned)s_b_max[6],
-                  (unsigned)(s_b_sum[7] / s_t_n), (unsigned)s_b_max[7]);
+                  (unsigned)(s_b_sum[7] / s_t_n), (unsigned)s_b_max[7],
+                  (unsigned)(s_i0_sum / s_t_n), (unsigned)s_i0_max);
     // AND WHICH BANDS. Means only -- the worst of a single band across a whole session is
     // one frame's accident, and what is wanted here is the shape of the drawing's cost.
     {

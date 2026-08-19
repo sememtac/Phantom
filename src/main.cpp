@@ -5,6 +5,7 @@
 //   vg_input_update() -> vg_game_update() -> vg_render_frame() -> vg_rast_flush()
 
 #include <Arduino.h>
+#include "esp_freertos_hooks.h"
 #include "esp_task_wdt.h"
 
 uint32_t vg_render_mirror_us(void);   // diagnostic, defined in vg_render.cpp
@@ -43,7 +44,33 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 
 static bool s_halted = false;
 
+// HOW IDLE CORE 0 ACTUALLY IS, measured rather than inferred from a table of task
+// costs. The idle hook runs each pass of core 0's idle task; two hook entries close
+// together mean the core did nothing between them, so summing only the short deltas
+// counts idle time and excludes the work that ran between distant ones. The threshold
+// is generous against the pass cost and tiny against any real job.
+//
+// This exists because every plan to offload work to core 0 rests on how much idle it
+// has, and that number had only ever been arithmetic. It reports through the replay's
+// BLIT line as idle0.
+// COUNTING PASSES, NOT CYCLES, because the idle task on this RTOS does not spin: it
+// executes waiti and sleeps to the next 1 ms tick. A cycle-delta scheme read every gap
+// as work and reported zero. With waiti, one hook entry is one tick the core spent
+// asleep-idle, so the pass count IS idle milliseconds -- coarse, and decisive enough
+// against a question asked in whole milliseconds.
+static volatile uint32_t g_idle0_passes = 0;
+static bool idle0_hook(void) {
+    g_idle0_passes++;
+    return true;   // no extra sleep; the idle task carries on to its own waiti
+}
+
 void setup(void) {
+    esp_register_freertos_idle_hook_for_cpu(idle0_hook, 0);
+    // PROBE DISABLED: the pilot said the steering was wrong, and that verdict outranks
+    // every counter. The touch read needs ~600 us of contiguous time and core 0's idle
+    // comes in ~130 us slivers, so the task's samples arrive stretched and irregular.
+    // Left in the tree, not started.
+    // vg_input_probe_start();
     // Frame capture pushes tens of KB per frame and the default TX ring is a
     // few hundred bytes, so the writer stalled packet by packet and capture ran
     // at 5 fps. With room to queue it runs at 22 -- a 4.3x gain from one line,
@@ -178,6 +205,7 @@ void loop(void) {
     static uint32_t acc_join = 0, acc_res = 0;
     static uint32_t acc_can = 0;
     static uint32_t acc_canh = 0, acc_canw = 0;
+    static uint32_t acc_idle0 = 0;
     static uint32_t acc_join_mm = 0, acc_join_n = 0;
     static uint32_t acc_sky = 0, acc_prim = 0, acc_scan = 0;
     static uint32_t acc_aa = 0, acc_ln = 0, acc_tri2 = 0, acc_oth = 0;
@@ -310,7 +338,9 @@ void loop(void) {
     if (rp_now == VG_RP_PLAY) {
         if (!vg_replay_next(&sim_dt, &in)) return;
     } else {
-        vg_input_update(sim_dt, &in);
+        // PROBE: the update lives on a core-0 task; take false means it never started
+        // and the inline path is exactly what it always was.
+        if (!vg_input_take(&in)) vg_input_update(sim_dt, &in);
     }
 
     // Sub-step long frames, as above. A replayed frame is already 1/60s, so
@@ -514,6 +544,14 @@ void loop(void) {
     // pixels being streamed the panel is never the bottleneck, so those measure a pipeline
     // the player never runs. What is left is the work itself, which is the same work whether
     // or not anybody is watching the pixels. See vg_replay_timed.
+    // Core 0's idle, drained EVERY frame -- the first version drained it inside the
+    // timed-replay branch below, which measures the replay's own idle and answers
+    // nothing about flight. One pass is one tick the idle task slept through, so the
+    // count reads as milliseconds; short wakes overcount, which makes it an upper
+    // bound and a fragmentation signal at once.
+    const uint32_t g_i0_frame = g_idle0_passes; g_idle0_passes = 0;
+    acc_idle0 += g_i0_frame;
+
     if (vg_replay_timed()) {
         vg_replay_note_cost(vg_rast_can_us(), vg_rast_raster_us(), vg_rast_prim_us(),
                             t3 - t2, t2 - t1);
@@ -525,6 +563,7 @@ void loop(void) {
                             vg_rast_res_us(), (uint32_t)vg_rast_over_bands(),
                             vg_rast_over_us(), vg_rast_sky_us(), vg_rast_scan_us());
         vg_replay_note_bands(vg_rast_band_us(), NUM_BANDS);
+        vg_replay_note_idle0(g_i0_frame * 1000u);   // one pass = one asleep tick = ~1 ms
         vg_replay_note_sub(g_sub_a, g_sub_b, g_sub_wait,
                            g_sub_arena, g_sub_star, g_sub_hud);
         // AND YIELD, because nothing else in this mode does.
@@ -599,7 +638,7 @@ void loop(void) {
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
                       "| aa %lu ln %lu(%lupx %lun) tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
-                      "| canh %lu canw %lu cana %d "
+                      "| canh %lu canw %lu cana %d i0 %lu "
                       "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
@@ -638,6 +677,7 @@ void loop(void) {
                       (unsigned long)(acc_canh / frames),
                       (unsigned long)(acc_canw / frames),
                       vg_rast_can_split(),
+                      (unsigned long)(acc_idle0 * 1000u / frames),
                       vg_rast_prim_count(),
                       vg_rast_prim_peak(),
                       vg_rast_tri_count(),
@@ -862,6 +902,7 @@ void loop(void) {
         acc_rast  = acc_wait = acc_push = 0;
         acc_over_us = acc_over_n = 0;
     acc_canh = acc_canw = 0;
+    acc_idle0 = 0;
         acc_join = acc_res = 0;
         acc_can = 0;
         acc_join_mm = acc_join_n = 0;

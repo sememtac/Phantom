@@ -100,6 +100,9 @@ void vg_replay_note_blit(uint32_t join, uint32_t wait, uint32_t push,
 // too expensive -- which is an art brief, and a far more useful one than "use less area".
 void vg_replay_note_bands(const uint32_t* band_us, int n);
 
+// Core 0's measured idle for the same frame, microseconds. See the hook in main.cpp.
+void vg_replay_note_idle0(uint32_t us);
+
 // The SUBMIT split. `sub` is the one stage of the frame never broken down, and it is now
 // the largest thing left: the raster is spent and this is not.
 //

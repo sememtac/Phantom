@@ -62,6 +62,13 @@ struct VgInput {
 
 void vg_input_init(void);
 
+// THE INPUT PROBE. Start moves the whole update onto a core-0 task; take reads the
+// freshest published sample. take returning false means the task never started and
+// the caller should update inline exactly as before. PROBE: measuring whether core
+// 0's fragmented idle can absorb the frame's input phase.
+bool vg_input_probe_start(void);
+bool vg_input_take(VgInput* out);
+
 // Capture the current attitude as neutral. Only meaningful for STEER_MODE 2;
 // harmless otherwise, so the game can call it unconditionally on each new run.
 void vg_input_calibrate(void);
