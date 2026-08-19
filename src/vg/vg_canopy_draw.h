@@ -22,6 +22,9 @@
 // Rows [r0, r1) of one band. Called from draw_band on one core and from the row-split
 // task on the other, exactly as vg_sky_fill_rows is.
 void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1);
+// Build the colour table now if the alarm dirtied it, on the calling core, so the
+// two-core pass never races the rebuild. Call once per frame before the band loop.
+void vg_canopy_warm(void);
 
 // WHERE THIS BAND'S WORK BALANCES, for the two-core split.
 //

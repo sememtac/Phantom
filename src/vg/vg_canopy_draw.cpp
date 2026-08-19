@@ -1514,6 +1514,19 @@ int vg_canopy_split_at(int band_index) {
     return at;
 }
 
+// THE COLOUR TABLE IS BUILT BEFORE THE FORK, ONCE, ON ONE CORE.
+//
+// canopy_rows_t opens with a lazy rebuild -- `if (!s_can_ready) canopy_lut()` -- and the
+// alarm requant dirties the table mid-flight, so under the two-core split BOTH cores
+// could enter the 256-entry rebuild together and draw through the torn half. The first
+// split analysis flagged this as latent; the whole-loop split made it hot; what it looks
+// like from outside is a handful of wrong-coloured canopy pixels that come and go BY
+// BUILD LAYOUT, which framed two innocent changes before the race was run to ground.
+// The lazy check stays as a backstop -- once warmed it never fires in the frame.
+void vg_canopy_warm(void) {
+    if (s_can && !s_can_ready) canopy_lut();
+}
+
 void IRAM_ATTR vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can) return;                    // no drawing selected: no cockpit, and no crash
     // Aft with no sequence running: there is no frame to draw and no world to hold back, so

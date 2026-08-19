@@ -1561,6 +1561,8 @@ void vg_rast_flush(void) {
     // thing that reads the list closes it first.
     const uint32_t f0 = micros();
     vg_prim_join();
+    // The canopy's colour table, warmed before any band forks -- see vg_canopy_warm.
+    vg_canopy_warm();
     s_join_us = micros() - f0;
 
     // Drain the LAST band of the previous frame before touching its buffer
