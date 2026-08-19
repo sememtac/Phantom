@@ -775,14 +775,28 @@ static void rowsplit_task(void*) {
 // Priority 3, above the audio task at 2: a rendezvous that waited behind an
 // audio chunk would cost more than the split saves. Audio has a 65 ms ring
 // against thirty bursts of ~90 us, so it never notices.
+static bool s_rs_dead = false;   // a failed setup never retries -- see below
+
 static bool rowsplit_start(uint8_t op, uint16_t* band, int by0, int r0, int r1) {
+    if (s_rs_dead) return false;
     if (!s_rs_go) {
+        // ALL OR NOTHING, and never again on failure. This used to null s_rs_go alone and
+        // leave s_rs_done standing, and the retry could then create a fresh s_rs_go while
+        // the second CreateBinary failed -- a half-alive pair. The NEXT call saw s_rs_go,
+        // returned true, and the caller took a null semaphore: an assert and a reboot, on
+        // every boot, for as long as the heap stayed tight. Found when 7.5 KB of IRAM
+        // placement pushed a device that was already running 4 KB free over the line --
+        // the promise above, that a failed setup costs frame rate and nothing else, is
+        // exactly what this path was not keeping.
         s_rs_go   = xSemaphoreCreateBinary();
         s_rs_done = xSemaphoreCreateBinary();
-        if (!s_rs_go || !s_rs_done) return false;
-        if (xTaskCreatePinnedToCore(rowsplit_task, "rowsplit", 4096, nullptr,
-                                    3, nullptr, 0) != pdPASS) {
-            s_rs_go = nullptr;      // and never try again
+        const bool task_ok = s_rs_go && s_rs_done &&
+            xTaskCreatePinnedToCore(rowsplit_task, "rowsplit", 4096, nullptr,
+                                    3, nullptr, 0) == pdPASS;
+        if (!task_ok) {
+            if (s_rs_go)   { vSemaphoreDelete(s_rs_go);   s_rs_go   = nullptr; }
+            if (s_rs_done) { vSemaphoreDelete(s_rs_done); s_rs_done = nullptr; }
+            s_rs_dead = true;
             return false;
         }
     }
