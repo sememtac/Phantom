@@ -393,12 +393,18 @@ bool vg_sky_init(void) {
         return true;
     }
 
-    // Internal only. The fill reads this every frame in a scattered pattern;
-    // from PSRAM it would thrash the cache exactly as a full framebuffer would.
-    s_tex = (uint16_t*)heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    // PSRAM, and the comment that used to say it must not be is the second one this month
+    // to fall to a measurement. It read "from PSRAM it would thrash the cache exactly as a
+    // full framebuffer would" -- but internal SRAM on this part is NOT cached, so every
+    // texture load was a raw access contending with the other core's band writes, while
+    // from PSRAM the whole 32 KB sits in the data cache and a hit costs less than the
+    // arbitration did. Measured over the course baseline: the fill got 283 us FASTER, the
+    // canopy 840 us faster beside it, and 32 KB of the scarcest memory on the part came
+    // free -- which is what pays for the canopy pass living in IRAM.
+    s_tex = (uint16_t*)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
     if (!s_tex) {
-        Serial.println("vg_sky_init: out of internal SRAM, backdrop disabled");
+        Serial.println("vg_sky_init: out of PSRAM, backdrop disabled");
         return false;
     }
     memset(s_tex, 0, bytes);

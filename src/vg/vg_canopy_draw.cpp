@@ -638,7 +638,7 @@ static inline int warp_y(int y, float zbase) {
 // Extended only where the drawing reached the border. Background beyond a member is not
 // something to stretch.
 static __attribute__((noinline))
-void canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, float zbase) {
+void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, float zbase) {
     if (p + 3 > e) return;
 
     // The near edge, from the first block.
@@ -970,7 +970,7 @@ void vg_canopy_hit_step(float dt) {
 }
 
 static __attribute__((noinline))
-void canopy_gate(uint16_t* row, int lx, int py) {
+void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
     const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
     const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
     const uint8_t* bay = &BAYER4[(py & 3) << 2];
@@ -1053,8 +1053,15 @@ void canopy_gate(uint16_t* row, int lx, int py) {
     }
 }
 
+// IN IRAM, and the reason is a measurement, not a preference. The bench runs this pass in
+// 9,387 us warped and never leaves it; in-game the band loop cycles four phases through a
+// 16 KB instruction cache fifteen times a frame, and this -- the largest tenant -- paid
+// most of the rent: placing it here was measured at -1,602 us of raster over the course
+// baseline, sky and scanlines included, because they stopped being evicted too. Placing
+// draw_band as well was measured at ZERO, to the microsecond: the walkers do not care.
+// The 7.5 KB it costs is financed by the sky texture's move to PSRAM, which freed 32.
 template <bool WARP, bool INTRO>
-static void canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
+static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can_ready) canopy_lut();
 
     // HOISTED OUT OF THE ROW LOOP, all of it. Which table is a compile-time choice still, so
@@ -1439,7 +1446,7 @@ int vg_canopy_split_at(int band_index) {
     return at;
 }
 
-void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
+void IRAM_ATTR vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
     if (!s_can) return;                    // no drawing selected: no cockpit, and no crash
     // Aft with no sequence running: there is no frame to draw and no world to hold back, so
     // the whole pass is skipped. Checked here rather than at the submit site, because the
