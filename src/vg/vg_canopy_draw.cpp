@@ -1407,10 +1407,16 @@ void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us) {
     // Only while there is something to balance. A frame with no canopy reports both at zero
     // and must not drag the bias anywhere.
     if (!half_us) return;
-    // A FORTIETH of the half is the deadband. A tenth was tried first and parked the bias at
-    // 18 rows with 613 us still on the clock, because 613 was inside a 784 us deadband --
-    // it stopped while there was most of a row's worth left to win. One row is about 3% of a
-    // band, so the deadband has to be well under that to let the last step happen.
+    // A FORTIETH of the half. A tenth parked the bias at 18 rows with 613 us still showing,
+    // and tightening it did close that -- canw fell to 157 and the cut moved to 19.6.
+    //
+    // IT BOUGHT NOTHING, and that is worth writing down rather than tuning further. A band
+    // costs max(half, half), and core 1 simply absorbed the work core 0 put down: 7,841/8,454
+    // became 8,314/8,471. Both settings sit on the flat bottom of the same curve. The tighter
+    // one is kept because a balance held to 157 us survives a change of scene better than one
+    // held to 613, not because it is faster.
+    //
+    // The split is finished. What is left in the canopy is its work, not its scheduling.
     const uint32_t dead = half_us / 40u;
     if (wait_us > dead) {
         // This core waited: the other side is slower, so give it less by cutting later.
