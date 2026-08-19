@@ -566,6 +566,8 @@ void loop(void) {
         vg_replay_note_idle0(g_i0_frame * 1000u);   // one pass = one asleep tick = ~1 ms
         vg_replay_note_sub(g_sub_a, g_sub_b, g_sub_wait,
                            g_sub_arena, g_sub_star, g_sub_hud);
+        vg_replay_note_types(vg_rast_aa_us(), vg_rast_ln_us(), vg_rast_tri_us(),
+                             vg_rast_gl_us(), vg_rast_fl_us());
         // AND YIELD, because nothing else in this mode does.
         //
         // Every other way of running a frame blocks somewhere: gameplay waits on the panel,

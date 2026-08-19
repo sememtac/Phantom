@@ -66,6 +66,11 @@ SUB = re.compile(
     r"arena (\d+)/(\d+) \| star (\d+)/(\d+) \| hud (\d+)/(\d+)")
 SKEYS = ["A(world)", "B(instr)", "wait", "arena", "star", "hud"]
 
+TYPES = re.compile(
+    r"vg_replay: TYPES aa (\d+)/(\d+) \| ln (\d+)/(\d+) \| tri (\d+)/(\d+) \| "
+    r"gl (\d+)/(\d+) \| fl (\d+)/(\d+)")
+TKEYS = ["aa", "ln", "tri", "gl", "fl"]
+
 WORLD = re.compile(
     r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
@@ -328,6 +333,11 @@ def fetch(port):
                 gs = [int(x) for x in sb.groups()]
                 for j, k2 in enumerate(SKEYS):
                     out[k2] = {"mean": gs[j * 2], "worst": gs[j * 2 + 1]}
+            ty = TYPES.search(txt)
+            if ty:
+                gt = [int(x) for x in ty.groups()]
+                for j, k2 in enumerate(TKEYS):
+                    out[k2] = {"mean": gt[j * 2], "worst": gt[j * 2 + 1]}
             b = BLIT.search(txt)
             if b:
                 gb = [int(x) for x in b.groups()]
@@ -361,6 +371,10 @@ def show(r):
         print("  -- inside `sub`; wait is core 1 idle at the rendezvous --")
         for k in SKEYS:
             print("  %-9s %7d %10d" % (k, r[k]["mean"], r[k]["worst"]))
+    if all(k in r for k in TKEYS):
+        print("  -- primitive raster by type; aa is the blended lines (trails) --")
+        for k in TKEYS:
+            print("  %-6s %8d %10d" % (k, r[k]["mean"], r[k]["worst"]))
     if r.get("bands"):
         w = r.get("band_window", 768)
         over = [(i, v) for i, v in enumerate(r["bands"]) if v > w]

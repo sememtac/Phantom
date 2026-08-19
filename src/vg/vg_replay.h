@@ -103,6 +103,12 @@ void vg_replay_note_bands(const uint32_t* band_us, int n);
 // Core 0's measured idle for the same frame, microseconds. See the hook in main.cpp.
 void vg_replay_note_idle0(uint32_t us);
 
+// The primitive raster split by TYPE, for the frame's largest stage. `aa` is every
+// blended line -- the trails live there -- and it took three wasted flights to admit
+// the replay should have carried it from the day the type counters existed.
+void vg_replay_note_types(uint32_t aa, uint32_t ln, uint32_t tri,
+                          uint32_t gl, uint32_t fl);
+
 // The SUBMIT split. `sub` is the one stage of the frame never broken down, and it is now
 // the largest thing left: the raster is spent and this is not.
 //

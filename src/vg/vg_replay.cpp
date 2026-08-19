@@ -63,6 +63,7 @@ static uint32_t s_b_sum[8], s_b_max[8];
 static uint32_t s_bd_sum[NUM_BANDS];
 static uint32_t s_s_sum[6], s_s_max[6];
 static uint32_t s_i0_sum = 0, s_i0_max = 0;
+static uint32_t s_ty_sum[5], s_ty_max[5];
 
 void vg_replay_note_world(uint32_t motes, uint32_t rocks, uint32_t trails,
                           uint32_t ships, uint32_t msl, uint32_t fire,
@@ -112,6 +113,16 @@ void vg_replay_note_idle0(uint32_t us) {
     if (!s_timed) return;
     s_i0_sum += us;
     if (us > s_i0_max) s_i0_max = us;
+}
+
+void vg_replay_note_types(uint32_t aa, uint32_t ln, uint32_t tri,
+                          uint32_t gl, uint32_t fl) {
+    if (!s_timed) return;
+    const uint32_t v[5] = { aa, ln, tri, gl, fl };
+    for (int i = 0; i < 5; i++) {
+        s_ty_sum[i] += v[i];
+        if (v[i] > s_ty_max[i]) s_ty_max[i] = v[i];
+    }
 }
 
 bool vg_replay_timed(void) { return s_timed; }
@@ -180,6 +191,13 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
                   (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
                   (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
+    Serial.printf("vg_replay: TYPES aa %u/%u | ln %u/%u | tri %u/%u | gl %u/%u | "
+                  "fl %u/%u  (mean/worst)\n",
+                  (unsigned)(s_ty_sum[0] / s_t_n), (unsigned)s_ty_max[0],
+                  (unsigned)(s_ty_sum[1] / s_t_n), (unsigned)s_ty_max[1],
+                  (unsigned)(s_ty_sum[2] / s_t_n), (unsigned)s_ty_max[2],
+                  (unsigned)(s_ty_sum[3] / s_t_n), (unsigned)s_ty_max[3],
+                  (unsigned)(s_ty_sum[4] / s_t_n), (unsigned)s_ty_max[4]);
     return true;
 }
 
