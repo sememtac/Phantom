@@ -1,0 +1,123 @@
+{
+  "frames": 2995,
+  "commit": "5f99ebd",
+  "session": "(fetched)",
+  "can": {
+    "mean": 6298,
+    "worst": 9093
+  },
+  "rast": {
+    "mean": 12414,
+    "worst": 16567
+  },
+  "prim": {
+    "mean": 9485,
+    "worst": 11889
+  },
+  "sub": {
+    "mean": 3204,
+    "worst": 8933
+  },
+  "upd": {
+    "mean": 791,
+    "worst": 238911
+  },
+  "motes": {
+    "mean": 495,
+    "worst": 810
+  },
+  "rocks": {
+    "mean": 56,
+    "worst": 458
+  },
+  "trails": {
+    "mean": 87,
+    "worst": 115
+  },
+  "ships": {
+    "mean": 3,
+    "worst": 10
+  },
+  "msl": {
+    "mean": 2,
+    "worst": 10
+  },
+  "fire": {
+    "mean": 4,
+    "worst": 14
+  },
+  "TOTAL": {
+    "mean": 659,
+    "worst": 937
+  },
+  "band_window": 768,
+  "bands": [
+    852,
+    871,
+    665,
+    740,
+    808,
+    683,
+    679,
+    1127,
+    709,
+    682,
+    870,
+    778,
+    911,
+    948,
+    625
+  ],
+  "A(world)": {
+    "mean": 2345,
+    "worst": 3111
+  },
+  "B(instr)": {
+    "mean": 1905,
+    "worst": 2525
+  },
+  "wait": {
+    "mean": 20,
+    "worst": 40
+  },
+  "arena": {
+    "mean": 1479,
+    "worst": 1960
+  },
+  "star": {
+    "mean": 126,
+    "worst": 510
+  },
+  "hud": {
+    "mean": 1006,
+    "worst": 1328
+  },
+  "join": {
+    "mean": 47,
+    "worst": 69
+  },
+  "push": {
+    "mean": 1338,
+    "worst": 7533
+  },
+  "res": {
+    "mean": 84,
+    "worst": 136
+  },
+  "over_n": {
+    "mean": 8,
+    "worst": 15
+  },
+  "over_us": {
+    "mean": 1584,
+    "worst": 4569
+  },
+  "sky": {
+    "mean": 1874,
+    "worst": 1958
+  },
+  "scan": {
+    "mean": 999,
+    "worst": 11586
+  }
+}

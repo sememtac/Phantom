@@ -57,3 +57,6 @@ captures/*
 # input structures, 73% of them under 59 fps -- and tools/ordnance-baseline.json is measured
 # against it. 668 KB.
 !captures/ordnance.phr
+
+# Visual Studio working directory
+.vs/
