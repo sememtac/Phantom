@@ -23,6 +23,17 @@
 // as -- g_sub_hud in particular brackets vg_draw_hud alone and is not group B's total.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 uint32_t g_sub_wait = 0;
+
+// WHO DRAWS THE RAILS, decided from last frame's halves rather than guessed once.
+//
+// The note above the grid call predicted this: a static owner picks a regime, and the
+// regimes flip -- combat gates on B, the attract loop on A. The slices make the owner
+// free to move (a slice's position in the join does not depend on which core filled
+// it), so the rails go to whichever half finished first last frame, with hysteresis so
+// the owner does not flap on noise. The same shape as the canopy split's nudge, for
+// the same reason: a frame costs the slower half, and only a measurement knows which
+// half that is today.
+static bool s_rails_b = false;
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
 
@@ -364,7 +375,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     // help. If a future scene flips it again, the fix is not another static guess -- it is to
     // choose the rails' owner per frame from g_sub_a and g_sub_b, which the slices already
     // allow because a slice's position in the join does not depend on which core filled it.
-    vg_draw_arena_grid(cam, ARENA_GRID_ALL);
+    vg_draw_arena_grid(cam, s_rails_b ? ARENA_GRID_HOOPS : ARENA_GRID_ALL);
     g_sub_arena = micros() - t_sub; t_sub = micros();
     // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to
     // land between the grid and the hulls rather than on top of them.
@@ -395,6 +406,19 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Only the async path is a WAIT. The serial fallback is core 1 doing B's work itself,
     // which is not a gap and would read as an enormous one.
     g_sub_wait = async ? (micros() - t_wait) : 0u;
+
+    // MOVE THE RAILS ONLY WHEN MOVING CANNOT LOSE. The deadband is the rails' own
+    // cost (~600 us), because a piece larger than the imbalance it fixes just carries
+    // the imbalance to the other side and flaps back every frame -- measured in
+    // course, where the halves sit ~440 apart and a 250 us deadband would have made
+    // the mean of max(A,B) worse. Under this rule the mover is inert in every scene
+    // measured today (fight is balanced to ~100 us, course sits inside the deadband)
+    // and exists for the regime flips the note above the grid call records: attract
+    // gates the other way round, and future scenes and ships will pick their own
+    // sides. When one arrives, the rails walk over on their own instead of waiting
+    // for somebody to re-measure and re-guess a static owner.
+    if      (g_sub_a > g_sub_b + 600u) s_rails_b = true;
+    else if (g_sub_b > g_sub_a + 600u) s_rails_b = false;
 
     // THE FRAME COUNTER LAST, AND ON THIS THREAD, because it prints the primitive
     // count INTO THE FRAME and that count is only whole once both halves are in.
@@ -430,6 +454,14 @@ void vg_render_frame(const VgInput* in, float fps) {
 // ===========================================================================
 static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     const uint32_t t_half = micros();
+    // The rails, when this half owns them. Into their own slice, so they land exactly
+    // where they land when group A draws them and the picture cannot tell the
+    // difference. Before everything else: they are the largest movable piece, and the
+    // earlier they start the better the halves overlap.
+    if (s_rails_b) {
+        vg_prim_select(1);
+        vg_draw_arena_grid(cam, ARENA_GRID_RAILS);
+    }
     // Two locals that group A used to share with this code when the two were one
     // function. `rear_view` comes off the camera rather than being re-read from vg,
     // because the preamble set cam.rear from it -- same value, and it keeps this
