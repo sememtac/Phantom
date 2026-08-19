@@ -332,31 +332,33 @@ void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut,
 static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_add) }
 static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_sub) }
 
+// THE STEP WITHOUT THE DIVIDE, which is the one division the block walk still does.
+//
+// About 1,650 of them a frame, and only sixty distinct (len, n0) pairs among the lot: a graded
+// edge is a few pixels wide and the magnification is small, so the same short block stretched
+// by the same amount recurs the whole way down the drawing. Four in five fall inside len <= 8
+// and n0 <= 12, and 384 bytes of flash answer those without the divider.
+//
+// The entries ARE what the divide produces, truncation included, so the table and the fallback
+// cannot disagree about a block -- and they must not, because this indexes the level array a
+// literal block reads per pixel.
+#define CANOPY_STEP_L  8u
+#define CANOPY_STEP_N  12u
+struct CanopyStepTab { uint32_t v[CANOPY_STEP_L][CANOPY_STEP_N]; };
+static constexpr CanopyStepTab canopy_step_build(void) {
+    CanopyStepTab t = {};
+    for (uint32_t l = 1; l <= CANOPY_STEP_L; l++)
+        for (uint32_t n = 1; n <= CANOPY_STEP_N; n++)
+            t.v[l - 1][n - 1] = (l << 16) / n;
+    return t;
+}
+static constexpr CanopyStepTab s_steptab = canopy_step_build();
+
 // Rows [r0, r1) of the band, so the pass can be halved across the cores. Each panel
 // row is an independent column of the drawing -- nothing carries between them -- which
 // is what makes this splittable at all, and it is by far the biggest of the three
 // row-split jobs: measured at ~4 ms against the backdrop's 2.5 and the scanlines' 1.8.
 // ===========================================================================
-// THE WARP
-//
-// The frame flexes with the throttle, and it costs almost nothing, because the table is
-// already a list of RUNS and a run can be moved by moving its endpoints. Two tables:
-//
-//   s_wy[y]   where the drawing's y goes. A stretch about the centre, so the members spread
-//             as the throttle opens. Applied to a block's START and END and the length taken
-//             as the difference, which is what makes it gap-free -- one run's end is the next
-//             run's start, so mapping both through the same table keeps them touching.
-//   s_wc[col] a shift for the whole column. Larger toward the edges, so the stretch bows
-//             rather than sliding, which is the difference between a frame flexing and a
-//             frame being dragged.
-//
-// Two table reads, a subtract and an add per block: 2,492 blocks, about 60 us. Nothing here
-// touches the per-PIXEL loop, which is where the 37 cycles live.
-//
-// The maps are rebuilt only when the QUANTISED amount changes. The HUD's warp has to be
-// quantised deliberately -- a fractional shift moves every instrument line by part of a pixel
-// and reads as shimmer -- and this one quantises itself, because a table of pixel offsets has
-// nowhere to put a fraction.
 // THE SPHERE, the same one the instruments are drawn on.
 //
 // A radial warp is NOT separable: k = 1 + K*scale*r2 scales both axes by an amount that
@@ -381,8 +383,7 @@ static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uin
 static float   s_w_zk   = 0.0f;    // zoom * K * scale / R2
 static float   s_w_zoom = 1.0f;
 static float   s_w_zbase[SCR_H];   // zoom + zoom*K*scale*dx^2/R2, per SOURCE column
-static int16_t s_wy[SCR_W + 1];
-static int16_t s_wc[SCR_H];
+static int16_t s_wc[SCR_H];        // the bow's per-column shift, laid on top of the sphere
 // WHICH DRAWING COLUMN A PANEL ROW SAMPLES, which is the other half of coming closer.
 //
 // Stretching the drawing's y alone made the frame taller, not nearer. A magnification needs
@@ -410,20 +411,49 @@ static uint8_t  s_wsplit[NUM_BANDS];
 static uint16_t s_colcost[SCR_H];
 static bool     s_colcost_ready = false;
 
+// WHICH COLUMNS CAN REACH A BORDER AT ALL, and it is not a runtime question.
+//
+// A border is extended only where the drawing already reached it, and whether it did is a
+// property of the BAKED column: the first block either starts at the drawing's zero or it does
+// not, and the last block either runs to the far side or stops short. The warp MOVES those
+// runs; it cannot create them. So the answer holds for the life of the drawing, and
+// canopy_edges was asking it 480 times a frame -- walking the whole block list to find the last
+// block and then throwing the walk away.
+//
+// Five columns of the 240 have a first block at zero and fourteen have a last one reaching the
+// far side. The other 92% walked the list to draw nothing.
+//
+// Two bits and the last block's offset, built in the cost walk because that walk already reads
+// every block of every column -- the same trade s_colmask makes against the zone map.
+#define CANOPY_EDGE_NEAR  1u
+#define CANOPY_EDGE_FAR   2u
+static uint8_t  s_coledge[SCR_H];
+static uint16_t s_colend[SCR_H];   // byte offset of the column's last block
+
 static void canopy_colcost(void) {
     for (int c = 0; c < SCR_H; c++) {
         uint32_t cost = 0;
+        uint8_t  edge = 0;
+        uint16_t last = 0;
         if (c < (int)s_can->cols) {
             const uint8_t* p = &s_can->data[s_can->ofs[c]];
             const uint8_t* e = &s_can->data[s_can->ofs[c + 1]];
+            int lastend = -1;                   // negative until a block has been seen
             while (p + 3 <= e) {
                 const uint8_t h = p[0];
+                const int y0  = ((h & 1) << 8) | p[1];
                 const int len = ((h & 2) << 7) | p[2];
+                if (lastend < 0 && y0 == 0) edge |= CANOPY_EDGE_NEAR;
+                lastend = y0 + len;
+                last    = (uint16_t)(p - s_can->data);
                 p += 3 + ((h & 0x80) ? len : 1);
                 cost += (uint32_t)len + 1;      // a header is worth about one pixel
             }
+            if (lastend >= SCR_W) edge |= CANOPY_EDGE_FAR;
         }
         s_colcost[c] = (uint16_t)(cost > 0xFFFFu ? 0xFFFFu : cost);
+        s_coledge[c] = edge;
+        s_colend[c]  = last;
     }
     s_colcost_ready = true;
 }
@@ -628,9 +658,9 @@ static inline int warp_y(int y, float zbase) {
 //
 // Only the FIRST and LAST block of a column can touch a border, so this finds those two and
 // extends them -- and by living out here it takes its state, its level lookups and its extra
-// branches out of canopy_rows_t. That matters more than the walk it repeats: carrying them
-// inline grew the rigid instantiation to 1185 bytes with fifty stack accesses, and cost 67 us
-// on a path where none of this code even runs.
+// branches out of canopy_rows_t. That mattered more than the walk it used to repeat: carrying
+// them inline grew the rigid instantiation to 1185 bytes with fifty stack accesses, and cost 67
+// us on a path where none of this code even runs.
 //
 // The extensions never overlap the blocks they come from -- [0, at) and [end, SCR_W) sit
 // outside them -- so it does not matter that this runs before the walk rather than around it.
@@ -638,11 +668,17 @@ static inline int warp_y(int y, float zbase) {
 // Extended only where the drawing reached the border. Background beyond a member is not
 // something to stretch.
 static __attribute__((noinline))
-void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, float zbase) {
+void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, float zbase, int c) {
     if (p + 3 > e) return;
 
+    // NEITHER BORDER, NOTHING TO DO, which is most of the screen. Both flags read as set until
+    // the table is built, so the tests below answer for themselves exactly as they always did.
+    const uint8_t edge = s_colcost_ready ? s_coledge[c]
+                                         : (uint8_t)(CANOPY_EDGE_NEAR | CANOPY_EDGE_FAR);
+    if (!edge) return;
+
     // The near edge, from the first block.
-    {
+    if (edge & CANOPY_EDGE_NEAR) {
         const uint8_t h  = p[0];
         const int     y0 = ((h & 1) << 8) | p[1];
         if (y0 == 0) {
@@ -656,13 +692,20 @@ void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, i
         }
     }
 
-    // The far edge, from the last -- which has to be walked to.
+    if (!(edge & CANOPY_EDGE_FAR)) return;
+
+    // The far edge, from the last block, which the table points straight at. The walk survives
+    // only for the frames before that table exists.
     const uint8_t* last = nullptr;
-    while (p + 3 <= e) {
-        last = p;
-        const uint8_t h = p[0];
-        const int len = ((h & 2) << 7) | p[2];
-        p += 3 + ((h & 0x80) ? len : 1);
+    if (s_colcost_ready) {
+        last = &s_can->data[s_colend[c]];
+    } else {
+        while (p + 3 <= e) {
+            last = p;
+            const uint8_t h = p[0];
+            const int len = ((h & 2) << 7) | p[2];
+            p += 3 + ((h & 0x80) ? len : 1);
+        }
     }
     if (!last) return;
     const uint8_t h   = last[0];
@@ -1133,7 +1176,11 @@ static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
         // repeating it is one index clamp, while the runs along a row are a sparse list and the
         // ones touching a border have to be EXTENDED to it -- or the frame ends in mid-air and
         // reads as clipped. Out of line, so the walk below never sees it.
-        if (WARP) canopy_edges(row, p, e, wofs, zbase);
+        if (WARP) canopy_edges(row, p, e, wofs, zbase, c);
+
+        // WHERE THE LAST BLOCK ENDED, carried across the walk. -1 is a y no block starts at,
+        // which is what the first block of a column needs.
+        int pend = -1, pwarp = 0;
 
         while (p + 3 <= e) {
             const uint8_t h   = p[0];
@@ -1161,8 +1208,19 @@ static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             if (WARP) {
                 // Both ends through the same map, and the length is the difference -- so the
                 // run still ends exactly where the next one starts.
-                at = warp_y(y0,       zbase) + wofs;
-                n  = warp_y(y0 + len, zbase) + wofs - at;
+                //
+                // WHICH IS ALSO WHY THE START CAN BE KEPT. Three blocks in ten begin exactly
+                // where the one before them ended, and warp_y is a pure function of y down a
+                // column -- zbase is fixed for the whole of it and s_w_zk for the whole frame --
+                // so the end carried forward IS what the call would return, bit for bit. The
+                // gap-freeness above is the same property read the other way round: it wants
+                // the two values equal, and this stops computing the second one.
+                const int w0 = (y0 == pend) ? pwarp : warp_y(y0, zbase);
+                const int w1 = warp_y(y0 + len, zbase);
+                pend  = y0 + len;
+                pwarp = w1;
+                at = w0 + wofs;
+                n  = w1 + wofs - at;
                 n0 = n;                       // before clipping: what the step is measured on
                 // THE TABLE'S OWN BOUNDS NO LONGER APPLY. Baked, every block was inside the
                 // row by construction and the baker verifies it; moved at runtime, that
@@ -1178,7 +1236,10 @@ static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                 if (WARP && n0 != len) {
                     // Stretched or squeezed: walk the levels at the ratio rather than one
                     // for one, or the block reads past its own data. See span_lit_add_rs.
-                    const uint32_t step = ((uint32_t)len << 16) / (uint32_t)n0;
+                    const uint32_t step =
+                        ((uint32_t)(len - 1) < CANOPY_STEP_L && (uint32_t)(n0 - 1) < CANOPY_STEP_N)
+                            ? s_steptab.v[len - 1][n0 - 1]
+                            : ((uint32_t)len << 16) / (uint32_t)n0;
                     const uint32_t i0   = (uint32_t)skip * step;
                     if (h & 0x40) span_lit_sub_rs(&row[at], n, p, lut, i0, step);
                     else          span_lit_add_rs(&row[at], n, p, lut, i0, step);
