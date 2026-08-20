@@ -191,6 +191,10 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
                   (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
                   (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
+    extern uint32_t g_course_inner_sum, g_course_calls, g_course_draws;
+    Serial.printf("vg_replay: COURSE inner_sum %u calls %u draws %u\n",
+                  (unsigned)g_course_inner_sum, (unsigned)g_course_calls,
+                  (unsigned)g_course_draws);
     extern uint32_t g_prim_hash, g_rng_hash, g_wall_hash, g_prim_hash_l, g_prim_hash_g, g_cam_hash, g_caminp_hash, g_cnt_hash;
     Serial.printf("vg_replay: PRIMH %08x RNGH %08x WALLH %08x LINESH %08x GLYPHH %08x CAMH %08x INPH %08x CNTH %08x\n",
                   (unsigned)g_prim_hash, (unsigned)g_rng_hash, (unsigned)g_wall_hash,

@@ -24,6 +24,7 @@
 // as -- g_sub_hud in particular brackets vg_draw_hud alone and is not group B's total.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 uint32_t g_sub_wait = 0;
+uint32_t g_sub_course = 0;
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
 
@@ -405,7 +406,13 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Gated on the state, not just on ring_alive. A stale gate drawn into a match
     // would be confusing at best, and its normal is only guaranteed sane while
     // the course owns it.
+    // Counted from the inside -- see g_sub_course's write in vg_course.cpp. A wall
+    // bracket here read impossible values (larger than the group containing it) for
+    // reasons that were never worth their chase: the function's own cycle counter and
+    // its draw count agree with each other and with the arithmetic, so they are the
+    // instrument, and this site just calls.
     if (vg.state == VG_COURSE) vg_course_draw(cam);
+    else g_sub_course = 0;
 
     // Collect core 0. If it was never started -- the first frame, or a board where
     // the task could not be created -- group B has not been submitted at all, so it

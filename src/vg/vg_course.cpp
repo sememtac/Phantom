@@ -1,4 +1,6 @@
 ﻿#include "vg_course.h"
+#include <Arduino.h>   // the cycle counter g_sub_course is built from
+#include "vg_prof.h"    // g_sub_course
 #include "vg_sim.h"
 #include "vg_arena.h"
 #include "vg_draw.h"
@@ -173,8 +175,46 @@ void vg_course_update(float dt) {
 
 // The gate, as a ring of segments in its own plane, in the IFT's white -- the
 // course is the tournament's furniture, not a pilot's.
+// THE GATE'S UNIT CIRCLE, once for the life of the binary. Twenty segments cost forty
+// transcendentals per call before this -- the same finding arena_line documents, at the
+// one draw site that never received it. A table rather than an incremental rotation,
+// because the table is built from the very expressions it replaces and is therefore
+// bit-identical; the rotation drifts in the last bit.
+static float s_ring_c[COURSE_SEGS + 1];
+static float s_ring_s[COURSE_SEGS + 1];
+static bool  s_ring_lut = false;
+
+// Session totals for the replay report: the inner clock summed, and counts that
+// cannot lie. These ended the phantom-counter chase; they stay.
+uint32_t g_course_inner_sum = 0;
+uint32_t g_course_calls = 0;
+uint32_t g_course_draws = 0;
+
 void vg_course_draw(const VgCam& cam) {
-    if (!vg_course.ring_alive) return;
+    g_course_calls++;
+    if (!vg_course.ring_alive) { g_sub_course = 0; return; }
+
+    // NOT IN THE MIRROR when the gate is ahead, which it nearly always is: the gate is
+    // re-placed the frame it is passed, so the aft view pays twenty edges to have every
+    // one rejected at the near plane. The whole-sphere test keeps the one honest case --
+    // a player flying away from a gate genuinely astern -- and drops the rest.
+    VgSpan sp;
+    if (!vg_screen_size(cam, vg_course.ring_pos, COURSE_RADIUS, COURSE_RADIUS, &sp)) {
+        if (!cam.rear) g_sub_course = 0;
+        return;
+    }
+
+    g_course_draws++;
+    const uint32_t c0_ = esp_cpu_get_cycle_count();
+    if (!s_ring_lut) {
+        const float TAU_ = 6.28318531f;
+        for (int i = 0; i <= COURSE_SEGS; i++) {
+            const float t = TAU_ * (float)i / (float)COURSE_SEGS;
+            s_ring_c[i] = cosf(t);
+            s_ring_s[i] = sinf(t);
+        }
+        s_ring_lut = true;
+    }
 
     // Any two axes perpendicular to the normal will do; there is no preferred
     // roll for a circle.
@@ -183,7 +223,6 @@ void vg_course_draw(const VgCam& cam) {
     a = vnorm(a);
     const Vec3 b = vnorm(vcross(vg_course.ring_norm, a));
 
-    const float TAU = 6.28318531f;
     Vec3 prev = vadd(vg_course.ring_pos, vmul(a, COURSE_RADIUS));
 
     // Not antialiased: the same call the arena grid made. A gate on approach is
@@ -193,11 +232,15 @@ void vg_course_draw(const VgCam& cam) {
     vg_line_aa_mode(false);
 
     for (int i = 1; i <= COURSE_SEGS; i++) {
-        const float t  = TAU * (float)i / (float)COURSE_SEGS;
         const Vec3  cur = vadd(vg_course.ring_pos,
-                               vadd(vmul(a, cosf(t) * COURSE_RADIUS),
-                                    vmul(b, sinf(t) * COURSE_RADIUS)));
+                               vadd(vmul(a, s_ring_c[i] * COURSE_RADIUS),
+                                    vmul(b, s_ring_s[i] * COURSE_RADIUS)));
         vg_edge(cam, prev, cur, COL_IFT);
         prev = cur;
     }
+    // The counter, from the inside: the wall bracket at the call site once measured
+    // values larger than the group containing it. Cycles do not.
+    const uint32_t d_ = (esp_cpu_get_cycle_count() - c0_) / 240u;
+    g_course_inner_sum += d_;
+    if (!cam.rear) g_sub_course = d_;
 }
