@@ -123,7 +123,7 @@ static void draw_rear_patch(const VgCam& base, float warp) {
     // The patch is world content, and it is drawn after the main view has already
     // switched AA back on for the instruments -- so it has to say so again.
     vg_line_aa_mode(false);
-    vg_draw_arena_grid(rc, ARENA_GRID_ALL);
+    vg_draw_arena_grid(rc);
     vg_draw_world(rc);
     if (vg.state == VG_COURSE) vg_course_draw(rc);
     // The diamonds below are an instrument, and so is the bezel after them.
@@ -390,7 +390,7 @@ void vg_render_frame(const VgInput* in, float fps) {
     // help. If a future scene flips it again, the fix is not another static guess -- it is to
     // choose the rails' owner per frame from g_sub_a and g_sub_b, which the slices already
     // allow because a slice's position in the join does not depend on which core filled it.
-    vg_draw_arena_grid(cam, ARENA_GRID_ALL);
+    vg_draw_arena_grid(cam);
     g_sub_arena = micros() - t_sub; t_sub = micros();
     // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to
     // land between the grid and the hulls rather than on top of them.
