@@ -103,6 +103,13 @@ void vg_replay_note_bands(const uint32_t* band_us, int n);
 // Core 0's measured idle for the same frame, microseconds. See the hook in main.cpp.
 void vg_replay_note_idle0(uint32_t us);
 
+// The external-memory cache counters, delta'd per frame. The EXTMEM block free-runs
+// from reset and aggregates both cores; IRAM fetches and internal SRAM never touch
+// it, which is exactly the point -- this counts only the traffic that pays for the
+// SPI0 controller: icache fills from flash, dcache fills split flash versus PSRAM.
+// The first per-frame attribution of cache misses this project has had.
+void vg_replay_note_cache(void);
+
 // The primitive raster split by TYPE, for the frame's largest stage. `aa` is every
 // blended line -- the trails live there -- and it took three wasted flights to admit
 // the replay should have carried it from the day the type counters existed.

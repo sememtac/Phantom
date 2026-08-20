@@ -563,6 +563,7 @@ void loop(void) {
                             vg_rast_res_us(), (uint32_t)vg_rast_over_bands(),
                             vg_rast_over_us(), vg_rast_sky_us(), vg_rast_scan_us());
         vg_replay_note_bands(vg_rast_band_us(), NUM_BANDS);
+        vg_replay_note_cache();
         vg_replay_note_idle0(g_i0_frame * 1000u);   // one pass = one asleep tick = ~1 ms
         vg_replay_note_sub(g_sub_a, g_sub_b, g_sub_wait,
                            g_sub_arena, g_sub_star, g_sub_hud);

@@ -5,6 +5,7 @@
 #include "vg_ship.h"
 #include "vg_capture.h"
 #include <Arduino.h>
+#include "soc/extmem_reg.h"   // the cache miss counters
 #include <esp_random.h>
 #include <string.h>
 
@@ -125,6 +126,35 @@ void vg_replay_note_types(uint32_t aa, uint32_t ln, uint32_t tri,
     }
 }
 
+// ibus_acs, ibus_miss, dbus_acs, dbus_flash_miss, dbus_psram_miss
+static uint32_t s_ch_prev[5];
+static uint64_t s_ch_sum[5];
+static uint32_t s_ch_max[5];
+static bool     s_ch_primed = false;
+
+void vg_replay_note_cache(void) {
+    if (!s_timed) { s_ch_primed = false; return; }
+    // The flash-vs-PSRAM split of the dbus miss counter is classified by a vaddr
+    // window; programmed once to the flash data range so the split can be trusted.
+    static bool windowed = false;
+    if (!windowed) {
+        REG_WRITE(EXTMEM_DBUS_TO_FLASH_START_VADDR_REG, 0x3C000000u);
+        REG_WRITE(EXTMEM_DBUS_TO_FLASH_END_VADDR_REG,   0x3DFFFFFFu);
+        windowed = true;
+    }
+    const uint32_t now[5] = {
+        REG_READ(EXTMEM_IBUS_ACS_CNT_REG),  REG_READ(EXTMEM_IBUS_ACS_MISS_CNT_REG),
+        REG_READ(EXTMEM_DBUS_ACS_CNT_REG),  REG_READ(EXTMEM_DBUS_ACS_FLASH_MISS_CNT_REG),
+        REG_READ(EXTMEM_DBUS_ACS_SPIRAM_MISS_CNT_REG),
+    };
+    for (int i = 0; i < 5; i++) {
+        const uint32_t d = now[i] - s_ch_prev[i];   // wrap-safe
+        s_ch_prev[i] = now[i];
+        if (s_ch_primed) { s_ch_sum[i] += d; if (d > s_ch_max[i]) s_ch_max[i] = d; }
+    }
+    s_ch_primed = true;
+}
+
 bool vg_replay_timed(void) { return s_timed; }
 
 // THE LAST TIMED RUN'S COST, printed again on demand.
@@ -191,6 +221,15 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
                   (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
                   (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
+    // Bytes per frame: icache misses fill 32 B lines, dcache 64 B. The flash/PSRAM
+    // split is the number nobody has ever had -- the canopy tables against the sky.
+    if (s_t_n) {
+        Serial.printf("vg_replay: CACHE im %u/%u | dfm %u/%u | dpm %u/%u | ia %u da %u  (mean/worst misses)\n",
+                      (unsigned)(s_ch_sum[1] / s_t_n), (unsigned)s_ch_max[1],
+                      (unsigned)(s_ch_sum[3] / s_t_n), (unsigned)s_ch_max[3],
+                      (unsigned)(s_ch_sum[4] / s_t_n), (unsigned)s_ch_max[4],
+                      (unsigned)(s_ch_sum[0] / s_t_n), (unsigned)(s_ch_sum[2] / s_t_n));
+    }
     extern uint32_t g_course_inner_sum, g_course_calls, g_course_draws;
     Serial.printf("vg_replay: COURSE inner_sum %u calls %u draws %u\n",
                   (unsigned)g_course_inner_sum, (unsigned)g_course_calls,
