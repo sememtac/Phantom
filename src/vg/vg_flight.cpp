@@ -9,7 +9,7 @@
 #include <Arduino.h>
 #include <math.h>
 
-PlayerTrail vg_trail;
+ShipTrailRing vg_trail;
 Wall vg_wall;
 
 void vg_wall_seed(void) {
@@ -21,7 +21,7 @@ void vg_wall_clear(void) {
 }
 
 void vg_trail_clear(void) {
-    vg_trail = PlayerTrail{};
+    trail_clear(vg_trail);
 }
 
 // The flight model and the per-frame world transform.
@@ -208,21 +208,11 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     // Trails are world geometry, so every stored point rides the same transform
     // the objects do -- otherwise a ribbon would smear sideways the moment you
     // manoeuvred instead of staying pinned to the track that was actually flown.
-    vg_trail.acc += dt;
-    for (int t = 0; t < vg_trail.n; t++) {
-        int idx = (vg_trail.head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
-        vg_trail.pt[idx] = mat3_apply(R, vg_trail.pt[idx]);
-        vg_trail.pt[idx].z -= dz;
-    }
-    if (vg_trail.acc >= SHIP_TRAIL_DT) {
-        vg_trail.acc = 0;
-        vg_trail.head = (uint8_t)((vg_trail.head + 1) % SHIP_TRAIL);
-        // The player is nailed to the origin, so their track is seeded there and
-        // is carried backwards by the transform above like everything else.
-        vg_trail.pt[vg_trail.head]   = v3(0, 0, 0);
-        vg_trail.p[vg_trail.head] = (uint8_t)(vg.throttle * 255.0f);
-        if (vg_trail.n < SHIP_TRAIL) vg_trail.n++;
-    }
+    trail_advect(vg_trail, R, dz);
+    // The player is nailed to the origin, so their track is seeded there and
+    // is carried backwards by the advect above like everything else.
+    trail_sample(vg_trail, dt, v3(0, 0, 0),
+                 (uint8_t)(vg.throttle * 255.0f), SHIP_TRAIL_DT);
 
     // The cutscene ship rides the ROTATION but not the translation. During the
     // death sequence that holds the wreck at a fixed distance while the camera
@@ -251,10 +241,8 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         // few frames the stored points were left pointing into an old view
         // frame -- swung behind the near plane and culled before they could be
         // drawn. The trail was always there; it was just no longer in front.
-        for (int t = 0; t < c->trail_n; t++) {
-            int idx = (c->trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
-            c->trail[idx] = mat3_apply(R, c->trail[idx]);
-        }
+        // dz is zero here for the reason stated above: rotation, no recession.
+        trail_advect(c->trail, R, 0.0f);
     }
 
     UPD_MARK(g_upd_trail);
@@ -268,24 +256,14 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         s->pos = vadd(s->pos, vmul(s->fwd, s->speed * dt));
         s->pos.z -= dz;
 
-        for (int t = 0; t < s->trail_n; t++) {
-            int idx = (s->trail_head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
-            s->trail[idx] = mat3_apply(R, s->trail[idx]);
-            s->trail[idx].z -= dz;
-        }
-        s->trail_acc += dt;
-        if (s->trail_acc >= SHIP_TRAIL_DT) {
-            s->trail_acc = 0;
-            s->trail_head = (uint8_t)((s->trail_head + 1) % SHIP_TRAIL);
-            s->trail[s->trail_head] = s->pos;
-            // Their throttle, read back out of their speed -- so an enemy
-            // extending at full power streams exactly the way the player does.
-            float tp = (s->speed - s->spec->speed_min)
-                     / (s->spec->speed_max - s->spec->speed_min);
-            if (tp < 0.0f) tp = 0.0f; else if (tp > 1.0f) tp = 1.0f;
-            s->trail_p[s->trail_head] = (uint8_t)(tp * 255.0f);
-            if (s->trail_n < SHIP_TRAIL) s->trail_n++;
-        }
+        trail_advect(s->trail, R, dz);
+        // Their throttle, read back out of their speed -- so an enemy
+        // extending at full power streams exactly the way the player does.
+        float tp = (s->speed - s->spec->speed_min)
+                 / (s->spec->speed_max - s->spec->speed_min);
+        if (tp < 0.0f) tp = 0.0f; else if (tp > 1.0f) tp = 1.0f;
+        trail_sample(s->trail, dt, s->pos, (uint8_t)(tp * 255.0f),
+                     SHIP_TRAIL_DT);
         // Backstop: the AI steers away from the wall, but never let one escape
         // the world if it cuts a turn too fine.
         s->pos = vg_arena_clamp_inside(s->pos, ENEMY_HIT_RADIUS);
@@ -321,11 +299,7 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         m->pos.z -= dz;
         // The trail is world geometry too, so it has to ride the same transform
         // or it would smear behind the missile as you manoeuvre.
-        for (int t = 0; t < m->trail_n; t++) {
-            int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
-            m->trail[idx] = mat3_apply(R, m->trail[idx]);
-            m->trail[idx].z -= dz;
-        }
+        trail_advect(m->trail, R, dz);
     }
 
     for (int i = 0; i < MAX_DEBRIS; i++) {

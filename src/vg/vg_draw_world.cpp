@@ -439,9 +439,10 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
 // Drawn newest-first with a quadratic fade, and stroked thick only at the head:
 // the near end is the part that carries the ship's current heading, and the tail
 // only needs to say where it came from.
-static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
-                            const uint8_t* power, int n, int head,
+static void draw_ship_trail(const VgCam& cam, const ShipTrailRing& ring,
                             Vec3 from, float hue) {
+    const int n    = ring.n;
+    const int head = ring.head;
     if (n < 2) return;
     // ADDITIVE, AND IT USED TO BE OPAQUE. That is the whole of the black-trail bug.
     //
@@ -469,7 +470,7 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
     Vec3 prev = from;
     for (int t = 0; t < n; ) {
         int   idx = (head - t + SHIP_TRAIL * 2) % SHIP_TRAIL;
-        Vec3  cur = trail[idx];
+        Vec3  cur = ring.pt[idx];
 
         // Age fade, scaled by the throttle this point was laid down at, so a
         // burst of speed stays lit in the tail long after the ship has backed
@@ -478,7 +479,7 @@ static void draw_ship_trail(const VgCam& cam, const Vec3* trail,
         // throttle was worked.
         float age = 1.0f - (float)t / (float)n;
         float pw  = SHIP_TRAIL_IDLE +
-                    (1.0f - SHIP_TRAIL_IDLE) * ((float)power[idx] * (1.0f / 255.0f));
+                    (1.0f - SHIP_TRAIL_IDLE) * ((float)ring.p[idx] * (1.0f / 255.0f));
         float f   = age * age * pw;
         if (f < SHIP_TRAIL_MIN) f = SHIP_TRAIL_MIN;
 
@@ -591,10 +592,10 @@ static void draw_missile(const VgCam& cam, const Missile* m) {
     // affordable thing in the game to lose against a bright sky.
     vg_line_blend(VG_LINE_ADD);
     Vec3 prev = m->pos;
-    for (int t = 0; t < m->trail_n; ) {
-        int idx = (m->trail_head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
-        Vec3 cur = m->trail[idx];
-        float f = 1.0f - (float)t / (float)m->trail_n;
+    for (int t = 0; t < m->trail.n; ) {
+        int idx = (m->trail.head - t + MISSILE_TRAIL * 2) % MISSILE_TRAIL;
+        Vec3 cur = m->trail.pt[idx];
+        float f = 1.0f - (float)t / (float)m->trail.n;
         // Was 3 at the head. Three offset copies per segment on every missile in
         // the air is the densest geometry in the frame, and it buys very little
         // on a stroke that is already the brightest thing on screen.
@@ -679,16 +680,14 @@ void vg_draw_world(const VgCam& cam) {
         for (int i = 0; i < MAX_ENEMIES; i++) {
             const Ship* s = &vg.enemy[i];
             if (s->alive)
-                draw_ship_trail(cam, s->trail, s->trail_p, s->trail_n,
-                                s->trail_head, s->pos, s->hue);
+                draw_ship_trail(cam, s->trail, s->pos, s->hue);
         }
         // The player's own, streaming from the origin. Invisible dead ahead, but
         // a hard turn sweeps it into view -- so you can see the arc you just
         // flew. In the repeater it is dead astern by definition, so it is a
         // permanent bright smear straight down the middle of the one instrument
         // meant to show what is behind you.
-        draw_ship_trail(cam, vg_trail.pt, vg_trail.p, vg_trail.n, vg_trail.head,
-                        v3(0, 0, 0), vg.trail_hue);
+        draw_ship_trail(cam, vg_trail, v3(0, 0, 0), vg.trail_hue);
     }
 
     // The trails end here; the gate and the hulls are the next span.
@@ -700,8 +699,7 @@ void vg_draw_world(const VgCam& cam) {
     // Nobody is flying this one: the fighter crossing the view during the launch
     // cutscene, or the player's own wreck after a death.
     if (vg_cine.on) {
-        draw_ship_trail(cam, vg_cine.ship.trail, vg_cine.ship.trail_p,
-                        vg_cine.ship.trail_n, vg_cine.ship.trail_head,
+        draw_ship_trail(cam, vg_cine.ship.trail,
                         vg_cine.ship.pos, vg_cine.ship.hue);
     }
 

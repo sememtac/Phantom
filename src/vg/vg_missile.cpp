@@ -27,16 +27,8 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->age         = 0;
     m->target      = target;
     m->last_range  = 1e9f;
-    m->trail_acc   = 0;
-    m->trail_n     = 0;
-    m->trail_head  = 0;
+    trail_clear(m->trail);
     return true;
-}
-
-static inline void trail_push(Missile* m) {
-    m->trail_head = (uint8_t)((m->trail_head + 1) % MISSILE_TRAIL);
-    m->trail[m->trail_head] = m->pos;
-    if (m->trail_n < MISSILE_TRAIL) m->trail_n++;
 }
 
 // Where is this missile's target right now, and how fast is it moving in view
@@ -217,11 +209,7 @@ void vg_update_missiles(float dt) {
 
         m->pos = vadd(m->pos, vmul(m->dir, m->spec->msl_speed * dt));
 
-        m->trail_acc += dt;
-        if (m->trail_acc >= TRAIL_SAMPLE_DT) {
-            m->trail_acc = 0;
-            trail_push(m);
-        }
+        trail_sample(m->trail, dt, m->pos, TRAIL_SAMPLE_DT);
 
         // A missile that runs out of world detonates against it, which makes
         // leading one into a wall a legitimate way to defeat it.

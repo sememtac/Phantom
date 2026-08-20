@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "vg_vec.h"
 #include "vg_config.h"
+#include "vg_trailring.h"
 
 // ===========================================================================
 // THE PLAYER'S RIBBON
@@ -17,19 +18,13 @@
 // a recording, and it stays in VgGame. The two only ever looked like one group
 // because they share a prefix.
 //
-// `p` is the throttle setting each point was laid down at, 0..255 -- what makes the
-// contrail lengthen under power and persist after the ship has backed off.
+// The fields themselves are a ShipTrailRing now -- the same ring every other
+// ship carries, one definition, in vg_trailring.h. What stays here is the
+// OWNERSHIP: this is the player's, vg_flight.cpp lays its points, and it is
+// still a global because the player still has no Ship.
 // ===========================================================================
 
-struct PlayerTrail {
-    float   acc;
-    uint8_t n;
-    uint8_t head;
-    uint8_t p[SHIP_TRAIL];
-    Vec3    pt[SHIP_TRAIL];
-};
-
-extern PlayerTrail vg_trail;
+extern ShipTrailRing vg_trail;
 
 // Back to no ribbon. Called from vg_game_init: these fields DID rely on its memset.
 // The two places that reset the trail by hand are a match start and a course start,

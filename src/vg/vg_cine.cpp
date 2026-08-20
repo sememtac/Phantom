@@ -23,9 +23,7 @@ void vg_cine_clear(void) {
     vg_cine.on         = false;
     vg_cine.gate_t          = 0.0f;
     vg_cine.hold       = 0.0f;
-    vg_cine.ship.trail_n    = 0;
-    vg_cine.ship.trail_head = 0;
-    vg_cine.ship.trail_acc  = 0;
+    trail_clear(vg_cine.ship.trail);
 }
 
 // A fly-by past a fixed position, the way a rally camera is planted at the
@@ -56,8 +54,7 @@ static void cine_launch(const ShipSpec* spec, float hue, bool mirror) {
     c->speed = 815.0f;
     c->roll_vis = sx * 0.5f;
 
-    c->trail_n = c->trail_head = 0;
-    c->trail_acc = 0;
+    trail_clear(c->trail);
 
     // The gate opens first and the ship waits behind it. Building the plane's
     // axes from the ship's heading means cross(gate_r, gate_u) is that heading
@@ -130,14 +127,8 @@ static void cine_fly(float dt) {
     // 815 units a second, and at the normal rate the ribbon is a row of
     // disconnected dashes rather than a streak. Laid from the engine, not the
     // hull centre, or at this model size it would start inside the ship.
-    c->trail_acc += dt;
-    if (c->trail_acc >= SHIP_TRAIL_DT * 0.5f) {
-        c->trail_acc = 0;
-        c->trail_head = (uint8_t)((c->trail_head + 1) % SHIP_TRAIL);
-        c->trail[c->trail_head]   = vsub(c->pos, vmul(c->fwd, c->scale * 1.3f));
-        c->trail_p[c->trail_head] = 255;
-        if (c->trail_n < SHIP_TRAIL) c->trail_n++;
-    }
+    trail_sample(c->trail, dt, vsub(c->pos, vmul(c->fwd, c->scale * 1.3f)),
+                 255, SHIP_TRAIL_DT * 0.5f);
 }
 
 bool vg_cine_update(float dt, bool skip) {

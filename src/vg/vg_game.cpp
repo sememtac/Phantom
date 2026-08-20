@@ -80,9 +80,7 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->skill      = skill;
     s->hue        = hue;
     s->scale      = ENEMY_SCALE;
-    s->trail_acc  = 0;
-    s->trail_n    = 0;
-    s->trail_head = 0;
+    trail_clear(s->trail);
 
     // Anywhere along the tunnel, ahead or behind, rather than parked in front.
     // The z sign is a coin flip: half the time the match opens with an empty

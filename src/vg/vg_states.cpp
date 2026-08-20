@@ -859,7 +859,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
                 c->speed    = 0.0f;
                 c->scale    = 84.0f;
                 c->roll_vis = 0.4f;
-                c->trail_n  = 0;
+                c->trail.n  = 0;
                 c->hit_flash = 0.0f;
                 vg_cine.on  = true;
                 // The player's own wreck, and the biggest eruption in the

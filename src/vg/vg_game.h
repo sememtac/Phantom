@@ -4,6 +4,7 @@
 #include "vg_config.h"
 #include "vg_input.h"
 #include "vg_ship.h"
+#include "vg_trailring.h"
 
 // The whole simulation lives in VIEW SPACE: the player is permanently at the
 // origin looking down +z, and the world rotates and translates around it. That
@@ -89,15 +90,10 @@ struct Ship {
     // any distance you could safely hold it, which is a contact, not a subject.
     float   scale;
 
-    // Identity, and the ribbon that carries it. trail_p is the throttle setting
-    // each point was laid down at, 0..255 -- what makes the contrail lengthen
-    // under power and persist after the ship has backed off.
+    // Identity, and the ribbon that carries it. The ring itself is the shared
+    // TrailRing -- see vg_trailring.h, where trail.p is explained.
     float   hue;
-    float   trail_acc;
-    uint8_t trail_n;
-    uint8_t trail_head;
-    uint8_t trail_p[SHIP_TRAIL];
-    Vec3    trail[SHIP_TRAIL];
+    ShipTrailRing trail;
 };
 
 // MslEvent moved to vg_cockpit.h with the banner it drives.
@@ -122,10 +118,8 @@ struct Missile {
     int     target;       // enemy index; -1 means the player
     float   last_range;   // for the proximity fuse
     float   lost_at;      // age at which the lock broke, for re-acquisition
-    float   trail_acc;
-    uint8_t trail_n;
-    uint8_t trail_head;
-    Vec3    trail[MISSILE_TRAIL];
+    // The bare ring: no power bytes, because a missile burns at one brightness.
+    MissileTrailRing trail;
 };
 
 struct Debris {
