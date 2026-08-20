@@ -55,6 +55,15 @@ static float s_alarm  = 0.0f;
 //
 // The grey levels come through a 256-entry table built once, so the per-pixel work is
 // a load and a saturating add rather than any arithmetic on the hue.
+//
+// THE INK CANOPIES' NUMBERS, moved here when the vector frame was deleted from
+// vg_hud.cpp. Two of its measured rejections still govern this design: partial
+// antialiasing -- the aperture smoothed, the struts not -- existed to buy back the
+// ~380 us full smoothing cost, and became pointless when AA came off the
+// instruments altogether; and the broadened frame drawn as bundles of parallel
+// lines was ~1.3 ms for its ~15,000 pixels, where fills moved the bound checks out
+// of the inner loop and dropped the per-line overhead entirely. The baked runs
+// below are that second lesson carried to the end.
 static uint16_t s_can_lut[256];
 static bool     s_can_ready = false;
 
@@ -394,7 +403,10 @@ static int16_t s_wc[SCR_H];        // the bow's per-column shift, laid on top of
 //
 // Nearest neighbour, so at a magnification of a tenth roughly every tenth column is read
 // twice. On a cockpit frame that reads as the members thickening slightly, which is what
-// something approaching does anyway. -1 means this row is off the drawing entirely.
+// something approaching does anyway. Every entry is a real column: the inversion
+// clamps to the nearest edge, so a row off the drawing repeats the edge column and
+// no sentinel is ever stored. (The -1 at the balance pass below is that call
+// site's own range test on the row, not a value read from here.)
 static int16_t s_wcol[SCR_H];
 
 // WHERE A WARPED BAND BALANCES, which the baked table cannot know.
@@ -1129,8 +1141,7 @@ static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
             // background, nothing is drawn and nothing is smeared.
             lx += s_lag_px;                       // the frame trailing the turn
             if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
-            lx = s_wcol[lx];
-            if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
+            lx = s_wcol[lx];      // always a real column -- see the note at s_wcol
         }
         // Mirrored only when the drawing is symmetric, which the baker decides and
         // records. An asymmetric frame stores every column and is read straight

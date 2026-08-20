@@ -132,8 +132,7 @@ static void arena_line(const VgCam& cam, bool along_v,
 // A single structural grid over the whole boundary. Proximity is conveyed by
 // arena_seg's distance fade -- the wall you are closing on simply gets brighter
 // and redder -- rather than by overlaying extra geometry near it.
-void vg_draw_arena_grid(const VgCam& cam, int part) {
-    const float PI  = 3.14159265f;
+void vg_draw_arena_grid(const VgCam& cam) {
     const float TAU = 6.28318531f;
 
     // Only the torus needs this, to centre its hoop window on the player.
@@ -165,19 +164,15 @@ void vg_draw_arena_grid(const VgCam& cam, int part) {
         const int b0 = cam.lite ? (base - (base & 1)) : base;
 
         const uint32_t th0 = micros();
-        if (part != ARENA_GRID_RAILS) {
-            for (int i = -nhoop; i <= nhoop; i += hs) {
-                float u = (float)(b0 + i) * du_hoop;
-                arena_line(cam, true, u, 0.0f, TAU, ARENA_HOOP_SEGS, col_struct);
-            }
+        for (int i = -nhoop; i <= nhoop; i += hs) {
+            float u = (float)(b0 + i) * du_hoop;
+            arena_line(cam, true, u, 0.0f, TAU, ARENA_HOOP_SEGS, col_struct);
         }
         const uint32_t th1 = micros();
-        if (part != ARENA_GRID_HOOPS) {
-            for (int j = 0; j < ARENA_RAILS; j += hs) {
-                float v = TAU * (float)j / (float)ARENA_RAILS;
-                arena_line(cam, false, v, u0 - du_hoop * nhoop, u0 + du_hoop * nhoop,
-                           nhoop * 2, col_struct);
-            }
+        for (int j = 0; j < ARENA_RAILS; j += hs) {
+            float v = TAU * (float)j / (float)ARENA_RAILS;
+            arena_line(cam, false, v, u0 - du_hoop * nhoop, u0 + du_hoop * nhoop,
+                       nhoop * 2, col_struct);
         }
         // Only the main view. The mirror runs this a second time at half density and
         // would fold its numbers into the same counters. See cam.lite.
@@ -185,30 +180,11 @@ void vg_draw_arena_grid(const VgCam& cam, int part) {
             g_arena_hoop += th1 - th0;
             g_arena_rail += micros() - th1;
         }
-    } else if (part != ARENA_GRID_RAILS) {
-        // ONE CORE FOR THE SPHERE. Its meridians and parallels are not the same
-        // division as the torus's hoops and rails -- splitting them would want its
-        // own measurement, and the sphere is not the arena the game is played in.
-        // Drawn whole by whichever core asks for the hoops.
-        //
-        // Sphere: meridians and parallels at ~20 degrees. That is the density
-        // needed for a few grid lines to sit in a 62-degree FOV whichever way you
-        // look -- at 36 degrees you could face a gap and see nothing at all.
-        const int NMER = 16;
-        for (int i = 0; i < NMER; i++)
-            arena_line(cam, true, TAU * (float)i / (float)NMER,
-                       -PI * 0.5f, PI * 0.5f, 14, col_struct);
-
-        const int NPAR = 9;
-        for (int j = 1; j <= NPAR; j++) {
-            float v = -PI * 0.5f + PI * (float)j / (float)(NPAR + 1);
-            // Parallels shrink towards the poles; scale their segment count so a
-            // small circle does not get segments it cannot show.
-            int segs = (int)(26.0f * cosf(v));
-            if (segs < 8) segs = 8;
-            arena_line(cam, false, v, 0.0f, TAU, segs, col_struct);
-        }
     }
+    // The sphere's draw went from here -- meridians and parallels at ~20 degrees --
+    // because no caller could ever reach it: every vg_arena_init in the game passes
+    // ARENA_TORUS. This file's git history has it. The sphere's queries stay in
+    // vg_arena.cpp, and the note at the top of vg_arena.h says why they are kept.
 
     // arena_seg leaves the flag wherever the last segment put it.
 }

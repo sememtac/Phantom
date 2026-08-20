@@ -47,13 +47,6 @@
 
 #define COL_HUD              INK_BRIGHT
 #define COL_HUD_DIM          INK_FAINT
-// The canopy's panel lines. The HUD's own hue at the bottom of the ramp, because
-// they are STRUCTURE and not an instrument: they have to be legible enough to imply
-// a frame the player is sitting inside and dim enough that the eye never stops on
-// them. Same ink the radar's graduations use, and for the same reason -- long lines
-// read stronger than short ones, so this is about as bright as it can go before it
-// starts competing with the things that are actually reporting something.
-#define COL_CANOPY           INK_TRACE
 
 // --- alerts ---------------------------------------------------------------
 // The hull meter is the one place the interface leaves its single hue: the fill
