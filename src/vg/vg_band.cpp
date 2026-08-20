@@ -521,8 +521,8 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
 // Halving every channel does not need the pixel in native order. It needs each field
 // halved IN PLACE, and only one field is inconvenient: stored, red is at 7..3, blue at
 // 12..8, and green is split, its high three bits at 2..0 and its low three at 15..13.
-// (That split is the way round vg_tv.cpp:167 says it is. The note further down this file
-// has it backwards and once made the tube flash pink.)
+// (That split is the way round vg_tv.cpp:167 says it is -- the note down this file
+// that had it backwards, and once made the tube flash pink, is gone with its pass.)
 //
 // Red, blue and green's high part halve under a plain shift. Green's low part is the only
 // thing that has to move across the byte boundary, and that is one shift: bit 0 to bit 15.
@@ -539,51 +539,6 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // Wall proximity tint
 // ---------------------------------------------------------------------------
 
-// Redden a pixel with ONE mask and ONE or, and no byte swap.
-//
-// The first version swapped each pixel to native order, scaled green and blue by
-// a shift, added the red, and swapped back. Correct, and it cost 17ms a frame at
-// full coverage: 66 fps fell to 35, at the exact moment the player most needs the
-// frame rate. Two swaps and eight masks per pixel pair, over 230,400 pixels.
-//
-// So the work is done in the panel's own byte order instead. The pixels are stored
-// byte-swapped, which puts the fields at:
-//
-//     bits 15..13  green, high 3      bits 7..3   red
-//     bits 12..8   blue               bits 2..0   green, low 3
-//
-// Blue is contiguous there and green's top bit is reachable, so "take blue out and
-// cap green" is a mask, and "add red" is an or into bits 7..3. Green cannot be
-// SCALED without recombining its two halves, and it does not need to be: for a
-// warning tint, removing blue and capping green is what turns the picture red.
-//
-// The masks take green down in stages, and they have to reach far enough to catch
-// AMBER. The HUD is #ffae1e, whose green is 21 of 63 -- binary 010101, with its
-// top bit already clear. An earlier ramp only cleared green's top bit, so it did
-// nothing at all to amber and the instruments sat there untouched inside a red
-// cockpit. Clearing G4 is what actually reddens them, and by the rim green is
-// gone entirely.
-// Twelve rings, not four. Four was a gradient in the sense that it had steps in
-// it, and the steps were the thing you noticed. Each extra ring costs one more
-// square root per ROW and two more spans, which is nothing next to the pixels.
-
-// Per ring, from the faint inner edge out to the rim. The mask CLEARS bits and
-// the glow is a red value out of 31, pre-shifted into the swapped red field.
-//
-// The red ramp starts at zero on purpose: the innermost ring changes nothing at
-// all, so the gradient fades out instead of ending on an edge.
-// Pre-paired, so the hot loop does not build them. Each entry is the mask and the
-// glow for TWO pixels at once. Recomputing these inside the span function cost
-// six operations per call, and there are twelve rings on both sides of 480 rows.
-// Shift applied to green's HIGH three bits, which are contiguous at 15..13 in
-// the swapped word. This is what gives amber intermediate levels: masks alone
-// could only take its green from 21 straight to 0, because 010101 has no bits
-// left to remove in between.
-
-// Tint [x0,x1) of one row. Unrolled four words at a time, which is what the
-// scanline pass above learned: at five operations of real work per word, the loop
-// itself was most of the cost.
-
 // THE WALL WARNING WAS A FULL-SCREEN RED RING AND IT IS GONE. What it cost, measured, is
 // the argument against ever putting one back:
 //
@@ -598,40 +553,25 @@ static inline uint32_t scanline_pair(uint32_t v) {
 // because the cost was never the arithmetic -- it was writing to 153,600 pixels that were
 // already going to be written once.
 //
+// It went through three shapes on the way. The first swapped every pixel to native order
+// and back: 17 ms a frame at full coverage, 66 fps down to 35. The second worked in the
+// panel's own byte order, one mask and one or per pixel -- the swapped word's fields are
+// at vg_tv.cpp:167, which is the note to trust; the copy that sat here had green's halves
+// backwards and once made the tube flash pink. Its masks also had to clear green's G4,
+// not just its top bit, or amber (#ffae1e, green 010101) never reddened at all. That pass
+// died of the lit sky: once the backdrop lit every pixel, five milliseconds a frame parked
+// against a wall, measured. The third applied the tint at the source, in the sky fill's
+// chunks and once per primitive at submit, and went down with the ring itself -- "THE
+// RING IS GONE" in vg_raster.h records its operations.
+//
 // A cockpit member is already being drawn. Colouring it differently costs nothing per pixel,
 // which no amount of work on a second full-screen pass can match. See vg_canopy_alarm.
 //
 // It existed because it had to: it predates canopies, and with no cockpit to light up,
 // tinting the whole view was the only way to say "wall" at all.
-
-// The wall alarm level moved to vg_canopy_draw.cpp with vg_canopy_alarm, which is the
-// only thing that ever read it. What is left above is the history of a pass that no
-// longer exists -- see "THE RING IS GONE" in vg_raster.h.
-
-
-// --- tint, at the source ----------------------------------------------------
 //
-// The full-frame tint pass died of the lit sky. Its pixel op is three masks a
-// word, but it walked every bright pixel of every row -- and once the sphere
-// backdrop lit the whole frame, "every bright pixel" became the whole frame:
-// five milliseconds a frame parked against a wall, measured. So the tint is
-// applied where the colour is already in hand instead: the sky fill tints its
-// 8-pixel chunks as it writes them, and primitives are tinted once each at
-// submit. A 60-chunk row costs sixty ops where the pass paid two hundred and
-// forty; a primitive costs one.
-
-// Ring crossings for one panel row: lim[i] is the half-width where ring i
-// begins. Geometry identical to the dead pass.
-
-
-// One primitive, tinted by the ring under its centre. A long line crosses
-// several rings and gets its centre's -- a visible simplification nobody will
-// study during a boundary alarm.
-
-
-
-
-
+// The wall alarm level moved to vg_canopy_draw.cpp with vg_canopy_alarm, which is the
+// only thing that ever read it.
 
 // ---------------------------------------------------------------------------
 // The set turning on and off MOVED to vg_tv.cpp, with vg_tv.h in front of it. It was 208
@@ -791,7 +731,10 @@ static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair")
 // share, r1 is the band's last row INCLUSIVE rather than a count, and r0 carries the
 // band's TRUE top row -- band_prims needs it for the line clip, and it is the one field
 // nothing else was using.
-enum { RS_SKY = 0, RS_SCAN = 1, RS_CANOPY = 2, RS_PREP = 3, RS_PRIM = 4 };
+//
+// RS_CANOPY (2) is gone: the outer RS_PRIM fork owns the canopy's split now, so
+// nothing ever started a canopy row split -- see the PRIM_CANOPY case in band_prims.
+enum { RS_SKY = 0, RS_SCAN = 1, RS_PREP = 3, RS_PRIM = 4 };
 
 // Forward: the primitive loop is a row-splittable job too, and it is the largest of
 // them. Declared here because the helper task below dispatches to it. The attributes
@@ -812,7 +755,6 @@ static void rowsplit_task(void*) {
     for (;;) {
         xSemaphoreTake(s_rs_go, portMAX_DELAY);
         if      (s_rs.op == RS_SKY)    vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
-        else if (s_rs.op == RS_CANOPY) vg_canopy_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_PREP)   vg_sky_prep_bands(s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_PRIM)   band_prims(s_rs.band, s_rs.by0, s_rs.r1, s_rs.r0, s_rs.r1);
         else                           band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);

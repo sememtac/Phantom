@@ -42,8 +42,8 @@ static int   s_count    = 0;          // the JOINED total, set by vg_prim_join
 // slice; vg_prim_join then memmoves the second block down to sit immediately after
 // the first. What the band raster then sees is byte-for-byte the array a serial
 // submit would have produced, in the same order, so the whole scanline active-list
-// machinery below is untouched and no second 68KB list is needed. The peak count is
-// 920 against MAX_PRIMS 3400, so the halves have room to spare.
+// machinery below is untouched and no second 40KB list is needed. The peak count is
+// 920 against MAX_PRIMS 2000, so the halves have room to spare.
 //
 // WHAT HAD TO BECOME PER-SUBMITTER, because all four are set by one half and read
 // by the other's primitives if left global:
@@ -106,6 +106,12 @@ struct Sub {
 // of the HUD's own.
 //
 // Slice 0 ends where slice 1 begins, and so on; the last bound is MAX_PRIMS.
+//
+// SINCE THE RAILS WENT BACK to core 1 -- see the note at the submit call in
+// vg_render.cpp -- the whole grid lands in slice 0 and slice 1 rides empty. The
+// bounds are kept as they are for the per-frame rails ownership that note names.
+// Worst-case hoops plus rails is 454 segments against slice 0's 450 plus the
+// stars; a slice that overflows says so on the telemetry line.
 static constexpr int SUB_AT[NSUB + 1] = {
     0,        // 0: starfield + hoops   -- 450: at most 294 grid segments, plus the stars
     450,      // 1: rails               -- 200: at most 160 segments
@@ -301,7 +307,7 @@ bool vg_rast_init(void) {
 
 // THE HIGH WATER MARK, since boot and never reset.
 //
-// MAX_PRIMS is 3400 and sizeof(Prim) is 20, so the list is 68KB of internal SRAM --
+// MAX_PRIMS is 2000 and sizeof(Prim) is 20, so the list is 40KB of internal SRAM --
 // and there are only ~36KB free, which is what blocks the one change that would
 // clear both frame budgets at once: building the NEXT frame's list on core 0 while
 // core 1 rasterises this one needs two lists.
@@ -310,7 +316,7 @@ bool vg_rast_init(void) {
 // for the shard burst -- 160 shards at one primitive each, plus everything else
 // they are on top of -- and the per-frame count reads 470-652 in combat. If the
 // true peak across a whole session is under half the ceiling, two lists fit inside
-// the 68KB already spent and the pipeline becomes affordable without another byte.
+// the 40KB already spent and the pipeline becomes affordable without another byte.
 //
 // Peak rather than a mean, and never reset, because the number that decides a
 // buffer size is the worst moment the game can produce, not the usual one. Sampled
@@ -320,7 +326,7 @@ static int s_peak = 0;
 
 // PER SLICE, because the whole-frame peak cannot size a slice.
 //
-// MAX_PRIMS is 3400 and the frame peak is 759, so the list looks four times larger than
+// MAX_PRIMS is 2000 and the frame peak is 759, so the list looks over twice as large as
 // it needs to be -- but each slice is its own ceiling now, and a slice that overflows
 // drops primitives whatever the total was doing. Sizing them down needs to know which
 // one gets closest to its own bound, and nothing measured that.

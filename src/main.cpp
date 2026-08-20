@@ -695,8 +695,10 @@ void loop(void) {
         // A second line rather than a longer one: the first is already at the
         // edge of what a terminal shows without wrapping. It shares the guard
         // and the window of the first, so the two lines average the same frames.
-        // `hoops` and not `arena`: the rails are core 0's now and are reported on the grid
-        // line below, beside the half they were split from.
+        // `hoops` is the label the split era left behind: the rails moved to core 0
+        // and back again -- see the note at the submit call in vg_render.cpp -- so
+        // this figure is the whole grid now, and the grid line below still splits it
+        // hoop against rail.
         Serial.printf("        sub = star %lu hoops %lu world %lu hud %lu mir %lu sfx %lu sxr %lu vc %d fb %d\n",
                       (unsigned long)(acc_star / frames),
                       (unsigned long)(acc_aren / frames),
