@@ -41,6 +41,7 @@ const uint8_t vg_ship_fin[SHIP_FIN_EDGES][2] = { {3,5}, {5,6}, {6,3} };
 static uint32_t s_rng = 0x9E3779B9u;
 
 void vg_rng_seed(uint32_t s) { s_rng = s | 1u; }
+uint32_t vg_rng_peek(void) { return s_rng; }   // DIAGNOSTIC: determinism hash
 
 static inline uint32_t rnd(void) {
     s_rng ^= s_rng << 13;

@@ -1,6 +1,8 @@
 #include "vg_raster.h"
 #include "vg_crumb.h"
 #include "vg_raster_int.h"
+#include "vg_replay.h"   // DIAGNOSTIC: vg_replay_timed for the prim hash
+#include "vg_flight.h"   // DIAGNOSTIC: vg_wall for the wall hash
 #include "vg_font.h"
 #include "vg_port.h"
 #include "vg_capture.h"
@@ -1524,6 +1526,14 @@ static uint32_t s_wait_us   = 0;
 static uint32_t s_push_us   = 0;
 static int      s_over_n    = 0;
 static uint32_t s_over_us   = 0;
+uint32_t g_prim_hash = 2166136261u;   // DIAGNOSTIC -- see the hash in vg_rast_flush
+uint32_t g_rng_hash  = 2166136261u;
+uint32_t g_prim_hash_l = 2166136261u;
+uint32_t g_prim_hash_g = 2166136261u;
+uint32_t g_cam_hash    = 2166136261u;
+uint32_t g_caminp_hash = 2166136261u;
+uint32_t g_cnt_hash    = 2166136261u;
+uint32_t g_wall_hash = 2166136261u;
 static uint32_t s_band_us[NUM_BANDS];
 static uint32_t s_join_us   = 0;
 static uint32_t s_res_us    = 0;
@@ -1563,6 +1573,40 @@ void vg_rast_flush(void) {
     vg_prim_join();
     // The canopy's colour table, warmed before any band forks -- see vg_canopy_warm.
     vg_canopy_warm();
+    // DIAGNOSTIC: a running hash of every frame's joined primitive list, to split the
+    // nondeterminism hunt in half -- if two replays disagree here, submission diverges;
+    // if they agree while pixels differ, the raster does. Reported via the cost line.
+    if (vg_replay_timed()) {
+        const Prim* dp = vg_prim_list();
+        const int   dn = vg_prim_live();
+        uint32_t hsh = g_prim_hash ^ (uint32_t)dn;
+        const uint8_t* bytes = (const uint8_t*)dp;
+        for (size_t i = 0; i < (size_t)dn * sizeof(Prim); i++)
+            hsh = (hsh ^ bytes[i]) * 16777619u;
+        g_prim_hash = hsh;
+        // Split by TYPE, which needs no slice bookkeeping: glyphs and fills are the
+        // instruments' hand, lines and triangles the world's. Whichever sub-hash
+        // diverges names the half of the picture the perturbation draws with.
+        for (int i2 = 0; i2 < dn; i2++) {
+            const uint8_t* pb = (const uint8_t*)&dp[i2];
+            uint32_t* dst = (dp[i2].type == PRIM_GLYPH || dp[i2].type == PRIM_FILL)
+                          ? &g_prim_hash_g : &g_prim_hash_l;
+            uint32_t h2 = *dst;
+            for (size_t j = 0; j < sizeof(Prim); j++) h2 = (h2 ^ pb[j]) * 16777619u;
+            *dst = h2;
+        }
+        // ...and two shallower streams, to say WHICH layer diverges first: the RNG
+        // stream (a shifted draw count moves every later draw) and the wall channel
+        // (lerp-smoothed, self-healing -- the shape the pixel evidence points at).
+        extern uint32_t vg_rng_peek(void);
+        g_rng_hash  = (g_rng_hash  ^ vg_rng_peek()) * 16777619u;
+        // The COUNT stream on its own: the visual evidence is whole primitives
+        // appearing and vanishing, so presence may be the divergence, not values.
+        g_cnt_hash  = (g_cnt_hash ^ (uint32_t)dn) * 16777619u;
+        union { float f; uint32_t u; } cw, cr;
+        cw.f = vg_wall.clearance; cr.f = vg_wall.rate;
+        g_wall_hash = ((g_wall_hash ^ cw.u) * 16777619u ^ cr.u) * 16777619u;
+    }
     s_join_us = micros() - f0;
 
     // Drain the LAST band of the previous frame before touching its buffer

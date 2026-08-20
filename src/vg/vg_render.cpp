@@ -4,6 +4,7 @@
 #include "vg_sky.h"
 #include "vg_draw.h"
 #include "vg_prof.h"
+#include "vg_replay.h"   // DIAGNOSTIC: vg_replay_timed for the cam hash
 #include "vg_game.h"
 #include "vg_screens.h"
 #include "vg_glitch.h"
@@ -221,6 +222,30 @@ static void await_instruments(void) {
 
 void vg_render_frame(const VgInput* in, float fps) {
     VgCam cam = vg_cam_make(vg.bank, vg_shake.x, vg_shake.y, vg.cam_zoom);
+    // DIAGNOSTIC: fold the camera's bytes per frame -- the one structure every
+    // primitive shares, now that RNG and wall hash identical while both prim-type
+    // hashes diverge. Differs: its inputs are four and the hunt ends upstairs.
+    // Matches: identical inputs are yielding different floats, and the hunt goes
+    // below the code.
+    if (vg_replay_timed()) {
+        // FIELDS, not sizeof: VgCam ends in two bools and the padding after them is
+        // stack garbage -- the first cut of this hash folded it in and measured the
+        // stack's mood, not the camera. The inputs ride in a second hash so a
+        // divergence names its side of the call.
+        extern uint32_t g_cam_hash, g_caminp_hash;
+        union { float f; uint32_t u; } b[9];
+        b[0].f = cam.bank_s; b[1].f = cam.bank_c; b[2].f = cam.sx;
+        b[3].f = cam.sy;     b[4].f = cam.focal;
+        b[5].f = vg.bank;    b[6].f = vg_shake.x; b[7].f = vg_shake.y;
+        b[8].f = vg.cam_zoom;
+        uint32_t h = g_cam_hash;
+        for (int i = 0; i < 5; i++) h = (h ^ b[i].u) * 16777619u;
+        h = (h ^ (uint32_t)cam.rear ^ ((uint32_t)cam.lite << 1)) * 16777619u;
+        g_cam_hash = h;
+        uint32_t h2 = g_caminp_hash;
+        for (int i = 5; i < 9; i++) h2 = (h2 ^ b[i].u) * 16777619u;
+        g_caminp_hash = h2;
+    }
 
     // Looking aft fills the main window. The patch is the button as well as the
     // repeater, so the picture the player is already watching is the one that
