@@ -296,6 +296,17 @@ bool vg_rast_init(void) {
     // Flash is where content actually lives: dialogue, ship tables, models, canopy
     // drawings are all const and never copied to RAM. It is the budget with the most
     // room and the one a writer or an artist is most likely to spend.
+    // What mode the flash cache is ACTUALLY filling in, read from the controller
+    // rather than believed from any header: the ROM banner says DIO about its own
+    // conservative load of the bootloader, the image header says what esptool was
+    // told, and neither is necessarily what the app runs with. Bits per the S3 TRM:
+    // SPI_MEM_CTRL_REG(0) FREAD_QIO(24) FREAD_DIO(23) FREAD_QUAD(20) FREAD_DUAL(14).
+    {
+        const uint32_t c = *(volatile uint32_t*)0x60002008;   // SPI_MEM_CTRL_REG(0)
+        const char* m = (c & (1u << 24)) ? "QIO" : (c & (1u << 23)) ? "DIO"
+                      : (c & (1u << 20)) ? "QOUT" : (c & (1u << 14)) ? "DOUT" : "SLOW";
+        Serial.printf("vg_rast_init: flash cache mode %s (ctrl %08x)\n", m, (unsigned)c);
+    }
     Serial.printf("vg_rast_init: internal-free %uKB  psram-free %uKB  (largest block: "
                   "internal %uKB psram %uKB)\n",
                   (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
