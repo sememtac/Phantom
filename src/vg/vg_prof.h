@@ -243,6 +243,10 @@ extern uint32_t g_sub_course;   // the course rings, bracketed 2026-08-20
 // What the ranking says overall is that there is no lever in upd. The largest span is 15%
 // of it, the top four are within 40 us of each other, and the next 100 us would have to
 // come from four places at once.
+// The eleven spans as they stood at the END of the update, before the telemetry
+// block zeroes them for the next frame. The replay's report runs after that reset,
+// so this is the only copy it can read.
+extern uint32_t g_upd_snap[11];
 extern uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
                 g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
                 g_upd_ai, g_upd_combat;

@@ -108,6 +108,7 @@ void vg_replay_note_bands(const uint32_t* band_us, int n) {
 static uint32_t s_cw_worst = 0, s_cw_frame = 0;
 static uint32_t s_cw_can = 0, s_cw_rast = 0, s_cw_prim = 0, s_cw_sub = 0, s_cw_upd = 0;
 static uint32_t s_cw_over16 = 0, s_cw_over20 = 0;
+static uint32_t s_cw_upd_stage[11] = {0};
 static uint32_t s_sw_a = 0, s_sw_b = 0, s_sw_frame = 0, s_sw_over = 0;
 static uint32_t s_wp_sum = 0, s_wp_max = 0, s_wp_n = 0, s_sw_warp = 0;
 
@@ -292,6 +293,14 @@ bool vg_replay_report_cost(void) {
                   (unsigned)s_cw_frame, (unsigned)s_cw_upd, (unsigned)s_cw_sub,
                   (unsigned)s_cw_rast, (unsigned)s_cw_can, (unsigned)s_cw_prim,
                   (unsigned)s_cw_over16, (unsigned)s_cw_over20);
+    Serial.printf("vg_replay: SLOWEST-UPD pre %u ship %u arena %u sky %u field %u trail %u"
+                  " enemy %u ord %u vfx %u ai %u combat %u\n",
+                  (unsigned)s_cw_upd_stage[0], (unsigned)s_cw_upd_stage[1],
+                  (unsigned)s_cw_upd_stage[2], (unsigned)s_cw_upd_stage[3],
+                  (unsigned)s_cw_upd_stage[4], (unsigned)s_cw_upd_stage[5],
+                  (unsigned)s_cw_upd_stage[6], (unsigned)s_cw_upd_stage[7],
+                  (unsigned)s_cw_upd_stage[8], (unsigned)s_cw_upd_stage[9],
+                  (unsigned)s_cw_upd_stage[10]);
 
     // The worst rendezvous, decomposed. If b_at is far above b's mean, core 0 was late
     // and core 1 paid for it; if a_at is small, core 1 arrived early and the gap is
@@ -352,6 +361,13 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
     if (ft > s_cw_worst) {
         s_cw_worst = ft; s_cw_frame = s_t_n;
         s_cw_can = can; s_cw_rast = rast; s_cw_prim = prim; s_cw_sub = sub; s_cw_upd = upd;
+        // AND WHICH SPAN OF THE UPDATE. A printf here cannot survive a replay -- the
+        // link owns the port -- so the stages are captured and printed with the rest
+        // of the report. They reset per telemetry window rather than per frame, so
+        // they carry a little of the frames before this one; against a stall of a
+        // quarter of a second that is noise.
+        extern uint32_t g_upd_snap[11];
+        for (int i = 0; i < 11; i++) s_cw_upd_stage[i] = g_upd_snap[i];
     }
     s_t_n++;
 }

@@ -408,6 +408,7 @@ void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in) {
 // leaving the loser's missiles and wreckage flying through the attract loop --
 // and a missile whose seeker had broken draws in the dead-seeker grey, which is
 // exactly the stray grey lines that were turning up on the menu.
+uint32_t g_upd_snap[11];   // the eleven, frozen at the end of the update
 uint32_t g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky, g_upd_field,
          g_upd_trail, g_upd_enemy, g_upd_ord, g_upd_vfx,
          g_upd_ai, g_upd_combat;

@@ -384,6 +384,16 @@ void loop(void) {
     vg_replay_note_frame(sim_dt, &in);
 
     uint32_t t2 = micros();
+    // SNAPSHOT THE UPDATE'S SPANS HERE, because the telemetry block below zeroes them
+    // every frame and the replay's own report runs after it -- read there, all eleven
+    // come back 0 while `upd` reads a quarter of a second. Taken at the end of the
+    // update, which is the only moment they are both complete and still alive.
+    {
+        const uint32_t u[11] = { g_upd_pre, g_upd_ship, g_upd_arena, g_upd_sky,
+                                 g_upd_field, g_upd_trail, g_upd_enemy, g_upd_ord,
+                                 g_upd_vfx, g_upd_ai, g_upd_combat };
+        for (int i = 0; i < 11; i++) g_upd_snap[i] = u[i];
+    }
     vg_crumb(CRUMB_RENDER, (uint8_t)vg.state);
     vg_render_frame(&in, fps);
 
