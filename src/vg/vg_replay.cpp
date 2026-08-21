@@ -109,6 +109,18 @@ static uint32_t s_cw_worst = 0, s_cw_frame = 0;
 static uint32_t s_cw_can = 0, s_cw_rast = 0, s_cw_prim = 0, s_cw_sub = 0, s_cw_upd = 0;
 static uint32_t s_cw_over16 = 0, s_cw_over20 = 0;
 static uint32_t s_cw_upd_stage[11] = {0};
+// THE TAIL, NOT ITS MAXIMUM. One worst frame cannot describe a hundred slow ones,
+// and a hundred slow ones is what the pilot reports as "sometimes". Six worst
+// frames with their parts, and a histogram of where every frame lands.
+#define SLOW_TOP 6
+static uint32_t s_top_ft[SLOW_TOP]  = {0};
+static uint32_t s_top_fr[SLOW_TOP]  = {0};
+static uint32_t s_top_upd[SLOW_TOP] = {0};
+static uint32_t s_top_sub[SLOW_TOP] = {0};
+static uint32_t s_top_rast[SLOW_TOP]= {0};
+static uint32_t s_top_can[SLOW_TOP] = {0};
+// 60+, 57-60, 54-57, 50-54, under 50. The pilot said 54, so the buckets straddle it.
+static uint32_t s_hist[5] = {0};
 static uint32_t s_sw_a = 0, s_sw_b = 0, s_sw_frame = 0, s_sw_over = 0;
 static uint32_t s_wp_sum = 0, s_wp_max = 0, s_wp_n = 0, s_sw_warp = 0;
 
@@ -293,6 +305,16 @@ bool vg_replay_report_cost(void) {
                   (unsigned)s_cw_frame, (unsigned)s_cw_upd, (unsigned)s_cw_sub,
                   (unsigned)s_cw_rast, (unsigned)s_cw_can, (unsigned)s_cw_prim,
                   (unsigned)s_cw_over16, (unsigned)s_cw_over20);
+    Serial.printf("vg_replay: FRAMES 60+ %u | 57-60 %u | 54-57 %u | 50-54 %u | under50 %u\n",
+                  (unsigned)s_hist[0], (unsigned)s_hist[1], (unsigned)s_hist[2],
+                  (unsigned)s_hist[3], (unsigned)s_hist[4]);
+    for (int i = 0; i < SLOW_TOP; i++) {
+        if (!s_top_ft[i]) break;
+        Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u (can %u)\n",
+                      i, (unsigned)s_top_fr[i], (unsigned)s_top_ft[i],
+                      (unsigned)(1000000u / s_top_ft[i]), (unsigned)s_top_upd[i],
+                      (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i]);
+    }
     Serial.printf("vg_replay: SLOWEST-UPD pre %u ship %u arena %u sky %u field %u trail %u"
                   " enemy %u ord %u vfx %u ai %u combat %u\n",
                   (unsigned)s_cw_upd_stage[0], (unsigned)s_cw_upd_stage[1],
@@ -358,6 +380,19 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
     const uint32_t ft   = upd + sub + (rast > wire ? rast : wire);
     if (ft > 16667u) s_cw_over16++;      // under 60 fps
     if (ft > 20000u) s_cw_over20++;      // under 50 fps
+    s_hist[ft <= 16667u ? 0 : ft <= 17544u ? 1 : ft <= 18519u ? 2 : ft <= 20000u ? 3 : 4]++;
+    // Six deep, insertion sorted: the list is tiny and this runs once a frame.
+    if (ft > s_top_ft[SLOW_TOP - 1]) {
+        int k = SLOW_TOP - 1;
+        while (k > 0 && s_top_ft[k - 1] < ft) {
+            s_top_ft[k]  = s_top_ft[k - 1];  s_top_fr[k]   = s_top_fr[k - 1];
+            s_top_upd[k] = s_top_upd[k - 1]; s_top_sub[k]  = s_top_sub[k - 1];
+            s_top_rast[k]= s_top_rast[k - 1]; s_top_can[k] = s_top_can[k - 1];
+            k--;
+        }
+        s_top_ft[k] = ft; s_top_fr[k] = s_t_n;
+        s_top_upd[k] = upd; s_top_sub[k] = sub; s_top_rast[k] = rast; s_top_can[k] = can;
+    }
     if (ft > s_cw_worst) {
         s_cw_worst = ft; s_cw_frame = s_t_n;
         s_cw_can = can; s_cw_rast = rast; s_cw_prim = prim; s_cw_sub = sub; s_cw_upd = upd;
