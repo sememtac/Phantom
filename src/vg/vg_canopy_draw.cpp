@@ -268,9 +268,108 @@ static void canopy_lut(void) {
 // here. A measurement that has already been taken should not have to be taken again because an
 // unrelated function got longer.
 static inline __attribute__((always_inline))
-void span_add(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
+void span_add_scalar(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
 static inline __attribute__((always_inline))
-void span_sub(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
+void span_sub_scalar(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
+
+// THE VECTOR PATH, and where it is allowed. 1 = flat spans of CANOPY_PIE_MIN
+// pixels or more go through the PIE unit (vg_pie_spans.S), everything shorter
+// stays on the scalar pair loop above; 0 = the shipped scalar path, untouched.
+// The self-test in vg_canopy_warm proves bit-identity before the first frame
+// draws, and prints its verdict either way. Both paths are measured; the
+// author chooses with the numbers in hand.
+#define CANOPY_PIE 1
+
+#if CANOPY_PIE
+extern "C" void vg_pie_span_add8m(uint16_t* u, int nu, const uint16_t* d3,
+                                  const uint16_t* m0, const uint16_t* mL);
+extern "C" void vg_pie_span_sub8m(uint16_t* u, int nu, const uint16_t* d3,
+                                  const uint16_t* m0, const uint16_t* mL);
+
+// Every span the dispatcher sends arrives ENTIRELY on the vector path: the
+// covering 8-pixel units are blended whole, and the head and tail units keep
+// only their covered lanes, masked from these tables. mh[o] covers lanes o
+// and up; mt[t] covers lanes below t, with t = 0 meaning the last unit is
+// full. A span inside a single unit pre-combines the two.
+alignas(16) static const uint16_t s_pie_mh[8][8] = {
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF },
+    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF },
+};
+alignas(16) static const uint16_t s_pie_mt[8][8] = {
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
+    { 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000 },
+    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000 },
+};
+
+// Below four pixels the call itself is the cost; the scalar pair loop keeps
+// those. Everything else vectorises, edge lanes included.
+#define CANOPY_PIE_MIN 4
+
+// Out of line ON PURPOSE, unlike the scalar spans: inlined, the mask staging
+// and unit arithmetic would join the block walk's register file -- the exact
+// spill this file already paid 29% to escape once.
+static __attribute__((noinline))
+void span_add_pie(uint16_t* q, int n, uint16_t d) {
+    const uint16_t d3[3] = { (uint16_t)((d >> 11) & 31u), (uint16_t)((d >> 5) & 63u),
+                             (uint16_t)(d & 31u) };
+    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
+    const int off = (int)(q - base);
+    const int cov = off + n;
+    const int nu  = (cov + 7) >> 3;
+    const uint16_t* m0 = s_pie_mh[off];
+    alignas(16) uint16_t mc[8];
+    if (nu == 1) {
+        const uint16_t* mL = s_pie_mt[cov & 7];
+        for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]);
+        m0 = mc;
+    }
+    vg_pie_span_add8m(base, nu, d3, m0, s_pie_mt[cov & 7]);
+}
+static __attribute__((noinline))
+void span_sub_pie(uint16_t* q, int n, uint16_t d) {
+    const uint16_t d3[3] = { (uint16_t)((d >> 11) & 31u), (uint16_t)((d >> 5) & 63u),
+                             (uint16_t)(d & 31u) };
+    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
+    const int off = (int)(q - base);
+    const int cov = off + n;
+    const int nu  = (cov + 7) >> 3;
+    const uint16_t* m0 = s_pie_mh[off];
+    alignas(16) uint16_t mc[8];
+    if (nu == 1) {
+        const uint16_t* mL = s_pie_mt[cov & 7];
+        for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]);
+        m0 = mc;
+    }
+    vg_pie_span_sub8m(base, nu, d3, m0, s_pie_mt[cov & 7]);
+}
+
+static inline __attribute__((always_inline))
+void span_add(uint16_t* q, int n, uint16_t d) {
+    if (n >= CANOPY_PIE_MIN) { span_add_pie(q, n, d); return; }
+    span_add_scalar(q, n, d);
+}
+static inline __attribute__((always_inline))
+void span_sub(uint16_t* q, int n, uint16_t d) {
+    if (n >= CANOPY_PIE_MIN) { span_sub_pie(q, n, d); return; }
+    span_sub_scalar(q, n, d);
+}
+#else
+static inline __attribute__((always_inline))
+void span_add(uint16_t* q, int n, uint16_t d) { span_add_scalar(q, n, d); }
+static inline __attribute__((always_inline))
+void span_sub(uint16_t* q, int n, uint16_t d) { span_sub_scalar(q, n, d); }
+#endif
 
 // A PIXEL AT A TIME, for the antialiased edge of a shape.
 //
@@ -1534,7 +1633,96 @@ int vg_canopy_split_at(int band_index) {
 // like from outside is a handful of wrong-coloured canopy pixels that come and go BY
 // BUILD LAYOUT, which framed two innocent changes before the race was run to ground.
 // The lazy check stays as a backstop -- once warmed it never fires in the frame.
+#if CANOPY_PIE
+// BIT-IDENTITY OR NOTHING, proven before the first frame. Plane-separated
+// min/max is exactly the guard-bit arithmetic on paper; this is where paper
+// meets the actual vzip byte order and the actual VMUL truncation. Three
+// sweeps: every 16-bit source value against four deltas (catches lane and
+// byte-order faults, which corrupt everything), a per-field exhaustive where
+// pixel j carries field values j and delta k carries field deltas k (all
+// (value, delta) pairs per field -- the planes are independent, so this IS
+// exhaustive), and the dispatcher itself across every head offset and a fan
+// of lengths. The scalar pair loop is the reference. Runs once, prints.
+static void canopy_pie_selftest(void) {
+    enum { NPX = 4096 };
+    uint16_t* a = (uint16_t*)heap_caps_aligned_alloc(16, NPX * 2 * 2, MALLOC_CAP_INTERNAL);
+    if (!a) { Serial.println("vg_canopy: PIE self-test SKIPPED (alloc)"); return; }
+    uint16_t* b = a + NPX;
+    const uint32_t t0 = micros();
+    uint32_t fails = 0, first = 0;
+    uint16_t f_d = 0, f_ref = 0, f_got = 0; int f_op = 0;
+    const uint16_t edge_d[4] = { 0x0000, 0xFFFF, 0x0821, 0xF7DF };
+    for (int sweep = 0; sweep < 3 && !fails; sweep++) {
+        const int nd     = (sweep == 1) ? 64 : 4;
+        const int chunks = (sweep == 0) ? 65536 / NPX : 1;
+        for (int di = 0; di < nd && !fails; di++) {
+            for (int c = 0; c < chunks && !fails; c++) {
+                uint16_t d; int n, off;
+                if (sweep == 0) {           // all sources x edge deltas, full chunks
+                    d = edge_d[di]; n = NPX; off = 0;
+                    for (int i = 0; i < NPX; i++) a[i] = (uint16_t)(c * NPX + i);
+                } else if (sweep == 1) {    // field-exhaustive: values j against delta di
+                    const uint16_t r = (uint16_t)(di & 31), g = (uint16_t)di;
+                    d = (uint16_t)((r << 11) | (g << 5) | r); n = 64; off = 0;
+                    for (int i = 0; i < 64; i++) {
+                        const uint16_t vr = (uint16_t)(i & 31), vg = (uint16_t)i;
+                        const uint16_t v = (uint16_t)((vr << 11) | (vg << 5) | vr);
+                        a[i] = (uint16_t)((v >> 8) | (v << 8));   // panel order
+                    }
+                } else {                    // the dispatcher: offsets x lengths
+                    d = edge_d[2]; off = di * 2 + 1; n = 17 + di * 31;
+                    for (int i = 0; i < off + n; i++) a[i] = (uint16_t)(i * 2557u + 41u);
+                }
+                memcpy(b, a, (size_t)(off + n) * 2);
+                for (int op = 0; op < 2 && !fails; op++) {
+                    const uint32_t drb = (uint32_t)d & 0xF81Fu, dg = (uint32_t)d & 0x07E0u;
+                    if (op == 0) { span_add(a + off, n, d);
+                        for (int i = 0; i < n; i++) b[off + i] = (uint16_t)px_add(b[off + i], drb, dg);
+                    } else {       span_sub(a + off, n, d);
+                        for (int i = 0; i < n; i++) b[off + i] = (uint16_t)px_sub(b[off + i], drb, dg);
+                    }
+                    for (int i = 0; i < n; i++) {
+                        if (a[off + i] != b[off + i] && !fails++) {
+                            first = (uint32_t)i; f_d = d; f_ref = b[off + i]; f_got = a[off + i]; f_op = op;
+                        }
+                    }
+                    memcpy(a, b, (size_t)(off + n) * 2);   // realign the copies
+                }
+            }
+        }
+    }
+    if (fails) Serial.printf("vg_canopy: PIE self-test FAIL op=%s i=%u d=%04x ref=%04x got=%04x (%u wrong)\n",
+                             f_op ? "sub" : "add", (unsigned)first, f_d, f_ref, f_got, (unsigned)fails);
+    else       Serial.printf("vg_canopy: PIE self-test PASS, bit-identical to the scalar spans (%u us)\n",
+                             (unsigned)(micros() - t0));
+    // THE PER-PIXEL PRICE, both paths, same hot SRAM the band lives in. The
+    // replay verdict confounds coverage with speed; this does not. Repeated
+    // adds saturate the fields, which is fine: the blend is data-independent.
+    static const int lens[4] = { 480, 120, 20, 8 };
+    for (int li = 0; li < 4; li++) {
+        const int len = lens[li];
+        uint32_t cp = 0, cs = 0;
+        for (int r = 0; r < 200; r++) {
+            uint32_t t = ESP.getCycleCount();
+            span_add_pie(a + 1, len, 0x0821);           // off the boundary on purpose
+            cp += ESP.getCycleCount() - t;
+            t = ESP.getCycleCount();
+            span_add_scalar(a + 1, len, 0x0821);
+            cs += ESP.getCycleCount() - t;
+        }
+        Serial.printf("vg_canopy: PIE bench len %d: %u.%u c/px vector, %u.%u scalar\n",
+                      len, (unsigned)(cp / (200u * len)), (unsigned)((cp * 10u / (200u * len)) % 10u),
+                           (unsigned)(cs / (200u * len)), (unsigned)((cs * 10u / (200u * len)) % 10u));
+    }
+    heap_caps_free(a);
+}
+#endif
+
 void vg_canopy_warm(void) {
+#if CANOPY_PIE
+    static bool tested = false;
+    if (!tested) { tested = true; canopy_pie_selftest(); }
+#endif
     if (s_can && !s_can_ready) canopy_lut();
 }
 

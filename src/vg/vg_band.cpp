@@ -42,7 +42,9 @@ bool vg_band_init(void) {
     // straight to the SPI engine.
 
     for (int i = 0; i < BAND_BUFS; i++) {
-        s_band[i] = (uint16_t*)heap_caps_malloc(SCR_W * BAND_H * 2,
+        // Aligned to 16 for the PIE spans: a row is 960 bytes, sixty vectors
+        // exactly, so one aligned base keeps every row start aligned.
+        s_band[i] = (uint16_t*)heap_caps_aligned_alloc(16, SCR_W * BAND_H * 2,
                                                MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
         if (!s_band[i]) {
             Serial.printf("vg_band_init: alloc failed (buffer %d of %d)\n", i, BAND_BUFS);
