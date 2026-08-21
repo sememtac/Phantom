@@ -664,7 +664,6 @@ static uint32_t s_cyc_pt[2], s_cyc_gl[2], s_cyc_fl[2];
 // wait >> half means the helper is, and it is too low.
 // Both small against `prim` means the rendezvous itself is the cost.
 static uint32_t s_can_half = 0, s_can_wait = 0, s_can_at = 0, s_can_n = 0;
-static uint32_t s_tint_us = 0;
 uint32_t vg_rast_aa_us(void)   { return (s_cyc_aa[0]  + s_cyc_aa[1])  / 240u; }
 uint32_t vg_rast_ln_us(void)   { return (s_cyc_ln[0]  + s_cyc_ln[1])  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return (s_cyc_tri[0] + s_cyc_tri[1]) / 240u; }
@@ -1572,7 +1571,6 @@ void vg_rast_flush(void) {
         s_ln_px[c] = s_ln_n[c] = 0;
     }
     s_can_half = s_can_wait = s_can_at = s_can_n = 0;
-    s_tint_us = 0;
 
     // THE WHOLE FRAME'S CHART, BOTH CORES, BEFORE ANY BAND IS DRAWN.
     //

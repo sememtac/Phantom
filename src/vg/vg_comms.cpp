@@ -52,20 +52,11 @@ bool vg_bcast_post(BcastChan c, const char* line, const char* tag, float hold, u
     return true;
 }
 
-void vg_bcast_clear(BcastChan c) {
-    if (c >= BC_CHANNELS) return;
-    vg_bcast.ch[c] = BcastSlot{};
-}
-
 // Everything off the air. For vg_game_init, which begin_record restarts the game through --
 // these slots relied on the memset of vg until they left it.
 void vg_bcast_clear_all(void) {
     for (int i = 0; i < BC_CHANNELS; i++) vg_bcast.ch[i] = BcastSlot{};
     vg_bcast.ift_fired = 0;
-}
-
-bool vg_bcast_live(BcastChan c) {
-    return c < BC_CHANNELS && vg_bcast.ch[c].line && vg_bcast.ch[c].t > 0.0f;
 }
 
 // Every channel's clock, in one place. `since` runs whether or not the channel is speaking,

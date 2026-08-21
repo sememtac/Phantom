@@ -348,7 +348,6 @@
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
-#define CANOPY_ALARM_FLOOR    0.45f   // how far down the swing goes, so it never looks off
 
 #define BOOT_RADIO_WAIT        1.00f
 

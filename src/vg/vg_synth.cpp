@@ -33,10 +33,8 @@ static float s_eng_lvl   = 0.0f;    // smoothed, so the throttle does not step
 static float s_eng_p1    = 0.0f, s_eng_p2 = 0.0f;
 static float s_eng_lp    = 0.0f;
 static float s_eng_want  = 0.0f;
-static bool  s_eng_on    = false;
 
 void vg_synth_engine(bool on, float throttle) {
-    s_eng_on = on;
     if (throttle < 0.0f) throttle = 0.0f;
     if (throttle > 1.0f) throttle = 1.0f;
     // Idle is audible but only just; the top of the travel is where it should be
@@ -125,7 +123,6 @@ void vg_synth_silence(void) {
     // when the picture has already gone. Their levels go to zero here rather
     // than their targets.
     for (int i = 0; i < VOICES; i++) s_v[i].on = false;
-    s_eng_on   = false;
     s_eng_want = 0.0f;
     s_eng_lvl  = 0.0f;
     s_flat_want = 0.0f;

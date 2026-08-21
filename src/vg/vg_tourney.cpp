@@ -201,7 +201,6 @@ void vg_tourney_begin(ShipClass player_class) {
     vt.player_pos = 0;
     for (int i = 0; i < TOURNEY_ENTRANTS; i++)
         if (vt.slot[0][i] == 0) { vt.player_pos = (uint8_t)i; break; }
-    vt.player_out = false;
     vt.complete   = false;
 }
 
@@ -240,7 +239,6 @@ void vg_tourney_resolve(bool player_won) {
     }
 
     if (!player_won) {
-        vt.player_out = true;
         return;
     }
 

@@ -43,7 +43,6 @@ struct Tourney {
 
     uint8_t round;        // 0..3 -- which round is about to be, or is being, played
     uint8_t player_pos;   // the player's index within slot[round]
-    bool    player_out;
     bool    complete;     // the player won the final
 };
 

@@ -22,7 +22,6 @@
 #define AST_R_MIN            10.0f
 #define AST_R_MAX            32.0f
 #define AST_VERTS            12
-#define AST_EDGES            30
 #define AST_FACES            20
 #define NUM_MODELS           5
 

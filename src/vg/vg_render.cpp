@@ -48,15 +48,6 @@ static void draw_fps(float fps) {
             fps >= 59.0f ? INK_BRIGHT : INK_FAINT, 2);
 }
 
-// Hermite ease between two edges. The transition curves want acceleration at
-// both ends -- a linear wipe reads as a slide, not as a tube.
-static inline float smoothstep(float e0, float e1, float x) {
-    if (e1 <= e0) return (x < e0) ? 0.0f : 1.0f;
-    float t = (x - e0) / (e1 - e0);
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    return t * t * (3.0f - 2.0f * t);
-}
 
 // The rear-view patch: the same world, half a turn about the vertical, drawn
 // small in the top right.

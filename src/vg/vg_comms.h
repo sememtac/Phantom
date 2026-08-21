@@ -93,14 +93,12 @@ bool vg_bcast_post(BcastChan c, const char* line, const char* tag,
 
 // Silence one channel, or all of them. For a transition that makes a queue meaningless --
 // nobody wants the last match's announcement finishing over the next one's opening.
-void vg_bcast_clear(BcastChan c);
 void vg_bcast_clear_all(void);
 
 // Advance every channel by dt. One call; channels do not each need driving.
 void vg_bcast_step(float dt);
 
 // Is this channel saying anything right now.
-bool vg_bcast_live(BcastChan c);
 
 // ---------------------------------------------------------------------------
 // The voices that post to it

@@ -1282,13 +1282,6 @@ void vg_sky_fill_rows(uint16_t* band, int band_y0, int r0, int r1) {
     }
 }
 
-// The whole band, for every caller that is not splitting it.
-void vg_sky_fill_band(uint16_t* band, int band_y0) {
-    if (!s_ready) return;
-    vg_sky_prep_begin();
-    vg_sky_band_prep(band_y0);
-    vg_sky_fill_rows(band, band_y0, 0, BAND_H);
-}
 
 // The patch's backdrop, called from the band raster when it meets a PRIM_SKY.
     // --- the rear-view patch ------------------------------------------------
