@@ -24,6 +24,7 @@
 // as -- g_sub_hud in particular brackets vg_draw_hud alone and is not group B's total.
 uint32_t g_sub_star, g_sub_arena, g_sub_world, g_sub_hud;   // per-layer submit
 uint32_t g_sub_wait = 0;
+uint32_t g_sub_warp = 0;
 uint32_t g_sub_course = 0;
 uint32_t g_sub_a, g_sub_b;                                  // each submit half's wall time
 uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
@@ -557,7 +558,15 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // The frame flexes with the surge as well as with the throttle. ADDED, not substituted:
     // a cockpit that stopped responding to speed the moment the instruments failed would
     // read as the effect replacing the flight model rather than sitting on top of it.
-    if (live) vg_canopy_warp((1.0f - sn) * flex + SURGE_FRAME_FLEX * vg_surge.level);
+    // THE WARP REBUILD IS A SPIKE, and this is the bracket that proved it. 480 forward
+    // evaluations and an inversion, on whichever frame the quantised throttle crosses a
+    // step: 23 us mean over a fight, but 1,175 us WORST and 270 of 5,444 frames paying
+    // something. It is not the main cause of the rendezvous gap -- it was 234 us of the
+    // worst 1,043 -- but it is the largest single spike inside group B, and it sits on
+    // the submit path, which runs before the transfer and is therefore frame time.
+    { const uint32_t t_w = micros();
+      if (live) vg_canopy_warp((1.0f - sn) * flex + SURGE_FRAME_FLEX * vg_surge.level);
+      g_sub_warp = micros() - t_w; }
     // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
     // what the frame should be late to -- the ship is already late to it itself, and lagging a
     // lag reads as sludge.

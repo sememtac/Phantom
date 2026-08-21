@@ -180,6 +180,7 @@ extern uint32_t g_sub_a, g_sub_b;
 // It is not the same as g_sub_b - g_sub_a. That difference is negative when A is slower and
 // tells you nothing about when each half STARTED; this brackets the wait itself.
 extern uint32_t g_sub_wait;
+extern uint32_t g_sub_warp;   // the canopy warp rebuild, inside group B
 extern uint32_t g_sub_course;   // the course rings, bracketed 2026-08-20
 
 // THE UPDATE, WHICH HAD NEVER BEEN MEASURED AT ALL.

@@ -100,6 +100,13 @@ void vg_replay_note_bands(const uint32_t* band_us, int n) {
     for (int i = 0; i < n; i++) s_bd_sum[i] += band_us[i];
 }
 
+// THE WORST WAIT, WITH ITS OWN FRAME'S A AND B BESIDE IT. Three independent maxima
+// cannot say whether the worst wait happened because B spiked -- they are three
+// different frames. This captures the pair AT the frame that set the record, and the
+// count of waits over 100 us, which says whether the tail is one event or a habit.
+static uint32_t s_sw_a = 0, s_sw_b = 0, s_sw_frame = 0, s_sw_over = 0;
+static uint32_t s_wp_sum = 0, s_wp_max = 0, s_wp_n = 0, s_sw_warp = 0;
+
 void vg_replay_note_sub(uint32_t a, uint32_t b, uint32_t wait,
                         uint32_t arena, uint32_t star, uint32_t hud) {
     if (!s_timed) return;
@@ -108,6 +115,11 @@ void vg_replay_note_sub(uint32_t a, uint32_t b, uint32_t wait,
         s_s_sum[i] += v[i];
         if (v[i] > s_s_max[i]) s_s_max[i] = v[i];
     }
+    extern uint32_t g_sub_warp;
+    s_wp_sum += g_sub_warp; if (g_sub_warp > s_wp_max) s_wp_max = g_sub_warp;
+    if (g_sub_warp > 50u) s_wp_n++;              // a frame that actually rebuilt
+    if (wait > 100u) s_sw_over++;
+    if (wait >= s_s_max[2]) { s_sw_a = a; s_sw_b = b; s_sw_frame = s_t_n; s_sw_warp = g_sub_warp; }
 }
 
 void vg_replay_note_idle0(uint32_t us) {
@@ -221,6 +233,16 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
                   (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
                   (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
+    // The worst rendezvous, decomposed. If b_at is far above b's mean, core 0 was late
+    // and core 1 paid for it; if a_at is small, core 1 arrived early and the gap is
+    // just the halves being uneven that frame.
+    Serial.printf("vg_replay: WAITMAX %u us at frame %u -- a %u b %u | %u frames over 100 us\n",
+                  (unsigned)s_s_max[2], (unsigned)s_sw_frame,
+                  (unsigned)s_sw_a, (unsigned)s_sw_b, (unsigned)s_sw_over);
+    Serial.printf("vg_replay: WARP mean %u worst %u | %u frames rebuilt | %u us at the worst wait\n",
+                  (unsigned)(s_t_n ? s_wp_sum / s_t_n : 0), (unsigned)s_wp_max,
+                  (unsigned)s_wp_n, (unsigned)s_sw_warp);
+
     // Bytes per frame: icache misses fill 32 B lines, dcache 64 B. The flash/PSRAM
     // split is the number nobody has ever had -- the canopy tables against the sky.
     if (s_t_n) {
