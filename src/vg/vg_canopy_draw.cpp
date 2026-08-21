@@ -685,6 +685,7 @@ static void canopy_colcost(void) {
     s_colcost_ready = true;
 }
 static int     s_wq = -1;                 // the quantised amount the maps were built for
+static int     s_wq_want = -1;            // ...and the one the last frame asked for
 static bool    s_warp_on = false;
 
 // SELECTING A DRAWING, and it is down here rather than beside s_can because of what it has to
@@ -713,6 +714,7 @@ void vg_canopy_use(const VgCanopy* c) {
     s_can_ready     = false;
     s_colcost_ready = false;
     s_wq            = -1;
+    s_wq_want       = -1;   // both, or the next warp call matches a stale want and skips
     // A SEQUENCE CANNOT BE RUNNING AGAINST A DRAWING THAT IS GONE.
     //
     // vg_canopy_intro_update reads s_can->zones and is guarded only by s_intro_on, so leaving the
@@ -806,13 +808,38 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
 // suppresses is set, and defined below with the rest of the intro.
 static float s_settle_t = -1.0f;          // < 0 means not settling
 
+// THE AMOUNT IS CHEAP; THE TABLE IS NOT. This used to do both, inside group B of the
+// submit split, and the rebuild is 480 forward evaluations, an inversion and a
+// fifteen-band rebalance -- 1,175 us at worst, on whichever frame the quantised
+// throttle crosses a step. A dogfight crosses them constantly.
+//
+// Submit runs BEFORE the transfer starts, so every microsecond there is frame time,
+// and this one was landing inside the half that core 1 already waits on: the
+// rendezvous gap is 214 us on the average fight frame and this was a fifth of its
+// worst. So the amount is still recorded here, where the throttle is known, and the
+// BUILD moves to the end of the frame -- see vg_canopy_warp_build.
 void vg_canopy_warp(float k) {
     if (!s_can) return;                    // the maps are built from the drawing
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
     s_warp_on = (q != 0) || s_lag_px || s_lag_py || (s_lag_sh != 0.0f);
-    if (q == s_wq) return;
+    s_wq_want = q;
+    // A DRAWING WITH NO TABLE CANNOT WAIT. s_wq is -1 on the first frame and after
+    // vg_canopy_use invalidates it, and the band pass is about to read the maps -- so
+    // that one case still builds here, where it always did.
+    if (s_wq < 0) vg_canopy_warp_build();
+}
+
+// Deferred from vg_canopy_warp, and called after the band pass has finished DRAWING --
+// the last bands are still going out over the wire, so this overlaps the transfer
+// instead of standing in front of it. The maps it leaves are the ones the NEXT frame
+// draws with, which is one frame of latency on a step crossing. The bend is quantised
+// and already lags the ship through a spring and a damper, so a frame is not visible;
+// what it is NOT is free of the pixel record, and the regression baseline moves with it.
+void vg_canopy_warp_build(void) {
+    if (!s_can || s_wq_want == s_wq) return;
+    const int q = s_wq_want;
     s_wq = q;
 
     const float a    = (float)q / (float)CANOPY_WARP_STEPS;
@@ -2035,7 +2062,7 @@ void vg_canopy_bench(VgCanopyCost* out) {
         icyc += esp_cpu_get_cycle_count() - t0;
     }
 
-    s_wq = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
+    s_wq = save_q; s_wq_want = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
     s_intro_on = save_in;
     for (int z = 0; z < s_can->zones; z++) {
         s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; s_ifill[z] = save_fill[z];

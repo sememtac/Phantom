@@ -108,6 +108,9 @@ void vg_canopy_prim(void);
 // same throttle the instruments' warp uses, so the frame and the panel mounted on it move
 // together. See CANOPY_WARP_* in cfg_hud.h and the note at its definition.
 void vg_canopy_warp(float k);
+// Builds the warp maps vg_canopy_warp asked for. Call once a frame AFTER the band pass
+// has drawn, so the rebuild overlaps the transfer rather than delaying it.
+void vg_canopy_warp_build(void);
 
 // THE FRAME TRAILING THE SHIP. `turn` is the cosmetic bank, and the offset comes from how fast
 // it is CHANGING -- so the frame swings during the onset and the release of a turn and sits

@@ -402,6 +402,11 @@ void loop(void) {
     uint32_t t3 = micros();
     vg_crumb(CRUMB_FLUSH, (uint8_t)vg.state);
     vg_rast_flush();
+    // THE CANOPY'S WARP MAPS, REBUILT HERE AND NOT IN SUBMIT. Every band has been drawn
+    // by now, so nothing reads the maps until the next frame; the last bands are still
+    // going out, so this runs against the wire instead of in front of it. It was inside
+    // group B, where it spiked to 1,175 us on a throttle step and made core 1 wait.
+    { const uint32_t t_w = micros(); vg_canopy_warp_build(); g_sub_warp = micros() - t_w; }
     uint32_t t4 = micros();
 
     // The rate the FRAME went out at, not the sub-step rate -- sub-steps are an

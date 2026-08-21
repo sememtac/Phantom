@@ -558,15 +558,9 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // The frame flexes with the surge as well as with the throttle. ADDED, not substituted:
     // a cockpit that stopped responding to speed the moment the instruments failed would
     // read as the effect replacing the flight model rather than sitting on top of it.
-    // THE WARP REBUILD IS A SPIKE, and this is the bracket that proved it. 480 forward
-    // evaluations and an inversion, on whichever frame the quantised throttle crosses a
-    // step: 23 us mean over a fight, but 1,175 us WORST and 270 of 5,444 frames paying
-    // something. It is not the main cause of the rendezvous gap -- it was 234 us of the
-    // worst 1,043 -- but it is the largest single spike inside group B, and it sits on
-    // the submit path, which runs before the transfer and is therefore frame time.
-    { const uint32_t t_w = micros();
-      if (live) vg_canopy_warp((1.0f - sn) * flex + SURGE_FRAME_FLEX * vg_surge.level);
-      g_sub_warp = micros() - t_w; }
+    // The amount only. The table this asks for is built after the band pass -- see
+    // vg_canopy_warp_build and the bracket around its call in main.cpp.
+    if (live) vg_canopy_warp((1.0f - sn) * flex + SURGE_FRAME_FLEX * vg_surge.level);
     // ...and the frame trails the ship, on all three axes. All three are the COMMAND, which is
     // what the frame should be late to -- the ship is already late to it itself, and lagging a
     // lag reads as sludge.
