@@ -119,6 +119,11 @@ static uint32_t s_top_upd[SLOW_TOP] = {0};
 static uint32_t s_top_sub[SLOW_TOP] = {0};
 static uint32_t s_top_rast[SLOW_TOP]= {0};
 static uint32_t s_top_can[SLOW_TOP] = {0};
+static uint32_t s_top_prim[SLOW_TOP]= {0};
+// The five raster types for the worst frame. note_types runs AFTER note_cost in the
+// same frame, so note_cost raises this flag and note_types answers it.
+static bool     s_top_want = false;
+static uint32_t s_top_ty[5] = {0};
 // 60+, 57-60, 54-57, 50-54, under 50. The pilot said 54, so the buckets straddle it.
 static uint32_t s_hist[5] = {0};
 static uint32_t s_sw_a = 0, s_sw_b = 0, s_sw_frame = 0, s_sw_over = 0;
@@ -148,6 +153,11 @@ void vg_replay_note_idle0(uint32_t us) {
 void vg_replay_note_types(uint32_t aa, uint32_t ln, uint32_t tri,
                           uint32_t gl, uint32_t fl) {
     if (!s_timed) return;
+    if (s_top_want) {
+        s_top_want = false;
+        const uint32_t t[5] = { aa, ln, tri, gl, fl };
+        for (int i = 0; i < 5; i++) s_top_ty[i] = t[i];
+    }
     const uint32_t v[5] = { aa, ln, tri, gl, fl };
     for (int i = 0; i < 5; i++) {
         s_ty_sum[i] += v[i];
@@ -310,11 +320,15 @@ bool vg_replay_report_cost(void) {
                   (unsigned)s_hist[3], (unsigned)s_hist[4]);
     for (int i = 0; i < SLOW_TOP; i++) {
         if (!s_top_ft[i]) break;
-        Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u (can %u)\n",
+        Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u (can %u prim %u)\n",
                       i, (unsigned)s_top_fr[i], (unsigned)s_top_ft[i],
                       (unsigned)(1000000u / s_top_ft[i]), (unsigned)s_top_upd[i],
-                      (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i]);
+                      (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i], (unsigned)s_top_prim[i]);
     }
+    Serial.printf("vg_replay: SLOWEST-TYPES aa %u ln %u tri %u gl %u fl %u"
+                  "  -- the raster of the worst frame\n",
+                  (unsigned)s_top_ty[0], (unsigned)s_top_ty[1], (unsigned)s_top_ty[2],
+                  (unsigned)s_top_ty[3], (unsigned)s_top_ty[4]);
     Serial.printf("vg_replay: SLOWEST-UPD pre %u ship %u arena %u sky %u field %u trail %u"
                   " enemy %u ord %u vfx %u ai %u combat %u\n",
                   (unsigned)s_cw_upd_stage[0], (unsigned)s_cw_upd_stage[1],
@@ -388,10 +402,13 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
             s_top_ft[k]  = s_top_ft[k - 1];  s_top_fr[k]   = s_top_fr[k - 1];
             s_top_upd[k] = s_top_upd[k - 1]; s_top_sub[k]  = s_top_sub[k - 1];
             s_top_rast[k]= s_top_rast[k - 1]; s_top_can[k] = s_top_can[k - 1];
+            s_top_prim[k]= s_top_prim[k - 1];
             k--;
         }
         s_top_ft[k] = ft; s_top_fr[k] = s_t_n;
         s_top_upd[k] = upd; s_top_sub[k] = sub; s_top_rast[k] = rast; s_top_can[k] = can;
+        s_top_prim[k] = prim;
+        if (k == 0) s_top_want = true;   // the new leader wants its types
     }
     if (ft > s_cw_worst) {
         s_cw_worst = ft; s_cw_frame = s_t_n;
