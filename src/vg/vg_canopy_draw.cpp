@@ -230,10 +230,12 @@ static void canopy_lut(void) {
 //   11 KB of the scarcest memory on the part.
 //
 // So the 36 cycles a flat pixel costs are neither the arithmetic nor the table: they are
-// the read-modify-write of the band itself. That is the floor, and the only way under it
-// is to touch fewer pixels. AREA is the lever, and it belongs to the artist, not to this
-// file -- which is what the estimate in tools/canopy_bake.py has always said. It now has
-// three measurements behind it instead of an assertion.
+// the read-modify-write of the band itself. That was called the floor here for a month,
+// with "the only way under it is to touch fewer pixels" -- true for SCALAR code, and the
+// PIE path below went under it anyway by changing the denominator: one 128-bit access per
+// eight pixels instead of one 32-bit access per two. The scalar floor still governs this
+// loop, which now serves the spans too short to vectorise; AREA remains the artist's
+// lever and canopy_bake.py's estimate stands.
 //
 // The pixel maths stays per-pixel on purpose. Packing both into one 32-bit add would
 // need a spare bit above red to catch its carry, and red sits at the top of its half,
