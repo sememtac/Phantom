@@ -50,8 +50,8 @@ static float s_alarm  = 0.0f;
 // nothing needs flipping inside a run, since mirroring in x leaves the y-runs alone.
 //
 // Empty pixels are not stored: a frame covers ~7% of the screen, so the table is runs
-// of used pixels and skips the rest. 9.5 KB in FLASH, where there are megabytes free,
-// rather than the 21 KB of internal SRAM that is actually scarce.
+// of used pixels and skips the rest. 21 to 26 KB per drawing in FLASH, where there are
+// megabytes free, rather than in the internal SRAM that is actually scarce.
 //
 // The grey levels come through a 256-entry table built once, so the per-pixel work is
 // a load and a saturating add rather than any arithmetic on the hue.
@@ -91,7 +91,7 @@ static int8_t s_centre_z = -1;
 
 // IS THE ARRIVAL SEQUENCE RUNNING. Declared HERE, beside the drawing, and not down with the
 // rest of the intro's state where it used to live -- because the two are coupled and the
-// coupling is a safety property: canopy_intro_step reads s_can->zones under this flag alone,
+// coupling is a safety property: vg_canopy_intro_update reads s_can->zones under this flag alone,
 // so a true flag and a null drawing is a fault. vg_canopy_use is the only place that can
 // break that pair, and it is a few lines below.
 static bool s_intro_on = false;
@@ -715,7 +715,7 @@ void vg_canopy_use(const VgCanopy* c) {
     s_wq            = -1;
     // A SEQUENCE CANNOT BE RUNNING AGAINST A DRAWING THAT IS GONE.
     //
-    // canopy_intro_step reads s_can->zones and is guarded only by s_intro_on, so leaving the
+    // vg_canopy_intro_update reads s_can->zones and is guarded only by s_intro_on, so leaving the
     // flag set while selecting nullptr arms exactly the fault that vg_canopy_intro_reset just
     // had to be fixed for. No caller does that today, and no caller should have to know not to.
     if (!c) s_intro_on = false;
@@ -1554,7 +1554,8 @@ void vg_canopy_intro_begin(void) {
 // cued while a match is being built, and nothing is cued twice.
 bool vg_canopy_intro_cued(void) { return s_icued; }
 
-// HOW MANY REGIONS HAVE LIT IN THE RUNNING SEQUENCE, 0..CANOPY_ZONES.
+// HOW MANY REGIONS HAVE LIT IN THE RUNNING SEQUENCE, 0..s_can->zones -- this drawing's
+// count, not the format ceiling VG_CANOPY_MAX_ZONES.
 //
 // Reported rather than acted on, because the thing that wants it is a SOUND and this file is
 // the band rasteriser -- it has no business talking to the mixer, and a cue fired from here

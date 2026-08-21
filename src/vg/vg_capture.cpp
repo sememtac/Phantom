@@ -339,9 +339,8 @@ void vg_capture_poll(void) {
             VgSkyCost s;
             vg_sky_bench(&s);
             if (!vg_link_busy()) {
-                Serial.printf("sky: prep %lu us, fill %lu us, tinted %lu us, sum %08lx\n",
+                Serial.printf("sky: prep %lu us, fill %lu us, sum %08lx\n",
                               (unsigned long)s.prep_us, (unsigned long)s.fill_us,
-                              (unsigned long)s.tint_us,
                               (unsigned long)s.sum);
             }
         } else if (c == 'v' && !vg_link_busy()) {

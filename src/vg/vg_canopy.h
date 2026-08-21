@@ -30,14 +30,6 @@
 
 // The activation regions a drawing may have.
 //
-// The block header carries the zone in four bits, so the FORMAT allows sixteen.
-// This is lower than that on purpose: the intro keeps a 256-entry colour table
-// per region so each can run its own glow, and at two bytes an entry sixteen of
-// them would be 8 KB of internal SRAM -- which is the scarce memory on this part,
-// not flash. Eight is 4 KB and is already more regions than a cockpit reads as.
-//
-// The baker refuses a drawing with more and says so, rather than letting the
-// extras alias onto region 7 and flash at the wrong time.
 // SIXTEEN, which is what the FORMAT can carry: the zone tag is bits 5..2 of a block
 // header and of a zone-map run, so 16 is the ceiling until that changes. It was 8, which
 // was half of what the data could already express.

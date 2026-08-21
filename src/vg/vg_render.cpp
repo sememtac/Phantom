@@ -286,7 +286,8 @@ void vg_render_frame(const VgInput* in, float fps) {
     // unconditionally. So the ring remains, for exactly the case it was invented for.
     //
     // AND IT FLASHES once the wall is close enough that turning is urgent -- see
-    // CANOPY_ALARM_FLASH_AT. A steady ramp cannot say "now", only "closer".
+    // CANOPY_ALARM_SECS and CANOPY_ALARM_HZ_* in cfg_hud.h. A steady ramp cannot
+    // say "now", only "closer".
     // SECONDS TO IMPACT AT THE CURRENT CLOSING RATE, and only while the clearance is
     // actually being spent -- see vg_wall.rate. RATE_MIN keeps a ship holding station from
     // strobing on numerical noise.

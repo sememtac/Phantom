@@ -126,7 +126,7 @@ static void hud_annunciator(int y, const char* s, int scale, uint16_t ink) {
 // says everything the solid one did.
 static void draw_missile_alert(void) {
     // Decided in the update -- range, cadence and beep together. See
-    // update_alerts() in vg_game.cpp.
+    // vg_update_alerts() in vg_cockpit.cpp.
     if (!vg_cockpit.alerts.msl_lit) return;
 
     hud_annunciator(62, "MISSILE", 2, INK_MAX);

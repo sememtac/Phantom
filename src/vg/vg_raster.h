@@ -92,16 +92,13 @@ void vg_rast_viewport_full(void);
 void vg_rast_rot_rect(int* x, int* y, int* w, int* h);
 // The rear-view patch's backdrop, as a primitive so it draws in order.
 void vg_sky_patch_prim(int x, int y, int w, int h);
-// THE BACKDROP, on the same terms. Serial 's'.
+// THE BACKDROP, on the same terms. Serial 'y'.
 //
 // `sky` brackets the per-band chart prep, the fill and the rendezvous together, so the
 // telemetry cannot say which is expensive. This separates prep from fill and reports a
 // checksum of the pixels, because the backdrop has to stay bit-identical through any change
 // to that loop -- a replay renders frame for frame.
-// `tint_us` is the same fill with the boundary tint ON, which is the one part of the
-// backdrop nobody has ever measured: `tnt` on the telemetry line reads 0 unless the ship is
-// inside ARENA_TINT_RANGE of a wall, and nobody captures telemetry while about to die.
-struct VgSkyCost { uint32_t prep_us, fill_us, tint_us, sum; };
+struct VgSkyCost { uint32_t prep_us, fill_us, sum; };
 void vg_sky_bench(VgSkyCost* out);
 // THE GLYPH NEST, both ways, over the same fixed page. Serial 'g'.
 //

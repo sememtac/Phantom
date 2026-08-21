@@ -1159,7 +1159,7 @@ void vg_glyph_bench(VgGlyphCost* out) {
 // It therefore has a visible side effect: the sky on screen changes to this one. That is a
 // fair price for a number that means something, and it only happens when asked.
 void vg_sky_bench(VgSkyCost* out) {
-    uint32_t pc = 0, fc = 0, tc = 0, sum = 2166136261u;
+    uint32_t pc = 0, fc = 0, sum = 2166136261u;
     if (!s_band[0]) { *out = VgSkyCost{}; return; }
 
     vg_sky_generate(SKY_NEBULA, 0x5EED1234u);
@@ -1177,22 +1177,13 @@ void vg_sky_bench(VgSkyCost* out) {
         const uint32_t t1 = esp_cpu_get_cycle_count();
         vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
         const uint32_t t2 = esp_cpu_get_cycle_count();
-        // AND AGAIN WITH THE BOUNDARY TINT ON. Held at 0.6 rather than 1.0: at full the
-        // innermost ring reaches the centre and every pixel is inside the gradient, which is
-        // the geometry at the instant of death and not the one a player flies in.
-        //
-        // NO TINT TO FORCE AROUND IT ANY MORE. This used to set the ring to 0.625 --
-        // exactly on a quantiser step, so the checksum stayed comparable -- because the
-        // fill's cost depended on whether the player was near a wall. The ring is gone, so
-        // the fill has one cost and this is it.
-        // Timed on one core like the fill it is compared against -- the frame splits both.
-        const uint32_t t3 = esp_cpu_get_cycle_count();
-        vg_sky_fill_rows(s_band[0], by0, 0, BAND_H);
-        const uint32_t t4 = esp_cpu_get_cycle_count();
-
+        // THE THIRD PASS IS GONE, and its own comment is why. It timed the fill "again
+        // with the boundary tint ON" -- but the tint ring was deleted, so it had become a
+        // second call with identical arguments, reporting fill_us a second time under a
+        // name that read as new information. Fifteen extra whole-band fills to print a
+        // number that could only agree with the one above it.
         pc += t1 - t0;
         fc += t2 - t1;
-        tc += t4 - t3;
 
         // Outside the timing: what the band came out as, folded in a word at a time.
         const uint32_t* w = (const uint32_t*)(const void*)s_band[0];
@@ -1201,7 +1192,6 @@ void vg_sky_bench(VgSkyCost* out) {
     vg_sky_bench_pin(false);
     out->prep_us = pc / 240u;
     out->fill_us = fc / 240u;
-    out->tint_us = tc / 240u;
     out->sum     = sum;
 }
 
@@ -1386,7 +1376,8 @@ draw_band(int band_index, uint16_t* band) {
     // The backdrop fill REPLACES the clear rather than adding to it, so its net
     // cost is only what it exceeds a memset by.
     if (vg_sky_ready()) {
-        // The chart is already built, for every band, by vg_sky_prep_all before the band
+        // The chart is already built, for every band, by vg_sky_prep_begin and the forked
+        // vg_sky_prep_bands, before the band
         // loop began -- see the note there. This used to prep the band right here, on this
         // core, with the helper idle and nothing overlapping it.
         const bool split = rowsplit_start(RS_SKY, band, by0, ROW_SPLIT, BAND_H);

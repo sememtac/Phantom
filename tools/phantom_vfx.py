@@ -8,7 +8,7 @@
 Leave the game on the title screen. The effects run there, so you do not need
 to play a match to see them.
 
-There are four presets and a shot steps to the next one:
+There are five presets and a shot steps to the next one:
 
     0  missile fuse expires
     1  missile hit

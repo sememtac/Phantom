@@ -256,7 +256,7 @@ use must do the same, or each command restarts the game and loses the repeat
 setting. The first version of this program had that fault, and the effects
 appeared to do nothing.
 
-There are four presets and each shot steps to the next one:
+There are five presets and each shot steps to the next one:
 
 | preset | effect |
 |---|---|
@@ -329,8 +329,8 @@ Obey these three rules:
 
 1. Give each region one flat value. A soft edge between two regions makes a third
    value, and that value becomes a region.
-2. Use 8 regions or fewer. The baker stops and shows the values it found if there
-   are more.
+2. Use 16 regions or fewer. The baker stops and shows the values it found if
+   there are more.
 3. Cover the whole image. Every pixel needs a region, not only the pixels the frame
    covers. The world stays black until its region comes on.
 
@@ -350,8 +350,11 @@ The reference drawing covers 10.5%. To make a drawing cheaper, make the shapes
 narrower. Do not remove detail. Detail costs nothing.
 
 The table is from August 2026, before the blend moved to the vector unit of the
-processor. The blend now costs about one third less, so the table is safe but
-conservative. Measure a heavy drawing with `replay_cost.py` before you reject it.
+processor. The whole canopy pass now costs about 10% less, so the table runs a
+little conservative. The per-pixel blend got much quicker than that, but most of
+the drawing is in short runs that keep the scalar path, so do not read the
+per-pixel gain as headroom. Measure a heavy drawing with `replay_cost.py` before
+you reject it.
 
 ### Bake it
 
@@ -517,7 +520,7 @@ Single bytes, typed at the board while nothing else holds the port.
 | `y` | what the backdrop costs, prep and fill, with a checksum |
 | `g` | the glyph nest, old against new, over fixed text |
 | `l` | the line walk, old against new, over a fan of every slope |
-| `x` `X` | fire an explosion, and cycle the preset |
+| `x` `X` | `x` fires one explosion and steps to the next preset. `X` turns the repeat on and off. |
 | `b` | link throughput, no rendering |
 | `!` | reboot |
 

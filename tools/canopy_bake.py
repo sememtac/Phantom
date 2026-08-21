@@ -529,8 +529,11 @@ def bake(src, out, name="CANOPY", probe=False):
 # normal bake, one with every run stored flat, and one with every pixel storing its
 # own level. Those three give three equations for these three numbers.
 #
-# The shape of them is the useful part. A pixel costs about 37 cycles and a header
-# about 32, so a header is worth less than one pixel and 95% of the bill is pixels.
+# The shape of them is the useful part. A pixel costs about 37 cycles on the SCALAR
+# span loop, which is what this model prices. Spans of four pixels or more now go
+# through the vector unit and cost less, so the estimate runs conservative. A header
+# costs about 32, so a header is worth less than one pixel and 95% of the bill is
+# pixels.
 # There is nothing left to win in the encoding: AREA is the only lever, which is the
 # author's, not the compiler's.
 # MUST MATCH VG_CANOPY_MAX_ZONES in src/vg/vg_canopy.h. The firmware keeps a 256-entry colour
