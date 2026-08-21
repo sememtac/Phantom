@@ -439,8 +439,120 @@ static __attribute__((noinline))
 void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut, uint32_t i0, uint32_t step)
 { SPAN_LIT_RS_BODY(px_sub) }
 
-static __attribute__((noinline)) void span_lit_add(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_add) }
-static __attribute__((noinline)) void span_lit_sub(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_sub) }
+static __attribute__((noinline)) void span_lit_add_scalar(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_add) }
+static __attribute__((noinline)) void span_lit_sub_scalar(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_sub) }
+
+#if CANOPY_PIE
+extern "C" void vg_pie_span_lit_add8m(uint16_t* u, int nu, const uint16_t* tiles,
+                                      const uint16_t* m0, const uint16_t* mL);
+extern "C" void vg_pie_span_lit_sub8m(uint16_t* u, int nu, const uint16_t* tiles,
+                                      const uint16_t* m0, const uint16_t* mL);
+
+// THE LIT DISPATCH. The vector unit has no gather, so the per-pixel LUT walk
+// cannot leave the scalar side -- but it can shrink to a STAGING walk: four
+// instructions a pixel writing lut[lv[i]] into a 16-byte tile per unit, with
+// the blend itself, the field split and the clamps all going to the vector
+// unit. Chunked at eight units so the tiles live in one small stack frame;
+// the masks work exactly as they do for the flat spans, and a chunk of one
+// unit pre-combines head and tail the same way.
+// 16, measured and not guessed: at 8 the staging and the call cost more than
+// the scalar walk they replace -- the first lit dispatch shipped at 8 with a
+// second call hop on the scalar side, and the replay read WORSE than flat-only
+// (+354 us fight, +336 course). The lit mass lives in 3.4-pixel blocks either
+// way; spans this path can win are the borders and the big members' edges.
+#define CANOPY_PIE_LIT_MIN 16
+
+static __attribute__((noinline))
+void span_lit_add_pie(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
+    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
+    const int off = (int)(q - base);
+    const int cov = off + n;
+    const int nu  = (cov + 7) >> 3;
+    alignas(16) uint16_t tiles[8][8];
+    alignas(16) uint16_t mc[8];
+    for (int u0 = 0; u0 < nu; u0 += 8) {
+        const int uc = (nu - u0 > 8) ? 8 : (nu - u0);
+        for (int u = 0; u < uc; u++) {
+            const int p0 = (u0 + u) * 8 - off;
+            uint16_t* t = tiles[u];
+            if (p0 >= 0 && p0 + 8 <= n) {
+                const uint8_t* l = lv + p0;
+                t[0] = lut[l[0]]; t[1] = lut[l[1]]; t[2] = lut[l[2]]; t[3] = lut[l[3]];
+                t[4] = lut[l[4]]; t[5] = lut[l[5]]; t[6] = lut[l[6]]; t[7] = lut[l[7]];
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    const int px = p0 + i;
+                    t[i] = (px >= 0 && px < n) ? lut[lv[px]] : (uint16_t)0;
+                }
+            }
+        }
+        const uint16_t* m0 = (u0 == 0) ? s_pie_mh[off] : s_pie_mh[0];
+        const uint16_t* mL = (u0 + uc == nu) ? s_pie_mt[cov & 7] : s_pie_mt[0];
+        if (uc == 1) { for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]); m0 = mc; }
+        vg_pie_span_lit_add8m(base + u0 * 8, uc, tiles[0], m0, mL);
+    }
+}
+static __attribute__((noinline))
+void span_lit_sub_pie(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
+    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
+    const int off = (int)(q - base);
+    const int cov = off + n;
+    const int nu  = (cov + 7) >> 3;
+    alignas(16) uint16_t tiles[8][8];
+    alignas(16) uint16_t mc[8];
+    for (int u0 = 0; u0 < nu; u0 += 8) {
+        const int uc = (nu - u0 > 8) ? 8 : (nu - u0);
+        for (int u = 0; u < uc; u++) {
+            const int p0 = (u0 + u) * 8 - off;
+            uint16_t* t = tiles[u];
+            if (p0 >= 0 && p0 + 8 <= n) {
+                const uint8_t* l = lv + p0;
+                t[0] = lut[l[0]]; t[1] = lut[l[1]]; t[2] = lut[l[2]]; t[3] = lut[l[3]];
+                t[4] = lut[l[4]]; t[5] = lut[l[5]]; t[6] = lut[l[6]]; t[7] = lut[l[7]];
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    const int px = p0 + i;
+                    t[i] = (px >= 0 && px < n) ? lut[lv[px]] : (uint16_t)0;
+                }
+            }
+        }
+        const uint16_t* m0 = (u0 == 0) ? s_pie_mh[off] : s_pie_mh[0];
+        const uint16_t* mL = (u0 + uc == nu) ? s_pie_mt[cov & 7] : s_pie_mt[0];
+        if (uc == 1) { for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]); m0 = mc; }
+        vg_pie_span_lit_sub8m(base + u0 * 8, uc, tiles[0], m0, mL);
+    }
+}
+
+// The shim inlines into the walk so the scalar majority pays one compare and
+// the same single call it always did -- the noinline wrapper this replaced
+// charged every three-pixel block a second hop, and the replay noticed.
+static inline __attribute__((always_inline))
+void span_lit_add(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
+    if (n >= CANOPY_PIE_LIT_MIN) { span_lit_add_pie(q, n, lv, lut); return; }
+    span_lit_add_scalar(q, n, lv, lut);
+}
+static inline __attribute__((always_inline))
+void span_lit_sub(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
+    if (n >= CANOPY_PIE_LIT_MIN) { span_lit_sub_pie(q, n, lv, lut); return; }
+    span_lit_sub_scalar(q, n, lv, lut);
+}
+
+#else
+#define span_lit_add span_lit_add_scalar
+#define span_lit_sub span_lit_sub_scalar
+#endif
+
+// THE BATCH THAT IS NOT HERE. The lit mass -- 44% of AEGIS's pixels, 57% of
+// CHARIOT's -- lives in blocks averaging 3.4 pixels, and a batched walk was
+// built to reach it: short blocks staged into signed field tiles, gaps as
+// zero deltas (a bit-exact identity), flushed maskless through the vector
+// unit. It measured a LOSS of 1.5-1.9 ms combined-core against the span
+// dispatch in both scenes -- worse than pure scalar in course. Two causes,
+// both structural: only three blocks in ten abut, so a segment blends mostly
+// padding at vector price; and the batch state inlined here three times
+// re-created the register spill this file once paid 29% to escape. The
+// numbers are in design/notes/performance.md; the span paths below are the
+// shape that measured best. Do not rebuild the batch without new economics.
 
 // THE STEP WITHOUT THE DIVIDE, which is the one division the block walk still does.
 //
@@ -1693,8 +1805,37 @@ static void canopy_pie_selftest(void) {
             }
         }
     }
+#if CANOPY_PIE
+    // The lit paths, against their own scalar bodies. The LUT and levels live
+    // in the far end of the test buffer; values include both field extremes.
+    if (!fails) {
+        uint16_t* lut = a + 2048;
+        uint8_t*  lv  = (uint8_t*)(a + 2560);
+        for (int i = 0; i < 256; i++) lut[i] = (uint16_t)(i * 197u + 31u);
+        lut[0] = 0x0000; lut[1] = 0xFFFF; lut[2] = 0x0821; lut[3] = 0xF7DF;
+        for (int i = 0; i < 512; i++) lv[i] = (uint8_t)(i * 73u + 5u);
+        for (int di = 0; di < 5 && !fails; di++) {
+            const int off = (di * 2 + 1) & 7, n = 5 + di * 99;
+            for (int i = 0; i < off + n; i++) a[i] = (uint16_t)(i * 2557u + 91u);
+            memcpy(b, a, (size_t)(off + n) * 2);
+            for (int op = 0; op < 2 && !fails; op++) {
+                if (op == 0) { span_lit_add(a + off, n, lv, lut);
+                               span_lit_add_scalar(b + off, n, lv, lut); }
+                else {         span_lit_sub(a + off, n, lv, lut);
+                               span_lit_sub_scalar(b + off, n, lv, lut); }
+                for (int i = 0; i < n; i++) {
+                    if (a[off + i] != b[off + i] && !fails++) {
+                        first = (uint32_t)i; f_d = 0; f_ref = b[off + i]; f_got = a[off + i];
+                        f_op = 2 + op;
+                    }
+                }
+                memcpy(a, b, (size_t)(off + n) * 2);
+            }
+        }
+    }
+#endif
     if (fails) Serial.printf("vg_canopy: PIE self-test FAIL op=%s i=%u d=%04x ref=%04x got=%04x (%u wrong)\n",
-                             f_op ? "sub" : "add", (unsigned)first, f_d, f_ref, f_got, (unsigned)fails);
+                             f_op == 0 ? "add" : f_op == 1 ? "sub" : f_op == 2 ? "lit-add" : "lit-sub", (unsigned)first, f_d, f_ref, f_got, (unsigned)fails);
     else       Serial.printf("vg_canopy: PIE self-test PASS, bit-identical to the scalar spans (%u us)\n",
                              (unsigned)(micros() - t0));
     // THE PER-PIXEL PRICE, both paths, same hot SRAM the band lives in. The
@@ -1715,6 +1856,27 @@ static void canopy_pie_selftest(void) {
         Serial.printf("vg_canopy: PIE bench len %d: %u.%u c/px vector, %u.%u scalar\n",
                       len, (unsigned)(cp / (200u * len)), (unsigned)((cp * 10u / (200u * len)) % 10u),
                            (unsigned)(cs / (200u * len)), (unsigned)((cs * 10u / (200u * len)) % 10u));
+    }
+    {
+        uint16_t* lut = a + 2048;
+        uint8_t*  lv  = (uint8_t*)(a + 2560);
+        for (int i = 0; i < 256; i++) lut[i] = (uint16_t)(i * 197u + 31u);
+        for (int i = 0; i < 128; i++) lv[i] = (uint8_t)(i * 73u + 5u);
+        for (int li = 0; li < 2; li++) {
+            const int len = li ? 20 : 120;
+            uint32_t cp = 0, cs = 0;
+            for (int r = 0; r < 200; r++) {
+                uint32_t t = ESP.getCycleCount();
+                span_lit_add(a + 1, len, lv, lut);
+                cp += ESP.getCycleCount() - t;
+                t = ESP.getCycleCount();
+                span_lit_add_scalar(a + 1, len, lv, lut);
+                cs += ESP.getCycleCount() - t;
+            }
+            Serial.printf("vg_canopy: PIE bench lit %d: %u.%u c/px vector, %u.%u scalar\n",
+                          len, (unsigned)(cp / (200u * len)), (unsigned)((cp * 10u / (200u * len)) % 10u),
+                               (unsigned)(cs / (200u * len)), (unsigned)((cs * 10u / (200u * len)) % 10u));
+        }
     }
     heap_caps_free(a);
 }
