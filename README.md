@@ -11,7 +11,7 @@ The game makes everything you see and hear while it runs. The ships, the arena, 
 sky, the canopy and every sound are generated. There are no bitmaps and no samples.
 
 - About 22,000 lines. Only one library is not written here.
-- 60 to 61 frames a second in a fight, and 71 when idle.
+- 60 to 61 frames a second in a fight, 60 to 64 on the ring course, and 71 when idle.
 - The game can record itself and play a session back, frame for frame.
 
 ---
@@ -180,6 +180,7 @@ does, and a duel is a poor place to learn it. The broadcast explains the test.
 There is no crosshair. The canopy is a drawing. `tools/canopy_bake.py` turns a PNG
 into a table of runs, and the band renderer applies the table to the finished picture
 as a change. So the canopy lights what is behind it. It does not paint over it.
+The blend runs on the vector unit of the processor. See **Speed**.
 
 The canopy bends, and it bends the opposite way to the instruments. It bends most when
 the throttle is shut and flattens as the ship speeds up. The canopy also swings behind
@@ -369,10 +370,11 @@ These are measured in flight. They are not calculated.
 |---|---|
 | idle loop | 71 |
 | a fight | 60 to 61 |
+| the ring course | 60 to 64 |
 | close to the wall | 57 |
 
-    a fight:  in 720   upd 758   sub 2851   blit 12252
-                                          = rast 10461  push 1598
+    the course, in flight:  in 810   upd 556   sub 2477   blit 12242
+                                              = rast 11555  push 474
 
 `push` is the CPU waiting for DMA. The idle loop and a fight do not agree, and an
 average of the two hides it:
@@ -380,7 +382,11 @@ average of the two hides it:
 | state | rast | push | bands over their limit |
 |---|---|---|---|
 | idle | 5.6 ms | 6.8 ms | 0 |
-| fight | 10.5 ms | 1.6 ms | 3.5 |
+| fight | 9.7 ms | 2.0 ms | 2 |
+
+The fight row is from August 2026, after the canopy blend moved to the vector
+unit. The change cut `rast` and increased `push` by the same amount. The
+processor finishes its drawing sooner, so it waits longer for the transfer.
 
 When idle there is 6.8 ms spare and drawing work is nearly free. In a fight there is
 1.6 ms spare and some bands take longer than the 768 us each band gets. Then drawing
@@ -433,6 +439,24 @@ ship in a dogfight is small, distant and moving, so a smooth edge on it is worth
 little. The cost of a smooth line rises with its length, and the longest lines in a
 fight are near a hull.
 
+### The vector unit
+
+The processor has a 128-bit vector unit, and the canopy blend runs on it. One
+instruction blends eight pixels. The scalar blend cost 36 cycles for each pixel.
+The vector blend costs 5 to 10, and a fight frame gained about 0.7 ms.
+
+The two blends give the same pixels. A test proves this at each start, before
+the first frame. The test runs both blends over every source value and compares
+the output. If one pixel differs, the test prints it. To use the scalar blend
+only, set `CANOPY_PIE` to 0 in `vg_canopy_draw.cpp`.
+
+The unit has limits, and two of them shaped the code. It cannot look up a table
+for eight pixels at once, so a blend that uses a table keeps a scalar step. A
+saturating add protects a 16-bit lane, not the three colour fields inside it.
+So the blend separates each pixel into its three fields, blends each field, and
+packs them again. The separated arithmetic gives the same result as the packed
+arithmetic, so the test can compare for equal pixels.
+
 ### Four ways a measurement can be wrong
 
 Each of these happened during this work. They are the most useful part of it.
@@ -466,6 +490,8 @@ telemetry. See [tools/README.md](tools/README.md).
 | `canopy_set.py` | bake `design/canopy/` and write the table the game reads |
 | `canopy.ps1` | bake, build, write to the board, and measure |
 | `canopy_cost.py` | ask the board what a canopy costs to draw |
+| `replay_cost.py` | play a recorded session and report the cost of each stage |
+| `phantom_regress.py` | play a recorded session and compare frame hashes against a baseline |
 
 Recording has two steps because of the serial port. One frame is 460,800 bytes and the
 port carries 0.74 MB/s, so the board cannot send 60 frames a second. The limit is about
@@ -518,8 +544,8 @@ missile balance does not mean reading past the colours.
 - **Screen tearing.** The game draws faster than the screen refreshes and does not wait
   for the tear signal. If tearing shows, wait for the signal or limit the frame rate.
 - **A gun** for close range, after the missile duel is right.
-- **Canopies for three ships.** The CHARIOT has one. AEGIS, LANCE and BALLISTA fly
-  without one until somebody draws them.
+- **Canopies for two ships.** The CHARIOT and the AEGIS have one. LANCE and
+  BALLISTA fly without one until somebody draws them.
 
 ## Licence
 

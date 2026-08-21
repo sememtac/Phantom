@@ -349,6 +349,10 @@ covers. Levels, gradients and fine detail are free.
 The reference drawing covers 10.5%. To make a drawing cheaper, make the shapes
 narrower. Do not remove detail. Detail costs nothing.
 
+The table is from August 2026, before the blend moved to the vector unit of the
+processor. The blend now costs about one third less, so the table is safe but
+conservative. Measure a heavy drawing with `replay_cost.py` before you reject it.
+
 ### Bake it
 
 The file name is the wiring. Name the PNG after the ship that flies it.
@@ -364,9 +368,9 @@ ship.
 
 The script bakes only the drawings that changed. It prints the whole set every time:
 
-    AEGIS     --             no cockpit frame
+    AEGIS     aegis.png         26 KB of generated header
     LANCE     --             no cockpit frame
-    CHARIOT   chariot.png       128 KB of generated header
+    CHARIOT   chariot.png       21 KB of generated header
     BALLISTA  --             no cockpit frame
 
 ### A ship with no drawing
@@ -449,6 +453,13 @@ Compare `rast` with **11520 microseconds**. That is the time the wire needs to s
 frame, and the frame cannot be quicker than it. Below that number, more drawing is mostly
 free, because the processor waits for the wire anyway. Above it, the processor sets the
 frame time, and every microsecond of drawing costs a microsecond.
+
+The report also prints two diagnostic lines. The `CACHE` line counts the cache
+misses of each frame: `im` is instruction misses, `dfm` is data misses to flash,
+and `dpm` is data misses to PSRAM. The hash line (`PRIMH`, `RNGH`, and the
+others) is a checksum of the simulation. Two runs of the same build must show
+the same hashes. If the hashes differ, the change altered the simulation and
+the cost numbers compare two different scenes.
 
 **This tool does not measure the frame rate.** It sends no pixels, so the panel never
 holds the frame up. The numbers are processor time, not frame time.
