@@ -110,6 +110,20 @@ void vg_replay_note_idle0(uint32_t us);
 // The first per-frame attribution of cache misses this project has had.
 void vg_replay_note_cache(void);
 
+// THE PIXELS THEMSELVES, HASHED ON THE DEVICE. Every bench in this codebase proves
+// itself with a checksum; the timed replay could not, and the only way to compare
+// pictures was to stream them to the host -- which on a bad day drops bands and
+// says the change is guilty. This folds the finished band, the same bytes the panel
+// receives, into a session hash printed as BANDH.
+//
+// ARMED, NOT ALWAYS ON. Folding 460 KB a frame costs about 1.9 ms, so it samples one
+// frame in BAND_HASH_EVERY and it is off unless serial 'w' turns it on. A run with
+// it armed is a PICTURE run and its timings are polluted; take cost numbers from a
+// separate run. Same build, same session, same hash means the pixels did not move.
+void vg_replay_hash_arm(bool on);
+bool vg_replay_hash_armed(void);
+void vg_replay_note_band(int band, const uint16_t* px, int n_px);
+
 // The primitive raster split by TYPE, for the frame's largest stage. `aa` is every
 // blended line -- the trails live there -- and it took three wasted flights to admit
 // the replay should have carried it from the day the type counters existed.

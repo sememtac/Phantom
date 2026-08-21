@@ -1635,6 +1635,9 @@ void vg_rast_flush(void) {
         // touching it, so the transfer that follows is unaffected.
         if (b == 0) vg_capture_frame_begin();
         vg_capture_band(b * BAND_H, BAND_H, buf);
+        // And the same bytes into the session hash, for the same reason the capture
+        // takes them here: after every effect, before the wire, and read-only.
+        vg_replay_note_band(b, buf, SCR_W * BAND_H);
 
         // Queues and returns: the next iteration rasterises into the other
         // buffer while this one is on the wire.

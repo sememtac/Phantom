@@ -5,6 +5,7 @@
 #include "vg_ship.h"
 #include "vg_capture.h"
 #include <Arduino.h>
+#include "esp_attr.h"   // RTC_NOINIT_ATTR, for the arm that outlives a reset
 #include "soc/extmem_reg.h"   // the cache miss counters
 #include <esp_random.h>
 #include <string.h>
@@ -144,6 +145,46 @@ static uint64_t s_ch_sum[5];
 static uint32_t s_ch_max[5];
 static bool     s_ch_primed = false;
 
+// One frame in this many is folded. 5,444 frames gives about twenty samples, which
+// is more sample points than the host-side regression ever rendered, at a total cost
+// under a tenth of a second.
+#define BAND_HASH_EVERY 256
+
+// IN RTC MEMORY, and that is the whole trick. replay_cost.py resets the board
+// before every run, so a flag armed over the serial line was gone by the time the
+// replay started -- armed twice, printed nothing, twice. RTC slow memory survives a
+// software reset, so `w` now arms the NEXT run the way it reads as doing. The magic
+// guards a cold boot, where this word is whatever was in the die.
+#define HASH_ARM_MAGIC 0x42414e44u   // 'BAND'
+static RTC_NOINIT_ATTR uint32_t s_hash_magic;
+static RTC_NOINIT_ATTR uint32_t s_hash_arm;
+static bool hash_on(void) {
+    return s_hash_magic == HASH_ARM_MAGIC && s_hash_arm != 0u;
+}
+static uint32_t s_band_hash = 2166136261u;
+static uint32_t s_band_n    = 0;
+
+void vg_replay_hash_arm(bool on) {
+    s_hash_magic = HASH_ARM_MAGIC;
+    s_hash_arm   = on ? 1u : 0u;
+    s_band_hash  = 2166136261u;
+    s_band_n     = 0;
+}
+bool vg_replay_hash_armed(void) { return hash_on(); }
+
+void vg_replay_note_band(int band, const uint16_t* px, int n_px) {
+    if (!s_timed || !hash_on() || !px) return;
+    if ((s_t_n % BAND_HASH_EVERY) != 0) return;
+    // The band index goes in too, so two bands swapping their contents is not a
+    // silent pass. A word at a time: the buffer is 16-byte aligned and internal.
+    uint32_t h = s_band_hash ^ (uint32_t)(band + 1);
+    const uint32_t* w = (const uint32_t*)(const void*)px;
+    const int nw = n_px >> 1;
+    for (int i = 0; i < nw; i++) h = (h ^ w[i]) * 16777619u;
+    s_band_hash = h;
+    s_band_n++;
+}
+
 void vg_replay_note_cache(void) {
     if (!s_timed) { s_ch_primed = false; return; }
     // The flash-vs-PSRAM split of the dbus miss counter is classified by a vaddr
@@ -233,6 +274,14 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_s_sum[3] / s_t_n), (unsigned)s_s_max[3],
                   (unsigned)(s_s_sum[4] / s_t_n), (unsigned)s_s_max[4],
                   (unsigned)(s_s_sum[5] / s_t_n), (unsigned)s_s_max[5]);
+    // The picture's own hash, when the run was armed for it. Absent means nobody
+    // asked, which is not the same as "the pixels matched".
+    if (hash_on()) {
+        Serial.printf("vg_replay: BANDH %08x over %u bands, 1 frame in %d"
+                      "  -- TIMINGS ABOVE ARE POLLUTED BY THE FOLD\n",
+                      (unsigned)s_band_hash, (unsigned)s_band_n, BAND_HASH_EVERY);
+    }
+
     // The worst rendezvous, decomposed. If b_at is far above b's mean, core 0 was late
     // and core 1 paid for it; if a_at is small, core 1 arrived early and the gap is
     // just the halves being uneven that frame.

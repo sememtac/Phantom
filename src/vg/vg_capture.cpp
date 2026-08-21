@@ -343,6 +343,14 @@ void vg_capture_poll(void) {
                               (unsigned long)s.prep_us, (unsigned long)s.fill_us,
                               (unsigned long)s.sum);
             }
+        } else if (c == 'w' && !vg_link_busy()) {
+            // ARM THE PICTURE HASH for the next timed replay. Off by default because
+            // the fold costs about 1.9 ms on the frames it samples, which would show
+            // up in every cost number this tool reports. Run it armed to compare two
+            // builds' PIXELS, and unarmed to compare their microseconds.
+            const bool on = !vg_replay_hash_armed();
+            vg_replay_hash_arm(on);
+            Serial.printf("vg_replay: band hash %s\n", on ? "ARMED" : "off");
         } else if (c == 'v' && !vg_link_busy()) {
             // THE VECTOR BLEND, PROVED ON DEMAND. This used to run at every boot and
             // charge the pilot 115 ms for a proof that cannot change between boots of
