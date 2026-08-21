@@ -7,10 +7,11 @@
 #include "../vg_canopy.h"
 #include "canopy_aegis.h"
 #include "canopy_chariot.h"
+#include "canopy_ballista.h"
 
 #define VG_CANOPY_SET_ROWS \
     /* AEGIS    */ &CANOPY_AEGIS, \
     /* LANCE    */ nullptr, \
     /* CHARIOT  */ &CANOPY_CHARIOT, \
-    /* BALLISTA */ nullptr,
+    /* BALLISTA */ &CANOPY_BALLISTA,
 

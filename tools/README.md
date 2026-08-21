@@ -371,7 +371,7 @@ The script bakes only the drawings that changed. It prints the whole set every t
     AEGIS     aegis.png         26 KB of generated header
     LANCE     --             no cockpit frame
     CHARIOT   chariot.png       21 KB of generated header
-    BALLISTA  --             no cockpit frame
+    BALLISTA  ballista.png      21 KB of generated header
 
 ### A ship with no drawing
 

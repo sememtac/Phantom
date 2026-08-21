@@ -544,8 +544,8 @@ missile balance does not mean reading past the colours.
 - **Screen tearing.** The game draws faster than the screen refreshes and does not wait
   for the tear signal. If tearing shows, wait for the signal or limit the frame rate.
 - **A gun** for close range, after the missile duel is right.
-- **Canopies for two ships.** The CHARIOT and the AEGIS have one. LANCE and
-  BALLISTA fly without one until somebody draws them.
+- **A canopy for the LANCE.** The other three ships have one. The LANCE flies
+  without one until somebody draws it.
 
 ## Licence
 
