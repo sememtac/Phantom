@@ -371,6 +371,9 @@ static inline __attribute__((always_inline))
 void span_add(uint16_t* q, int n, uint16_t d) { span_add_scalar(q, n, d); }
 static inline __attribute__((always_inline))
 void span_sub(uint16_t* q, int n, uint16_t d) { span_sub_scalar(q, n, d); }
+void vg_canopy_pie_selftest(void) {
+    Serial.println("vg_canopy: PIE compiled out (CANOPY_PIE 0); the scalar spans are shipping");
+}
 #endif
 
 // A PIXEL AT A TIME, for the antialiased edge of a shape.
@@ -603,7 +606,6 @@ static constexpr CanopyStepTab s_steptab = canopy_step_build();
 // Rebuilt only when the quantised amount changes, so the 480 forward evaluations and the
 // inversion are paid a handful of times across a throttle sweep, not per frame.
 static float   s_w_zk   = 0.0f;    // zoom * K * scale / R2
-static float   s_w_zoom = 1.0f;
 static float   s_w_zbase[SCR_H];   // zoom + zoom*K*scale*dx^2/R2, per SOURCE column
 static int16_t s_wc[SCR_H];        // the bow's per-column shift, laid on top of the sphere
 // WHICH DRAWING COLUMN A PANEL ROW SAMPLES, which is the other half of coming closer.
@@ -817,7 +819,6 @@ void vg_canopy_warp(float k) {
     const float zoom = 1.0f + CANOPY_WARP_ZOOM * a;
     const float R2   = (float)SCR_CX * SCR_CX + (float)SCR_CY * SCR_CY;
     const float krn  = HUD_WARP_K * CANOPY_WARP_SPHERE * a / R2;
-    s_w_zoom = zoom;
     s_w_zk   = zoom * krn;
 
     // The forward map along x at the centre line, then inverted. Monotone, so one walk.
@@ -1535,7 +1536,6 @@ void vg_canopy_intro_begin(void) {
     s_lag_sh = 0.0f;
 }
 
-bool vg_canopy_intro_active(void) { return s_intro_on; }
 
 // HAS THE SEQUENCE CALLED FOR THE INSTRUMENTS YET.
 //
@@ -1757,7 +1757,7 @@ int vg_canopy_split_at(int band_index) {
 // (value, delta) pairs per field -- the planes are independent, so this IS
 // exhaustive), and the dispatcher itself across every head offset and a fan
 // of lengths. The scalar pair loop is the reference. Runs once, prints.
-static void canopy_pie_selftest(void) {
+void vg_canopy_pie_selftest(void) {
     enum { NPX = 4096 };
     uint16_t* a = (uint16_t*)heap_caps_aligned_alloc(16, NPX * 2 * 2, MALLOC_CAP_INTERNAL);
     if (!a) { Serial.println("vg_canopy: PIE self-test SKIPPED (alloc)"); return; }
@@ -1882,11 +1882,20 @@ static void canopy_pie_selftest(void) {
 }
 #endif
 
+// THE SELF-TEST IS NOT HERE ANY MORE, and the reason is what it tests.
+//
+// It ran on the first frame after every boot and cost the player about 115 ms of
+// it: 65,536 sources, a per-field exhaustive sweep, every alignment offset, and
+// a timing bench on top. That was right while the vector path was unproven, and
+// wrong the moment it shipped -- the sweep has NO INPUT THAT VARIES AT RUNTIME,
+// so its answer is a property of the binary, not of the boot. A thousand boots
+// of one build re-prove the same theorem and charge the pilot each time. It also
+// owned ft_worst in the first telemetry window, which made the boot diagnostic a
+// liar about the frame it was measuring.
+//
+// So it moved to serial 'v', beside every other bench in this codebase, and it
+// is the acceptance test for a change to the blend: flash, press v, read PASS.
 void vg_canopy_warm(void) {
-#if CANOPY_PIE
-    static bool tested = false;
-    if (!tested) { tested = true; canopy_pie_selftest(); }
-#endif
     if (s_can && !s_can_ready) canopy_lut();
 }
 

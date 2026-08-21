@@ -64,7 +64,12 @@ BANDS = re.compile(r"vg_replay: BANDS/(\d+) = ([0-9 ]+)")
 SUB = re.compile(
     r"vg_replay: SUB a (\d+)/(\d+) \| b (\d+)/(\d+) \| wait (\d+)/(\d+) \| "
     r"arena (\d+)/(\d+) \| star (\d+)/(\d+) \| hud (\d+)/(\d+)")
-SKEYS = ["A(world)", "B(instr)", "wait", "arena", "star", "hud"]
+# `sub_wait`, not `wait`: BKEYS carries a `wait` of its own and both lines land in
+# one flat dict, so the blit's wire wait quietly overwrote this one and the SUB table
+# printed it under "core 1 idle at the rendezvous". The two are unrelated numbers and
+# the report showed the same value twice for weeks. Any rendezvous figure recorded
+# before 2026-08-20 is the blit wait and has to be re-measured.
+SKEYS = ["A(world)", "B(instr)", "sub_wait", "arena", "star", "hud"]
 
 TYPES = re.compile(
     r"vg_replay: TYPES aa (\d+)/(\d+) \| ln (\d+)/(\d+) \| tri (\d+)/(\d+) \| "

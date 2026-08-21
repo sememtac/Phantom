@@ -513,6 +513,7 @@ Single bytes, typed at the board while nothing else holds the port.
 |---|---|
 | `q` | antialiasing on the instruments, on and off |
 | `k` | what the canopy costs, rigid and warped |
+| `v` | the vector blend against the scalar blend: proves the pixels match, then times both |
 | `y` | what the backdrop costs, prep and fill, with a checksum |
 | `g` | the glyph nest, old against new, over fixed text |
 | `l` | the line walk, old against new, over a fan of every slope |

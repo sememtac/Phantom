@@ -111,7 +111,7 @@ if over:
     else:
         print("     -> BALANCED. Neither side is worth much; look before blit.")
 
-b = avg(subs, ["star", "arena", "world", "hud", "mir", "sfx", "sxr"])
+b = avg(subs, ["star", "hoops", "world", "hud", "mir", "sfx", "sxr"])
 if b:
     print("submit: " + "  ".join("%s %.0f" % (k, v) for k, v in b.items()))
 

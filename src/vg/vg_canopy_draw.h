@@ -26,6 +26,13 @@ void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1);
 // two-core pass never races the rebuild. Call once per frame before the band loop.
 void vg_canopy_warm(void);
 
+// THE VECTOR BLEND'S ACCEPTANCE TEST, on serial 'v'. Proves the PIE spans are
+// bit-identical to the scalar ones over every source value, every field delta and
+// every alignment offset, then benches both paths. Run it after any change to the
+// blend; it is not run at boot, because its answer cannot change between boots of
+// one build. Prints PASS, the first mismatch, or that the path is compiled out.
+void vg_canopy_pie_selftest(void);
+
 // WHERE THIS BAND'S WORK BALANCES, for the two-core split.
 //
 // Three different answers -- the baked point, the warped one, or the midpoint during the
@@ -164,7 +171,6 @@ void  vg_canopy_alarm(float k, bool white);
 void  vg_canopy_intro_reset(void);
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);
-bool  vg_canopy_intro_active(void);
 bool  vg_canopy_intro_cued(void);
 int   vg_canopy_intro_lit(void);
 float vg_canopy_intro_flex(void);

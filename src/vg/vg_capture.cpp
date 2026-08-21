@@ -344,6 +344,12 @@ void vg_capture_poll(void) {
                               (unsigned long)s.tint_us,
                               (unsigned long)s.sum);
             }
+        } else if (c == 'v' && !vg_link_busy()) {
+            // THE VECTOR BLEND, PROVED ON DEMAND. This used to run at every boot and
+            // charge the pilot 115 ms for a proof that cannot change between boots of
+            // one build -- see the note at vg_canopy_warm. It is an acceptance test for
+            // a change to the blend, so it belongs on a key, next to the other benches.
+            vg_canopy_pie_selftest();
         } else if (c == 'g' && !vg_link_busy()) {
             // The glyph nest, plain against hoisted, over identical text. `same` is the
             // part that matters: a faster loop that draws different pixels is not faster.
