@@ -36,6 +36,9 @@ from phantom_link import Desync, PhantomLink, Session, reset_board
 
 # Spread through a session rather than bunched: the cost of a run is set by the
 # DEEPEST frame, because the device must replay everything before it.
+# These run out to 16,000 ON PURPOSE: they are sized for the anomaly session, which is
+# 8,442 frames, not for regress.phr's 5,444. Against the short session the tail simply
+# does not exist -- which is fine, and used to be SILENT, which was not. See render().
 DEFAULT_FRAMES = "500,1840,3400,4760,6500,7700,10000,13000,16000"
 
 
@@ -94,7 +97,16 @@ def device_report(link, wait=8.0):
 def render(port, path, wanted, out_dir):
     ses = Session.load(path)
     n = len(ses.frames)
+    # SAY WHAT WAS DROPPED. A frame past the end of the session cannot be rendered, and
+    # this used to filter it out without a word -- so a run that asked for nine frames and
+    # tested four reported success in the same voice as a run that tested nine.
+    # regress-baseline-exact.json is exactly that: four hashes, saved as a nine-frame test.
+    dropped = [f for f in wanted if f >= n]
     wanted = [f for f in wanted if f < n]
+    if dropped:
+        print(f"  NOTE: {len(dropped)} of {len(dropped) + len(wanted)} frames are past the "
+              f"end of this {n}-frame session and will not be tested: "
+              + ",".join(str(f) for f in dropped))
     if not wanted:
         sys.exit(f"no wanted frame is inside this session ({n} frames)")
     last = max(wanted)

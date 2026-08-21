@@ -57,6 +57,12 @@ captures/*
 # input structures, 73% of them under 59 fps -- and tools/ordnance-baseline.json is measured
 # against it. 668 KB.
 !captures/ordnance.phr
+# AND THE COURSE RUN, which is the scene the 60 fps goal was stated in. The whole August
+# campaign was measured on it, tools/course-baseline.json and course-iram-baseline.json
+# are taken against it, and it was UNTRACKED the entire time -- one `git clean` from
+# turning both of those into the exact orphan this comment block was written about.
+# 243 KB, 2,995 frames.
+!captures/course.phr
 
 # Visual Studio working directory
 .vs/

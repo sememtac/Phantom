@@ -267,7 +267,7 @@ def run(port, path, limit):
     os._exit(0)
 
 
-def fetch(port):
+def fetch(port, session=None):
     """Ask the device for the last timed run's cost, on a fresh connection.
 
     SEPARATE FROM THE RUN, because a handle that has carried a full session cannot be
@@ -321,7 +321,7 @@ def fetch(port):
         if m and (BLIT.search(txt) or time.time() > deadline - 8.0):
             ser.close()
             g = [int(x) for x in m.groups()]
-            out = {"frames": g[0], "commit": git_commit(), "session": "(fetched)"}
+            out = {"frames": g[0], "commit": git_commit(), "session": session or "(unknown)"}
             for j, k2 in enumerate(KEYS):
                 out[k2] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
             w = WORLD.search(txt)
@@ -406,10 +406,18 @@ def compare(now, was):
         d = b - a
         pct = (100.0 * d / a) if a else 0.0
         print("  %-6s %10d %12d %9d %+6.1f%%" % (k, a, b, d, pct))
-    if was.get("session") != now.get("session"):
+    # A baseline saved before 2026-08-20 carries "(fetched)" here, because the name was
+    # hardcoded and this guard could never fire. Those cannot be checked, so they are not
+    # accused -- but they are the ones most likely to be the wrong session.
+    old_s, new_s = was.get("session"), now.get("session")
+    if old_s == "(fetched)":
+        print("\n  BASELINE PREDATES SESSION STAMPING. It does not record which recording it\n"
+              "  was measured over, so nothing here can confirm both runs saw the same frames.\n"
+              "  Take a fresh baseline before trusting a small change.")
+    elif old_s != new_s:
         print("\n  DIFFERENT SESSIONS (%s vs %s). The whole point of this tool is that\n"
               "  both runs see the same frames, so this comparison means nothing."
-              % (was.get("session"), now.get("session")))
+              % (old_s, new_s))
     if was["frames"] != now["frames"]:
         print("\n  Different frame counts (%d vs %d): one run ended early, so the means\n"
               "  are over different work." % (was["frames"], now["frames"]))
@@ -431,7 +439,7 @@ def main():
     a = ap.parse_args()
 
     if a.fetch:
-        r = fetch(a.port)
+        r = fetch(a.port, os.path.basename(a.session))
     elif a.run_only:
         run(a.port, a.session, a.frames)   # never returns; see the end of run()
         return
