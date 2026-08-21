@@ -105,6 +105,9 @@ void vg_replay_note_bands(const uint32_t* band_us, int n) {
 // cannot say whether the worst wait happened because B spiked -- they are three
 // different frames. This captures the pair AT the frame that set the record, and the
 // count of waits over 100 us, which says whether the tail is one event or a habit.
+static uint32_t s_cw_worst = 0, s_cw_frame = 0;
+static uint32_t s_cw_can = 0, s_cw_rast = 0, s_cw_prim = 0, s_cw_sub = 0, s_cw_upd = 0;
+static uint32_t s_cw_over16 = 0, s_cw_over20 = 0;
 static uint32_t s_sw_a = 0, s_sw_b = 0, s_sw_frame = 0, s_sw_over = 0;
 static uint32_t s_wp_sum = 0, s_wp_max = 0, s_wp_n = 0, s_sw_warp = 0;
 
@@ -282,6 +285,14 @@ bool vg_replay_report_cost(void) {
                       (unsigned)s_band_hash, (unsigned)s_band_n, BAND_HASH_EVERY);
     }
 
+    // Which frame the pilot would have felt, and what it was made of.
+    Serial.printf("vg_replay: SLOWEST %u us (%u fps) at frame %u -- upd %u sub %u rast %u"
+                  " (can %u prim %u) | %u frames under 60, %u under 50\n",
+                  (unsigned)s_cw_worst, (unsigned)(s_cw_worst ? 1000000u / s_cw_worst : 0),
+                  (unsigned)s_cw_frame, (unsigned)s_cw_upd, (unsigned)s_cw_sub,
+                  (unsigned)s_cw_rast, (unsigned)s_cw_can, (unsigned)s_cw_prim,
+                  (unsigned)s_cw_over16, (unsigned)s_cw_over20);
+
     // The worst rendezvous, decomposed. If b_at is far above b's mean, core 0 was late
     // and core 1 paid for it; if a_at is small, core 1 arrived early and the gap is
     // just the halves being uneven that frame.
@@ -319,6 +330,11 @@ bool vg_replay_report_cost(void) {
     return true;
 }
 
+// THE WORST FRAME, WITH ITS OWN PARTS. Five separate maxima are five different
+// frames and cannot explain each other -- the same trap WAITMAX was built to escape.
+// The pilot sees a dip; this says which frame it was and what that frame was doing.
+// Ranked on upd + sub + rast, which is the CPU that has to fit inside the transfer.
+
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
                          uint32_t sub, uint32_t upd) {
     if (!s_timed) return;
@@ -326,6 +342,16 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
     for (int i = 0; i < 5; i++) {
         s_t_sum[i] += v[i];
         if (v[i] > s_t_max[i]) s_t_max[i] = v[i];
+    }
+    // The wire still has to run whatever the CPU does, so a frame costs about
+    // max(rast, wire) plus the serial stages in front of it.
+    const uint32_t wire = 11520u;
+    const uint32_t ft   = upd + sub + (rast > wire ? rast : wire);
+    if (ft > 16667u) s_cw_over16++;      // under 60 fps
+    if (ft > 20000u) s_cw_over20++;      // under 50 fps
+    if (ft > s_cw_worst) {
+        s_cw_worst = ft; s_cw_frame = s_t_n;
+        s_cw_can = can; s_cw_rast = rast; s_cw_prim = prim; s_cw_sub = sub; s_cw_upd = upd;
     }
     s_t_n++;
 }
