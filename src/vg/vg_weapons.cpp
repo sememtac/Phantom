@@ -32,14 +32,40 @@ void vg_threat_clear(void) {
 // Acquire and hold a lock on whichever live enemy is nearest the nose, provided
 // it stays inside the cone long enough.
 void vg_update_lock(float dt) {
+    // IF YOU CAN SEE IT, YOU CAN HOLD IT -- for a class that asks for it.
+    //
+    // lock_cos below -1 is not a cone. A cosine can never reach -2, so that is the
+    // honest way to spell "the viewport instead", the same idiom msl_reacq_cos uses
+    // for "never". Everything else keeps its cone.
+    //
+    // A cone was never the same shape as the screen. FOCAL is 400 on a 480 px
+    // panel, so the nose cone at 0.86 is cos(31 deg) -- exactly the screen's half
+    // WIDTH, which makes it the circle INSCRIBED in the viewport. A target in a
+    // corner sits 40 degrees out: plainly visible, comfortably outside the lock,
+    // and the pilot is left holding a ship in view that the game says it cannot
+    // see. For a sniper whose whole requirement is aim, that gap is the mechanic
+    // failing rather than the aim.
+    //
+    // Tested in the ship's own frame rather than the camera's, so ROLL does not
+    // decide it. Banking the picture should not drop a lock.
+    const bool viewport = (vg.spec->lock_cos < -1.0f);
+
     int   best   = -1;
-    float best_c = vg.spec->lock_cos;
+    float best_c = viewport ? -2.0f : vg.spec->lock_cos;
 
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
         float range = vlen(s->pos);
         if (range > vg.spec->lock_range || range < 1.0f) continue;
+        if (viewport) {
+            if (s->pos.z <= NEAR_Z) continue;             // behind the canopy
+            const float inv = FOCAL / s->pos.z;
+            if (fabsf(s->pos.x * inv) > SCR_W * 0.5f) continue;
+            if (fabsf(s->pos.y * inv) > SCR_H * 0.5f) continue;
+        }
+        // Still ranked by how near the nose it is, so the pick is unchanged when
+        // two are eligible -- only the eligibility test moved.
         float c = vdot(vnorm(s->pos), v3(0, 0, 1));   // player looks down +z
         if (c > best_c) { best_c = c; best = i; }
     }

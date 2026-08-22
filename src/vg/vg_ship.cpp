@@ -91,7 +91,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* hull       */ 90.0f,  /* shake */ 0.55f,
         /* warhead    */ 40.0f, 20.0f, 0.50f, 320.0f, 2.30f, 20.0f, 0.30f,
         /* seeker     */ 0.42f, -0.30f, 0.9f,
-        /* fire ctrl  */ 0.86f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
+        /* fire ctrl  */ -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
 

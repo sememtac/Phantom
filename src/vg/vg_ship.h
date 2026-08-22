@@ -96,6 +96,15 @@ struct ShipSpec {
     // lock time at all it is the ONLY requirement -- which is what makes turning
     // away the counter, and what forces the choice between dodging and holding
     // the nose on target.
+    //
+    // BELOW -1 IS NOT A CONE. A cosine cannot reach -2, so that is the honest way
+    // to spell "the viewport instead" -- the lock holds for as long as the target
+    // is on screen. The same idiom as msl_reacq_cos's 2.0f for "never".
+    //
+    // The two are not interchangeable and a cone is not the smaller of them. At
+    // FOCAL 400 on a 480 px panel the screen's half width is 31 degrees, so the
+    // usual 0.86 cone is the circle INSCRIBED in the viewport: a ship in a corner
+    // is 40 degrees out, plainly visible, and outside the lock.
     float lock_cos;
     float lock_range;
     float lock_time;           // seconds in the nose cone, at low speed

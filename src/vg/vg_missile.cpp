@@ -31,21 +31,39 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     return true;
 }
 
-// Where is this missile's target right now, and how fast is it moving in view
-// space? The player is the origin and, in its own frame, motionless -- which is
-// why an enemy missile needs no lead prediction at all.
+// Where is this missile's target right now, and how fast is it moving RELATIVE TO
+// THE MISSILE? That last part is the whole of it, and it was wrong.
+//
+// The world flow cancels. Every step, an enemy gets mat3_apply(R, pos) and then
+// pos.z -= dz -- and so does every missile, in the very next loop (vg_flight.cpp
+// :253-257 and :295-297). The player's forward travel moves BOTH of them by the
+// same amount, so it does not appear in the geometry between them at all. The
+// only relative motion is what each one flies under its own power.
+//
+// Subtracting the player's speed anyway put up to 460 units/sec of phantom
+// velocity into the lead solution, and the lead runs out to the 1.2s cap -- so the
+// round aimed at a point up to 550 units from the target and flew there, confident
+// and locked, because the target was still well inside the seeker cone. It read
+// from the cockpit as a missile that simply would not track something in plain
+// view. It hurt BALLISTA worst: a slow round saturates the cap on every shot, so
+// it always paid the full error.
+//
+// THE PLAYER IS THE OTHER HALF OF THE SAME MISTAKE. The player sits at the origin
+// and does not take the -dz; the missile hunting them does. So relative to that
+// missile the player IS moving, at exactly the speed they are flying, up the +z
+// they are flying along. Zero was never "no prediction needed", it was the same
+// term missing with the opposite sign.
 static bool missile_target(const Missile* m, Vec3* pos, Vec3* vel) {
     if (m->target < 0) {
         *pos = v3(0, 0, 0);
-        *vel = v3(0, 0, 0);
+        *vel = v3(0, 0, vg.speed);
         return true;
     }
     if (m->target >= MAX_ENEMIES) return false;
     const Ship* s = &vg.enemy[m->target];
     if (!s->alive) return false;
     *pos = s->pos;
-    // View-space velocity: its own motion, minus the player's forward travel.
-    *vel = vsub(vmul(s->fwd, s->speed), v3(0, 0, vg.speed));
+    *vel = vmul(s->fwd, s->speed);
     return true;
 }
 
