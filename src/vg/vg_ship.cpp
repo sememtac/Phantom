@@ -71,10 +71,23 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
-    // A missile SLOWER than everything it shoots at but alive for twenty seconds:
-    // it cannot run you down, it just refuses to go away -- and now it means that
-    // literally. It is the only seeker in the game that RE-ACQUIRES, so breaking
+    // A missile at 200 -- HALF the speed of the airframes it is shooting at, and
+    // alive for thirty-two seconds. It cannot run anything down, it just refuses to
+    // go away, and it is the only seeker in the game that RE-ACQUIRES, so breaking
     // its lock buys a pass rather than a kill.
+    //
+    // The slowness is the aiming cost, paid AFTER the trigger. At 320 the round
+    // arrived almost as soon as it was sent, so the shot was over the moment the
+    // lock existed and the aim was worth nothing. At 200 a shot across the arena is
+    // twenty seconds in the air: the pilot has to pick a moment that will still be
+    // true when it gets there, and the target has every one of those seconds to
+    // notice it and break. That is what makes it a decision instead of a hit.
+    //
+    // SPEED AND REACH ARE ONE NUMBER HERE. The round has to service its own lock
+    // range or the LOCK is a lie -- see the reach static_assert below the table --
+    // so cutting speed bought life to keep 200 x 32 = 6400 against 4200. The cost
+    // is rounds staying airborne much longer, against a pool of MAX_MISSILES and
+    // the busiest geometry in the frame. It is measured, not assumed.
     //
     // Locks from 4200 out and takes no time to do it -- but it has to be ACQUIRED
     // in the nose cone like anything else, and only then does it hold for as long
@@ -102,7 +115,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,  /* shake */ 0.55f,
-        /* warhead    */ 30.0f, 17.0f, 0.50f, 320.0f, 2.30f, 20.0f, 0.30f,
+        /* warhead    */ 30.0f, 17.0f, 0.50f, 200.0f, 2.30f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, -0.30f, 0.9f,
         /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
