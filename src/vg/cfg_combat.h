@@ -128,7 +128,7 @@
 //
 // They will find each other regardless -- the AI closes on the player, so the
 // distance costs a few seconds of approach, not a stalemate.
-#define ENEMY_SPAWN_DIST     2900.0f
+#define ENEMY_SPAWN_DIST     3800.0f
 #define ENEMY_EVADE_RANGE    540.0f   // break when a missile gets this close
 
 // Enemies aim at a point offset from the player rather than at the player, so

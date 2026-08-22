@@ -116,7 +116,13 @@ struct Missile {
     float   life;
     float   age;
     int     target;       // enemy index; -1 means the player
-    float   last_range;   // for the proximity fuse
+    // The bearing to the target as it stood at the END of the previous step, kept
+    // as a VECTOR rather than a range. The fuse needs to know how close the round
+    // passed, and two consecutive ranges cannot say: they are the endpoints of a
+    // chord and the closest point is somewhere in between. Two consecutive
+    // bearings are that chord, so the answer is exact.
+    Vec3    last_rel;     // for the proximity fuse
+    bool    have_last;    // ...false on the step it was launched
     float   lost_at;      // age at which the lock broke, for re-acquisition
     // The bare ring: no power bytes, because a missile burns at one brightness.
     MissileTrailRing trail;

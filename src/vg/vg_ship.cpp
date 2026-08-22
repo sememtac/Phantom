@@ -38,9 +38,9 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 95.0f,  /* shake */ 1.30f,
-        /* warhead    */ 32.0f, 18.0f, 0.20f, 340.0f, 2.50f, 10.0f, 0.22f,
+        /* warhead    */ 32.0f, 14.0f, 0.20f, 520.0f, 1.20f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
-        /* fire ctrl  */ 0.86f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
+        /* fire ctrl  */ 0.90f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
 
     // ---- CHARIOT -- the speed ------------------------------------------------
@@ -58,30 +58,40 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 70.0f,  /* shake */ 1.70f,
-        /* warhead    */ 12.0f, 18.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.22f,
+        /* warhead    */ 12.0f, 22.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f,
-        /* fire ctrl  */ 0.86f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
+        /* fire ctrl  */ 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
-    // A missile SLOWER than everything it shoots at but alive for eighteen
-    // seconds: it cannot run you down, it just refuses to go away -- and now it
-    // means that literally. It is the only seeker in the game that RE-ACQUIRES,
-    // so breaking its lock buys a pass rather than a kill.
+    // A missile SLOWER than everything it shoots at but alive for twenty seconds:
+    // it cannot run you down, it just refuses to go away -- and now it means that
+    // literally. It is the only seeker in the game that RE-ACQUIRES, so breaking
+    // its lock buys a pass rather than a kill.
     //
-    // Locks from 3400 out, and takes 1.3 seconds in the cone to do it: the shot
-    // is a decision made long before it is taken. Three rounds on a nine second
-    // reload, a slow trigger between them, and it loses almost all its agility at
-    // speed -- so anything fast that gets inside is its whole problem, and running
-    // the rack dry is how it gets there.
+    // Locks from 4200 out and takes NO TIME AT ALL to do it: the cone is the whole
+    // requirement, so the shot is a decision about where the nose is pointing and
+    // nothing else. That is the sniper's bargain from both ends -- it can take you
+    // from beyond anything you can answer, and the only way it holds you is by
+    // flying straight at you, which is also the only way it cannot dodge.
+    //
+    // 4200 is not a taste, it is the WORLD. CULL_RADIUS is 4200 and so is the
+    // arena's major radius, so a longer lock would be a lock on something the
+    // round can never reach. 320 x 20s of travel services it with the arc to
+    // spare, and the missile cull follows the class so the shot is not deleted at
+    // the moment it arrives.
+    //
+    // Three rounds on a nine second reload, a slow trigger between them, and it
+    // loses almost all its agility at speed -- so anything fast that gets inside is
+    // its whole problem, and running the rack dry is how it gets there.
     {
         "BALLISTA", "KILL THEM FIRST",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,  /* shake */ 0.55f,
-        /* warhead    */ 40.0f, 18.0f, 0.50f, 300.0f, 2.30f, 18.0f, 0.22f,
+        /* warhead    */ 40.0f, 20.0f, 0.50f, 320.0f, 2.30f, 20.0f, 0.30f,
         /* seeker     */ 0.42f, -0.30f, 0.9f,
-        /* fire ctrl  */ 0.86f, 3400.0f, 1.30f, 3, 1.60f, 9.0f,
+        /* fire ctrl  */ 0.86f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
 

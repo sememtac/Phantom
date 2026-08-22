@@ -26,7 +26,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->life        = spec->msl_life;
     m->age         = 0;
     m->target      = target;
-    m->last_range  = 1e9f;
+    m->have_last   = false;
     trail_clear(m->trail);
     return true;
 }
@@ -180,31 +180,57 @@ void vg_update_missiles(float dt) {
                 }
             }
 
-            // Proximity fuse: once inside fuse range and the range starts opening
-            // again, this is the closest we will ever get.
-            if (range < m->spec->msl_splash * 2.5f && range > m->last_range) {
-                // Score off the CLOSEST approach, not the current range. The fuse
-                // fires on the frame after the range starts opening again, so
-                // using `range` would charge every detonation a frame's worth of
-                // separation it never actually had -- which at 12 units per frame
-                // against an 18-unit radius is most of the falloff curve.
-                bool hit = m->last_range < m->spec->msl_splash;
-                if (hit) {
-                    float dmg = impact_damage(m, m->last_range);
-                    if (m->target < 0) {
-                        vg_damage_player(dmg);
-                    } else {
-                        bool was_alive = vg.enemy[m->target].alive;
-                        hit_enemy(m->target, dmg);
-                        const bool killed = was_alive && !vg.enemy[m->target].alive;
-                        if (m->from_player)
-                            report(killed ? MSL_DESTROYED : MSL_HIT);
-                    }
+            // PROXIMITY FUSE, over the STEP rather than at its ends.
+            //
+            // This used to compare two consecutive RANGES: arm inside 2.5x the
+            // radius, fire on the frame the range started opening, and score off
+            // whichever of the two samples was smaller. That works, but it can only
+            // ever report a distance it happened to sample, and a round closing
+            // head-on shuts the range by up to (msl_speed + 460) * 0.02 -- around
+            // 16 units for AEGIS and 20 for a 520 u/s warhead. So the sampled
+            // minimum overstates how close the round really passed, the fuse scores
+            // a rim hit or a clean miss on a round that flew through the middle,
+            // and the tighter the radius the worse it gets: a 14-unit fuse was
+            // delivering about 10.
+            //
+            // The two bearings ARE the chord the round flew relative to the target
+            // over this step, so the closest point on that segment to the origin is
+            // the true miss distance, exactly. No velocity model and no arming
+            // window: nothing here has to assume anything about how the world flows
+            // past, which is the part that would otherwise have to be got right.
+            if (m->have_last) {
+                const Vec3  r0 = m->last_rel;              // bearing at step start
+                const Vec3  d  = vsub(to, r0);             // ...and how it moved
+                const float dd = vdot(d, d);
+                float u = 1.0f;
+                if (dd > 1e-6f) {
+                    u = -vdot(r0, d) / dd;
+                    if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
                 }
-                detonate(m, hit);
-                continue;
+                const float d_min = vlen(vadd(r0, vmul(d, u)));
+                // u < 1 means the nearest point lies INSIDE this step, so the round
+                // is opening again: this is the closest it will ever be. Same moment
+                // the old range test fired on, decided exactly instead of by sample.
+                if (u < 1.0f && d_min < m->spec->msl_splash * 2.5f) {
+                    bool hit = d_min < m->spec->msl_splash;
+                    if (hit) {
+                        float dmg = impact_damage(m, d_min);
+                        if (m->target < 0) {
+                            vg_damage_player(dmg);
+                        } else {
+                            bool was_alive = vg.enemy[m->target].alive;
+                            hit_enemy(m->target, dmg);
+                            const bool killed = was_alive && !vg.enemy[m->target].alive;
+                            if (m->from_player)
+                                report(killed ? MSL_DESTROYED : MSL_HIT);
+                        }
+                    }
+                    detonate(m, hit);
+                    continue;
+                }
             }
-            m->last_range = range;
+            m->last_rel  = to;
+            m->have_last = true;
         }
 
         m->pos = vadd(m->pos, vmul(m->dir, m->spec->msl_speed * dt));
@@ -223,7 +249,15 @@ void vg_update_missiles(float dt) {
         // expires -- especially a BALLISTA's, which burns for eighteen seconds --
         // and this path just switched it off without ever telling the player
         // what happened to it.
-        if (vlen2(m->pos) > CULL_RADIUS * CULL_RADIUS) {
+        // THE ENVELOPE FOLLOWS THE CLASS THAT FIRED IT. A flat 4200 is right for
+        // asteroids, which are scenery, and wrong for a round whose whole identity
+        // is reach: BALLISTA locks at 4200, so a flat cull deleted its shot at the
+        // moment it arrived. 1.4x is the pursuit-curve allowance -- a seeker flies
+        // an arc, not a chord -- and the floor keeps every other class exactly
+        // where it was.
+        float lim = m->spec->lock_range * 1.4f;
+        if (lim < CULL_RADIUS) lim = CULL_RADIUS;
+        if (vlen2(m->pos) > lim * lim) {
             if (m->from_player) report(MSL_MISSED);
             m->alive = false;
         }
