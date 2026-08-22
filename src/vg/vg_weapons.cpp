@@ -32,41 +32,52 @@ void vg_threat_clear(void) {
 // Acquire and hold a lock on whichever live enemy is nearest the nose, provided
 // it stays inside the cone long enough.
 void vg_update_lock(float dt) {
-    // IF YOU CAN SEE IT, YOU CAN HOLD IT -- for a class that asks for it.
+    // ACQUIRE IN THE CONE, HOLD IN THE VIEWPORT.
     //
-    // lock_cos below -1 is not a cone. A cosine can never reach -2, so that is the
-    // honest way to spell "the viewport instead", the same idiom msl_reacq_cos uses
-    // for "never". Everything else keeps its cone.
+    // These are two different questions and they were being answered by one test.
+    // Acquiring is the aim -- put the nose on them and the shot exists, which is
+    // the whole of what a sniper is asked to do. Holding only asks whether you
+    // have lost them, and a ship that has drifted to the corner of the canopy has
+    // not been lost: it is right there.
     //
-    // A cone was never the same shape as the screen. FOCAL is 400 on a 480 px
-    // panel, so the nose cone at 0.86 is cos(31 deg) -- exactly the screen's half
-    // WIDTH, which makes it the circle INSCRIBED in the viewport. A target in a
-    // corner sits 40 degrees out: plainly visible, comfortably outside the lock,
-    // and the pilot is left holding a ship in view that the game says it cannot
-    // see. For a sniper whose whole requirement is aim, that gap is the mechanic
-    // failing rather than the aim.
+    // Judged by one cone, one of the two always breaks. A cone tight enough to be
+    // an aiming requirement drops targets that are plainly visible; a window wide
+    // enough to keep them makes the aim free, which is what the last build did --
+    // point roughly, fire, win.
     //
     // Tested in the ship's own frame rather than the camera's, so ROLL does not
     // decide it. Banking the picture should not drop a lock.
-    const bool viewport = (vg.spec->lock_cos < -1.0f);
-
     int   best   = -1;
-    float best_c = viewport ? -2.0f : vg.spec->lock_cos;
+    float best_c = -2.0f;
 
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];
         if (!s->alive) continue;
         float range = vlen(s->pos);
         if (range > vg.spec->lock_range || range < 1.0f) continue;
-        if (viewport) {
-            if (s->pos.z <= NEAR_Z) continue;             // behind the canopy
-            const float inv = FOCAL / s->pos.z;
-            if (fabsf(s->pos.x * inv) > SCR_W * 0.5f) continue;
-            if (fabsf(s->pos.y * inv) > SCR_H * 0.5f) continue;
-        }
-        // Still ranked by how near the nose it is, so the pick is unchanged when
-        // two are eligible -- only the eligibility test moved.
         float c = vdot(vnorm(s->pos), v3(0, 0, 1));   // player looks down +z
+
+        // The held target is judged by the hold rule; everything else has to be
+        // acquired, every time. So a lock that breaks costs the nose to get back,
+        // which is what puts the choice between dodging and shooting back in.
+        const bool holding = (i == vg_wpn.target && vg_wpn.locked);
+        bool ok;
+        if (!holding) {
+            ok = (c > vg.spec->lock_cos);
+        } else if (vg.spec->lock_hold_cos < -1.0f) {
+            ok = false;
+            if (s->pos.z > NEAR_Z) {
+                const float inv = FOCAL / s->pos.z;
+                ok = fabsf(s->pos.x * inv) <= SCR_W * 0.5f
+                  && fabsf(s->pos.y * inv) <= SCR_H * 0.5f;
+            }
+        } else {
+            ok = (c > vg.spec->lock_hold_cos);
+        }
+        if (!ok) continue;
+
+        // Still ranked by how near the nose it is, so the pick between two
+        // eligible targets is unchanged -- only the eligibility test moved.
         if (c > best_c) { best_c = c; best = i; }
     }
 

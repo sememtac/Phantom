@@ -97,15 +97,24 @@ struct ShipSpec {
     // away the counter, and what forces the choice between dodging and holding
     // the nose on target.
     //
-    // BELOW -1 IS NOT A CONE. A cosine cannot reach -2, so that is the honest way
-    // to spell "the viewport instead" -- the lock holds for as long as the target
-    // is on screen. The same idiom as msl_reacq_cos's 2.0f for "never".
-    //
-    // The two are not interchangeable and a cone is not the smaller of them. At
-    // FOCAL 400 on a 480 px panel the screen's half width is 31 degrees, so the
-    // usual 0.86 cone is the circle INSCRIBED in the viewport: a ship in a corner
-    // is 40 degrees out, plainly visible, and outside the lock.
     float lock_cos;
+    // ...and the cone it is HELD in once acquired, which is a different question
+    // and now a different number.
+    //
+    // ACQUIRING AND HOLDING ARE NOT THE SAME SKILL. Acquiring is the aim: put the
+    // nose on them and the shot exists. Holding is only asking whether you have
+    // lost them, and a ship drifting to the corner of the canopy has not been
+    // lost -- it is right there, in plain view. Judging both with one cone means
+    // either the aim is free or a visible target reads as gone.
+    //
+    // BELOW -1 IS NOT A CONE. A cosine cannot reach -2, so that is the honest way
+    // to spell "the viewport instead" -- held for as long as it is on screen. Same
+    // idiom as msl_reacq_cos's 2.0f for "never". At FOCAL 400 on a 480 px panel a
+    // 0.86 cone is the circle INSCRIBED in the viewport, so a corner is 40 degrees
+    // out: visible, and outside the cone. That gap is what this closes.
+    //
+    // Set it equal to lock_cos for a class that should not tell them apart.
+    float lock_hold_cos;
     float lock_range;
     float lock_time;           // seconds in the nose cone, at low speed
     int   magazine;            // rounds per clip
