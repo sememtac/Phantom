@@ -150,7 +150,12 @@ uint32_t vg_rast_ln_px(void);
 uint32_t vg_rast_ln_n(void);
 // The baked canopy alone. Split out of `oth`, which is a bucket that also holds glyphs
 // and fills and therefore moves with how busy the fight is.
+// WALL CLOCK, all of them. Each is the sum over bands of what the SLOWER core spent on
+// that type, so they can be compared with `rast` and with each other. They used to be
+// both cores added together, which made `can` plus `prim` exceed the `rast` containing
+// them. vg_rast_can_both_us is the old sum, kept for the split's own balance question.
 uint32_t vg_rast_can_us(void);
+uint32_t vg_rast_can_both_us(void);
 // HOW HARD THE WALL WARNING IS RUNNING, 0 to 100. Not a time -- see the note at its
 // definition, where it has been three different wrong things.
 uint32_t vg_rast_tint_us(void);

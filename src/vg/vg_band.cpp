@@ -652,6 +652,29 @@ static uint32_t s_cyc_can[2];
 // to say, fills with the instruments drawn.
 static uint32_t s_cyc_pt[2], s_cyc_gl[2], s_cyc_fl[2];
 
+// THE SAME EIGHT, ON THE FRAME'S OWN CLOCK.
+//
+// Every counter above is a SUM over both cores, because the primitive loop forks and
+// each half bills its own. That is the right number for "how much work was done" and
+// the WRONG one for "how long did the frame take", and the two were being read
+// interchangeably: `can` plus `prim` came to 14,903 us inside a `rast` of 9,790, which
+// is not a contradiction, it is two clocks. Every "rast minus its parts" subtraction in
+// this project rested on it, including the hunt for the twelve missing milliseconds on
+// the entry frames -- which is what finally made this worth fixing.
+//
+// A band's WALL cost from a type is what the SLOWER core spent on it, because the other
+// core was busy at the same time. So the deltas are taken per band, across the fork, and
+// the larger one is kept. Summing the maxima over bands is right where taking the
+// maximum of the sums would not be: the halves swap which is slower band to band.
+//
+// The sums stay. They answer the question they were built for -- how the two cores
+// divide, which is what the split nudge balances on -- and they are what `can` on the
+// telemetry line has always meant.
+static uint32_t s_wall_cyc[8];
+static uint32_t* const CYC_ALL[8] = { s_cyc_aa, s_cyc_ln, s_cyc_tri, s_cyc_oth,
+                                      s_cyc_can, s_cyc_pt, s_cyc_gl, s_cyc_fl };
+enum { W_AA = 0, W_LN, W_TRI, W_OTH, W_CAN, W_PT, W_GL, W_FL };
+
 // WHAT THE PRIMITIVE PASS'S SPLIT IS ACTUALLY DOING.
 //
 // These wrapped the canopy case alone when the canopy was the only primitive that
@@ -664,17 +687,19 @@ static uint32_t s_cyc_pt[2], s_cyc_gl[2], s_cyc_fl[2];
 // wait >> half means the helper is, and it is too low.
 // Both small against `prim` means the rendezvous itself is the cost.
 static uint32_t s_can_half = 0, s_can_wait = 0, s_can_at = 0, s_can_n = 0;
-uint32_t vg_rast_aa_us(void)   { return (s_cyc_aa[0]  + s_cyc_aa[1])  / 240u; }
-uint32_t vg_rast_ln_us(void)   { return (s_cyc_ln[0]  + s_cyc_ln[1])  / 240u; }
-uint32_t vg_rast_tri_us(void)  { return (s_cyc_tri[0] + s_cyc_tri[1]) / 240u; }
-uint32_t vg_rast_oth_us(void)  { return (s_cyc_oth[0] + s_cyc_oth[1]) / 240u; }
-uint32_t vg_rast_can_us(void)  { return (s_cyc_can[0] + s_cyc_can[1]) / 240u; }
+uint32_t vg_rast_aa_us(void)   { return s_wall_cyc[W_AA]  / 240u; }
+uint32_t vg_rast_ln_us(void)   { return s_wall_cyc[W_LN]  / 240u; }
+uint32_t vg_rast_tri_us(void)  { return s_wall_cyc[W_TRI] / 240u; }
+uint32_t vg_rast_oth_us(void)  { return s_wall_cyc[W_OTH] / 240u; }
+uint32_t vg_rast_can_us(void)  { return s_wall_cyc[W_CAN] / 240u; }
+// Both cores' canopy work added together -- the split's own question, not the frame's.
+uint32_t vg_rast_can_both_us(void) { return (s_cyc_can[0] + s_cyc_can[1]) / 240u; }
 uint32_t vg_rast_canhalf_us(void) { return s_can_half / 240u; }
 uint32_t vg_rast_canwait_us(void) { return s_can_wait / 240u; }
 int      vg_rast_can_split(void)  { return s_can_n ? (int)(s_can_at / s_can_n) : -1; }
-uint32_t vg_rast_pt_us(void)   { return (s_cyc_pt[0]  + s_cyc_pt[1])  / 240u; }
-uint32_t vg_rast_gl_us(void)   { return (s_cyc_gl[0]  + s_cyc_gl[1])  / 240u; }
-uint32_t vg_rast_fl_us(void)   { return (s_cyc_fl[0]  + s_cyc_fl[1])  / 240u; }
+uint32_t vg_rast_pt_us(void)   { return s_wall_cyc[W_PT]  / 240u; }
+uint32_t vg_rast_gl_us(void)   { return s_wall_cyc[W_GL]  / 240u; }
+uint32_t vg_rast_fl_us(void)   { return s_wall_cyc[W_FL]  / 240u; }
 uint32_t vg_rast_ln_px(void)   { return s_ln_px[0] + s_ln_px[1]; }
 uint32_t vg_rast_ln_n(void)    { return s_ln_n[0]  + s_ln_n[1]; }
 
@@ -1442,6 +1467,10 @@ draw_band(int band_index, uint16_t* band) {
     // only a measurement knows by how much. r0 carries the band's true top row
     // for the line clip; see RS_PRIM at the op enum.
     const int at = vg_canopy_split_at(band_index);
+    // Both cores' counters as they stand, so this band's share can be told from the
+    // running totals after the join -- see s_wall_cyc.
+    uint32_t snap[8][2];
+    for (int i = 0; i < 8; i++) { snap[i][0] = CYC_ALL[i][0]; snap[i][1] = CYC_ALL[i][1]; }
     const bool split = rowsplit_start(RS_PRIM, band + at * SCR_W, by0 + at, by0, by1);
     const uint32_t ch0 = esp_cpu_get_cycle_count();
     band_prims(band, by0, split ? by0 + at - 1 : by1, by0, by1);
@@ -1451,6 +1480,13 @@ draw_band(int band_index, uint16_t* band) {
     s_can_wait += esp_cpu_get_cycle_count() - ch1;
     s_can_at   += (uint32_t)(split ? at : BAND_H);
     s_can_n++;
+    // The slower half is what the band actually waited for. With no split the helper's
+    // delta is zero and the maximum is simply this core's, which is also correct.
+    for (int i = 0; i < 8; i++) {
+        const uint32_t d0 = CYC_ALL[i][0] - snap[i][0];
+        const uint32_t d1 = CYC_ALL[i][1] - snap[i][1];
+        s_wall_cyc[i] += (d0 > d1) ? d0 : d1;
+    }
 
     s_prim_us += micros() - t_prim;
 }
@@ -1558,6 +1594,7 @@ void vg_rast_flush(void) {
     s_sky_us = s_prim_us = s_scan_us = 0;
     for (int c = 0; c < 2; c++) {
         s_cyc_aa[c] = s_cyc_ln[c] = s_cyc_tri[c] = s_cyc_oth[c] = s_cyc_can[c] = 0;
+        for (int i = 0; i < 8; i++) s_wall_cyc[i] = 0;
         s_cyc_pt[c] = s_cyc_gl[c] = s_cyc_fl[c] = 0;
         s_ln_px[c] = s_ln_n[c] = 0;
     }
