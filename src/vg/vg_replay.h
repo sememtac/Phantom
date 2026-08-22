@@ -66,8 +66,12 @@ bool vg_replay_report_cost(void);
 
 // One frame's raster cost, handed over by the frame loop while a timed replay runs.
 // Ignored otherwise. Summed and reported when the replay ends.
+// `scan` and `tv` came late and go on the end rather than beside `prim`, so the order
+// of the five the frame loop has always passed does not move. tv is the part of scan
+// that was the transition -- a subset of it, not a sixth term of the raster.
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
-                         uint32_t sub, uint32_t upd);
+                         uint32_t sub, uint32_t upd,
+                         uint32_t scan, uint32_t tv);
 
 // The same frame's `world` split -- see g_w_motes in vg_prof.h. Separate from the call
 // above because it answers a different question: that one is "what does a frame cost",

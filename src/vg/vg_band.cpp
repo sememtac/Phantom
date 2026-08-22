@@ -624,6 +624,19 @@ static inline void band_scanlines(uint16_t* band, int by0, int r0, int r1) {
 // against a constant backdrop cost. So measure all three.
 static uint32_t s_sky_us = 0, s_prim_us = 0, s_scan_us = 0;
 
+// AND WHAT `scan` IS ACTUALLY MADE OF. The window s_scan_us times covers two passes,
+// not one: band_scanlines over every band, and vg_tv_band, which is behind
+// vg_tv_active() and so runs only during a transition. That mattered the moment `scan`
+// read 1,008 us mean against 11,661 worst, because the two cannot both be that number:
+// band_scanlines is BRANCHLESS since the sphere backdrop lit most of the frame, so it
+// does the same work on a black band as a white one and cannot vary elevenfold, while
+// vg_tv_band is a full-band pass that is NOT row-split -- one core walks every row.
+//
+// s_tv_us is a SUBSET of s_scan_us, not a sibling of it. The invariant the telemetry
+// rests on stays `rast` = sky + prim + scan; this only says how much of the scan was
+// the set turning on.
+static uint32_t s_tv_us = 0;
+
 // The prim stage broken down by TYPE, in CPU cycles read off CCOUNT -- a
 // micros() pair per primitive would cost more than some of the primitives.
 // This exists because "prim 9.3ms" names a stage, not a culprit: whether that
@@ -708,6 +721,7 @@ uint32_t vg_rast_ln_n(void)    { return s_ln_n[0]  + s_ln_n[1]; }
 uint32_t vg_rast_sky_us(void)  { return s_sky_us; }
 uint32_t vg_rast_prim_us(void) { return s_prim_us; }
 uint32_t vg_rast_scan_us(void) { return s_scan_us; }
+uint32_t vg_rast_tv_us(void)   { return s_tv_us; }
 
 // ===========================================================================
 // THE ROW SPLIT: half a band on each core
@@ -760,7 +774,8 @@ static_assert(ROW_SPLIT % 2 == 0, "row split must not straddle a backdrop pair")
 //
 // RS_CANOPY (2) is gone: the outer RS_PRIM fork owns the canopy's split now, so
 // nothing ever started a canopy row split -- see the PRIM_CANOPY case in band_prims.
-enum { RS_SKY = 0, RS_SCAN = 1, RS_PREP = 3, RS_PRIM = 4 };
+// RS_TV took the empty slot, and it is a plain row split like RS_SCAN beside it.
+enum { RS_SKY = 0, RS_SCAN = 1, RS_TV = 2, RS_PREP = 3, RS_PRIM = 4 };
 
 // Forward: the primitive loop is a row-splittable job too, and it is the largest of
 // them. Declared here because the helper task below dispatches to it. The attributes
@@ -783,6 +798,7 @@ static void rowsplit_task(void*) {
         if      (s_rs.op == RS_SKY)    vg_sky_fill_rows(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_PREP)   vg_sky_prep_bands(s_rs.r0, s_rs.r1);
         else if (s_rs.op == RS_PRIM)   band_prims(s_rs.band, s_rs.by0, s_rs.r1, s_rs.r0, s_rs.r1);
+        else if (s_rs.op == RS_TV)     vg_tv_band(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         else                           band_scanlines(s_rs.band, s_rs.by0, s_rs.r0, s_rs.r1);
         xSemaphoreGive(s_rs_done);
     }
@@ -1591,7 +1607,7 @@ void vg_rast_flush(void) {
     uint32_t raster = 0;
     s_push_us = s_over_us = 0;
     s_over_n  = 0;
-    s_sky_us = s_prim_us = s_scan_us = 0;
+    s_sky_us = s_prim_us = s_scan_us = s_tv_us = 0;
     for (int c = 0; c < 2; c++) {
         s_cyc_aa[c] = s_cyc_ln[c] = s_cyc_tri[c] = s_cyc_oth[c] = s_cyc_can[c] = 0;
         for (int i = 0; i < 8; i++) s_wall_cyc[i] = 0;
@@ -1659,7 +1675,20 @@ void vg_rast_flush(void) {
         // Last of all. The set turning off takes the whole picture with it --
         // scanlines, tint, instruments and all -- because it is the display
         // going away rather than another layer drawn on top of it.
-        if (vg_tv_active()) vg_tv_band(buf, b * BAND_H);
+        // TIMED INSIDE THE TEST, so a frame with no transition pays for no reading at
+        // all. Still inside the scan window above it, which is what keeps s_tv_us a
+        // subset of s_scan_us rather than a second thing to add on.
+        // SPLIT ACROSS BOTH CORES, the same way the scanlines above it are. Every row of
+        // this pass depends on its own y alone, so the halves are the whole -- and it was
+        // the only thing in the frame doing full-band per-pixel work on one core. It cost
+        // 10.3 ms of a 16.4 ms raster on the entry frames, which was the tail.
+        if (vg_tv_active()) {
+            const uint32_t t_tv = micros();
+            const bool split = rowsplit_start(RS_TV, buf, b * BAND_H, ROW_SPLIT, BAND_H);
+            vg_tv_band(buf, b * BAND_H, 0, split ? ROW_SPLIT : BAND_H);
+            if (split) rowsplit_wait();
+            s_tv_us += micros() - t_tv;
+        }
         s_scan_us += micros() - t_scan;
         const uint32_t dr = micros() - r0;
         raster += dr;
@@ -1691,6 +1720,7 @@ void vg_rast_flush(void) {
         s_push_us += micros() - p0;
     }
 
+    vg_crumb(CRUMB_FEND, 0);
     vg_capture_frame_end();
     s_raster_us = raster;
 

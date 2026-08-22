@@ -171,6 +171,8 @@ static int s_outstanding = 0;
 
 // Reap exactly one. The driver returns them in the order they were queued.
 uint32_t g_panel_wedges = 0;
+// Consecutive reap timeouts. Reset by any reap that succeeds -- see panel_reap.
+static int s_wedge_run = 0;
 
 static void panel_reap(void) {
     if (s_outstanding <= 0) return;
@@ -205,6 +207,25 @@ static void panel_reap(void) {
         // die anyway on the way out.
         g_panel_wedges++;
         esp_task_wdt_reset();
+
+        // AND THE COUNT STAYS UP, which is the whole of the crash this file spent four
+        // records on. `s_outstanding` means "transactions the driver still owes us". A
+        // timeout does not retrieve one -- spi_device_get_trans_result returned nothing,
+        // so the driver still owns that slot -- and decrementing here told us there was
+        // room in a queue that was full. devcfg.queue_size is 2, so ONE of these was
+        // enough: the next push called spi_device_queue_trans, which waits forever and
+        // feeds no watchdog, and the record read "died in flush-push" ten seconds later.
+        //
+        // Left standing, the count self-heals: a transfer that is merely late is returned
+        // by the next reap and decremented then, exactly once.
+        //
+        // GIVING UP IS STILL ALLOWED, or a transfer that never completes turns
+        // vg_panel_wait into a permanent loop -- alive, and never drawing again. Two
+        // consecutive failures is four seconds, and the transfer is written off.
+        if (++s_wedge_run < 2) return;
+        s_wedge_run = 0;
+    } else {
+        s_wedge_run = 0;
     }
     s_outstanding--;
 }
@@ -255,7 +276,17 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     // Queue and return: the caller now rasterises the next band into its other
     // buffer while this one is on the wire. This is the whole point -- the CPU
     // used to busy-wait through all 11.5 ms of transfer per frame.
-    if (spi_device_queue_trans(s_spi, t, portMAX_DELAY) == ESP_OK) s_outstanding++;
+    // BOUNDED, for the same reason the reap above it is. This was portMAX_DELAY, and it
+    // is the one wait in the whole push path that fed no watchdog: when the queue was
+    // full and stayed full, the loop task stopped here and the board reset. A full queue
+    // is now a DROPPED BAND -- a stripe of the previous frame left on the panel -- which
+    // is what "degrade rather than die" has meant everywhere else in this file.
+    if (spi_device_queue_trans(s_spi, t, pdMS_TO_TICKS(2000)) == ESP_OK) {
+        s_outstanding++;
+    } else {
+        g_panel_wedges++;
+        esp_task_wdt_reset();
+    }
 }
 
 static void panel_clear(void) {

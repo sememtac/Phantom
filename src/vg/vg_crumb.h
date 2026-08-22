@@ -32,6 +32,15 @@ enum VgCrumb : uint8_t {
     CRUMB_FDRAW,     // drawing a band's primitives
     CRUMB_FSCAN,     // scanlines, tint, tv over a finished band
     CRUMB_FPUSH,     // queueing the band to the panel
+    // AND THE TAIL, added for the same reason the flush sub-phases were: a watchdog
+    // that reported "flush-push, band 14" was read as the push, and band 14 is simply
+    // the LAST crumb a frame writes -- so it named everything from the final push to
+    // the next loop's dog feed. That is the flush tail, the warp build, the telemetry
+    // and the rest of loop(). Three regions reported as one, and the fix aimed at the
+    // push changed nothing because the push was never where it died.
+    CRUMB_FEND,      // after the last band: capture end, the flush's own tail
+    CRUMB_TAIL,      // loop() after the flush: warp build, housekeeping
+    CRUMB_TELEM,     // ...and the two-second telemetry write, on its own
     CRUMB_SLOTS
 };
 

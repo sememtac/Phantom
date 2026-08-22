@@ -1,5 +1,6 @@
 #include "vg_tv.h"
 #include "cfg_display.h"
+#include "esp_attr.h"   // IRAM_ATTR, and see vg_tv_band
 #include <string.h>
 
 #include "vg_states.h"
@@ -248,8 +249,16 @@ static inline void tv_span(uint16_t* row, int x0, int x1, int s, uint16_t wash) 
 // logical (lx,ly) lands at panel (ly, H-1-lx) and a whole buffer row is a logical
 // COLUMN. The first version of this effect ran sideways for exactly that reason.
 // ---------------------------------------------------------------------------
-void vg_tv_band(uint16_t* band, int by0) {
-    (void)by0;
+// IN IRAM, and it is a CONTENTION fix rather than a fetch one -- measured. Single-core
+// this pass ran the same from flash as from IRAM (~1%, noise). Once BOTH cores run it at
+// once, the same attribute is worth 12%: what they were competing for was the 16 KB
+// instruction cache, which is the shape the primitive split measured as +1,206 us from
+// flash and the canopy as -1,602 us moving out of it.
+//
+// The span helper stays INLINE. Marking it noinline to keep one copy in IRAM measured
+// WORSE than flash -- 10,739 us to 12,321 on frame 423 -- because inlining is what lets
+// the compiler hoist the `s` and `wash` tests out of the pixel loop.
+void IRAM_ATTR vg_tv_band(uint16_t* band, int by0, int r0, int r1) {
 
     // A six-level shift would band visibly across a fade this short, so the
     // fractional level is dithered by row -- adjacent rows sit either side of the
@@ -284,7 +293,7 @@ void vg_tv_band(uint16_t* band, int by0) {
     if (s_tv_wash > 0.0f && wp < 1.5f) wp = 1.5f;
     const int rlo = (int)(hhalf - wp), rhi = (int)(hhalf + wp);
 
-    for (int r = 0; r < BAND_H; r++) {
+    for (int r = r0; r < r1; r++) {
         uint16_t* row = band + r * SCR_W;
         const int y   = by0 + r;
 
@@ -313,7 +322,7 @@ void vg_tv_band(uint16_t* band, int by0) {
     if (clo < 0) clo = 0;
     if (chi > SCR_W) chi = SCR_W;
 
-    for (int r = 0; r < BAND_H; r++) {
+    for (int r = r0; r < r1; r++) {
         const int y   = by0 + r;
         uint16_t* row = band + r * SCR_W;
         if (y < lo || y >= hi) { memset(row, 0, SCR_W * 2); continue; }

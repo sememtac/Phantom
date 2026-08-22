@@ -121,7 +121,27 @@ void setup(void) {
     //
     // The long timeout is correct only while a capture is running, and only then
     // is a host actually reading. vg_capture_set() raises it and lowers it again.
-    Serial.setTxTimeoutMs(0);
+    // ONE, NOT ZERO, AND ZERO IS THE BUG. Read HWCDC::write before changing this.
+    //
+    // The driver's inner loop keeps `uint32_t tries = tx_timeout_ms` as its escape from a
+    // ring that is not draining: every iteration that makes no progress does `tries--`
+    // and `delay(1)`, and at `tries == 0` it declares the host gone and gives up. Setting
+    // the timeout to zero starts that counter AT zero, so the first no-progress iteration
+    // underflows it to 4,294,967,295 and the escape can never fire. The write then spins
+    // on delay(1) for about seven weeks.
+    //
+    // Which is what a task watchdog at ten seconds calls a reset. It needs the ring FULL
+    // and the port enumerated but unread -- a board plugged into a PC with no terminal
+    // open, which is every normal session -- and the 16 KB ring takes about forty seconds
+    // of two-second telemetry to fill. Frames 2410, 2691, 2696, 2700, 2701 and 2714
+    // across six crashes, all in that window, and never once while a tool held the port,
+    // because a tool reading the port is a tool draining the ring.
+    //
+    // Zero was put here to fix the opposite fault -- a 5000 ms timeout froze the game for
+    // five seconds at a time once the ring filled -- and the note above is still right
+    // about that. It just picked the one value that turns a five-second freeze into a
+    // permanent one. One millisecond is the smallest value that still counts down.
+    Serial.setTxTimeoutMs(1);
 
     // Room for more than one replay record in flight, so the host can keep the
     // next frame queued while the device is still sending the current one.
@@ -422,6 +442,9 @@ void loop(void) {
     // group B, where it spiked to 1,175 us on a throttle step and made core 1 wait.
     { const uint32_t t_w = micros(); vg_canopy_warp_build(); g_sub_warp = micros() - t_w; }
     uint32_t t4 = micros();
+    // Everything from here to the dog feed at the top of the next loop() used to be
+    // reported as "flush-push, band 14". See CRUMB_FEND.
+    vg_crumb(CRUMB_TAIL, (uint8_t)vg.state);
 
     // The rate the FRAME went out at, not the sub-step rate -- sub-steps are an
     // implementation detail of a long frame and would read as a speed-up.
@@ -573,7 +596,7 @@ void loop(void) {
 
     if (vg_replay_timed()) {
         vg_replay_note_cost(vg_rast_can_us(), vg_rast_raster_us(), vg_rast_prim_us(),
-                            t3 - t2, t2 - t1);
+                            t3 - t2, t2 - t1, vg_rast_scan_us(), vg_rast_tv_us());
         // AND WHAT THE BLIT WAS DOING, from the same read of the same counters. `push` is
         // the CPU stopped against a full SPI queue and `over` is the part of the raster
         // that outran its band's window -- between them they say whether the wire is
@@ -647,7 +670,16 @@ void loop(void) {
     // frame does not even pay for formatting one nobody can receive.
     const bool win = !vg_capture_active() && vg_replay_mode() == VG_RP_OFF
                    && ms - report_ms >= 2000;
-    if (win && Serial.availableForWrite() > 256) {
+    // ROOM FOR THE WHOLE REPORT, not for a token 256 bytes of it. This block writes
+    // about a kilobyte across eight calls, so a 256-byte check passed and then handed the
+    // rest to the driver's full-ring path -- the one that had to be escaped from. Asking
+    // for the whole thing means a full ring costs a dropped line here and nothing at all
+    // in the driver.
+    if (win && Serial.availableForWrite() > 2048) {
+        // ON ITS OWN CRUMB. The guard checks for 256 bytes once and then writes about a
+        // kilobyte, so it does not prove the write cannot block -- it only proves the
+        // ring was not completely full when we asked.
+        vg_crumb(CRUMB_TELEM, (uint8_t)vg.state);
         uint8_t pmu_seen[3];
         vg_pmu_seen(pmu_seen);
         // blit is now fully accounted: wait is the previous frame's last transfer
@@ -903,6 +935,7 @@ void loop(void) {
             Serial.printf("        slice peak/cap = %s\n", row);
         }
         ft_skip_next = true;
+        vg_crumb(CRUMB_TAIL, (uint8_t)vg.state);
     }
 
     // The window closes on time whether or not the report went out -- which is

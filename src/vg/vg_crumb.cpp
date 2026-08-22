@@ -41,6 +41,18 @@ static RTC_NOINIT_ATTR uint32_t s_crash_state;
 // resets, so the reset reason and the breadcrumb both stay silent while the
 // player watches a dead screen and quite reasonably calls it a crash. This is
 // the only thing that would catch one.
+// EVERY BOOT'S REASON, not just the ones that count as crashes.
+//
+// A restart whose reason is POWERON, SW, EXT or USB is treated as clean and writes no
+// record at all, so a board that is quietly restarting every twenty seconds looks exactly
+// like a board that has been up the whole time -- the only trace is the frame counter
+// starting over, and nothing prints that unless someone asks.
+//
+// It cannot be caught by watching the port either: the restarts only happen when NOTHING
+// is reading, and attaching a reader is what stops them. So the device remembers instead.
+// Eight reasons, four bits each, newest in the low nibble.
+static RTC_NOINIT_ATTR uint32_t s_reason_hist;
+
 static RTC_NOINIT_ATTR uint32_t s_stall_ms;
 static RTC_NOINIT_ATTR uint32_t s_stall_state;
 static RTC_NOINIT_ATTR uint32_t s_stall_where;
@@ -52,7 +64,8 @@ struct CrashRec {
 
 static const char* const CRUMB_NAME[CRUMB_SLOTS] = {
     "boot", "poll", "input", "update", "render", "flush",
-    "flush-wait", "flush-draw", "flush-scan", "flush-push"
+    "flush-wait", "flush-draw", "flush-scan", "flush-push",
+    "flush-end", "tail", "telem"
 };
 
 // Kept next to the enum in vg_game.h. Duplicated on purpose: this file must not
@@ -94,6 +107,7 @@ static void detail_str(char* buf, size_t n, uint32_t where, uint32_t val) {
             snprintf(buf, n, ", band %u", (unsigned)val);
             break;
         case CRUMB_FWAIT:
+        case CRUMB_FEND:
         case CRUMB_BOOT:
             buf[0] = '\0';                     // neither, and 0 is not ATTRACT
             break;
@@ -175,6 +189,20 @@ void vg_crumb_report(void) {
     Serial.printf("reset reason: %d\n", (int)r);
 
     const bool cold  = (s_magic != CRUMB_MAGIC);
+    // Pushed BEFORE anything can return, so the history is complete even on a cold boot.
+    if (cold) s_reason_hist = 0;
+    s_reason_hist = (s_reason_hist << 4) | ((uint32_t)r & 0xFu);
+    {
+        char h[64];
+        int  at = 0;
+        for (int i = 0; i < 8 && at < (int)sizeof(h) - 4; i++) {
+            const uint32_t v = (s_reason_hist >> (i * 4)) & 0xFu;
+            if (!v) break;                    // 0 is not a reason; nothing older
+            at += snprintf(h + at, sizeof(h) - at, "%lu ", (unsigned long)v);
+        }
+        h[at > 0 ? at - 1 : 0] = 0;
+        Serial.printf("crumb: recent resets (newest first): %s\n", h);
+    }
     const bool clean = (r == ESP_RST_POWERON || r == ESP_RST_USB
                         || r == ESP_RST_SW || r == ESP_RST_EXT);
 

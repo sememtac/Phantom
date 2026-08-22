@@ -57,7 +57,9 @@ bool vg_capture_want_detail(void) {
 // Replay owns this, because replay is what knows a session has started. It has
 // to be on before the first announce: the host waits for "PLAYING", and with
 // writes non-blocking that line was dropped and the render never began.
-void vg_link_blocking(bool on) { Serial.setTxTimeoutMs(on ? 5000 : 0); }
+// NOT ZERO on the way down -- see the note at Serial.setTxTimeoutMs in main.cpp. Zero
+// makes the driver's no-progress counter underflow and the write never returns.
+void vg_link_blocking(bool on) { Serial.setTxTimeoutMs(on ? 5000 : 1); }
 
 // NOTHING WRITES TO THE PORT WHILE A SESSION OWNS IT -- including the core.
 //

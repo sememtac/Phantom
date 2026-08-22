@@ -90,5 +90,11 @@ void vg_tv_set(float open, float wide, float wash, float dim);
 // entirely when this is false, which is what keeps the effect off the frame's bill.
 bool vg_tv_active(void);
 
-// One band, in place. Call only when vg_tv_active() -- it does not check.
-void vg_tv_band(uint16_t* band, int by0);
+// Rows [r0, r1) of one band, in place. Call only when vg_tv_active() -- it does not check.
+//
+// THE ROW RANGE IS THERE SO BOTH CORES CAN HAVE HALF. Every row of this pass depends on
+// its own absolute y and nothing else -- the dither reads ROWD[y & 3], the bar's extent
+// is a per-band constant -- so a range of rows produces exactly the pixels a whole-band
+// walk would put there. It measured 10.3 ms of a 16.4 ms raster on the transition into
+// the course, which was the whole of the tail the pilot was reporting.
+void vg_tv_band(uint16_t* band, int by0, int r0, int r1);

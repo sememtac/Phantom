@@ -249,6 +249,9 @@ int      vg_rast_join_n(void);
 uint32_t vg_rast_sky_us(void);
 uint32_t vg_rast_prim_us(void);
 uint32_t vg_rast_scan_us(void);
+// The part of `scan` that was the transition, which is zero on almost every frame --
+// see s_tv_us. A subset of the line above, not an addition to it.
+uint32_t vg_rast_tv_us(void);
 int      vg_rast_tri_count(void);
 // Scale an RGB565 colour per channel by f in [0,1]. Used for distance fade and
 // for fading debris out.

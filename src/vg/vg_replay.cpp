@@ -107,6 +107,11 @@ void vg_replay_note_bands(const uint32_t* band_us, int n) {
 // count of waits over 100 us, which says whether the tail is one event or a habit.
 static uint32_t s_cw_worst = 0, s_cw_frame = 0;
 static uint32_t s_cw_can = 0, s_cw_rast = 0, s_cw_prim = 0, s_cw_sub = 0, s_cw_upd = 0;
+// AND THE OTHER TWO THIRDS OF THE RASTER. `rast` is sky + prim + scan and only prim was
+// captured here, so a worst frame whose raster was scanlines said nothing about why --
+// which is exactly the frame 423 case, 15.9 ms of raster with the canopy at zero. `tv`
+// is the part of scan that was the transition, and is a subset of it.
+static uint32_t s_cw_scan = 0, s_cw_tv = 0;
 static uint32_t s_cw_over16 = 0, s_cw_over20 = 0;
 static uint32_t s_cw_upd_stage[11] = {0};
 // THE TAIL, NOT ITS MAXIMUM. One worst frame cannot describe a hundred slow ones,
@@ -120,6 +125,8 @@ static uint32_t s_top_sub[SLOW_TOP] = {0};
 static uint32_t s_top_rast[SLOW_TOP]= {0};
 static uint32_t s_top_can[SLOW_TOP] = {0};
 static uint32_t s_top_prim[SLOW_TOP]= {0};
+static uint32_t s_top_scan[SLOW_TOP]= {0};
+static uint32_t s_top_tv[SLOW_TOP]  = {0};
 // The five raster types for the worst frame. note_types runs AFTER note_cost in the
 // same frame, so note_cost raises this flag and note_types answers it.
 static bool     s_top_want = false;
@@ -310,20 +317,23 @@ bool vg_replay_report_cost(void) {
 
     // Which frame the pilot would have felt, and what it was made of.
     Serial.printf("vg_replay: SLOWEST %u us (%u fps) at frame %u -- upd %u sub %u rast %u"
-                  " (can %u prim %u) | %u frames under 60, %u under 50\n",
+                  " (can %u prim %u scan %u tv %u) | %u frames under 60, %u under 50\n",
                   (unsigned)s_cw_worst, (unsigned)(s_cw_worst ? 1000000u / s_cw_worst : 0),
                   (unsigned)s_cw_frame, (unsigned)s_cw_upd, (unsigned)s_cw_sub,
                   (unsigned)s_cw_rast, (unsigned)s_cw_can, (unsigned)s_cw_prim,
+                  (unsigned)s_cw_scan, (unsigned)s_cw_tv,
                   (unsigned)s_cw_over16, (unsigned)s_cw_over20);
     Serial.printf("vg_replay: FRAMES 60+ %u | 57-60 %u | 54-57 %u | 50-54 %u | under50 %u\n",
                   (unsigned)s_hist[0], (unsigned)s_hist[1], (unsigned)s_hist[2],
                   (unsigned)s_hist[3], (unsigned)s_hist[4]);
     for (int i = 0; i < SLOW_TOP; i++) {
         if (!s_top_ft[i]) break;
-        Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u (can %u prim %u)\n",
+        Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u"
+                      " (can %u prim %u scan %u tv %u)\n",
                       i, (unsigned)s_top_fr[i], (unsigned)s_top_ft[i],
                       (unsigned)(1000000u / s_top_ft[i]), (unsigned)s_top_upd[i],
-                      (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i], (unsigned)s_top_prim[i]);
+                      (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i],
+                      (unsigned)s_top_prim[i], (unsigned)s_top_scan[i], (unsigned)s_top_tv[i]);
     }
     Serial.printf("vg_replay: SLOWEST-TYPES aa %u ln %u tri %u gl %u fl %u"
                   "  -- the raster of the worst frame\n",
@@ -381,7 +391,8 @@ bool vg_replay_report_cost(void) {
 // Ranked on upd + sub + rast, which is the CPU that has to fit inside the transfer.
 
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
-                         uint32_t sub, uint32_t upd) {
+                         uint32_t sub, uint32_t upd,
+                         uint32_t scan, uint32_t tv) {
     if (!s_timed) return;
     const uint32_t v[5] = { can, rast, prim, sub, upd };
     for (int i = 0; i < 5; i++) {
@@ -403,16 +414,18 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
             s_top_upd[k] = s_top_upd[k - 1]; s_top_sub[k]  = s_top_sub[k - 1];
             s_top_rast[k]= s_top_rast[k - 1]; s_top_can[k] = s_top_can[k - 1];
             s_top_prim[k]= s_top_prim[k - 1];
+            s_top_scan[k]= s_top_scan[k - 1]; s_top_tv[k]  = s_top_tv[k - 1];
             k--;
         }
         s_top_ft[k] = ft; s_top_fr[k] = s_t_n;
         s_top_upd[k] = upd; s_top_sub[k] = sub; s_top_rast[k] = rast; s_top_can[k] = can;
-        s_top_prim[k] = prim;
+        s_top_prim[k] = prim; s_top_scan[k] = scan; s_top_tv[k] = tv;
         if (k == 0) s_top_want = true;   // the new leader wants its types
     }
     if (ft > s_cw_worst) {
         s_cw_worst = ft; s_cw_frame = s_t_n;
         s_cw_can = can; s_cw_rast = rast; s_cw_prim = prim; s_cw_sub = sub; s_cw_upd = upd;
+        s_cw_scan = scan; s_cw_tv = tv;
         // AND WHICH SPAN OF THE UPDATE. A printf here cannot survive a replay -- the
         // link owns the port -- so the stages are captured and printed with the rest
         // of the report. They reset per telemetry window rather than per frame, so
