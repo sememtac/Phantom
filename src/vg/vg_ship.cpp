@@ -11,7 +11,7 @@
 // clean hits, LANCE 4 clean but 17 if it keeps grazing, CHARIOT 10 out of a
 // twelve-round magazine, BALLISTA 3.
 
-const ShipSpec vg_ship_class[SHIP_CLASSES] = {
+constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
 
     // ---- AEGIS -- the shield -------------------------------------------------
     // The reference ship, and the one an average player should have a good time
@@ -21,8 +21,9 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 110.0f, /* shake */ 1.00f,
-        /* warhead    */ 20.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.50f, 2.0f,
-        /* fire ctrl  */ 1600.0f, 0.45f, 6, 0.50f, 5.0f,
+        /* warhead    */ 20.0f, 18.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.22f,
+        /* seeker     */ 0.50f, 2.0f, 0.9f,
+        /* fire ctrl  */ 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------
@@ -37,8 +38,9 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 95.0f,  /* shake */ 1.30f,
-        /* warhead    */ 32.0f, 0.20f, 340.0f, 2.50f, 10.0f, 0.50f, 2.0f,
-        /* fire ctrl  */ 1600.0f, 0.60f, 4, 0.55f, 6.5f,
+        /* warhead    */ 32.0f, 18.0f, 0.20f, 340.0f, 2.50f, 10.0f, 0.22f,
+        /* seeker     */ 0.50f, 2.0f, 0.9f,
+        /* fire ctrl  */ 0.86f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
 
     // ---- CHARIOT -- the speed ------------------------------------------------
@@ -56,8 +58,9 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 70.0f,  /* shake */ 1.70f,
-        /* warhead    */ 12.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.52f, 2.0f,
-        /* fire ctrl  */ 1300.0f, 0.25f, 12, 0.16f, 10.0f,
+        /* warhead    */ 12.0f, 18.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.22f,
+        /* seeker     */ 0.52f, 2.0f, 0.9f,
+        /* fire ctrl  */ 0.86f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
@@ -76,7 +79,29 @@ const ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 90.0f,  /* shake */ 0.55f,
-        /* warhead    */ 40.0f, 0.50f, 300.0f, 2.30f, 18.0f, 0.42f, -0.30f,
-        /* fire ctrl  */ 3400.0f, 1.30f, 3, 1.60f, 9.0f,
+        /* warhead    */ 40.0f, 18.0f, 0.50f, 300.0f, 2.30f, 18.0f, 0.22f,
+        /* seeker     */ 0.42f, -0.30f, 0.9f,
+        /* fire ctrl  */ 0.86f, 3400.0f, 1.30f, 3, 1.60f, 9.0f,
     },
 };
+
+// WHAT THE TABLE IS NOT ALLOWED TO SAY.
+//
+// The rows are POSITIONAL. A miscounted row does not fail to compile, it silently
+// reassigns every value after the mistake, and a short row zero-fills the tail --
+// which lands on msl_splash and msl_speed, both of which are divisors. These catch
+// that at build time instead of in a fight.
+//
+// The reach test is the one worth having. A class whose round cannot fly as far as
+// its own lock range will let the player earn a LOCK, fire, and watch the missile
+// expire on the way -- which reads as a broken weapon, not as a range limit. 1.4x
+// is the pursuit-curve allowance: a seeker flies an arc, not a chord.
+#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_ship_class[C].msl_speed * vg_ship_class[C].msl_life                             > vg_ship_class[C].lock_range * 1.4f,                                              #C " cannot reach its own lock range")
+
+SHIP_INVARIANTS(SHIP_AEGIS);
+SHIP_INVARIANTS(SHIP_LANCE);
+SHIP_INVARIANTS(SHIP_CHARIOT);
+SHIP_INVARIANTS(SHIP_BALLISTA);
+
+#undef SHIP_INVARIANTS
+

@@ -50,20 +50,53 @@ struct ShipSpec {
 
     // --- the warhead this ship launches --------------------------------------
     float msl_damage;          // hull points on a dead-centre detonation
+    // The fuse radius, and it does TWO jobs: inside it is a kill, and it is also
+    // the scale the falloff runs over -- a detonation at 0 does full damage, one
+    // out at the rim does msl_graze_floor of it.
+    //
+    // Wider is not automatically better and narrower is not automatically
+    // sharper. A missile closing head-on shuts the range at up to 760 units/sec,
+    // which is about 12 units per simulation step, so a radius near that figure
+    // gets stepped over between samples: the round arrives, the fuse never sees
+    // the inside of the sphere, and the player is told MISSED on a shot that
+    // looked perfect. A tight fuse is a real shooting demand; a fuse tighter than
+    // the simulation can resolve is a lie.
+    float msl_splash;
     float msl_graze_floor;     // fraction of that at the rim of the fuse radius
     float msl_speed;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
+    // Seconds off the rail before the lead solution is allowed to steer. NOT a
+    // safety arming delay -- the round can detonate at any age; what this gates
+    // is lead correction only. A fast round with a wide turn radius wants to
+    // leave straight, because the lead term will otherwise spend the only turn
+    // it has in the first tenth of a second.
+    float msl_arm_time;
 
     // The cone the bearing must stay inside for the lock to hold. Wider is not
     // better: a round that cannot be shaken is a round that is not a decision.
     float msl_seeker_cos;
     // ...and the cone it may RE-acquire through, after coasting ballistic for
-    // MISSILE_REACQ_DELAY. 2.0f means never, which is what a cosine can never
+    // msl_reacq_delay. 2.0f means never, which is what a cosine can never
     // reach and therefore the honest way to spell "this class does not come back".
     float msl_reacq_cos;
+    // How long it coasts before the seeker may try again. Long enough that the
+    // player gets the moment of having beaten it -- without that beat,
+    // re-acquisition would just read as a lock that never broke.
+    //
+    // Inert for any class whose msl_reacq_cos is the 2.0f sentinel. It is still
+    // set on all four on purpose: a class that later gains re-acquisition would
+    // otherwise silently inherit a zero delay, which is the unbreakable lock this
+    // whole mechanism exists to avoid.
+    float msl_reacq_delay;
 
     // --- fire control --------------------------------------------------------
+    // The nose cone the target must be inside to acquire, as a cosine. This is
+    // the "you must aim" half of every lock in the game, and for a class with no
+    // lock time at all it is the ONLY requirement -- which is what makes turning
+    // away the counter, and what forces the choice between dodging and holding
+    // the nose on target.
+    float lock_cos;
     float lock_range;
     float lock_time;           // seconds in the nose cone, at low speed
     int   magazine;            // rounds per clip

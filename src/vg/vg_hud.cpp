@@ -440,8 +440,19 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     // Against the speed-scaled requirement, so the brackets visibly stop closing
     // when you are going too fast to get a lock at all.
+    // GUARDED ON THE DIVISOR, NOT ON THE RESULT. A class with no lock time at all
+    // -- an instant-lock gun platform -- makes both of these zero, and 0/0 is NaN.
+    // The clamp below cannot be relied on to catch it: this builds with
+    // -ffast-math, which implies -ffinite-math-only, so the compiler is licensed
+    // to assume no NaN exists and fold the comparison away. The NaN would then
+    // reach the bracket radius and the integer casts under it, which on this
+    // rasteriser is a corrupt band rather than a crash -- and so would read as a
+    // drawing bug rather than as arithmetic.
+    //
+    // A lock that needs no time is simply always complete, so 1.0f is the honest
+    // answer: the bracket sits tight and LOCK appears the frame the cone closes.
     float need = (vg_wpn.lock_need > 0.01f) ? vg_wpn.lock_need : vg.spec->lock_time;
-    float prog = vg_wpn.lock_t / need;
+    float prog = (need > 0.0f) ? (vg_wpn.lock_t / need) : 1.0f;
     if (prog > 1.0f) prog = 1.0f;
 
     float base = sp.rpx;

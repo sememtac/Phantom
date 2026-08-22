@@ -33,7 +33,7 @@ void vg_threat_clear(void) {
 // it stays inside the cone long enough.
 void vg_update_lock(float dt) {
     int   best   = -1;
-    float best_c = PLAYER_LOCK_COS;
+    float best_c = vg.spec->lock_cos;
 
     for (int i = 0; i < MAX_ENEMIES; i++) {
         const Ship* s = &vg.enemy[i];

@@ -101,8 +101,11 @@ void vg_draw_select(void) {
         stat_bar(bx, y + 8,  bw, (s->speed_max - 300.0f) / 180.0f,  INK_BRIGHT);
         stat_bar(bx, y + 22, bw, s->hull / 120.0f,                  INK_BRIGHT);
         stat_bar(bx, y + 36, bw, s->msl_damage / 44.0f,             INK_BRIGHT);
+        // Guarded: reload is a divisor and a zero here would take the select
+        // screen out, which is the one place every class is drawn at once.
         stat_bar(bx, y + 50, bw,
-                 ((float)s->magazine / s->reload) / 9.0f,           INK_BRIGHT);
+                 s->reload > 0.0f ? ((float)s->magazine / s->reload) / 9.0f : 0.0f,
+                 INK_BRIGHT);
 
         vg_text(bx - 26, y + 7,  "SPD", INK, 1);
         vg_text(bx - 26, y + 21, "HUL", INK, 1);

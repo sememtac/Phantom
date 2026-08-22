@@ -92,7 +92,7 @@ static void detonate(Missile* m, bool hit) {
 // about shooting, and it applies symmetrically to the player's own aim.
 static float impact_damage(const Missile* m, float range) {
     const ShipSpec* w = m->spec;
-    float t = 1.0f - range / MISSILE_HIT_RADIUS;   // 1 at the centre, 0 at the rim
+    float t = (w->msl_splash > 0.0f) ? 1.0f - range / w->msl_splash : 1.0f;
     if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
     return w->msl_damage * (w->msl_graze_floor + (1.0f - w->msl_graze_floor) * t);
 }
@@ -142,7 +142,7 @@ void vg_update_missiles(float dt) {
         // twice, or three times; you just cannot beat it once and forget it.
         if (!m->locked && have_target && m->lost_at >= 0.0f
             && m->spec->msl_reacq_cos <= 1.0f
-            && (m->age - m->lost_at) > MISSILE_REACQ_DELAY) {
+            && (m->age - m->lost_at) > m->spec->msl_reacq_delay) {
             Vec3  to    = vsub(tpos, m->pos);
             float range = vlen(to);
             if (range > 1e-3f
@@ -170,7 +170,7 @@ void vg_update_missiles(float dt) {
                     // Lead pursuit: aim where the target will be, which is what
                     // bends the flight path into the arc you actually see.
                     Vec3 aim = tpos;
-                    if (m->age > MISSILE_ARM_TIME) {
+                    if (m->age > m->spec->msl_arm_time) {
                         float t_int = range / m->spec->msl_speed;
                         if (t_int > 1.2f) t_int = 1.2f;
                         aim = vadd(tpos, vmul(tvel, t_int));
@@ -182,13 +182,13 @@ void vg_update_missiles(float dt) {
 
             // Proximity fuse: once inside fuse range and the range starts opening
             // again, this is the closest we will ever get.
-            if (range < MISSILE_HIT_RADIUS * 2.5f && range > m->last_range) {
+            if (range < m->spec->msl_splash * 2.5f && range > m->last_range) {
                 // Score off the CLOSEST approach, not the current range. The fuse
                 // fires on the frame after the range starts opening again, so
                 // using `range` would charge every detonation a frame's worth of
                 // separation it never actually had -- which at 12 units per frame
                 // against an 18-unit radius is most of the falloff curve.
-                bool hit = m->last_range < MISSILE_HIT_RADIUS;
+                bool hit = m->last_range < m->spec->msl_splash;
                 if (hit) {
                     float dmg = impact_damage(m, m->last_range);
                     if (m->target < 0) {

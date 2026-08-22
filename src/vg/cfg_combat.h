@@ -48,26 +48,18 @@
 // past, the dodge still works. It simply comes back for another pass. Beating it
 // once and forgetting about it is the only thing that stops working.
 
-// How long a broken seeker coasts before it may try again. Long enough that the
-// player gets the moment of having beaten it -- without that beat, re-acquisition
-// would just read as a lock that never broke.
-#define MISSILE_REACQ_DELAY  0.9f
-
-// Widened with the speed rebalance. A missile closing head-on shuts the range at
-// up to 760 units/sec -- about 12 units per frame -- so a tight hit radius would
-// be stepped straight over between samples.
-//
-// This is also the falloff scale: a detonation at 0 does full warhead damage,
-// one out at the rim does ShipSpec::msl_graze_floor of it.
-#define MISSILE_HIT_RADIUS   18.0f
-#define MISSILE_ARM_TIME     0.22f    // no lead correction while clearing the rail
+// THE COAST BEFORE A RETRY is ShipSpec::msl_reacq_delay, per class, and the fuse
+// radius and the lead-correction delay are msl_splash and msl_arm_time beside it.
+// They moved because a warhead is a property of the ship that launched it, and
+// because msl_splash in particular is now a real point of difference: it is the
+// radius the graze floor applies OVER, so a global one was leaving half of the
+// LANCE-versus-CHARIOT idea unsaid.
 
 // --- player weapons --------------------------------------------------------
 // Rate of fire is ShipSpec::fire_gap now, not one number for everybody: it is
 // most of what separates CHARIOT's twelve-round dump from BALLISTA's three
 // deliberate shots, and a class cannot have a firing style if the game owns the
-// trigger.
-#define PLAYER_LOCK_COS      0.86f    // cos(~31 deg) nose cone to acquire lock
+// trigger. The nose cone went the same way, as ShipSpec::lock_cos.
 
 // Lock time scales with speed: at full throttle it takes (1 + this) times as long
 // to ACQUIRE. Holding is unaffected -- see the latch in update_lock.
