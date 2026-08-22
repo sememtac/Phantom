@@ -60,7 +60,11 @@ static bool s_halted = false;
 // against a question asked in whole milliseconds.
 static volatile uint32_t g_idle0_passes = 0;
 static bool idle0_hook(void) {
-    g_idle0_passes++;
+    // Read-then-write rather than ++, which C++20 deprecates on a volatile: the
+    // standard stopped guaranteeing how many accesses the compound form implies.
+    // Identical here -- one hook entry, one increment, and the only other toucher
+    // is the telemetry window, which reads and clears it once a frame.
+    g_idle0_passes = g_idle0_passes + 1;
     return true;   // no extra sleep; the idle task carries on to its own waiti
 }
 

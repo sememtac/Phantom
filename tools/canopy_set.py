@@ -29,17 +29,42 @@ GEN = os.path.join(ROOT, "src", "vg", "generated")
 # between the directory and the firmware.
 HULLS = ["aegis", "lance", "chariot", "ballista"]
 
-# Per-hull bake options. This is where the author fits a heavy drawing to a budget,
-# one drawing at a time, after looking at what the fit removes (tools/canopy_preview.py
-# renders it). A hull not listed here bakes at the default tolerance and is never
-# reduced, however heavy it is -- the report states the cost and the decision to fit is
-# made here or not at all.
+# Per-hull bake options. The author sets them one drawing at a time, after looking at
+# what each option changes (tools/canopy_preview.py renders it). A hull not listed here
+# bakes at the default tolerance. The baker never reduces a drawing on its own: it
+# reports the cost, and the decision is made here or not at all.
 #
-# Empty is a decision, not a default. AEGIS was fitted to 33,000 px -- CHARIOT's flown
-# weight, which runs the course at 58.9 fps -- flown on 2026-08-19, and the author judged
-# the loss on the glass and rejected it: the drawing at full weight is the look, and its
-# ~55 fps is what that look costs. The mechanism stays for the two hulls not yet drawn.
-FIT = {}
+# THE OPTION GOES BOTH WAYS. It was written to make a heavy drawing lighter. LANCE uses
+# it to make a light drawing heavier, which is the same control read the other way.
+#
+# LANCE: --tol=8. The baker skips a pixel within the tolerance of the background, and
+# the background is 128 exactly, so any tolerance above 0 discards ART and not empty
+# space. This drawing is low contrast -- its faintest deliberate tone sits at 148, only
+# twenty levels off the ground -- so the default of 20 landed on it and threw away
+# 37,806 drawn pixels, 55.8% of the artwork. That is the frame the author saw as bled
+# out, and it is what this entry exists to stop.
+#
+# TOLERANCE 0 WAS FLOWN AND REJECTED, 2026-08-21. It paints every pixel drawn: 60,100 a
+# frame, 26.1% of the screen, 4.94 ms, which is the whole of what the cockpit may have
+# and 21% heavier than the AEGIS. The frame rate was poor on the glass.
+#
+# 8 keeps 84% of the art and lands at 48,828 px a frame -- the AEGIS's weight almost
+# exactly, and the AEGIS flies at 60 to 65 fps. It is the flyable setting, not the
+# finished one.
+#
+# THE REAL FIX IS AREA, AND IT IS IN THE DRAWING. Cost is pixels PAINTED; brightness and
+# gradients are free, so brightening the faint shading does NOT make it cheaper -- the
+# same pixels are painted either way. What brightness buys is CONTROL: shading drawn
+# past about 155 survives any tolerance, so the artist chooses what a cut removes
+# instead of the cut taking whatever happens to be faintest. To make the drawing
+# cheaper, narrow the shapes. 26.1% of the screen is more than the frame can carry;
+# the AEGIS is 21.6% and the CHARIOT 14.3%.
+#
+# AEGIS: nothing, and that is a decision. It was fitted to 33,000 px, which is the
+# CHARIOT's flown weight and runs the course at 58.9 fps. The author flew it on
+# 2026-08-19, judged the loss on the glass, and rejected it. The drawing at full weight
+# is the look, and about 55 fps is what that look costs.
+FIT = {"lance": ["--tol=24"]}
 
 
 def main():
