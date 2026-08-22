@@ -9,6 +9,7 @@
 #include <string.h>
 #include <math.h>
 #include "vg_cockpit.h"
+#include "vg_replay.h"   // vg_replay_mode: the split must not adapt under a replay
 
 // ===========================================================================
 // THE CANOPY, LIFTED WHOLE OUT OF vg_band.cpp
@@ -1758,7 +1759,21 @@ int vg_canopy_split_at(int band_index) {
     if (!s_can)      return ROW_SPLIT;
     if (s_intro_on)  return ROW_SPLIT;   // the world gate dwarfs the frame; midpoint is right
     int at = s_warp_on ? (int)s_wsplit[band_index] : (int)s_can->split[band_index];
-    at += s_split_bias;
+    // THE ADAPTIVE TERM IS DROPPED UNDER A REPLAY, and this is what makes a render
+    // reproducible at all.
+    //
+    // s_split_bias is nudged by MEASURED TIME, so it settles somewhere slightly
+    // different on every run of the same build -- and with SPLIT_LINE_CLAMPED the
+    // seam carries a +-1 px jog, so a cut one row further down moves pixels. Two
+    // runs of one build therefore render two different pictures, which is what had
+    // phantom_regress reporting frames DIFFERENT for changes that cannot move a
+    // pixel, and what this project has been recording as an "FPU ghost" since the
+    // band checksum first disagreed with itself.
+    //
+    // The BAKED per-band split stays -- it is a property of the drawing, not of the
+    // clock -- so a replay still forks, still costs what it costs, and still
+    // exercises both cores. Only the term that listens to a stopwatch goes.
+    if (vg_replay_mode() == VG_RP_OFF) at += s_split_bias;
     // Clamped well inside the band: a split at 0 or BAND_H is not a split, and the pass
     // would silently go back to one core.
     if (at < 2)              at = 2;
