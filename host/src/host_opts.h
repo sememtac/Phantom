@@ -16,9 +16,14 @@
 // hand. The same NUMBER, a third of the movement, and the ship snapped to full
 // deflection on a twitch.
 //
-// At 0.15 full deflection wants about 770 counts, which is roughly 2 cm of hand
+// At 0.10 full deflection wants about 1150 counts, which is roughly 3 cm of hand
 // at 1000 DPI. That is a deliberate movement rather than a flick, and it leaves
 // room to be precise near the centre where the 8 px deadzone lives.
+//
+// It was 1.0, then 0.15, and both were still too quick in the hand. Each step
+// down was measured against the same complaint rather than guessed at, and the
+// number is exposed precisely because the right one depends on a mouse this
+// code cannot see.
 //
 // Mouse DPI varies by a factor of ten between devices, so no single number is
 // right for everybody. --sens overrides it.

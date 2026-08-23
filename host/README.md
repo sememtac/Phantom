@@ -38,7 +38,7 @@ output.
 |---|---|
 | `--scale N` | Sets the window size to N times the 480x480 panel. N is 1 to 4. The default is 2. |
 | `--frames N` | Runs N frames and then stops. Use this to test the build. |
-| `--sens F` | Sets the mouse scale. The default is 0.15. A lower number is slower. |
+| `--sens F` | Sets the mouse scale. The default is 0.10. A lower number is slower. |
 | `--help` | Shows the options. |
 
 The game keeps its progress in `phantom_save.bin`. The game writes the file
@@ -56,9 +56,7 @@ code that the board uses.
 | Throttle up | `W` or the up arrow |
 | Throttle down | `S` or the down arrow |
 | Fire a missile | The left mouse button, or space |
-| Roll left | Hold `A` |
-| Roll right | Hold `D` |
-| Roll with the mouse | Hold `Shift` and steer |
+| Roll | Hold `Shift`, then steer left or right |
 | Look behind | Hold `R` |
 | Menu key | `Esc` or `Enter` |
 | Select a menu item | Move the mouse, then click |
@@ -66,9 +64,8 @@ code that the board uses.
 The window holds the mouse pointer while you fly. The window lets the pointer go
 when you open a menu, and when you move to another window.
 
-`A` and `D` roll the ship. The keys hold the roll control and move the steering
-finger to the side, so the roll starts in about a fifth of a second. The mouse
-still aims while you roll, and the ship returns to your aim when you let go.
+Hold `Shift` to roll. The mouse then rolls the ship instead of turning it, which
+is what the roll button does on the board. Pitch still works while you roll.
 
 In a menu the window does not hold the pointer. Move the mouse to the item, then
 click it.
@@ -81,15 +78,15 @@ reads a drag and not a tap.
 ### Mouse scale
 
 The mouse scale is the number of game pixels for each count that the mouse
-reports. The game needs 115 pixels for a full turn. At the default of 0.15, a
-full turn needs about 770 counts. That is about 2 cm of hand movement on a
+reports. The game needs 115 pixels for a full turn. At the default of 0.10, a
+full turn needs about 1150 counts. That is about 3 cm of hand movement on a
 1000 DPI mouse.
 
 Mouse hardware differs by a factor of ten, so change the number to suit your
 mouse:
 
-    hostuild\phantom.exe --sens 0.08     slower
-    hostuild\phantom.exe --sens 0.30     faster
+    hostuild\phantom.exe --sens 0.05     slower
+    hostuild\phantom.exe --sens 0.20     faster
 
 The game prints the scale and the count for a full turn when it starts.
 

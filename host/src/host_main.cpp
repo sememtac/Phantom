@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
             printf("phantom [--scale N] [--sens F] [--frames N]\n"
                    "  --scale N    window size, N times the 480x480 panel (1-4, default 2)\n"
                    "  --sens F     mouse scale, logical pixels per mouse count.\n"
-                   "               Default 0.15. Lower is slower. Full deflection\n"
+                   "               Default 0.10. Lower is slower. Full deflection\n"
                    "               costs 115/F counts of hand movement.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
