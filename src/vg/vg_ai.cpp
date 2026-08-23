@@ -87,6 +87,98 @@ static void tactic_fighter(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     }
 }
 
+// STANDOFF -- the one that fights a different fight rather than the same fight
+// with different numbers.
+//
+// It cannot fly backwards, so holding a range means never pointing straight at
+// the thing it is holding away from. But it also has to keep its nose on the
+// player to be allowed to shoot. Those two pull against each other, and the
+// answer is to aim PAST the player: a point out to the side, far enough that the
+// closing rate falls away, near enough that the bearing stays inside the firing
+// cone. That is a wide arc, and it is what a gun platform circling its target
+// actually looks like.
+//
+// Inside the flee range it stops arguing and runs. That is the whole counter to
+// the class -- get inside and it has nothing -- so it has to be visible from the
+// cockpit: the ship turns its back and leaves.
+static void tactic_standoff(Ship* s, const ShipSpec* sp, Vec3 to, float range,
+                            float smin, float smax, Vec3* desired) {
+    const float hold = sp->lock_range * STANDOFF_HOLD_K;
+    const float flee = ENEMY_BREAK_RANGE * STANDOFF_FLEE_K;
+
+    if (s->break_t > 0 || range < flee) {
+        if (s->break_t <= 0) {
+            s->break_dir = vnorm(vmul(to, -1.0f));   // straight out, no cleverness
+            s->break_t   = vg_frand(1.2f, 2.2f);
+        }
+        *desired = s->break_dir;
+        s->target_speed = smax;
+        return;
+    }
+
+    // The side it arcs around. offset_dir is already a stable random unit that is
+    // re-rolled on a break, so the arc does not jitter frame to frame.
+    Vec3 los  = vnorm(to);
+    Vec3 side = vsub(s->offset_dir, vmul(los, vdot(s->offset_dir, los)));
+    if (vlen2(side) < 1e-4f) side = vcross(los, s->up);
+    side = vnorm(side);
+
+    if (range > hold * 1.15f) {
+        // Still outside the band: close, and aim nearly straight in.
+        *desired = vadd(to, vmul(side, range * STANDOFF_ARC * 0.35f));
+        s->target_speed = smax * 0.85f;
+    } else {
+        // In the band. Slow enough to be allowed to fire, arcing wide enough
+        // that it does not walk straight into the merge it is trying to avoid.
+        *desired = vadd(to, vmul(side, range * STANDOFF_ARC));
+        s->target_speed = smin * 1.15f;
+    }
+}
+
+// SLASH -- the same shape as the fighter, flown harder and further.
+static void tactic_slash(Ship* s, const ShipSpec* sp, Vec3 to, float range,
+                         float close_r, float smin, float smax, Vec3* desired) {
+    (void)sp;
+    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE * SLASH_BREAK_K) {
+        if (s->break_t <= 0) {
+            s->break_dir = break_across(vnorm(to), s->up, -0.75f);
+            s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN * SLASH_EXTEND_K,
+                                    ENEMY_BREAK_TIME_MAX * SLASH_EXTEND_K);
+            s->offset_dir = vg_rand_unit();
+        }
+        *desired = s->break_dir;
+        s->target_speed = smax;
+    } else {
+        // A wide offset, so the pass CROSSES instead of converging. A slash that
+        // converges is a joust, and a joust is what the fighter already does.
+        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET * SLASH_OFFSET_K);
+        *desired  = vsub(aim, s->pos);
+        s->target_speed = (range > close_r) ? smax
+                        : smin + (smax - smin) * SLASH_SPEED_K;
+    }
+}
+
+// GEOMETRY -- the fighter, but it wants to be lined up more than it wants to be
+// safe.
+static void tactic_geometry(Ship* s, const ShipSpec* sp, Vec3 to, float range,
+                            float close_r, float smin, float smax, Vec3* desired) {
+    (void)sp;
+    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE * GEOM_BREAK_K) {
+        if (s->break_t <= 0) {
+            s->break_dir = break_across(vnorm(to), s->up, -0.55f);
+            s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN, ENEMY_BREAK_TIME_MAX);
+            s->offset_dir = vg_rand_unit();
+        }
+        *desired = s->break_dir;
+        s->target_speed = smax;
+    } else {
+        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET * GEOM_OFFSET_K);
+        *desired  = vsub(aim, s->pos);
+        s->target_speed = (range > close_r) ? smax * 0.85f
+                        : smin + (smax - smin) * GEOM_SPEED_K;
+    }
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) return;
     if (s->hit_flash > 0) s->hit_flash -= dt;
@@ -171,6 +263,15 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         float range = vlen(to);
 
         switch (sp->tactic) {
+            case TACTIC_STANDOFF:
+                tactic_standoff(s, sp, to, range, smin, smax, &desired);
+                break;
+            case TACTIC_SLASH:
+                tactic_slash(s, sp, to, range, close_r, smin, smax, &desired);
+                break;
+            case TACTIC_GEOMETRY:
+                tactic_geometry(s, sp, to, range, close_r, smin, smax, &desired);
+                break;
             case TACTIC_FIGHTER:
             default:
                 tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);

@@ -63,7 +63,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* hull       */ 95.0f,  /* shake */ 1.30f,
         /* warhead    */ 32.0f, 14.0f, 0.20f, 520.0f, 1.20f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
-        /* tactic     */ TACTIC_FIGHTER,
+        /* tactic     */ TACTIC_GEOMETRY,
         /* fire ctrl  */ 0.90f, 0.90f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
 
@@ -84,7 +84,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* hull       */ 70.0f,  /* shake */ 1.70f,
         /* warhead    */ 12.0f, 22.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f,
-        /* tactic     */ TACTIC_FIGHTER,
+        /* tactic     */ TACTIC_SLASH,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
@@ -135,7 +135,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* hull       */ 90.0f,  /* shake */ 0.55f,
         /* warhead    */ 30.0f, 17.0f, 0.50f, 200.0f, 2.30f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, -0.30f, 0.9f,
-        /* tactic     */ TACTIC_FIGHTER,
+        /* tactic     */ TACTIC_STANDOFF,
         /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };

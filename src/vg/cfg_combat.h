@@ -155,6 +155,41 @@
 // collision. Inside ENEMY_BREAK_RANGE they abandon the attack and extend away.
 #define ENEMY_OFFSET         150.0f   // lateral aim offset, world units
 #define ENEMY_BREAK_RANGE    560.0f
+
+// --- how each archetype positions itself ------------------------------------
+//
+// Everything above this is the fight EVERY enemy flies. These are the three that
+// fly a different one, and they are dispatched on ShipSpec::tactic.
+//
+// All of them still obey the two firing gates -- under ENEMY_ENGAGE_SPEED and
+// inside ENEMY_FIRE_COS -- because being slow and pointed at somebody to shoot
+// them is the trade the whole game is built on, and a class that was exempt from
+// it would not be a different tactic, it would be a different game.
+
+// STANDOFF -- BALLISTA. Holds a band at a fraction of its own lock range, faces
+// the player because the nose has to be on target to fire, and runs when
+// anything gets inside. It cannot fly backwards, so it holds range by aiming
+// PAST the player rather than at them: a wide arc that keeps the bearing inside
+// the firing cone while closing slowly, instead of boring straight in.
+#define STANDOFF_HOLD_K      0.72f   // x its own lock range: the band it wants
+#define STANDOFF_FLEE_K      2.4f    // x ENEMY_BREAK_RANGE: inside this it runs
+#define STANDOFF_ARC         0.30f   // x range: how far beside the player it aims
+
+// SLASH -- CHARIOT. One fast pass, the rack emptied, and a long extend. It still
+// has to slow to shoot, so the speed on the merge sits just under the gate
+// rather than at it: fast enough to be a pass, slow enough to be allowed.
+#define SLASH_OFFSET_K       1.8f    // x ENEMY_OFFSET: crosses rather than jousts
+#define SLASH_BREAK_K        1.35f   // x ENEMY_BREAK_RANGE: turns away sooner
+#define SLASH_SPEED_K        0.45f   // fraction of its speed span on the pass
+#define SLASH_EXTEND_K       1.7f    // x the break time: stays away longer
+
+// GEOMETRY -- LANCE. A 0.20 graze floor means only a clean hit pays, so this one
+// wants alignment more than it wants angles: a smaller offset, a later break and
+// a slower merge, all of which buy a steadier shot at the cost of being an
+// easier target while it lines one up.
+#define GEOM_OFFSET_K        0.45f   // x ENEMY_OFFSET: nearly head-on
+#define GEOM_BREAK_K         0.75f   // x ENEMY_BREAK_RANGE: holds the merge longer
+#define GEOM_SPEED_K         0.22f   // fraction of its speed span: slow and steady
 #define ENEMY_BREAK_TIME_MIN 1.1f
 #define ENEMY_BREAK_TIME_MAX 1.8f
 

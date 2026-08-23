@@ -37,6 +37,9 @@
 // numbers it has to work with.
 enum ShipTactic : uint8_t {
     TACTIC_FIGHTER = 0,   // merge, pass, extend, come round again
+    TACTIC_STANDOFF,      // hold the range its reach buys, and run from a merge
+    TACTIC_SLASH,         // one fast pass, the rack emptied, a long extend
+    TACTIC_GEOMETRY,      // line the shot up, because only a clean one pays
 };
 
 enum ShipClass : uint8_t {
