@@ -19,6 +19,7 @@
 #include "vg_port.h"
 #include "cfg_display.h"
 #include "cfg_hud.h"        // the throttle strip and the rear patch
+#include "cfg_flight.h"     // STEER_RANGE: the deflection the centre is measured against
 #include "host_window.h"
 #include "host_opts.h"
 #include "vg_game.h"   // vg_state_flags: only a flown state captures the pointer
@@ -73,10 +74,26 @@ void vg_panel_wait(void) {}
 // Touch -- the mouse and the keyboard, dressed as fingers
 // ---------------------------------------------------------------------------
 
-// The steering finger. Starts in the middle of the glass, which is clear of both
-// the throttle strip down the left edge and the rear-view patch.
-static float s_fx = (float)(SCR_W / 2);
-static float s_fy = (float)(SCR_H / 2);
+// THE STICK IS ANCHORED TO THE MIDDLE OF THE SCREEN, and is held as an OFFSET
+// from it rather than as a position on the glass.
+//
+// A finger knows where it is. A hand on a mouse does not, and the first version
+// let the contact wander the panel: vg_input sets its origin wherever the
+// contact first lands, and STEER_RECENTER slides that origin along once the drag
+// passes STEER_RANGE. So neutral drifted to somewhere invisible, and the ship
+// could be turning steadily while the hand felt perfectly centred.
+//
+// Reporting the centre plus a CLAMPED offset fixes both ends of that. The first
+// contact lands exactly at the centre, so vg_input's origin is the centre; and
+// the offset can never exceed the distance that would make the origin slide, so
+// it stays there. Middle of the screen is level flight, for the whole session,
+// and full deflection sits at a fixed distance from it in every direction.
+//
+// The cost is that the mouse no longer drags for ever -- it saturates. That is
+// the right trade here: an aeroplane stick has a stop, and a reference you can
+// return to is worth more than travel you cannot see.
+static float s_ox = 0.0f;   // offset from the centre, in panel pixels
+static float s_oy = 0.0f;
 
 // The throttle thumb, in panel pixels. THROTTLE_TOP is full and THROTTLE_BOT is
 // idle, and the game reads the value straight off the contact's y. Seeded to
@@ -165,18 +182,21 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // ---- the steering finger ----
     float mdx = 0, mdy = 0;
     host_mouse_take_delta(&mdx, &mdy);
-    s_fx += mdx * g_host_mouse_sens;
-    s_fy += mdy * g_host_mouse_sens;
+    s_ox += mdx * g_host_mouse_sens;
+    s_oy += mdy * g_host_mouse_sens;
 
-    // Held inside the steering half of the glass. Clamping is not a limit on how
-    // far you can turn: past 115 px the origin slides after the finger
-    // (STEER_RECENTER), so a finger parked against the edge simply holds full
-    // deflection, and pulling back the other way answers at once.
-    const float x_lo = (float)(THROTTLE_ZONE_X1 + 2);
-    if (s_fx < x_lo)                 s_fx = x_lo;
-    if (s_fx > (float)(SCR_W - 2))   s_fx = (float)(SCR_W - 2);
-    if (s_fy < 2.0f)                 s_fy = 2.0f;
-    if (s_fy > (float)(SCR_H - 2))   s_fy = (float)(SCR_H - 2);
+    // CLAMPED BY LENGTH, not per axis, and just inside the distance that would
+    // make vg_input's origin start sliding. Clamping each axis on its own would
+    // allow a diagonal of 1.41x the range, which slides -- and once the origin
+    // moves, the centre of the screen stops being neutral, which is the entire
+    // thing this is here to prevent.
+    const float lim = (float)STEER_RANGE - 1.0f;
+    const float len = sqrtf(s_ox * s_ox + s_oy * s_oy);
+    if (len > lim) {
+        const float k = lim / len;
+        s_ox *= k;
+        s_oy *= k;
+    }
 
     // LIFTING THE FINGER, which is the one thing an always-engaged mouse cannot
     // do by itself. Hold this and the contact simply stops being reported: the
@@ -185,9 +205,15 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // That is not an approximation of lifting a finger, it IS lifting a finger.
     const bool lifted = host_key_down('C') || host_key_down(VK_RBUTTON);
 
-    if (host_window_focused() && !lifted) {
-        xs[n] = (uint16_t)s_fx;
-        ys[n] = (uint16_t)s_fy;
+    // Lifting also RE-ZEROES, which is what makes it a centre key rather than
+    // only a pause: the contact returns at the centre, so the origin is the
+    // centre again and level flight is where it was before.
+    if (lifted || !host_window_focused()) {
+        s_ox = 0.0f;
+        s_oy = 0.0f;
+    } else {
+        xs[n] = (uint16_t)((float)(SCR_W / 2) + s_ox);
+        ys[n] = (uint16_t)((float)(SCR_H / 2) + s_oy);
         n++;
     }
 

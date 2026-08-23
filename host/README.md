@@ -105,9 +105,19 @@ The game prints the scale and the count for a full turn when it starts.
 Windows pointer speed does not change the scale. The game reads the mouse
 device, not the pointer, so pointer acceleration cannot affect the ship.
 
-The mouse does not centre itself. The board centres the stick when the finger
-lifts, but a mouse stays where you put it. Hold `C` to lift the finger. The
-stick centres, and the game starts a new stick position when you release `C`.
+### Where the centre is
+
+The middle of the screen is level flight. The steering measures from that point
+and never moves away from it, so the ship flies straight whenever the steering
+returns to the middle.
+
+The steering has a limit, like the stick of an aeroplane. Move the mouse further
+and the ship does not turn faster. Move it back toward the middle and the ship
+straightens.
+
+The mouse does not centre itself, because a mouse stays where you put it. Hold
+`C` to centre the steering at once. The game reads a lifted finger, the ship
+stops turning, and the steering starts again from the middle when you let go.
 
 ## What this build is not for
 
