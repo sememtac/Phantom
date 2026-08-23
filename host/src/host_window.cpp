@@ -38,6 +38,20 @@ static HostView view_of(HWND h) {
     v.y = (ch - v.h) / 2;
     return v;
 }
+
+// The same viewport in SCREEN coordinates, which is what ClipCursor wants.
+// False when there is nothing to fence -- a minimised window has no client area
+// and clipping to an empty rect would pin the pointer to a point.
+static bool view_rect_screen(HWND h, RECT* out) {
+    const HostView v = view_of(h);
+    if (v.w <= 0 || v.h <= 0) return false;
+    POINT tl = { v.x, v.y };
+    POINT br = { v.x + v.w, v.y + v.h };
+    ClientToScreen(h, &tl);
+    ClientToScreen(h, &br);
+    out->left = tl.x; out->top = tl.y; out->right = br.x; out->bottom = br.y;
+    return true;
+}
 static float      s_rawx    = 0.0f;   // device counts since the last read
 static float      s_rawy    = 0.0f;
 
@@ -57,7 +71,11 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
         case WM_CLOSE:
         case WM_DESTROY:      s_quit = true; return 0;
-        case WM_KILLFOCUS:    ShowCursor(TRUE); return 0;
+        // Let go of the pointer on the way out, and do it here rather than
+        // waiting for the next pump: an alt-tab that left the fence up for even
+        // one frame would drag the pointer back off whatever the player just
+        // switched to.
+        case WM_KILLFOCUS:    ClipCursor(nullptr); ShowCursor(TRUE); return 0;
         case WM_INPUT: {
             // Only relative reports are steering. A tablet or a remote-desktop
             // session sends absolute ones, and treating those as a delta would
@@ -201,6 +219,7 @@ bool host_window_open(int scale, const char* title) {
 }
 
 void host_window_close(void) {
+    ClipCursor(nullptr);   // never leave the desktop's pointer fenced to a dead window
     if (s_bgra) { free(s_bgra); s_bgra = nullptr; }
     if (s_hwnd) { DestroyWindow(s_hwnd); s_hwnd = nullptr; }
 }
@@ -218,6 +237,34 @@ bool host_window_pump(void) {
     while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
+    }
+
+    // THE POINTER IS FENCED INTO THE PICTURE WHILE THE WINDOW HAS FOCUS.
+    //
+    // Re-centring below is not a fence. It is a correction applied once a frame,
+    // so everything that happens BETWEEN two frames is unopposed: a fast flick
+    // outruns it, a long frame gives it a whole extra 16ms of travel, and a
+    // stall gives it as long as the stall. The pointer ends up over another
+    // window and the next click goes there. And in the menus there is no
+    // re-centring at all -- capture is deliberately off so clicks work and the
+    // cursor stays where it was put -- so nothing held it in at all.
+    //
+    // ClipCursor is the fence, and the system keeps it between our frames.
+    //
+    // FENCED TO THE VIEWPORT, NOT THE CLIENT AREA. host_mouse_logical refuses a
+    // pointer sitting on a letterbox bar, because a bar maps to no logical
+    // pixel -- so the bars are dead space, and stopping at the edge of the
+    // picture means every place the pointer can reach is a place that answers.
+    //
+    // Recomputed every frame because it is built from the client rect, so a move
+    // or a resize is followed with no message to hook. It is dropped the moment
+    // focus goes -- on WM_KILLFOCUS above and here as the standing state -- so
+    // alt-tab is never trapped.
+    if (s_hwnd && !s_quit && host_window_focused()) {
+        RECT rc;
+        if (view_rect_screen(s_hwnd, &rc)) ClipCursor(&rc);
+    } else {
+        ClipCursor(nullptr);
     }
 
     // THE MOUSE IS CAPTURED AND RE-CENTRED EVERY FRAME. Reading the absolute
