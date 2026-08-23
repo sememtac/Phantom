@@ -316,6 +316,13 @@ static void q_drain(void) {
 // manufacture more of it.
 //
 // Neither case cares about frame time, which is why this costs nothing.
+// Did the mixing task actually start? Every other task in this project treats a
+// failed creation as a supported outcome and falls back -- rowsplit_start says a
+// failure "costs frame rate and nothing else", and vg_input drops to reading the
+// IMU on the render thread. This one ignored the answer, and the fallback did not
+// exist: with no task, normal play does no mixing at all and the game is silent
+// for ever with nothing anywhere saying why.
+static bool          s_task_ok       = false;
 static volatile bool s_inline_want   = false;   // set by the game thread
 static volatile bool s_task_parked   = true;    // acknowledged by the task
 static int16_t       s_buf[512];
@@ -388,7 +395,8 @@ bool vg_sfx_init(void) {
     // below nothing that matters on this core; the task yields every pass, so it
     // cannot starve anything, and it is deliberately NOT registered with the task
     // watchdog -- it is not the loop, and a stall here should not panic the game.
-    xTaskCreatePinnedToCore(sfx_task, "sfx", 4096, nullptr, 2, nullptr, 0);
+    s_task_ok = (xTaskCreatePinnedToCore(sfx_task, "sfx", 4096, nullptr, 2,
+                                        nullptr, 0) == pdPASS);
     return true;
 }
 
@@ -434,7 +442,11 @@ void vg_sfx_update(float dt) {
     // Which side is rendering this frame. Requested here and acknowledged by the
     // task, because a request on its own would let both render the same voices for
     // however long the task took to notice.
-    const bool want_inline = (vg_replay_mode() != VG_RP_OFF) || vg_capture_active();
+    // ...OR BECAUSE THERE IS NOBODY ELSE. A replay and a capture render inline so
+    // the frame owns the sound; so does a build whose mixing task never started,
+    // which would otherwise be silent and never say so.
+    const bool want_inline = !s_task_ok
+                          || (vg_replay_mode() != VG_RP_OFF) || vg_capture_active();
     s_inline_want = want_inline;
 
     if (!want_inline) {
