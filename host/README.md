@@ -58,10 +58,15 @@ code that the board uses.
 | Roll | Hold `Shift` and steer |
 | Look behind | Hold `R` |
 | Menu key | `Enter` |
+| Select a menu item | Move the mouse, then click |
 | Release the mouse | `Esc` |
 
-The window holds the mouse pointer while the window has focus. Press `Esc` to
-get the pointer back. Click the window to fly again.
+The window holds the mouse pointer while you fly. Press `Esc` to get the pointer
+back. Click the window to fly again.
+
+In a menu the window does not hold the pointer. Move the mouse to point at an
+item, and click to select it. The game gets a tap, because the port lifts the
+contact for one frame when you click.
 
 The mouse does not centre itself. The board centres the stick when the finger
 lifts, but a mouse stays where you put it. Hold `C` to lift the finger. The

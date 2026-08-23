@@ -24,9 +24,20 @@ void host_window_present(const uint16_t* panel);
 // ---- raw input -------------------------------------------------------------
 
 // Mouse movement since the last call, in raw device pixels, and clears it. The
-// cursor is captured and re-centred every frame while the window has focus, so
-// this keeps accumulating however far the pointer is pushed.
+// cursor is captured and re-centred every frame while capture is on, so this
+// keeps accumulating however far the pointer is pushed.
 void host_mouse_take_delta(float* dx, float* dy);
+
+// Capture is for FLYING. While it is on the pointer is hidden and pulled back to
+// the centre every frame, which is what lets a mouse drag for ever like a finger.
+// A menu wants the opposite: a visible pointer that stays where the player put
+// it, so the port turns capture off there.
+void host_window_set_capture(bool on);
+
+// Where the pointer is, in LOGICAL game pixels rather than window pixels, so the
+// caller never has to know the window scale. False when it is outside the client
+// area. Only meaningful while capture is off.
+bool host_mouse_logical(float* x, float* y);
 
 // VK_* codes.
 bool host_key_down(int vk);

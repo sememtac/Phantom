@@ -20,6 +20,7 @@
 #include "cfg_display.h"
 #include "cfg_hud.h"        // the throttle strip and rear patch, in panel pixels
 #include "host_window.h"
+#include "vg_game.h"   // vg_state_is_menu: a menu wants a pointer, not a stick
 
 #include <Arduino.h>
 #include <stdio.h>
@@ -95,6 +96,42 @@ bool vg_touch_init(void) { return true; }
 int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (!xs || !ys) return 0;
     int n = 0;
+
+    // A MENU IS NOT FLOWN, IT IS POINTED AT.
+    //
+    // Flying wants a captured pointer that can be dragged for ever, because that
+    // is what a finger on glass does. A menu wants the opposite: the cursor
+    // visible, where the player left it, and a click that means something. The
+    // game already tells us which it is in, so the port asks rather than guesses.
+    const bool menu = vg_state_is_menu(vg.state);
+    host_window_set_capture(!menu);
+
+    if (menu) {
+        float mx = 0, my = 0;
+        const bool inside = host_mouse_logical(&mx, &my);
+
+        // A TAP IS A LIFT AND A TOUCH, so that is what a click is made of. The
+        // menu reads menu_edge, which fires when a contact APPEARS -- and a
+        // contact that is always down never appears again. Dropping it for the
+        // single frame the button goes down produces a real press edge on the
+        // next one, out of the game's own semantics rather than a special case.
+        static bool prev_click = false;
+        static int  lift = 0;
+        const bool click = host_key_down(VK_LBUTTON);
+        if (click && !prev_click) lift = 1;
+        prev_click = click;
+
+        if (inside && host_window_focused()) {
+            if (lift > 0) { lift--; }
+            else {
+                xs[n] = (uint16_t)mx;
+                ys[n] = (uint16_t)my;
+                n++;
+            }
+        }
+        g_in_touch = (uint32_t)n;
+        return n;
+    }
 
     static uint32_t s_prev_us = 0;
     const uint32_t now = micros();

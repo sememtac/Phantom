@@ -14,6 +14,7 @@ static float     s_mdx     = 0.0f;
 static float     s_mdy     = 0.0f;
 static uint32_t* s_bgra    = nullptr;   // SCR_W * SCR_H, what GDI actually blits
 static BITMAPINFO s_bmi;
+static bool       s_capture = true;
 
 // ---------------------------------------------------------------------------
 // THE FRAME RATE IS CAPPED, and it is not cosmetic.
@@ -105,7 +106,7 @@ bool host_window_pump(void) {
     // GetForegroundWindow rather than our own focus flag alone: a window that
     // has been alt-tabbed away from must not still be dragging the pointer back
     // to its centre several times a second.
-    if (s_focus && s_hwnd && !s_quit && GetForegroundWindow() == s_hwnd) {
+    if (s_capture && s_focus && s_hwnd && !s_quit && GetForegroundWindow() == s_hwnd) {
         RECT cr; GetClientRect(s_hwnd, &cr);
         POINT mid = { (cr.right - cr.left) / 2, (cr.bottom - cr.top) / 2 };
         ClientToScreen(s_hwnd, &mid);
@@ -114,8 +115,32 @@ bool host_window_pump(void) {
         s_mdy += (float)(cur.y - mid.y);
         SetCursorPos(mid.x, mid.y);
         while (ShowCursor(FALSE) >= 0) {}
+    } else {
+        while (ShowCursor(TRUE) < 0) {}
     }
     return !s_quit;
+}
+
+void host_window_set_capture(bool on) {
+    if (s_capture == on) return;
+    s_capture = on;
+    // Drop whatever movement arrived under the other regime, or the first frame
+    // after a menu closes would fling the stick by however far the pointer
+    // wandered while it was free.
+    s_mdx = s_mdy = 0.0f;
+}
+
+bool host_mouse_logical(float* x, float* y) {
+    if (!s_hwnd) return false;
+    POINT p; GetCursorPos(&p);
+    ScreenToClient(s_hwnd, &p);
+    RECT cr; GetClientRect(s_hwnd, &cr);
+    const int w = cr.right - cr.left, h = cr.bottom - cr.top;
+    if (w <= 0 || h <= 0) return false;
+    if (p.x < 0 || p.y < 0 || p.x >= w || p.y >= h) return false;
+    if (x) *x = (float)p.x * (float)SCR_W / (float)w;
+    if (y) *y = (float)p.y * (float)SCR_H / (float)h;
+    return true;
 }
 
 void host_mouse_take_delta(float* dx, float* dy) {
@@ -136,9 +161,18 @@ void host_window_present(const uint16_t* panel) {
     // word before it ever reaches a band, so recovering the colour means
     // swapping back first -- see the channel map in vg_tv.cpp, which is the one
     // place this layout is written down.
-    const int n = SCR_W * SCR_H;
-    for (int i = 0; i < n; i++) {
-        const uint16_t s = panel[i];
+    // TURNED BACK. The game draws through a quarter turn on its way to the panel
+    // -- rot_pt in vg_raster.cpp sends logical (x,y) to panel (y, SCR_H-1-x) --
+    // because the glass is mounted a quarter turn off. A window has no such
+    // excuse, so the turn is undone here and the picture stands up.
+    //
+    // Reading logical (lx,ly) means fetching panel[(SCR_H-1-lx)*W + ly]. Only the
+    // PICTURE needs this: vg_touch_read already reports in the logical frame on
+    // both ports, so the pointer needs no turn of its own.
+    for (int ly = 0; ly < SCR_H; ly++)
+    for (int lx = 0; lx < SCR_W; lx++) {
+        const uint16_t s = panel[(size_t)(SCR_H - 1 - lx) * SCR_W + ly];
+        const int i = ly * SCR_W + lx;
         const uint16_t v = (uint16_t)((s >> 8) | (s << 8));
         const uint32_t r = (uint32_t)((v >> 11) & 0x1F);
         const uint32_t g = (uint32_t)((v >>  5) & 0x3F);

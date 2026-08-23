@@ -48,9 +48,15 @@ void vg_panel_wait(void);
 
 bool vg_touch_init(void);
 
-// Fills xs/ys with up to VG_MAX_TOUCH active points in PANEL coordinates
-// (origin top-left, +x right, +y down) and returns the count. The game needs
-// more than one point so the throttle can be held while firing.
+// Fills xs/ys with up to VG_MAX_TOUCH active points and returns the count. The
+// game needs more than one point so the throttle can be held while firing.
+//
+// LOGICAL COORDINATES, not panel ones: origin top-left of the picture as the
+// PLAYER sees it, +x right, +y down, buttons up. This said "PANEL" and was
+// wrong -- vg_port_co5300.cpp undoes both the controller's own quarter turn and
+// the VG_ROTATE display turn before it returns, precisely so that nothing above
+// this seam ever sees panel space. A port that returns panel coordinates will
+// look almost right and put the throttle strip along the wrong edge.
 int  vg_touch_read(uint16_t* xs, uint16_t* ys);
 
 // HOW OFTEN THE BUS WAS REFUSED, since boot and never reset.
