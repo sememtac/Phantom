@@ -115,6 +115,11 @@ The steering has a limit, like the stick of an aeroplane. Move the mouse further
 and the ship does not turn faster. Move it back toward the middle and the ship
 straightens.
 
+The board draws a ring and a marker to show where your thumb is. This build does
+not draw them. They exist because glass has no pointer and a thumb leaves no
+mark, and here the steering is always in the middle of the screen, so the ring
+would show you something you already know.
+
 The mouse does not centre itself, because a mouse stays where you put it. Hold
 `C` to centre the steering at once. The game reads a lifted finger, the ship
 stops turning, and the steering starts again from the middle when you let go.

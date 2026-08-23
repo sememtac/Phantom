@@ -409,7 +409,26 @@ static void draw_radar(void) {
 // what they point at, or with the finger)
 // ---------------------------------------------------------------------------
 
+// THE WIDGET IS FOR A FINGER, and a build flown with a mouse does not want it.
+//
+// It draws where the thumb went down and where it is now, which is the one thing
+// a touchscreen cannot show by itself: there is no cursor on glass, and without
+// this the pilot has no idea how far they have pulled. A mouse build has the
+// opposite problem -- the stick is pinned to the middle of the screen and the
+// ring would sit in the same place for ever, drawing a diagram of something the
+// player already knows.
+//
+// Compile-time, and defaulting ON, so the device is unaffected and only a port
+// that knows it has a pointer turns it off. See host/build.ps1.
+#ifndef VG_STEER_WIDGET
+#define VG_STEER_WIDGET 1
+#endif
+
 void vg_draw_steer_indicator(const VgInput* in) {
+#if !VG_STEER_WIDGET
+    (void)in;
+    return;
+#else
     if (!in->steering) return;
     const float ox = in->steer_ox, oy = in->steer_oy, r = 26.0f;
 
@@ -422,6 +441,7 @@ void vg_draw_steer_indicator(const VgInput* in) {
     }
     vg_line(ox, oy, in->steer_x, in->steer_y, COL_HUD_DIM);
     vg_rect((int)in->steer_x - 4, (int)in->steer_y - 4, 9, 9, COL_HUD);
+#endif
 }
 
 // Corner brackets around the tracked enemy: dim and wide while acquiring, tight

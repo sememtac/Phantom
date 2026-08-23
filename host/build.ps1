@@ -66,7 +66,7 @@ $inc = @(
 # so the code behaves the way it was written to.
 $flags = @(
     "/nologo", "/std:c++17", "/EHsc", "/O2", "/fp:fast", "/GS-", "/MT",
-    "/DNDEBUG", "/DCANOPY_PIE=0", "/D_CRT_SECURE_NO_WARNINGS",
+    "/DNDEBUG", "/DCANOPY_PIE=0", "/DVG_STEER_WIDGET=0", "/D_CRT_SECURE_NO_WARNINGS",
     "/DWIN32_LEAN_AND_MEAN",
     "/FI`"$host_\compat\host_prelude.h`"",
     "/wd4244", "/wd4305", "/wd4838", "/wd4996"   # float narrowing, all deliberate
