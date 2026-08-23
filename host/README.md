@@ -23,6 +23,11 @@ You do not need any other library. The window uses Win32 and GDI.
 
 The build writes `host\build\phantom.exe`.
 
+In a bash shell, use forward slashes. Bash removes the backslash, and
+PowerShell then looks for a file called `hostbuild.ps1`:
+
+    powershell -ExecutionPolicy Bypass -File host/build.ps1
+
 Add `-Run` to start the game after the build. Add `-Clean` to remove the build
 output first.
 
