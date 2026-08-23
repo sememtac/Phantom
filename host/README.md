@@ -160,5 +160,14 @@ Three things to tell the person you send it to:
 
 ## Sound
 
-This build has no sound. The sound code still runs, because it costs frame time
-and the game must cost the same here as on the board. The samples go nowhere.
+The game plays sound through the default Windows output device. It uses waveOut,
+which is part of Windows, so there is nothing to install.
+
+The game makes one channel of sound at 22050 Hz. The board makes the same sound
+and copies it to two channels, because the board's codec needs a pair. A PC
+sound device accepts one channel, so this build sends one.
+
+If the game cannot open the sound device, it prints a warning and runs silently.
+Nothing else changes.
+
+Use the game's own volume setting to change the level.

@@ -30,6 +30,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mmsystem.h>   // waveOut: the sound output, and winmm is already linked
 
 // Counters the device port owns and the telemetry reads.
 uint32_t g_panel_wedges     = 0;
@@ -289,33 +290,120 @@ bool vg_store_diag_load(void* d, unsigned n) { return file_load("phantom_diag.bi
 bool vg_store_diag_save(const void* d, unsigned n) { return file_save("phantom_diag.bin", d, n); }
 
 // ---------------------------------------------------------------------------
-// Audio -- silent, but still clocked
+// Audio
 // ---------------------------------------------------------------------------
 //
-// There is no output device here yet. The synth still runs, because it is part
-// of the frame's cost and part of the simulation's timing, and switching it off
-// would quietly make this build cheaper and different from the board. Samples
-// are accepted and dropped; the clock below is what keeps the synth generating
-// the right NUMBER of them.
+// waveOut, because it is in winmm and winmm was already linked for the timer.
+// WASAPI would be the modern answer and several hundred lines of one; this is a
+// window for judging how the game feels, and the sound only has to arrive.
+//
+// THE GAME IS MONO. vg_synth_render fills n int16 samples at VG_AUDIO_RATE and
+// the device port doubles each one into stereo because the codec wants pairs. A
+// PC sound device is happy to be told it is mono, so nothing is doubled here.
+//
+// EIGHT BUFFERS OF 1024 SAMPLES is about 370 ms of slack. That is generous, and
+// deliberately so: this build is paced by a sleep in the presenter rather than
+// by a panel, so a frame can arrive late by a millisecond or two whenever
+// Windows feels like it, and a short ring would turn every one of those into a
+// click.
 
-bool vg_audio_init(void) { return true; }
+#define AU_BUFS 8
+#define AU_CAP  1024
 
-int vg_audio_write(const int16_t*, int n) { return n; }
+static HWAVEOUT s_wo = nullptr;
+static WAVEHDR  s_hdr[AU_BUFS];
+static int16_t  s_abuf[AU_BUFS][AU_CAP];
+static bool     s_audio_ok = false;
 
+bool vg_audio_init(void) {
+    WAVEFORMATEX wf = {};
+    wf.wFormatTag      = WAVE_FORMAT_PCM;
+    wf.nChannels       = 1;
+    wf.nSamplesPerSec  = VG_AUDIO_RATE;
+    wf.wBitsPerSample  = 16;
+    wf.nBlockAlign     = (WORD)(wf.nChannels * wf.wBitsPerSample / 8);
+    wf.nAvgBytesPerSec = wf.nSamplesPerSec * wf.nBlockAlign;
+
+    // CALLBACK_NULL: the buffers are polled through WHDR_DONE rather than
+    // signalled. A callback would arrive on the driver's own thread, and this
+    // build has exactly one thread on purpose -- see the note in Arduino.h.
+    if (waveOutOpen(&s_wo, WAVE_MAPPER, &wf, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) {
+        s_wo = nullptr;
+        Serial.println("WARN: no audio device - the game will be silent");
+        return false;
+    }
+    memset(s_hdr, 0, sizeof(s_hdr));
+    s_audio_ok = true;
+    return true;
+}
+
+// Non-blocking BY CONTRACT: takes what it can and reports how much, and the
+// caller is expected to shrug at a short write. A port that blocked here would
+// put the sound on the critical path of the frame.
+int vg_audio_write(const int16_t* samples, int n) {
+    if (!s_audio_ok || !samples || n <= 0) return 0;
+
+    int done = 0;
+    for (int b = 0; b < AU_BUFS && done < n; b++) {
+        WAVEHDR* h = &s_hdr[b];
+        // Still on the wire: leave it alone. A buffer is reusable once the
+        // driver has flagged it done, and a fresh one has no flags at all.
+        if (h->dwFlags & WHDR_PREPARED) {
+            if (!(h->dwFlags & WHDR_DONE)) continue;
+            waveOutUnprepareHeader(s_wo, h, sizeof(*h));
+        }
+
+        int take = n - done;
+        if (take > AU_CAP) take = AU_CAP;
+        memcpy(s_abuf[b], samples + done, (size_t)take * sizeof(int16_t));
+
+        memset(h, 0, sizeof(*h));
+        h->lpData         = (LPSTR)s_abuf[b];
+        h->dwBufferLength = (DWORD)take * sizeof(int16_t);
+        if (waveOutPrepareHeader(s_wo, h, sizeof(*h)) != MMSYSERR_NOERROR) break;
+        if (waveOutWrite(s_wo, h, sizeof(*h)) != MMSYSERR_NOERROR) {
+            waveOutUnprepareHeader(s_wo, h, sizeof(*h));
+            break;
+        }
+        done += take;
+    }
+
+    // Counted where the device port counts it, so the telemetry's `short` figure
+    // means the same thing on both: samples the synth made that nothing took.
+    g_audio_short += (uint32_t)(n - done);
+    return done;
+}
+
+// How many samples the output has consumed since the last call, from wall time.
+// The device answers this from the codec's own sample clock; here the clock is
+// the only one available, and over a frame it is close enough that the synth
+// generates the right amount.
+//
+// CAPPED, because the first call after a stall would otherwise ask for every
+// sample since the world began. A quarter of a second of catch-up is plenty and
+// the rest is better dropped than rendered into a ring nobody is waiting on.
 int vg_audio_due(void) {
-    // How many samples the output would have consumed since the last call, from
-    // wall time -- the same question the device answers from the codec's own
-    // clock, and close enough that the synth advances at the right rate.
     static uint32_t prev = 0;
     const uint32_t now = micros();
     if (!prev) { prev = now; return 0; }
     const uint32_t dt = now - prev;
-    const int n = (int)(((uint64_t)dt * VG_AUDIO_RATE) / 1000000ull);
-    if (n > 0) prev = now;
+    int n = (int)(((uint64_t)dt * VG_AUDIO_RATE) / 1000000ull);
+    if (n <= 0) return 0;
+    prev = now;
+    const int cap = VG_AUDIO_RATE / 4;
+    if (n > cap) n = cap;
     return n;
 }
 
-int vg_audio_write_paced(const int16_t*, int n) { return n; }
+// The device lets this one wait, because on the board it runs on the audio task
+// and the codec pacing the producer IS the mechanism. There is no audio task
+// here, so waiting would be the frame waiting on itself.
+int vg_audio_write_paced(const int16_t* samples, int n) {
+    const uint32_t t0 = micros();
+    const int done = vg_audio_write(samples, n);
+    g_audio_blocked_us += micros() - t0;
+    return done;
+}
 
 // ---------------------------------------------------------------------------
 // IMU -- absent, which the game already knows how to handle

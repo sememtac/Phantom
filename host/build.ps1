@@ -99,12 +99,18 @@ $log = Join-Path $build "build.log"
 $prev = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 cmd /c "`"$bat`" > `"$log`" 2>&1"
+$compileFailed = ($LASTEXITCODE -ne 0)
 $ErrorActionPreference = $prev
 
 Get-Content $log | Where-Object { $_ -match "error [A-Z]+[0-9]+|fatal error" } |
     Select-Object -First 30 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
 
-if (-not (Test-Path "$build\phantom.exe")) { throw "build failed" }
+# THE EXIT CODE, NOT THE FILE. Testing for phantom.exe reported success off a
+# STALE binary from the previous build while the compiler was failing, which is
+# the worst possible way for a build to lie: it hands back something that runs.
+if ($compileFailed -or -not (Test-Path "$build\phantom.exe")) {
+    throw "build failed -- see $log"
+}
 Write-Host "built $build\phantom.exe" -ForegroundColor Green
 
 if ($Run) { & "$build\phantom.exe" "--scale" $Scale }
@@ -152,8 +158,8 @@ The ship turns too fast or too slow for some mice. To change it:
     phantom.exe --sens 0.05      slower
     phantom.exe --sens 0.20      faster
 
-The game has no sound yet. It writes phantom_save.bin beside itself, so keep it
-in a folder you can write to.
+The game writes phantom_save.bin beside itself, so keep it in a folder you can
+write to.
 "@ | Out-File -Encoding ascii (Join-Path $stage "READ ME.txt")
 
     $zip = Join-Path $build "phantom-pc.zip"
