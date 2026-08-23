@@ -4,6 +4,7 @@
 // all this does, so main.cpp -- the whole frame sequence, the telemetry, the
 // crumbs -- is the same file running here as on the board.
 #include "host_window.h"
+#include "host_opts.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,9 +25,17 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--sens") && i + 1 < argc) {
+            const float v = (float)atof(argv[++i]);
+            if (v > 0.0f) g_host_mouse_sens = v;
+        }
         else if (!strcmp(argv[i], "--help")) {
-            printf("phantom [--scale N]\n"
-                   "  --scale N   window size, N times the 480x480 panel (1-4, default 2)\n");
+            printf("phantom [--scale N] [--sens F] [--frames N]\n"
+                   "  --scale N    window size, N times the 480x480 panel (1-4, default 2)\n"
+                   "  --sens F     mouse scale, logical pixels per mouse count.\n"
+                   "               Default 0.15. Lower is slower. Full deflection\n"
+                   "               costs 115/F counts of hand movement.\n"
+                   "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
     }
@@ -37,6 +46,9 @@ int main(int argc, char** argv) {
         fprintf(stderr, "could not open a window\n");
         return 1;
     }
+
+    printf("mouse scale %.3f -- full deflection at %.0f mouse counts\n",
+           (double)g_host_mouse_sens, (double)(115.0f / g_host_mouse_sens));
 
     setup();
 

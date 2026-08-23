@@ -20,6 +20,7 @@
 #include "cfg_display.h"
 #include "cfg_hud.h"        // the throttle strip and rear patch, in panel pixels
 #include "host_window.h"
+#include "host_opts.h"
 #include "vg_game.h"   // vg_state_is_menu: a menu wants a pointer, not a stick
 
 #include <Arduino.h>
@@ -86,10 +87,9 @@ static float s_ty = (float)THROTTLE_BOT - 0.55f * (float)(THROTTLE_BOT - THROTTL
 // is close to what a thumb does and slow enough to hold a cruise setting.
 #define HOST_THROTTLE_PX_PER_SEC 235.0f
 
-// Mouse pixels to panel pixels. 1:1 on purpose -- 115 px of hand movement is
-// full deflection here exactly as it is on the glass, so anything learned about
-// how hard to pull transfers to the device.
-#define HOST_MOUSE_GAIN 1.0f
+// Logical pixels per mouse count. See host_opts.h for why this is not 1.0 and
+// why it has to be settable.
+float g_host_mouse_sens = 0.15f;
 
 bool vg_touch_init(void) { return true; }
 
@@ -141,8 +141,8 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // ---- the steering finger ----
     float mdx = 0, mdy = 0;
     host_mouse_take_delta(&mdx, &mdy);
-    s_fx += mdx * HOST_MOUSE_GAIN;
-    s_fy += mdy * HOST_MOUSE_GAIN;
+    s_fx += mdx * g_host_mouse_sens;
+    s_fy += mdy * g_host_mouse_sens;
 
     // Held inside the steering half of the glass. Clamping is not a limit on how
     // far you can turn: past 115 px the origin slides after the finger

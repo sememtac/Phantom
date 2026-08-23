@@ -10,11 +10,11 @@ static HWND      s_hwnd    = nullptr;
 static int       s_scale   = 2;
 static bool      s_quit    = false;
 static bool      s_focus   = false;
-static float     s_mdx     = 0.0f;
-static float     s_mdy     = 0.0f;
 static uint32_t* s_bgra    = nullptr;   // SCR_W * SCR_H, what GDI actually blits
 static BITMAPINFO s_bmi;
 static bool       s_capture = true;
+static float      s_rawx    = 0.0f;   // device counts since the last read
+static float      s_rawy    = 0.0f;
 
 // ---------------------------------------------------------------------------
 // THE FRAME RATE IS CAPPED, and it is not cosmetic.
@@ -34,6 +34,24 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case WM_DESTROY:      s_quit = true; return 0;
         case WM_SETFOCUS:     s_focus = true;  return 0;
         case WM_KILLFOCUS:    s_focus = false; ShowCursor(TRUE); return 0;
+        case WM_INPUT: {
+            // Only relative reports are steering. A tablet or a remote-desktop
+            // session sends absolute ones, and treating those as a delta would
+            // throw the stick to a corner on the first packet.
+            UINT sz = 0;
+            GetRawInputData((HRAWINPUT)l, RID_INPUT, nullptr, &sz, sizeof(RAWINPUTHEADER));
+            if (sz && sz <= sizeof(RAWINPUT)) {
+                RAWINPUT ri;
+                if (GetRawInputData((HRAWINPUT)l, RID_INPUT, &ri, &sz,
+                                    sizeof(RAWINPUTHEADER)) == sz &&
+                    ri.header.dwType == RIM_TYPEMOUSE &&
+                    !(ri.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                    s_rawx += (float)ri.data.mouse.lLastX;
+                    s_rawy += (float)ri.data.mouse.lLastY;
+                }
+            }
+            return DefWindowProc(h, m, w, l);
+        }
         case WM_KEYDOWN:
             // Escape releases the mouse rather than quitting, because the mouse
             // is captured while flying and a window you cannot get out of is a
@@ -78,6 +96,26 @@ bool host_window_open(int scale, const char* title) {
     s_bmi.bmiHeader.biBitCount    = 32;
     s_bmi.bmiHeader.biCompression = BI_RGB;
 
+    // RAW MOUSE INPUT, and this is what makes the stick honest.
+    //
+    // GetCursorPos deltas are what the POINTER did, which is the device's motion
+    // after Windows has applied pointer speed and "enhance pointer precision".
+    // That last one is acceleration: the same hand movement produces a different
+    // deflection depending on how fast it was made. A flight control cannot be
+    // calibrated against that, because there is no single number to calibrate.
+    //
+    // WM_INPUT reports what the DEVICE reported, in its own counts, before any of
+    // that. No RIDEV_INPUTSINK: input while another window is in front is not
+    // wanted.
+    {
+        RAWINPUTDEVICE rid = {};
+        rid.usUsagePage = 0x01;   // generic desktop
+        rid.usUsage     = 0x02;   // mouse
+        rid.dwFlags     = 0;
+        rid.hwndTarget  = s_hwnd;
+        RegisterRawInputDevices(&rid, 1, sizeof(rid));
+    }
+
     ShowWindow(s_hwnd, SW_SHOW);
     SetForegroundWindow(s_hwnd);
     s_focus = true;
@@ -110,9 +148,9 @@ bool host_window_pump(void) {
         RECT cr; GetClientRect(s_hwnd, &cr);
         POINT mid = { (cr.right - cr.left) / 2, (cr.bottom - cr.top) / 2 };
         ClientToScreen(s_hwnd, &mid);
-        POINT cur; GetCursorPos(&cur);
-        s_mdx += (float)(cur.x - mid.x);
-        s_mdy += (float)(cur.y - mid.y);
+        // The pointer is still parked in the middle every frame, but only so it
+        // cannot wander onto another window and take a click with it. The motion
+        // itself comes from WM_INPUT, not from where the pointer ended up.
         SetCursorPos(mid.x, mid.y);
         while (ShowCursor(FALSE) >= 0) {}
     } else {
@@ -127,7 +165,7 @@ void host_window_set_capture(bool on) {
     // Drop whatever movement arrived under the other regime, or the first frame
     // after a menu closes would fling the stick by however far the pointer
     // wandered while it was free.
-    s_mdx = s_mdy = 0.0f;
+    s_rawx = s_rawy = 0.0f;
 }
 
 bool host_mouse_logical(float* x, float* y) {
@@ -144,9 +182,9 @@ bool host_mouse_logical(float* x, float* y) {
 }
 
 void host_mouse_take_delta(float* dx, float* dy) {
-    if (dx) *dx = s_mdx;
-    if (dy) *dy = s_mdy;
-    s_mdx = s_mdy = 0.0f;
+    if (dx) *dx = s_rawx;
+    if (dy) *dy = s_rawy;
+    s_rawx = s_rawy = 0.0f;
 }
 
 bool host_key_down(int vk) {

@@ -38,6 +38,7 @@ output.
 |---|---|
 | `--scale N` | Sets the window size to N times the 480x480 panel. N is 1 to 4. The default is 2. |
 | `--frames N` | Runs N frames and then stops. Use this to test the build. |
+| `--sens F` | Sets the mouse scale. The default is 0.15. A lower number is slower. |
 | `--help` | Shows the options. |
 
 The game keeps its progress in `phantom_save.bin`. The game writes the file
@@ -71,6 +72,24 @@ A click is a tap. The game sees a finger while you hold the button, and it sees
 the finger lift when you let go. The game reads the position where the button
 went down. If you move the mouse more than 16 pixels before you let go, the game
 reads a drag and not a tap.
+
+### Mouse scale
+
+The mouse scale is the number of game pixels for each count that the mouse
+reports. The game needs 115 pixels for a full turn. At the default of 0.15, a
+full turn needs about 770 counts. That is about 2 cm of hand movement on a
+1000 DPI mouse.
+
+Mouse hardware differs by a factor of ten, so change the number to suit your
+mouse:
+
+    hostuild\phantom.exe --sens 0.08     slower
+    hostuild\phantom.exe --sens 0.30     faster
+
+The game prints the scale and the count for a full turn when it starts.
+
+Windows pointer speed does not change the scale. The game reads the mouse
+device, not the pointer, so pointer acceleration cannot affect the ship.
 
 The mouse does not centre itself. The board centres the stick when the finger
 lifts, but a mouse stays where you put it. Hold `C` to lift the finger. The
