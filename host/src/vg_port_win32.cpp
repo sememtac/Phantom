@@ -203,7 +203,11 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // stick self-centres exactly as it does when a thumb comes off the glass,
     // and letting go re-acquires with a fresh origin wherever the pointer is.
     // That is not an approximation of lifting a finger, it IS lifting a finger.
-    const bool lifted = host_key_down('C') || host_key_down(VK_RBUTTON);
+    // C ALONE. The right button used to do this as well, and it is the roll
+    // button now -- which would have meant every roll silently centring the
+    // stick and dropping the lock at the moment the pilot was committing to a
+    // turn.
+    const bool lifted = host_key_down('C');
 
     // Lifting also RE-ZEROES, which is what makes it a centre key rather than
     // only a pause: the contact returns at the centre, so the origin is the
@@ -263,9 +267,14 @@ uint8_t vg_buttons_read(void) {
     // it is the arrangement a PC player expects and it changes nothing the game
     // can see.
     if (host_key_down(VK_SPACE) || host_key_down(VK_LBUTTON)) m |= VG_BTN_A;
-    // The roll button. Held, the mouse stops steering and starts rolling --
-    // which is the board's control, not an approximation of it.
-    if (host_key_down(VK_SHIFT)) m |= VG_BTN_B;
+    // The roll button, held on the right mouse button. Both hands are already
+    // where they need to be -- the roll is a thing you do WITH the steering, not
+    // instead of it, and reaching for a key to modify the hand that is already
+    // flying is the one arrangement that cannot be done smoothly.
+    //
+    // Held, the mouse stops steering and starts rolling. That is the board's
+    // control, not an approximation of it.
+    if (host_key_down(VK_RBUTTON)) m |= VG_BTN_B;
     return m;
 }
 

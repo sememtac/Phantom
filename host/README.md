@@ -62,11 +62,11 @@ code that the board uses.
 | Control | Key |
 |---|---|
 | Steer | Move the mouse |
-| Centre the stick | Hold `C` or the right mouse button |
+| Centre the stick | Hold `C` |
 | Throttle up | `W` or the up arrow |
 | Throttle down | `S` or the down arrow |
 | Fire a missile | The left mouse button, or space |
-| Roll | Hold `Shift`, then steer left or right |
+| Roll | Hold the right mouse button, then steer left or right |
 | Look behind | Hold `R` |
 | Menu key | `Esc` or `Enter` |
 | Select a menu item | Move the mouse, then click |
@@ -76,8 +76,9 @@ pointer go on every screen, in a cutscene, when you pause the game, and when you
 move to another window. You always get the pointer back when the ship stops
 flying.
 
-Hold `Shift` to roll. The mouse then rolls the ship instead of turning it, which
-is what the roll button does on the board. Pitch still works while you roll.
+Hold the right mouse button to roll. The mouse then rolls the ship instead of
+turning it, which is what the roll button does on the board. Pitch still works
+while you roll.
 
 In a menu the window does not hold the pointer. Move the mouse to the item, then
 click it.
