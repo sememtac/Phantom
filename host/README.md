@@ -64,9 +64,13 @@ code that the board uses.
 The window holds the mouse pointer while you fly. Press `Esc` to get the pointer
 back. Click the window to fly again.
 
-In a menu the window does not hold the pointer. Move the mouse to point at an
-item, and click to select it. The game gets a tap, because the port lifts the
-contact for one frame when you click.
+In a menu the window does not hold the pointer. Move the mouse to the item, then
+click it.
+
+A click is a tap. The game sees a finger while you hold the button, and it sees
+the finger lift when you let go. The game reads the position where the button
+went down. If you move the mouse more than 16 pixels before you let go, the game
+reads a drag and not a tap.
 
 The mouse does not centre itself. The board centres the stick when the finger
 lifts, but a mouse stays where you put it. Hold `C` to lift the finger. The

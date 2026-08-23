@@ -107,27 +107,26 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     host_window_set_capture(!menu);
 
     if (menu) {
+        // A TAP IS A CONTACT THAT ARRIVES, STAYS STILL AND LIFTS. vg_game.cpp
+        // builds one that way: menu_edge records where it went down, every frame
+        // it is held adds to a travel total, and the tap only counts if the
+        // contact LIFTS having moved less than MENU_TAP_SLOP.
+        //
+        // So the button held is the finger down, and nothing else. An earlier
+        // version reported a contact continuously so the pointer could hover,
+        // and it broke selection twice over: a contact that never lifts never
+        // taps, and every bit of pointer movement piled into the travel total,
+        // so even a lift would have been thrown out as a drag.
+        //
+        // There is no hover on glass. The click position is the selection, which
+        // is why none is needed here either -- and dragging still works, because
+        // a contact that DOES travel is exactly what the bracket pan wants.
         float mx = 0, my = 0;
-        const bool inside = host_mouse_logical(&mx, &my);
-
-        // A TAP IS A LIFT AND A TOUCH, so that is what a click is made of. The
-        // menu reads menu_edge, which fires when a contact APPEARS -- and a
-        // contact that is always down never appears again. Dropping it for the
-        // single frame the button goes down produces a real press edge on the
-        // next one, out of the game's own semantics rather than a special case.
-        static bool prev_click = false;
-        static int  lift = 0;
-        const bool click = host_key_down(VK_LBUTTON);
-        if (click && !prev_click) lift = 1;
-        prev_click = click;
-
-        if (inside && host_window_focused()) {
-            if (lift > 0) { lift--; }
-            else {
-                xs[n] = (uint16_t)mx;
-                ys[n] = (uint16_t)my;
-                n++;
-            }
+        if (host_key_down(VK_LBUTTON) && host_window_focused()
+            && host_mouse_logical(&mx, &my)) {
+            xs[n] = (uint16_t)mx;
+            ys[n] = (uint16_t)my;
+            n++;
         }
         g_in_touch = (uint32_t)n;
         return n;
