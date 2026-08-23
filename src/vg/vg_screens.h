@@ -35,13 +35,16 @@
 #define PAU_BTN_GAP     12
 #define PAU_STACK_CY    300      // the stack's centre, whatever its height
 
-// The audio page.
+// The config page. It was the audio page, and it grew a display toggle, which is
+// why the button that opens it no longer says AUDIO.
 #define PAU_SLD_X       100
 #define PAU_SLD_W       280
 #define PAU_SLD_H       22
 #define PAU_SLD_MUSIC_Y 210
 #define PAU_SLD_SFX_Y   290
-#define PAU_BACK_Y      360
+#define PAU_CHK_Y       348      // the scanline box
+#define PAU_CHK_SIZE    26
+#define PAU_BACK_Y      404
 
 // What the pause screen is offering. Built as a list rather than tested one at a
 // time, so the drawing and the hit test cannot disagree about which entry is
@@ -49,7 +52,7 @@
 enum PauseItem : unsigned char {
     PAUSE_NONE = 0,
     PAUSE_RESUME,
-    PAUSE_AUDIO,
+    PAUSE_CONFIG,
     PAUSE_SKIP,      // only in a mode that can be skipped
     PAUSE_QUIT
 };
@@ -64,6 +67,7 @@ PauseItem vg_pause_item_at(float x, float y, bool skippable);
 bool  vg_pause_music_at(float x, float y);
 bool  vg_pause_sfx_at(float x, float y);
 bool  vg_pause_back_at(float x, float y);
+bool  vg_pause_scanline_at(float x, float y);
 float vg_pause_slider_value(float x);
 
 // --- callsign and trail colour ---------------------------------------------

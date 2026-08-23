@@ -10,6 +10,7 @@
 #include "vg_canopy.h"
 #include "vg_canopy_draw.h"
 #include "vg_tv.h"
+#include "vg_sfx.h"   // vg_disp: the player can switch the scanlines off
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
@@ -1668,7 +1669,11 @@ void vg_rast_flush(void) {
         // instead silently skipped every vector element.
         const uint32_t t_scan = micros();
         vg_crumb(CRUMB_FSCAN, (uint8_t)b);
-        {
+        // TURNED OFF WHOLE, not dimmed to nothing. The pass costs about a
+        // millisecond a frame whether or not anybody wants it, and the player
+        // who has switched it off should get that back rather than pay for a
+        // multiply by one.
+        if (vg_disp.scanlines) {
             const bool split = rowsplit_start(RS_SCAN, buf, b * BAND_H,
                                               ROW_SPLIT, BAND_H);
             band_scanlines(buf, b * BAND_H, 0, split ? ROW_SPLIT : BAND_H);

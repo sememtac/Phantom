@@ -123,7 +123,7 @@ void vg_draw_select(void) {
 int vg_pause_items(bool skippable, PauseItem* out) {
     int n = 0;
     out[n++] = PAUSE_RESUME;
-    out[n++] = PAUSE_AUDIO;
+    out[n++] = PAUSE_CONFIG;
     if (skippable) out[n++] = PAUSE_SKIP;
     out[n++] = PAUSE_QUIT;
     return n;
@@ -159,11 +159,34 @@ bool vg_pause_sfx_at(float x, float y) {
 bool vg_pause_back_at(float x, float y) {
     return vg_in_rect(x, y, PAU_BTN_X, PAU_BACK_Y, PAU_BTN_W, PAU_BTN_H);
 }
+// The whole row, not just the box. A 26 px square is a hard thing to hit with a
+// thumb, and the label is part of the control as far as the player is concerned.
+bool vg_pause_scanline_at(float x, float y) {
+    return vg_in_rect(x, y, PAU_SLD_X, PAU_CHK_Y - 6, PAU_SLD_W, PAU_CHK_SIZE + 12);
+}
 float vg_pause_slider_value(float x) {
     float v = (x - (float)PAU_SLD_X) / (float)PAU_SLD_W;
     if (v < 0.0f) v = 0.0f;
     if (v > 1.0f) v = 1.0f;
     return v;
+}
+
+// A box and a label, drawn as one row because that is what it is to a thumb.
+// Ticked with a cross rather than a fill: at this size a filled square and an
+// empty one read alike across the room, and two crossing lines do not.
+static void check_row(int y, const char* label, bool on) {
+    vg_text(PAU_SLD_X + PAU_CHK_SIZE + 14, y + 4, label, INK, 2);
+
+    const int x = PAU_SLD_X;
+    vg_fill_rect(x, y, PAU_CHK_SIZE, PAU_CHK_SIZE, INK_WELL);
+    vg_rect(x, y, PAU_CHK_SIZE, PAU_CHK_SIZE, INK);
+    if (on) {
+        const float a = (float)(x + 6),  b = (float)(y + 6);
+        const float c = (float)(x + PAU_CHK_SIZE - 6);
+        const float d = (float)(y + PAU_CHK_SIZE - 6);
+        vg_line(a, b, c, d, INK_BRIGHT);
+        vg_line(a, d, c, b, INK_BRIGHT);
+    }
 }
 
 static void volume_slider(int y, const char* label, float v) {
@@ -185,9 +208,10 @@ void vg_draw_pause(void) {
     for (int y = 0; y < SCR_H; y += 2) vg_fill_rect(0, y, SCR_W, 1, COL_BLACK);
 
     if (vg.pause_page == 1) {
-        centred(120, "AUDIO", INK_MAX, 5);
+        centred(120, "CONFIG", INK_MAX, 5);
         volume_slider(PAU_SLD_MUSIC_Y, "MUSIC", vg_vol.music);
         volume_slider(PAU_SLD_SFX_Y,   "SFX",   vg_vol.sfx);
+        check_row(PAU_CHK_Y, "SCANLINES", vg_disp.scanlines);
         vg_button(PAU_BTN_X, PAU_BACK_Y, PAU_BTN_W, PAU_BTN_H, "BACK", true, true);
         return;
     }
@@ -208,8 +232,8 @@ void vg_draw_pause(void) {
         switch (items[i]) {
         case PAUSE_RESUME:
             vg_button(x, y, w, h, "RESUME", true, true);  break;
-        case PAUSE_AUDIO:
-            vg_button(x, y, w, h, "AUDIO",  false, true); break;
+        case PAUSE_CONFIG:
+            vg_button(x, y, w, h, "CONFIG", false, true); break;
         case PAUSE_SKIP:
             vg_button(x, y, w, h, "SKIP",   false, vg_course.named); break;
         case PAUSE_QUIT:

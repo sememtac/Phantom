@@ -97,4 +97,15 @@ struct VgVolume {
     float sfx;
 };
 
+// WHAT THE PLAYER HAS TURNED OFF.
+//
+// Beside the volumes because it is the same kind of thing -- a preference the
+// player sets on the pause screen and expects to still be there tomorrow -- and
+// because both are saved by the same table. It is not audio, which is why the
+// page it lives on is not called AUDIO any more.
+struct VgDisplay {
+    bool scanlines;
+};
+extern VgDisplay vg_disp;
+
 extern VgVolume vg_vol;

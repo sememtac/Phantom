@@ -680,6 +680,14 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
             else if (vg_pause_sfx_at(in->menu_x, in->menu_y))
                 vg_vol.sfx = vg_pause_slider_value(in->menu_x);
         }
+        // TAPPED, not dragged, unlike the sliders above: a checkbox is a
+        // decision and a slider is an adjustment, and holding a finger on a
+        // decision should not flip it forty times.
+        if (tap->up && vg_pause_scanline_at(tap->x, tap->y)) {
+            vg_disp.scanlines = !vg_disp.scanlines;
+            vg_save_store();
+            return;
+        }
         if (tap->up && vg_pause_back_at(tap->x, tap->y)) {
             vg.pause_page = 0;
             vg_save_store();        // settings outlive the session
@@ -692,7 +700,7 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
         case PAUSE_RESUME:
             vg_state_resume(back);
             break;
-        case PAUSE_AUDIO:
+        case PAUSE_CONFIG:
             vg.pause_page = 1;
             break;
         case PAUSE_SKIP:

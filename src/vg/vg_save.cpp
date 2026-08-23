@@ -19,7 +19,7 @@
 // it, which is what the version field is for -- a record of a different size read
 // as if it were this one is exactly the "callsign of random bytes" the note above
 // is about.
-#define SAVE_VERSION 2
+#define SAVE_VERSION 3
 
 struct SaveRecord {
     uint32_t magic;
@@ -41,6 +41,12 @@ struct SaveRecord {
     // A-Z and treats anything else as "nobody has inherited the name". That is the
     // right answer for an old save and for a fresh one alike.
     char     phantom[3];
+    // DISPLAY TOGGLES, one bit each, and the byte is here to be grown into.
+    // Adding it took the record from 20 to 24 and cost every existing save, so
+    // the next preference goes in a spare bit of this rather than in a field of
+    // its own.
+    //   bit 0  scanlines off
+    uint8_t  flags;
 };
 
 // THE COMMENT ON `reserved` USED TO SAY "keeps the record 16 bytes", AND IT WAS
@@ -53,7 +59,7 @@ struct SaveRecord {
 // So it is asserted now rather than described. If this fires, the record grew, and
 // growing it means bumping SAVE_VERSION -- a record of a different size read as if
 // it were this one is the "callsign of random bytes" the note above is about.
-static_assert(sizeof(SaveRecord) == 20, "record grew: bump SAVE_VERSION too");
+static_assert(sizeof(SaveRecord) == 24, "record grew: bump SAVE_VERSION too");
 
 // ONE ROW PER PERSISTED FIELD, AND BOTH DIRECTIONS COME FROM IT.
 //
@@ -75,7 +81,7 @@ static_assert(sizeof(SaveRecord) == 20, "record grew: bump SAVE_VERSION too");
 // So the fields stay converted and clamped, and what becomes single is the LIST.
 // Each row is the field, how it packs, and how it unpacks -- side by side, where
 // leaving one out is visible.
-#define VG_PROFILE_FIELDS(F)                                                       F(credits,                                                                       r.credits = (uint16_t)((vg.credits < 0) ? 0 : vg.credits),                     vg.credits = (int)r.credits;                                                   if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;                          if (vg.credits < 0)          vg.credits = 0)                                 F(callsign,                                                                      memcpy(r.callsign, vg.callsign, 4),                                            for (int i = 0; i < 3; i++) {                                                      const char c = r.callsign[i];                                                  vg.callsign[i] = (c >= 'A' && c <= 'Z') ? c : 'A';                         }                                                                              vg.callsign[3] = 0)                                                          F(ship,                                                                          r.ship = (uint8_t)vg.ship,                                                     vg.ship = (r.ship < SHIP_CLASSES) ? (ShipClass)r.ship : SHIP_AEGIS;            vg.spec = vg_spec(vg.ship))                                                  F(champion,                                                                      r.champion = vg.champion ? 1u : 0u,                                            vg.champion = (r.champion != 0))                                             F(hue,                                                                           { float h = vg.trail_hue - (float)(int)vg.trail_hue;                             if (h < 0.0f) h += 1.0f;                                                       r.hue = (uint8_t)(h * 255.0f); },                                            vg.trail_hue = (float)r.hue * (1.0f / 255.0f))                               F(vol_music,                                                                     r.vol_music = (uint8_t)(vg_vol.music * 255.0f + 0.5f),                         vg_vol.music = (float)r.vol_music * (1.0f / 255.0f))                         F(phantom_tag,                                                                   memcpy(r.phantom, vg.phantom_tag, 3),                                          { bool ok = true;                                                                for (int i = 0; i < 3; i++)                                                        if (r.phantom[i] < 'A' || r.phantom[i] > 'Z') ok = false;                    if (ok) { memcpy(vg.phantom_tag, r.phantom, 3); vg.phantom_tag[3] = 0; }       else    { vg.phantom_tag[0] = 0; } })                                        F(vol_sfx,                                                                       r.vol_sfx = (uint8_t)(vg_vol.sfx * 255.0f + 0.5f),                             vg_vol.sfx = (float)r.vol_sfx * (1.0f / 255.0f))
+#define VG_PROFILE_FIELDS(F)                                                       F(credits,                                                                       r.credits = (uint16_t)((vg.credits < 0) ? 0 : vg.credits),                     vg.credits = (int)r.credits;                                                   if (vg.credits > CREDIT_CAP) vg.credits = CREDIT_CAP;                          if (vg.credits < 0)          vg.credits = 0)                                 F(callsign,                                                                      memcpy(r.callsign, vg.callsign, 4),                                            for (int i = 0; i < 3; i++) {                                                      const char c = r.callsign[i];                                                  vg.callsign[i] = (c >= 'A' && c <= 'Z') ? c : 'A';                         }                                                                              vg.callsign[3] = 0)                                                          F(ship,                                                                          r.ship = (uint8_t)vg.ship,                                                     vg.ship = (r.ship < SHIP_CLASSES) ? (ShipClass)r.ship : SHIP_AEGIS;            vg.spec = vg_spec(vg.ship))                                                  F(champion,                                                                      r.champion = vg.champion ? 1u : 0u,                                            vg.champion = (r.champion != 0))                                             F(hue,                                                                           { float h = vg.trail_hue - (float)(int)vg.trail_hue;                             if (h < 0.0f) h += 1.0f;                                                       r.hue = (uint8_t)(h * 255.0f); },                                            vg.trail_hue = (float)r.hue * (1.0f / 255.0f))                               F(vol_music,                                                                     r.vol_music = (uint8_t)(vg_vol.music * 255.0f + 0.5f),                         vg_vol.music = (float)r.vol_music * (1.0f / 255.0f))                         F(phantom_tag,                                                                   memcpy(r.phantom, vg.phantom_tag, 3),                                          { bool ok = true;                                                                for (int i = 0; i < 3; i++)                                                        if (r.phantom[i] < 'A' || r.phantom[i] > 'Z') ok = false;                    if (ok) { memcpy(vg.phantom_tag, r.phantom, 3); vg.phantom_tag[3] = 0; }       else    { vg.phantom_tag[0] = 0; } })                                        F(vol_sfx,                                                                       r.vol_sfx = (uint8_t)(vg_vol.sfx * 255.0f + 0.5f),                             vg_vol.sfx = (float)r.vol_sfx * (1.0f / 255.0f))                             F(flags,                                                                         r.flags = (uint8_t)(vg_disp.scanlines ? 0u : 1u),                              vg_disp.scanlines = ((r.flags & 1u) == 0u))
 
 void vg_save_load(void) {
     SaveRecord r;
