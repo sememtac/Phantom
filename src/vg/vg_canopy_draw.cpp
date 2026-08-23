@@ -281,7 +281,13 @@ void span_sub_scalar(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
 // The self-test in vg_canopy_warm proves bit-identity before the first frame
 // draws, and prints its verdict either way. Both paths are measured; the
 // author chooses with the numbers in hand.
+// Overridable from the build, which is how the desktop host selects the scalar
+// path: the PIE unit is Xtensa and the .S files cannot be assembled on a PC.
+// The self-test in vg_canopy_warm proves the two paths are bit-identical, so
+// this changes what runs and not what is drawn.
+#ifndef CANOPY_PIE
 #define CANOPY_PIE 1
+#endif
 
 #if CANOPY_PIE
 extern "C" void vg_pie_span_add8m(uint16_t* u, int nu, const uint16_t* d3,
@@ -2044,7 +2050,11 @@ void vg_canopy_bench(VgCanopyCost* out) {
 
         // The same two reads around nothing, so the harness pays for itself.
         const uint32_t t1 = esp_cpu_get_cycle_count();
+#if defined(_MSC_VER)
+        _ReadWriteBarrier();   // the same fence, spelled for MSVC
+#else
         asm volatile("" ::: "memory");
+#endif
         cal += esp_cpu_get_cycle_count() - t1;
     }
     vg_canopy_warp(1.0f);

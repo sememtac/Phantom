@@ -18,7 +18,22 @@
 // that has to be followed up, and still the most a single round carries after
 // LANCE's clean hit.
 
+// CONSTEXPR ON THE FIRMWARE BUILD ONLY, and it is not a preference.
+//
+// The invariants below read the table at compile time, which needs it constexpr.
+// MSVC will not accept constexpr on a definition whose header declaration says
+// `extern const`, and the header cannot say constexpr instead, because a
+// constexpr declaration without an initialiser is ill-formed. Both requirements
+// cannot be met there at once.
+//
+// So the desktop build takes const and goes without the checks, which is the
+// right way round: the firmware is what ships, and it is the build that would
+// otherwise carry a miscounted row into a fight.
+#if defined(_MSC_VER)
+const ShipSpec vg_ship_class[SHIP_CLASSES] = {
+#else
 constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
+#endif
 
     // ---- AEGIS -- the shield -------------------------------------------------
     // The reference ship, and the one an average player should have a good time
@@ -134,10 +149,12 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
 // is the pursuit-curve allowance: a seeker flies an arc, not a chord.
 #define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_ship_class[C].msl_speed * vg_ship_class[C].msl_life                             > vg_ship_class[C].lock_range * 1.4f,                                              #C " cannot reach its own lock range")
 
+#if !defined(_MSC_VER)
 SHIP_INVARIANTS(SHIP_AEGIS);
 SHIP_INVARIANTS(SHIP_LANCE);
 SHIP_INVARIANTS(SHIP_CHARIOT);
 SHIP_INVARIANTS(SHIP_BALLISTA);
+#endif
 
 #undef SHIP_INVARIANTS
 

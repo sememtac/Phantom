@@ -76,9 +76,16 @@ bool vg_band_init(void) {
 // ROUND.S on an out-of-range or NaN input saturates rather than raising, where lrintf's
 // result would be undefined anyway.
 static inline int fast_lrintf(float f) {
+#if defined(__XTENSA__)
     int r;
     asm ("round.s %0, %1, 0" : "=a"(r) : "f"(f));
     return r;
+#else
+    // The desktop build has no round.s. lrintf is the same operation -- round to
+    // nearest, ties to even -- and on x86 it is a single instruction too, so the
+    // fallback costs nothing where it is used.
+    return (int)lrintf(f);
+#endif
 }
 
 // Clip a line to a y-range. x is already inside the screen, so only y needs

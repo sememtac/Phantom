@@ -278,7 +278,7 @@ static void q_push(uint8_t kind, bool on, float a, const SynthLayer* l) {
     // ACQUIRE on the tail: we have to see the consumer's progress before deciding
     // the ring is full, or a full-looking ring stays full forever.
     if (h - __atomic_load_n(&s_q_tail, __ATOMIC_ACQUIRE) >= SFX_Q) return;
-    s_q[h & (SFX_Q - 1)] = (SfxEv){ kind, on, a, l };
+    s_q[h & (SFX_Q - 1)] = SfxEv{ kind, on, a, l };
     // RELEASE, and last: the slot must be visible before the index that publishes
     // it, or the consumer can read an entry that has not been written yet.
     __atomic_store_n(&s_q_head, h + 1, __ATOMIC_RELEASE);

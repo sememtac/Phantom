@@ -66,3 +66,8 @@ captures/*
 
 # Visual Studio working directory
 .vs/
+
+# The desktop build output. Reproducible from host/build.ps1 in one command,
+# and it carries a .exe and object files that would otherwise be tracked by the
+# *.bin rule above disagreeing with itself.
+host/build/

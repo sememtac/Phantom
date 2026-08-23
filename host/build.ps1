@@ -1,0 +1,109 @@
+# Build the desktop version of the game.
+#
+#   powershell -ExecutionPolicy Bypass -File host\build.ps1
+#   powershell -ExecutionPolicy Bypass -File host\build.ps1 -Run
+#
+# The result is host\build\phantom.exe. It needs no DLLs and no installed
+# libraries: the window is plain Win32 and the picture goes out through GDI.
+#
+# The game's own sources are compiled unchanged. Only two files are left out --
+# the device port and its audio codec -- and one is added in their place.
+param(
+    [switch]$Run,
+    [int]$Scale = 2,
+    [switch]$Clean
+)
+
+$ErrorActionPreference = "Stop"
+$root  = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$host_ = Join-Path $root "host"
+$build = Join-Path $host_ "build"
+
+if ($Clean -and (Test-Path $build)) { Remove-Item -Recurse -Force $build }
+New-Item -ItemType Directory -Force $build | Out-Null
+
+# --- find the compiler -------------------------------------------------------
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vcvars = $null
+if (Test-Path $vswhere) {
+    $install = & $vswhere -latest -products * `
+                 -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                 -property installationPath
+    if ($install) { $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat" }
+}
+if (-not $vcvars -or -not (Test-Path $vcvars)) {
+    throw "no MSVC x64 toolchain found. Install the Visual Studio C++ build tools."
+}
+
+# --- what to compile ---------------------------------------------------------
+#
+# EVERY game source except the two that are device-only:
+#   vg_port_co5300.cpp  the panel, touch, audio and storage for the real board
+#   third_party/es8311  the audio codec driver that port talks to
+#
+# The .S files are not listed at all -- they are Xtensa assembly for the canopy
+# blend, and CANOPY_PIE=0 below selects the scalar path they accelerate. The
+# self-test in vg_canopy_warm proves the two produce identical pixels.
+$src = @()
+$src += Get-ChildItem (Join-Path $root "src") -Filter *.cpp |
+        ForEach-Object { $_.FullName }
+$src += Get-ChildItem (Join-Path $root "src\vg") -Filter *.cpp |
+        Where-Object { $_.Name -ne "vg_port_co5300.cpp" } |
+        ForEach-Object { $_.FullName }
+$src += Get-ChildItem (Join-Path $host_ "src") -Filter *.cpp |
+        ForEach-Object { $_.FullName }
+
+$inc = @(
+    (Join-Path $host_ "compat"),     # Arduino.h and the esp_* headers, first
+    (Join-Path $host_ "src"),
+    (Join-Path $root  "src"),
+    (Join-Path $root  "src\vg")
+) | ForEach-Object { "/I`"$_`"" }
+
+# /fp:fast matches the -ffast-math the firmware builds with. It will NOT produce
+# the same bits as Xtensa -- see host\README.md -- but it keeps the same latitude
+# so the code behaves the way it was written to.
+$flags = @(
+    "/nologo", "/std:c++17", "/EHsc", "/O2", "/fp:fast", "/GS-", "/MT",
+    "/DNDEBUG", "/DCANOPY_PIE=0", "/D_CRT_SECURE_NO_WARNINGS",
+    "/DWIN32_LEAN_AND_MEAN",
+    "/FI`"$host_\compat\host_prelude.h`"",
+    "/wd4244", "/wd4305", "/wd4838", "/wd4996"   # float narrowing, all deliberate
+)
+
+$objdir = Join-Path $build "obj"
+New-Item -ItemType Directory -Force $objdir | Out-Null
+
+$args = @()
+$args += $flags
+$args += $inc
+# Forward slash and a relative path on purpose: a trailing backslash inside
+# quotes escapes the quote, which cl reports as one enormous invalid argument.
+$args += '/Fo"obj/"'
+$args += ($src | ForEach-Object { "`"$_`"" })
+$args += "/link", "user32.lib", "gdi32.lib", "winmm.lib"
+$args += "/OUT:`"$build\phantom.exe`""
+
+$cmdline = "cl " + ($args -join " ")
+$bat = Join-Path $build "_build.bat"
+"@echo off`r`ncall `"$vcvars`" >nul`r`ncd /d `"$build`"`r`n$cmdline" |
+    Out-File -Encoding ascii $bat
+
+Write-Host "compiling $($src.Count) files..." -ForegroundColor Cyan
+# Output goes to a log rather than the pipeline. vcvars64.bat writes a harmless
+# complaint about vswhere to stderr, and PowerShell turns any stderr from a
+# native command into a terminating error -- which would fail the build over a
+# message that has nothing to do with it.
+$log = Join-Path $build "build.log"
+$prev = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+cmd /c "`"$bat`" > `"$log`" 2>&1"
+$ErrorActionPreference = $prev
+
+Get-Content $log | Where-Object { $_ -match "error [A-Z]+[0-9]+|fatal error" } |
+    Select-Object -First 30 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+
+if (-not (Test-Path "$build\phantom.exe")) { throw "build failed" }
+Write-Host "built $build\phantom.exe" -ForegroundColor Green
+
+if ($Run) { & "$build\phantom.exe" "--scale" $Scale }

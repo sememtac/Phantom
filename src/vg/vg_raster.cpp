@@ -302,7 +302,15 @@ bool vg_rast_init(void) {
     // told, and neither is necessarily what the app runs with. Bits per the S3 TRM:
     // SPI_MEM_CTRL_REG(0) FREAD_QIO(24) FREAD_DIO(23) FREAD_QUAD(20) FREAD_DUAL(14).
     {
+#if defined(__XTENSA__)
         const uint32_t c = *(volatile uint32_t*)0x60002008;   // SPI_MEM_CTRL_REG(0)
+#else
+        // No flash cache controller to ask, and no memory at that address --
+        // dereferencing it on a desktop is an access violation. Reports SLOW,
+        // which is the honest answer for a build that is not fetching from
+        // flash at all.
+        const uint32_t c = 0;
+#endif
         const char* m = (c & (1u << 24)) ? "QIO" : (c & (1u << 23)) ? "DIO"
                       : (c & (1u << 20)) ? "QOUT" : (c & (1u << 14)) ? "DOUT" : "SLOW";
         Serial.printf("vg_rast_init: flash cache mode %s (ctrl %08x)\n", m, (unsigned)c);
