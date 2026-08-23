@@ -207,6 +207,13 @@ static void enter_intro(void) {
 // finished with and the cockpit is never zoomed.
 static void leave_intro(void) {
     vg_cine_clear();
+    // The cutscene posts the two introductions itself, and a SKIP can leave one
+    // of them still on the air. Nothing else takes it down: vg_state_cut clears
+    // the broadcast, but INTRO leaves through vg_state_go. Here rather than in
+    // vg_upd_intro because the leave hook is the one path every exit takes, and
+    // not in vg_cine_clear, which also runs BETWEEN SHOTS and would cut the
+    // first introduction off at the cut to the second.
+    vg_ift_clear();
     vg.cam_zoom = 1.0f;
 }
 
