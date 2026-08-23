@@ -21,7 +21,7 @@
 #include "cfg_hud.h"        // the throttle strip and the rear patch
 #include "host_window.h"
 #include "host_opts.h"
-#include "vg_game.h"   // vg_state_is_menu: a menu wants a pointer, not a stick
+#include "vg_game.h"   // vg_state_flags: only a flown state captures the pointer
 
 #include <Arduino.h>
 #include <stdio.h>
@@ -110,16 +110,26 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (!xs || !ys) return 0;
     int n = 0;
 
-    // A MENU IS NOT FLOWN, IT IS POINTED AT.
+    // CAPTURE THE POINTER ONLY WHILE THE SHIP IS BEING FLOWN.
     //
     // Flying wants a captured pointer that can be dragged for ever, because that
-    // is what a finger on glass does. A menu wants the opposite: the cursor
-    // visible, where the player left it, and a click that means something. The
-    // game already tells us which it is in, so the port asks rather than guesses.
-    const bool menu = vg_state_is_menu(vg.state);
-    host_window_set_capture(!menu);
+    // is what a finger on glass does. Everything else wants the opposite: the
+    // cursor visible, where the player left it, and clicks that mean something.
+    //
+    // ASKED AS "IS THIS FLYING", NOT AS "IS THIS A MENU", and the difference is
+    // not pedantic. PAUSE is deliberately not a menu -- its flags are 0, and the
+    // state table says why: "a pause is not a place, it suspends one". So a
+    // menu test left the pointer locked away at the exact moment the player had
+    // asked for it, which is the one moment they cannot get it back.
+    //
+    // VGS_LIVE and VGS_ENGINE are the game's own way of saying the airframe is
+    // under power and the panel is answering. That is true for PLAYING, HIT,
+    // KILL and COURSE, and false for every screen, every cutscene and the pause.
+    const uint8_t sf = vg_state_flags(vg.state);
+    const bool flying = (sf & (VGS_LIVE | VGS_ENGINE)) != 0u;
+    host_window_set_capture(flying);
 
-    if (menu) {
+    if (!flying) {
         // A TAP IS A CONTACT THAT ARRIVES, STAYS STILL AND LIFTS. vg_game.cpp
         // builds one that way: menu_edge records where it went down, every frame
         // it is held adds to a travel total, and the tap only counts if the

@@ -61,8 +61,10 @@ code that the board uses.
 | Menu key | `Esc` or `Enter` |
 | Select a menu item | Move the mouse, then click |
 
-The window holds the mouse pointer while you fly. The window lets the pointer go
-when you open a menu, and when you move to another window.
+The window holds the mouse pointer only while you fly the ship. It lets the
+pointer go on every screen, in a cutscene, when you pause the game, and when you
+move to another window. You always get the pointer back when the ship stops
+flying.
 
 Hold `Shift` to roll. The mouse then rolls the ship instead of turning it, which
 is what the roll button does on the board. Pitch still works while you roll.
