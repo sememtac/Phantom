@@ -11,7 +11,8 @@
 param(
     [switch]$Run,
     [int]$Scale = 2,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$Package
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,3 +108,56 @@ if (-not (Test-Path "$build\phantom.exe")) { throw "build failed" }
 Write-Host "built $build\phantom.exe" -ForegroundColor Green
 
 if ($Run) { & "$build\phantom.exe" "--scale" $Scale }
+
+# --- something to hand to somebody else --------------------------------------
+#
+# The exe is the whole game. It links the C runtime statically (/MT) and imports
+# only USER32, GDI32, WINMM and KERNEL32, all of which are part of Windows, so
+# there is nothing to install and nothing to sit beside it. The zip exists to
+# carry the controls along with it, not because the exe needs company.
+if ($Package) {
+    $stage = Join-Path $build "package"
+    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+    New-Item -ItemType Directory -Force $stage | Out-Null
+    Copy-Item "$build\phantom.exe" $stage
+
+    @"
+PHANTOM
+
+Run phantom.exe. There is nothing to install.
+
+Windows may warn you that it does not recognise the program. The file is not
+signed. Choose "More info" and then "Run anyway".
+
+CONTROLS
+
+  Mouse                 Steer
+  Left mouse button     Fire a missile
+  Hold Shift            Roll. The mouse rolls the ship instead of turning it.
+  W and S               Throttle up and down
+  Hold C                Centre the steering. Let go to steer again.
+  Hold R                Look behind
+  Esc                   Menu, and pause during a fight
+  Mouse in a menu       Point at an item and click it
+
+The window takes the mouse pointer while you fly. You get it back when you
+pause, when you open a menu, and when you move to another window.
+
+The window is 960x960. For a larger window, run it from a command prompt:
+
+    phantom.exe --scale 3
+
+The ship turns too fast or too slow for some mice. To change it:
+
+    phantom.exe --sens 0.05      slower
+    phantom.exe --sens 0.20      faster
+
+The game has no sound yet. It writes phantom_save.bin beside itself, so keep it
+in a folder you can write to.
+"@ | Out-File -Encoding ascii (Join-Path $stage "READ ME.txt")
+
+    $zip = Join-Path $build "phantom-pc.zip"
+    if (Test-Path $zip) { Remove-Item -Force $zip }
+    Compress-Archive -Path "$stage\*" -DestinationPath $zip
+    Write-Host "packaged $zip" -ForegroundColor Green
+}

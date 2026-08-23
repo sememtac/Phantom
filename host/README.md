@@ -134,6 +134,30 @@ the two `.S` files, because they hold Xtensa assembly code. The build sets
 `CANOPY_PIE=0`, so the canopy uses the C code that those files make faster. The
 self test in the game proves that the two paths give the same pixels.
 
+## How to share the game
+
+Run this command:
+
+    powershell -ExecutionPolicy Bypass -File hostuild.ps1 -Package
+
+It writes `hostuild\phantom-pc.zip`. The zip holds the executable and a text
+file with the controls. Send the zip. The other person unpacks it and runs
+`phantom.exe`.
+
+You can also send `phantom.exe` on its own. The executable is the whole game:
+
+- It links the C runtime into itself, so nobody needs a Visual C++ package.
+- It uses only Win32 and GDI, which are part of Windows.
+- It holds the art and the models. It makes the sky when it starts.
+
+Three things to tell the person you send it to:
+
+- Windows shows a warning for a program it does not recognise, because the file
+  is not signed. They must choose **More info** and then **Run anyway**.
+- The game needs 64-bit Windows.
+- The game writes `phantom_save.bin` beside itself, so it must sit in a folder
+  they can write to. It cannot run from `C:\Program Files`.
+
 ## Sound
 
 This build has no sound. The sound code still runs, because it costs frame time
