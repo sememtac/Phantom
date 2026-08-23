@@ -895,6 +895,23 @@ void loop(void) {
         // Audio delivery, on its own line because it is not a frame-time number
         // and reading it as one would be a mistake. Samples, at 22050 a second:
         // 22 of them is a millisecond. See vg_prof.h for the decision this makes.
+        // HOW MANY ROUNDS ARRIVE, both ways, since boot.
+        //
+        // The damage table is written in HITS -- "AEGIS 6 clean hits" -- so it
+        // only describes a fight if you also know what fraction of shots become
+        // hits. That fraction moved a long way when the lead solution and the
+        // fuse were fixed, and nothing was measuring it. Printed only once there
+        // is something to divide, so a menu does not carry an empty line.
+        if (g_msl_end[0] + g_msl_end[1] > 0) {
+            Serial.printf("        msl  = you %lu/%lu hit %lu%% %lu dmg | them %lu/%lu hit %lu%% %lu dmg\n",
+                          (unsigned long)g_msl_hit[1], (unsigned long)g_msl_end[1],
+                          (unsigned long)(g_msl_end[1] ? g_msl_hit[1] * 100u / g_msl_end[1] : 0u),
+                          (unsigned long)g_msl_dmg[1],
+                          (unsigned long)g_msl_hit[0], (unsigned long)g_msl_end[0],
+                          (unsigned long)(g_msl_end[0] ? g_msl_hit[0] * 100u / g_msl_end[0] : 0u),
+                          (unsigned long)g_msl_dmg[0]);
+        }
+
         // Audio delivery. The window is the same two seconds as the lines above,
         // so `blocked` reads straight off as a percentage: 1700 of 2000 ms waiting
         // for ring space means the queue is full 85% of the time, which is health

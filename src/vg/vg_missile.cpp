@@ -8,6 +8,22 @@
 // pull so many degrees per second -- and on the seeker cone that turns falling
 // behind that limit into a permanent miss rather than an endless chase.
 
+// HOW OFTEN A ROUND ARRIVES, which nothing has ever counted.
+//
+// The whole damage table is written in hits: "AEGIS 6 clean hits, LANCE 4". That
+// only says anything about a fight if you also know how many shots become hits,
+// and that number has been assumed rather than measured for the life of the
+// project. It moved a long way the day the lead solution and the fuse were
+// fixed, and the first thing anybody noticed was that everything had become
+// lethal.
+//
+// Indexed by who fired: [0] the enemy, [1] the player. Cumulative since boot,
+// because a ratio wants a sample and a two-second window is not one.
+uint32_t g_msl_fired[2] = { 0, 0 };
+uint32_t g_msl_end[2]   = { 0, 0 };   // rounds that have finished, any way
+uint32_t g_msl_hit[2]   = { 0, 0 };   // ...of which these arrived
+uint32_t g_msl_dmg[2]   = { 0, 0 };   // hull points delivered
+
 bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
                        const ShipSpec* spec) {
     Missile* m = nullptr;
@@ -27,6 +43,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->age         = 0;
     m->target      = target;
     m->have_last   = false;
+    g_msl_fired[from_player ? 1 : 0]++;
     trail_clear(m->trail);
     return true;
 }
@@ -91,6 +108,10 @@ static void report(MslEvent e) {
 }
 
 static void detonate(Missile* m, bool hit) {
+    const int who = m->from_player ? 1 : 0;
+    g_msl_end[who]++;
+    if (hit) g_msl_hit[who]++;
+
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);
     // A round that runs out of fuel still goes off. It used to leave nothing but
     // three shards, so a missile you had watched all the way in simply stopped
@@ -233,6 +254,7 @@ void vg_update_missiles(float dt) {
                     bool hit = d_min < m->spec->msl_splash;
                     if (hit) {
                         float dmg = impact_damage(m, d_min);
+                    g_msl_dmg[m->from_player ? 1 : 0] += (uint32_t)dmg;
                         if (m->target < 0) {
                             vg_damage_player(dmg);
                         } else {
@@ -276,6 +298,9 @@ void vg_update_missiles(float dt) {
         float lim = m->spec->lock_range * 1.4f;
         if (lim < CULL_RADIUS) lim = CULL_RADIUS;
         if (vlen2(m->pos) > lim * lim) {
+            // Counted here as well as in detonate: a round that leaves the world
+            // never detonates, and a miss that is not counted flatters the rate.
+            g_msl_end[m->from_player ? 1 : 0]++;
             if (m->from_player) report(MSL_MISSED);
             m->alive = false;
         }

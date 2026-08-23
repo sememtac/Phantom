@@ -42,6 +42,51 @@ static Vec3 break_across(Vec3 along, Vec3 up, float toward_bias) {
     return vnorm(vadd(side, vmul(along, toward_bias)));
 }
 
+// ---------------------------------------------------------------------------
+// THE TACTIC: what this class wants to be doing when nothing is trying to kill
+// it this instant.
+//
+// Steps 1 to 3 above -- the wall, the suicide run, the missile on the tail --
+// are survival, and every hull does them the same way. What is left is
+// POSITIONING, and that is where one class should differ from another: where it
+// wants to be relative to the player, and how fast.
+//
+// Split out so a second tactic can exist without touching the priorities that
+// have to hold for all of them. Dispatched on ShipSpec::tactic; today every
+// class carries TACTIC_FIGHTER, so this is one function and the behaviour is
+// exactly what it was.
+// ---------------------------------------------------------------------------
+
+static void tactic_fighter(Ship* s, const ShipSpec* sp, Vec3 to, float range,
+                           float close_r, float smin, float smax, Vec3* desired) {
+    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE) {
+        // Break off and extend. Holding the current heading here instead --
+        // which pursuit had already pointed at the player -- flew them
+        // straight into the player. Commit to a direction across AND away
+        // from the line of sight, long enough to actually open the range.
+        if (s->break_t <= 0) {
+            s->break_dir = break_across(vnorm(to), s->up, -0.55f);
+            s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN, ENEMY_BREAK_TIME_MAX);
+            // Re-roll the approach offset so the next pass comes in from a
+            // different side instead of repeating the same merge forever.
+            s->offset_dir = vg_rand_unit();
+        }
+        *desired = s->break_dir;
+        s->target_speed = smax;
+    } else {
+        // Aim at a point BESIDE the player. A pursuit curve that converges
+        // perfectly on its aim point then produces a firing pass rather than
+        // a collision.
+        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET);
+        *desired  = vsub(aim, s->pos);
+        // Close fast, then bleed off to a speed they can actually fight at --
+        // the same decision the player has to make.
+        s->target_speed = (range > close_r)
+                          ? smax * 0.85f
+                          : smin + (smax - smin) * 0.35f;
+    }
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) return;
     if (s->hit_flash > 0) s->hit_flash -= dt;
@@ -125,31 +170,11 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         Vec3  to    = vsub(v3(0, 0, 0), s->pos);   // player is the origin
         float range = vlen(to);
 
-        if (s->break_t > 0 || range < ENEMY_BREAK_RANGE) {
-            // Break off and extend. Holding the current heading here instead --
-            // which pursuit had already pointed at the player -- flew them
-            // straight into the player. Commit to a direction across AND away
-            // from the line of sight, long enough to actually open the range.
-            if (s->break_t <= 0) {
-                s->break_dir = break_across(vnorm(to), s->up, -0.55f);
-                s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN, ENEMY_BREAK_TIME_MAX);
-                // Re-roll the approach offset so the next pass comes in from a
-                // different side instead of repeating the same merge forever.
-                s->offset_dir = vg_rand_unit();
-            }
-            desired = s->break_dir;
-            s->target_speed = smax;
-        } else {
-            // Aim at a point BESIDE the player. A pursuit curve that converges
-            // perfectly on its aim point then produces a firing pass rather than
-            // a collision.
-            Vec3 aim = vmul(s->offset_dir, ENEMY_OFFSET);
-            desired  = vsub(aim, s->pos);
-            // Close fast, then bleed off to a speed they can actually fight at --
-            // the same decision the player has to make.
-            s->target_speed = (range > close_r)
-                              ? smax * 0.85f
-                              : smin + (smax - smin) * 0.35f;
+        switch (sp->tactic) {
+            case TACTIC_FIGHTER:
+            default:
+                tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);
+                break;
         }
     }
 

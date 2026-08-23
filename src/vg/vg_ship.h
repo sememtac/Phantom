@@ -23,6 +23,22 @@
 // to the target's armour, because it is a distinction about SHOOTING.
 // ===========================================================================
 
+// WHICH FIGHT THE AI FLIES IN THIS HULL.
+//
+// Everything else about a class is a number, and the AI reads those already: it
+// settles to a fighting speed at a fraction of its own lock_range, so a BALLISTA
+// engages from further out than a CHARIOT without the behaviour code knowing
+// that classes exist. That is scale, not tactics -- a BALLISTA still flies the
+// same fight an AEGIS does, just bigger.
+//
+// This is the part that cannot be derived from a number, because two ships with
+// identical stats could still want to fight differently. It lives on the spec so
+// the AI keeps reading one table, and so a class's tactic sits beside the
+// numbers it has to work with.
+enum ShipTactic : uint8_t {
+    TACTIC_FIGHTER = 0,   // merge, pass, extend, come round again
+};
+
 enum ShipClass : uint8_t {
     SHIP_AEGIS = 0,
     SHIP_LANCE,
@@ -89,6 +105,9 @@ struct ShipSpec {
     // otherwise silently inherit a zero delay, which is the unbreakable lock this
     // whole mechanism exists to avoid.
     float msl_reacq_delay;
+
+    // --- how the AI flies it -------------------------------------------------
+    ShipTactic tactic;
 
     // --- fire control --------------------------------------------------------
     // The nose cone the target must be inside to acquire, as a cosine. This is

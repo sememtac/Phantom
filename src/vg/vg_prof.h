@@ -310,3 +310,11 @@ extern uint32_t g_in_touch, g_in_lock;
 // the game alive. Counted rather than printed at the point of failure -- see panel_reap
 // for what printing it from there cost.
 extern uint32_t g_panel_wedges;
+
+// HOW OFTEN A ROUND ARRIVES. [0] the enemy fired it, [1] the player did.
+// Cumulative since boot; see the note at the definitions in vg_missile.cpp for
+// why a ratio is the point and a two-second window would not be one.
+extern uint32_t g_msl_fired[2];
+extern uint32_t g_msl_end[2];
+extern uint32_t g_msl_hit[2];
+extern uint32_t g_msl_dmg[2];
