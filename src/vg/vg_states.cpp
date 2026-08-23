@@ -724,19 +724,48 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
 }
 
 void vg_upd_round_won(float dt, const VgInput* in, const Tap* tap) {
-    if (vg.state_t > 2.4f) {
-        vg_tourney_resolve(true);
-        if (vt.complete) {
-            vg.champion = true;
-            // Back out of combat, so back to the menu sky. The bracket
-            // gets this from enter_bracket; the winner's card does not
-            // pass through it.
-            vg_use_menu_sky();
-            vg_state_go(VG_WON);
-            vg_save_store();      // the name sticks from here on
-        } else {
-            vg_state_go(VG_BRACKET);
-        }
+    if (vg.state_t <= 2.4f) return;
+
+    // RESOLVING IS ONCE, AND IT HAS TO BE SAID OUT LOUD NOW.
+    //
+    // vg_tourney_resolve advances the round counter AND simulates every other
+    // match in the draw, so calling it twice is a second tournament: the player
+    // skips a round and the rest of the bracket is re-rolled underneath them.
+    //
+    // It was safe when this was a vg_state_go, which changed the state on the
+    // same frame and so could not come back here. A cut does not: the state
+    // does not change until the JOIN, most of two seconds later, and this
+    // handler keeps running for every frame of the set going out. Hence the
+    // phase test -- the transition being up IS the record that the draw has
+    // already been resolved.
+    if (vg_tv.phase != TV_NONE) return;
+
+    vg_tourney_resolve(true);
+    if (vt.complete) {
+        vg.champion = true;
+        // Back out of combat, so back to the menu sky. The bracket
+        // gets this from enter_bracket; the winner's card does not
+        // pass through it.
+        vg_use_menu_sky();
+        vg_state_go(VG_WON);
+        vg_save_store();      // the name sticks from here on
+    } else {
+        // THE SET GOES OFF BETWEEN THE FIGHT AND THE TABLE. Every other way
+        // into the bracket is a cut -- finishing the course, walking out of a
+        // briefing -- and winning a match was the one path that snapped
+        // straight there, which read as the scorecard being replaced rather
+        // than as the broadcast moving on.
+        //
+        // It also puts enter_bracket behind the dead air, where the rest of the
+        // game already puts its set-up: the table is now built while the screen
+        // is black and the aperture opens onto a finished draw, instead of the
+        // redraw happening in front of the player.
+        //
+        // NOTHING OF THE MATCH IS STILL TALKING BY HERE. IFT_MATCH_END goes up
+        // KILL_SPEECH into the wreck and holds for IFT_SPEECH, which runs out
+        // 1.8s into this state's 2.4 -- so the vg_ift_clear inside the cut has
+        // nothing to take off the air, and the line still gets its full read.
+        vg_state_cut(VG_BRACKET);
     }
 }
 
