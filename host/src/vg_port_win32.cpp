@@ -92,8 +92,63 @@ void vg_panel_wait(void) {}
 // The cost is that the mouse no longer drags for ever -- it saturates. That is
 // the right trade here: an aeroplane stick has a stop, and a reference you can
 // return to is worth more than travel you cannot see.
-static float s_ox = 0.0f;   // offset from the centre, in panel pixels
-static float s_oy = 0.0f;
+//
+// THE POINTER IS THE THUMB NOW, and this is the second half of that sentence
+// finally being paid for.
+//
+// The offset used to be a RUNNING TOTAL of raw motion, which is a relative
+// control wearing a positional control's clothes. It was clamped to the right
+// place and it started in the right place, but it had no way of telling the hand
+// where inside that range it had got to -- so holding a steady bank meant
+// remembering how far you had already pushed, and reversing meant winding the
+// whole distance back before anything happened. That is the clunk.
+//
+// STEER_MODE 0 is a POSITIONAL stick: cfg_flight.h says the ship keeps turning
+// while the finger is held displaced, and that is exactly what a thumb resting
+// on glass does. So the pointer's POSITION inside the picture is the thumb's
+// position, read fresh every frame and never accumulated. Hold the mouse still
+// off-centre and the ship holds the turn. Put it back in the middle and you are
+// level. Nothing to remember and nothing to wind back.
+//
+// DRIVEN BY RAW COUNTS, DISPLAYED BY THE POINTER, and both halves are load
+// bearing.
+//
+// Reading the OS pointer's position directly was tried and it is not good enough,
+// for two reasons that both only show up in the hand.
+//
+// ACCELERATION. "Enhance pointer precision" moves the pointer further for a fast
+// hand than a slow one over the same distance of desk, so a flick reaches the
+// stop and a deliberate push of the same length does not. That is the exact fault
+// this file's raw input note was written about, and going positional did not
+// repeal it: the mapping from pointer to stick stayed honest, but the mapping
+// from HAND to pointer never was.
+//
+// AND THE WINDOW IS TOO SMALL TO BE A GATE. Bounding the stick by the picture
+// bounds the hand by the picture too, and a wrist flick crosses any window that
+// fits on a desk. Full deflection at the edge of a --scale 2 window is 482 screen
+// pixels, which is a flick; the travel the control actually wants is nearer three
+// times that, and there is nowhere to put it. A fence wider than the window is
+// not available -- it would park the pointer over another application, where the
+// fire button lands on them and takes the focus with it.
+//
+// So the thumb is a running total of RAW counts, clamped, and the pointer is
+// placed on it every frame. Raw counts cannot be accelerated, and the total is
+// clamped rather than free, so meeting the stop and coming straight back off it
+// costs nothing -- which was the only thing a running total ever got wrong.
+// The pointer is then a readout of the stick rather than the source of it, and
+// the fence and the clamp stop at the same place because one is set from the
+// other.
+//
+// WHAT MAKES IT POSSIBLE IS THE FENCE. An absolute mapping is only worth having
+// if the hand cannot leave the range that maps to something -- otherwise the
+// pointer wanders into a dead region past full deflection and coming back costs
+// exactly the winding this is meant to remove. host_window_set_fence stops the
+// pointer at the displacement that means full deflection, so the stop under the
+// hand and the stop in the flight model are the same stop.
+//
+// AND POINTER ACCELERATION STOPS MATTERING, which is what raw input was for.
+// Acceleration changes how far the pointer travels for a given hand movement; it
+// cannot change where the pointer IS, and where it is, is the whole control now.
 
 // The throttle thumb, in panel pixels. THROTTLE_TOP is full and THROTTLE_BOT is
 // idle, and the game reads the value straight off the contact's y. Seeded to
@@ -105,31 +160,11 @@ static float s_ty = (float)THROTTLE_BOT - 0.55f * (float)(THROTTLE_BOT - THROTTL
 // is close to what a thumb does and slow enough to hold a cruise setting.
 #define HOST_THROTTLE_PX_PER_SEC 235.0f
 
-// --- easing the stick back when the hand stops ------------------------------
-// A THUMB KNOWS WHERE IT IS AND A HAND ON A MOUSE DOES NOT, which is the reason
-// given at the top of this file for anchoring the stick to the middle of the
-// screen. The same sentence is the reason for this: the anchor made neutral a
-// FIXED PLACE, but it did not give the hand any way to feel where the stick is
-// sitting inside it. A drag that ends near the stop leaves the ship turning
-// steadily while the hand, which has no spring and no stop of its own, feels
-// like it is doing nothing.
-//
-// So a mouse that has come to rest is read as a hand that has stopped asking for
-// anything, and the stick eases home. Stopping is how you level out.
-//
-// GATED ON MOTION, NOT APPLIED CONTINUOUSLY, and that is the whole difference
-// between this and a spring. A spring decays while you are still pushing, so
-// holding deflection means feeding it faster than it bleeds -- deflection becomes
-// mouse SPEED, which is a different control and not the board's. Here any motion
-// at all holds the stick exactly where it was dragged, so a sustained turn costs
-// a slow drift rather than a sprint.
-#define HOST_CENTER_IDLE 0.05f   // seconds of stillness before it starts easing
-#define HOST_CENTER_TAU  0.055f  // e-fold of the ease; ~0.2s to arrive
-#define HOST_CENTER_SNAP 0.5f    // px below which it is simply centred
+static float s_ox = 0.0f;   // offset from the centre, in panel pixels
+static float s_oy = 0.0f;
 
-// Logical pixels per mouse count. See host_opts.h for why this is not 1.0 and
-// why it has to be settable.
-float g_host_mouse_sens = 0.10f;
+// Logical pixels of stick per raw mouse count. See host_opts.h.
+float g_host_stick_sens = 0.10f;
 
 // ROLL IS SHIFT, AND NOTHING ELSE HAPPENS HERE.
 //
@@ -184,6 +219,12 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         // There is no hover on glass. The click position is the selection, which
         // is why none is needed here either -- and dragging still works, because
         // a contact that DOES travel is exactly what the bracket pan wants.
+        // The whole picture, not the stick's box: a menu pointer has to be able
+        // to reach everything that can be clicked. The thumb goes back to neutral
+        // with it, so a match never begins already holding a turn.
+        host_window_set_fence(0.0f);
+        s_ox = s_oy = 0.0f;
+
         float mx = 0, my = 0;
         if (host_key_down(VK_LBUTTON) && host_window_focused()
             && host_mouse_logical(&mx, &my)) {
@@ -202,16 +243,23 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (dt < 0.0f || dt > 0.1f) dt = 0.0f;   // a stall must not fling the thumb
 
     // ---- the steering finger ----
+    // THE THUMB IS A RUNNING TOTAL OF RAW COUNTS, held and never decayed: hold
+    // the mouse still off-centre and the ship holds the turn, which is what
+    // cfg_flight.h means by a positional stick.
     float mdx = 0, mdy = 0;
     host_mouse_take_delta(&mdx, &mdy);
-    s_ox += mdx * g_host_mouse_sens;
-    s_oy += mdy * g_host_mouse_sens;
+    s_ox += mdx * g_host_stick_sens;
+    s_oy += mdy * g_host_stick_sens;
 
     // CLAMPED BY LENGTH, not per axis, and just inside the distance that would
     // make vg_input's origin start sliding. Clamping each axis on its own would
     // allow a diagonal of 1.41x the range, which slides -- and once the origin
     // moves, the centre of the screen stops being neutral, which is the entire
     // thing this is here to prevent.
+    //
+    // The clamp is also what stops a running total feeling like winding. The
+    // total saturates instead of running away, so the stop is a stop: coming back
+    // off it moves the ship on the very next count, with no distance to undo.
     const float lim = (float)STEER_RANGE - 1.0f;
     const float len = sqrtf(s_ox * s_ox + s_oy * s_oy);
     if (len > lim) {
@@ -220,31 +268,15 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         s_oy *= k;
     }
 
-    // Idle is measured in MOUSE COUNTS, not in the offset those counts produce,
-    // so the test means "the device reported nothing" and does not change with
-    // --sens. A resting mouse sends no counts at all; the threshold is here for
-    // a sensor that dithers by one, not to forgive a slow deliberate drift.
-    static float s_still = 0.0f;
-    if (fabsf(mdx) + fabsf(mdy) > 0.5f) s_still = 0.0f;
-    else                                s_still += dt;
-
-    if (s_still > HOST_CENTER_IDLE) {
-        const float k = expf(-dt / HOST_CENTER_TAU);
-        s_ox *= k;
-        s_oy *= k;
-        // Snapped rather than left to approach for ever. The exponential never
-        // reaches zero, and a stick parked a third of a pixel off centre would
-        // make the middle of the screen not quite level -- which is the one
-        // thing the anchor above exists to guarantee.
-        if (fabsf(s_ox) < HOST_CENTER_SNAP) s_ox = 0.0f;
-        if (fabsf(s_oy) < HOST_CENTER_SNAP) s_oy = 0.0f;
-    }
+    // The pointer is a READOUT now. Fenced to the stick's own travel and placed
+    // on the thumb every frame, so the hand meets the edge of the box at the same
+    // moment the ship meets full deflection -- and a pointer that is hidden
+    // anyway can never be somewhere the stick is not.
+    host_window_set_fence(lim);
 
     // LIFTING THE FINGER, which is the one thing an always-engaged mouse cannot
     // do by itself. Hold this and the contact simply stops being reported: the
-    // stick self-centres exactly as it does when a thumb comes off the glass,
-    // and letting go re-acquires with a fresh origin wherever the pointer is.
-    // That is not an approximation of lifting a finger, it IS lifting a finger.
+    // stick self-centres exactly as it does when a thumb comes off the glass.
     // C ALONE. The right button used to do this as well, and it is the roll
     // button now -- which would have meant every roll silently centring the
     // stick and dropping the lock at the moment the pilot was committing to a
@@ -257,7 +289,9 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (lifted || !host_window_focused()) {
         s_ox = 0.0f;
         s_oy = 0.0f;
+        host_mouse_centre();
     } else {
+        host_mouse_place((float)(SCR_W / 2) + s_ox, (float)(SCR_H / 2) + s_oy);
         xs[n] = (uint16_t)((float)(SCR_W / 2) + s_ox);
         ys[n] = (uint16_t)((float)(SCR_H / 2) + s_oy);
         n++;

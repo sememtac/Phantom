@@ -39,18 +39,63 @@ static HostView view_of(HWND h) {
     return v;
 }
 
-// The same viewport in SCREEN coordinates, which is what ClipCursor wants.
+// How far the pointer may get from the middle, in logical pixels. <= 0 is the
+// whole picture. Set by the port: the stick's travel while flying, everything
+// while not.
+static float s_fence_half = 0.0f;
+
+void host_window_set_fence(float half_logical) { s_fence_half = half_logical; }
+
+// The fenced area in SCREEN coordinates, which is what ClipCursor wants.
 // False when there is nothing to fence -- a minimised window has no client area
 // and clipping to an empty rect would pin the pointer to a point.
+//
+// The fence is expressed in LOGICAL pixels and applied in window ones, so it
+// tracks --scale and a resize for nothing: the box is the same fraction of the
+// picture however big the picture is drawn, exactly as the thumb's travel is the
+// same fraction of the glass.
 static bool view_rect_screen(HWND h, RECT* out) {
     const HostView v = view_of(h);
     if (v.w <= 0 || v.h <= 0) return false;
-    POINT tl = { v.x, v.y };
-    POINT br = { v.x + v.w, v.y + v.h };
+
+    int x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.h;
+    if (s_fence_half > 0.0f) {
+        // Rounded UP, and at least a pixel each way: a box that rounded to
+        // nothing would pin the pointer and the stick would stick at neutral.
+        int hw = (int)(s_fence_half * (float)v.w / (float)SCR_W + 0.5f);
+        int hh = (int)(s_fence_half * (float)v.h / (float)SCR_H + 0.5f);
+        if (hw < 1) hw = 1;
+        if (hh < 1) hh = 1;
+        const int cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+        if (hw < v.w / 2) { x0 = cx - hw; x1 = cx + hw; }
+        if (hh < v.h / 2) { y0 = cy - hh; y1 = cy + hh; }
+    }
+
+    POINT tl = { x0, y0 };
+    POINT br = { x1, y1 };
     ClientToScreen(h, &tl);
     ClientToScreen(h, &br);
     out->left = tl.x; out->top = tl.y; out->right = br.x; out->bottom = br.y;
     return true;
+}
+
+void host_mouse_place(float lx, float ly) {
+    if (!s_hwnd) return;
+    const HostView v = view_of(s_hwnd);
+    if (v.w <= 0 || v.h <= 0) return;
+    POINT p = { v.x + (int)(lx * (float)v.w / (float)SCR_W + 0.5f),
+                v.y + (int)(ly * (float)v.h / (float)SCR_H + 0.5f) };
+    ClientToScreen(s_hwnd, &p);
+    SetCursorPos(p.x, p.y);
+}
+
+void host_mouse_centre(void) {
+    if (!s_hwnd) return;
+    const HostView v = view_of(s_hwnd);
+    if (v.w <= 0 || v.h <= 0) return;
+    POINT mid = { v.x + v.w / 2, v.y + v.h / 2 };
+    ClientToScreen(s_hwnd, &mid);
+    SetCursorPos(mid.x, mid.y);
 }
 static float      s_rawx    = 0.0f;   // device counts since the last read
 static float      s_rawy    = 0.0f;
@@ -267,21 +312,17 @@ bool host_window_pump(void) {
         ClipCursor(nullptr);
     }
 
-    // THE MOUSE IS CAPTURED AND RE-CENTRED EVERY FRAME. Reading the absolute
-    // cursor and putting it back in the middle turns a pointer that would stop
-    // at the edge of the desk into one that can be pushed for ever, which is
-    // what a finger dragging across a panel does.
-    // GetForegroundWindow rather than our own focus flag alone: a window that
-    // has been alt-tabbed away from must not still be dragging the pointer back
-    // to its centre several times a second.
+    // THE POINTER IS NOT PUT BACK IN THE MIDDLE ANY MORE.
+    //
+    // It used to be, every frame, so that a mouse which stops at the edge of the
+    // desk could be pushed for ever -- the stick was a running total of motion
+    // and the pointer's own position meant nothing. It means everything now:
+    // where the pointer sits inside the fence IS the stick, so parking it in the
+    // middle would hold the ship at neutral for ever.
+    //
+    // Hidden while flying all the same. There is nothing to point at, and a
+    // cursor sitting in the canopy is the desktop showing through.
     if (s_capture && s_hwnd && !s_quit && host_window_focused()) {
-        const HostView v = view_of(s_hwnd);
-        POINT mid = { v.x + v.w / 2, v.y + v.h / 2 };
-        ClientToScreen(s_hwnd, &mid);
-        // The pointer is still parked in the middle every frame, but only so it
-        // cannot wander onto another window and take a click with it. The motion
-        // itself comes from WM_INPUT, not from where the pointer ended up.
-        SetCursorPos(mid.x, mid.y);
         while (ShowCursor(FALSE) >= 0) {}
     } else {
         while (ShowCursor(TRUE) < 0) {}
@@ -296,6 +337,11 @@ void host_window_set_capture(bool on) {
     // after a menu closes would fling the stick by however far the pointer
     // wandered while it was free.
     s_rawx = s_rawy = 0.0f;
+    // ENTERING FLIGHT STARTS AT NEUTRAL. The pointer was last wherever the
+    // player clicked READY, which is nowhere in particular, and the stick is its
+    // position now -- so without this the ship would begin the match already
+    // holding whatever turn that corner of the screen happens to mean.
+    if (on) host_mouse_centre();
 }
 
 bool host_mouse_logical(float* x, float* y) {
