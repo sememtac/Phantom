@@ -109,6 +109,28 @@ struct ShipSpec {
     // whole mechanism exists to avoid.
     float msl_reacq_delay;
 
+    // SEMI-ACTIVE: THE LAUNCHER HAS TO KEEP LOOKING AT THEM.
+    //
+    // A normal round here is fire-and-forget -- it carries its own seeker, and
+    // once it is away the launcher may do as it likes. A semi-active one has no
+    // seeker worth the name: it flies down a target the LAUNCHER is holding, and
+    // the moment that lock is lost the round has nothing to follow. Immediately,
+    // and for good -- it keeps its heading and sails on like any other broken
+    // lock.
+    //
+    // BALLISTA'S FANTASY, STATED AS A RULE. Its reach is the longest in the game
+    // and its round is alive for thirty-two seconds; what pays for that is not
+    // being allowed to look away. Firing across the arena now means holding the
+    // target in view for the twenty seconds the round takes to arrive -- twenty
+    // seconds of not manoeuvring, not turning on anybody else, and being
+    // perfectly predictable to the person being shot at. Reported from play as
+    // the class feeling too strong precisely because none of that was true.
+    //
+    // WHOSE VIEW NEEDS NO CONE OF ITS OWN. It is the class's lock_hold_cos, and
+    // BALLISTA's is the viewport idiom -- so the lock holds for exactly as long
+    // as the target is on screen, which is the promise the fantasy makes.
+    bool  msl_saam;
+
     // --- how the AI flies it -------------------------------------------------
     ShipTactic tactic;
 

@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "vg_pilot.h"
 #include <stdint.h>
 #include "vg_vec.h"
 #include "vg_config.h"
@@ -41,17 +42,52 @@ struct Ship {
     // Which class this fighter is flying. Everything about its performance comes
     // from here, so an NPC BALLISTA is the same ship the player can pick.
     const ShipSpec* spec;
-    // Pilot quality, as a scale on turn rate. The bracket will eventually seed
-    // this per entrant; for now it is a constant that reproduces the difficulty
-    // the game had when enemies were strictly worse than the player.
+    // Pilot quality, as a scale on turn rate. Derived from `pilot` at spawn and
+    // then modulated by the entrant's rating, so it is the one trait that
+    // carries the bracket's seeding as well as the character's.
     float skill;
+    // WHO IS FLYING IT. See vg_pilot.h -- the traits that are about the person
+    // rather than about the airframe. Never null: vg_spawn_enemy fills it.
+    const PilotSpec* pilot;
+    // WHERE THIS PILOT IS ACTUALLY POINTING, as against where the ship faces.
+    //
+    // A unit vector, the nose plus a slow wander whose width is the pilot's
+    // `aim`. EVERYTHING THAT AIMS READS THIS AND NOT s->fwd: the lock is earned
+    // with it and rounds leave along it, so one trait produces a pilot who takes
+    // longer to lock, loses locks a steadier one would keep, and occasionally
+    // sends a round somewhere useless. Flying still uses fwd -- being a poor shot
+    // is not the same as being unable to fly.
+    Vec3  aim_dir;
+    Vec3  aim_off;        // the current wander, re-rolled every aim_hold seconds
+    float aim_t;          // ...and the countdown to the next roll
+    // >0 while this pilot has NOT YET REACTED to something new. They carry on
+    // doing whatever they were doing until it expires, which is what being slow
+    // to notice looks like from outside.
+    float react_t;
+    bool  threat_seen;    // was there a threat last frame, so a NEW one can start the clock
     Vec3  pos;
     Vec3  fwd;
     Vec3  up;
     float speed;
     float target_speed;
     float hull;           // absolute points, counted down from spec->hull
+    // THE RACK, AND THE GAP BETWEEN TWO ROUNDS OUT OF IT.
+    //
+    // fire_cd is the trigger, which is now sp->fire_gap while there is anything
+    // to fire -- the class's real cadence rather than an average of one. rounds
+    // is what is left in the rack, and reload_t is how long until it comes back.
+    //
+    // The player's magazine lives in vg_wpn and is not shared: an enemy's rack is
+    // per-ship, because four of them are flying at once and they empty their own.
+    int   rounds;
+    float reload_t;       // >0 while dry and reloading
     float fire_cd;
+    // THE SAME LOCK THE PLAYER HAS TO EARN. Time held inside this class's own
+    // nose cone, and whether that has reached the class's lock_time. An enemy
+    // used to fire on a bearing test alone, which is the one part of a ship's
+    // fire control the AI was exempt from.
+    float lock_t;
+    bool  locked;
     float evade_t;        // >0 while breaking away from an incoming missile
     Vec3  evade_dir;
     float break_t;        // >0 while extending away after a firing pass
@@ -63,6 +99,21 @@ struct Ship {
     float defend_t;
     Vec3  defend_dir;
     bool  defend_run;     // running from the attacker, rather than turning on them
+    // >0 while holding a winning position instead of breaking off it. See
+    // has_the_angle: a pass that ends up behind the player is the one pass worth
+    // not finishing, and every tactic used to abandon it on a range test alone.
+    float press_t;
+    // How long the CURRENT pursuit has run, so it can be given a ceiling. Reset
+    // when the pursuit ends rather than when it starts, which is what makes a
+    // re-acquisition a new pursuit and not a continuation of the old one.
+    float press_run;
+    // WHAT THIS PILOT IS LIKE, rolled once at spawn and true for the whole match.
+    //
+    // skill is how well they fly; this is how they CHOOSE. Below 1 is a pilot who
+    // breaks early and extends long, above 1 one who stays in the fight past the
+    // point the geometry says to leave. Rolled per ship rather than per class, so
+    // four CHARIOTs are four pilots and a rematch is not a replay.
+    float nerve;
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
@@ -122,6 +173,15 @@ struct Missile {
     float   life;
     float   age;
     int     target;       // enemy index; -1 means the player
+    // WHO FIRED IT: enemy index, or -1 for the player. Only a semi-active round
+    // reads this, and only to ask whether that pilot still holds the lock.
+    //
+    // An INDEX and not a pointer, unlike spec above, and for the opposite reason.
+    // spec is a pointer because it must stay valid after the launcher dies; this
+    // must go STALE when the launcher dies. Killing the ship that is illuminating
+    // you is meant to drop its rounds out of the sky, and an index into a table
+    // whose `alive` flag has just gone false says that by itself.
+    int     shooter;
     // The bearing to the target as it stood at the END of the previous step, kept
     // as a VECTOR rather than a range. The fuse needs to know how close the round
     // passed, and two consecutive ranges cannot say: they are the endpoints of a
@@ -383,6 +443,35 @@ struct VgGame {
     // bank, and losing it would defeat the point of a meta-currency.
     int      credits;
 
+    // THE GYM. A fight with no tournament around it, for tuning combat.
+    //
+    // A tournament is a bad instrument for a combat change: one opponent per
+    // round, chosen by a draw, and a mistake costs the run. Judging whether a
+    // CHARIOT's burst is right needs the same CHARIOT over and over, and the
+    // ability to lose without it meaning anything.
+    //
+    // Both sides respawn here and nothing is scored, so a session ends when the
+    // player walks out of it and not before. NOT PERSISTED: it is a workshop, and
+    // a save that came back up in it would be a save that had lost its run.
+    bool     gym;
+    uint8_t  gym_opp;        // ShipClass the gym keeps sending
+    // A REP IS DUE, consumed by PLAYING's entry hook.
+    //
+    // The set-up cannot run at the button. vg_state_cut's own note says why: a
+    // state's set-up belongs at the JOIN, with the screen black, or the aperture
+    // closes on a scene that has already been replaced -- and the gym's worst
+    // case is exactly that, rebuilding the arena underneath the wreck the player
+    // is still tumbling around.
+    //
+    // It cannot be the entry hook alone either, because PLAYING is re-entered
+    // after every hit and every pause, and rebuilding the match there would make
+    // one missile the end of the rep. So the latch: set where a rep is decided,
+    // spent where the screen is black.
+    bool     gym_arm;
+    // Which half of the pair the select screen is asking about. Only meaningful
+    // while gym is set -- a tournament asks once.
+    bool     sel_opp;
+
     // Set once a tournament has been taken, and never cleared. The rumour in
     // the hangar bays is about YOU from then on -- the intro crawl changes to
     // match, which is the whole point of the name.
@@ -502,6 +591,13 @@ void vg_tournament_begin(ShipClass c);
 // Set up the next match against whoever the bracket says. Hull is NOT restored
 // here -- damage carries between rounds, and only credits will ever undo it.
 void vg_match_start(void);
+
+// Set up the gym's fight and put a fresh opponent in it. Used to start a gym
+// session and again on every respawn, so the two cannot drift apart.
+void vg_gym_start(void);
+// Just the opponent, for when the player is still flying and only the target
+// needs replacing.
+void vg_gym_spawn_opponent(void);
 
 // --- changing state ---------------------------------------------------------
 //

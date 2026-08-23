@@ -217,6 +217,16 @@ static void leave_intro(void) {
     vg.cam_zoom = 1.0f;
 }
 
+// Entering the flight, which is nearly always a continuation -- back from a hit,
+// back from the pause -- and must stay one. Only a gym rep asks for a whole new
+// match here, and only when the latch says so; see Vg::gym_arm.
+static void enter_playing(void) {
+    if (vg.gym && vg.gym_arm) {
+        vg.gym_arm = false;
+        vg_gym_start();
+    }
+}
+
 // Starting the flight phase of a match.
 //
 // NOT an entry hook, and the note on VgStateDef::leave says why: VG_HIT hands
@@ -309,7 +319,7 @@ static const VgStateDef STATES[VG_STATE_COUNT] = {
     { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_repair },
     { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr, vg_upd_bracket },
     { "INTRO",     VGS_MENU,                           enter_intro,      leave_intro, vg_upd_intro },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, enter_playing,    nullptr, vg_upd_playing },
     { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
@@ -523,7 +533,7 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
             for (int i = 0; i < MAX_ENEMIES; i++)
                 if (!vg.enemy[i].alive) {
                     vg_spawn_enemy(i, (ShipClass)(i % SHIP_CLASSES), ENEMY_SKILL,
-                                0.1f + 0.45f * (float)i);
+                                0.1f + 0.45f * (float)i, vg_pilot_default());
                     break;
                 }
         }
@@ -535,7 +545,29 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
         vg.health = vg.health_max;      // never let the load generator "die"
     }
 #endif
+    // THE GYM IS A CHORD, AND IT IS NOT ADVERTISED.
+    //
+    // Hold the alt button and tap to start. The title screen says TOUCH TO START
+    // and says nothing else: this is a workshop door, for whoever is tuning
+    // combat, and a player who came for the tournament will never find it by
+    // doing what the screen tells them.
+    //
+    // A CHORD RATHER THAN A BUTTON OF ITS OWN, because the alt button alone is
+    // reachable by accident -- it is the roll control in flight, so a hand
+    // already rests on it -- and a stray press that swallowed the start of a run
+    // would be a bug report about the tournament refusing to open.
+    //
+    // Tested BEFORE the plain tap and returning, or the same tap would open the
+    // gym and then be spent again on the entry screen behind it.
+    if (tap->up && in->roll_btn) {
+        vg.gym     = true;
+        vg.sel_opp = false;
+        vg_state_go(VG_SELECT);
+        return;
+    }
+
     if (tap->up) {
+        vg.gym = false;      // the tournament door clears the workshop
         vg_entry_reset();
         vg_state_go(VG_ENTRY);
     }
@@ -554,13 +586,36 @@ void vg_upd_repair(float dt, const VgInput* in, const Tap* tap) {
 void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
     // The +/- key cycles as well as the cards, since it is already wired and
     // is the fastest way to feel the difference between classes.
-    if (in->alt_edge)
-        vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
+    if (in->alt_edge) {
+        if (vg.gym && vg.sel_opp) vg.gym_opp = (uint8_t)((vg.gym_opp + 1) % SHIP_CLASSES);
+        else                      vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
+    }
     if (tap->up) {
         int card = vg_select_card_at(tap->x, tap->y);
         if (card >= 0) {
-            vg_game_select_ship((ShipClass)card);
+            // Picking the OPPONENT must not touch vg.ship: that call also resets
+            // the player's hull and rack, so choosing who to fight would have
+            // silently re-armed the player as the class they picked to fight.
+            if (vg.gym && vg.sel_opp) vg.gym_opp = (uint8_t)card;
+            else                      vg_game_select_ship((ShipClass)card);
         } else if (vg_select_confirm_at(tap->x, tap->y)) {
+            if (vg.gym) {
+                // TWO PASSES THROUGH ONE SCREEN. The first confirm keeps the
+                // player's ship and comes straight back for the opponent's,
+                // which is why this does not leave the state: the cards, the
+                // stat bars and the hit tests are the same question asked twice.
+                if (!vg.sel_opp) {
+                    vg.sel_opp = true;
+                    // The second pick starts on the ship just chosen rather than
+                    // wherever the cursor was left, so confirming twice is a
+                    // mirror match -- the most common thing to want.
+                    vg.gym_opp = (uint8_t)vg.ship;
+                } else {
+                    vg.gym_arm = true;
+                    vg_state_cut(VG_PLAYING);
+                }
+                return;
+            }
             // The draw is made HERE, so the course that follows has a
             // tournament to return to and the player flies it in the airframe
             // they actually picked.
@@ -645,11 +700,27 @@ void vg_upd_kill(float dt, const VgInput* in, const Tap* tap) {
     // After the last transmission, not over it. KILL_SPEECH is exactly how
     // long the dying pilot holds the other slot, so this lands in the silence
     // that follows and runs on into the bracket redraw.
-    if (vg.state_t > KILL_SPEECH && !(vg_bcast.ift_fired & (1u << IFT_MATCH_END))) {
+    // NOT IN THE GYM. The line names the round and the opponent out of the
+    // BRACKET, and a gym has neither -- vg_tourney_opponent would hand back
+    // whichever entrant the last tournament left indexed, so the announcer would
+    // sum up a match that is not being played.
+    if (!vg.gym &&
+        vg.state_t > KILL_SPEECH && !(vg_bcast.ift_fired & (1u << IFT_MATCH_END))) {
         vg_bcast.ift_fired |= (1u << IFT_MATCH_END);
         vg_ift_line(IFT_MATCH_END);
     }
     if (vg.state_t > KILL_BEAT) {
+        if (vg.gym) {
+            // NO PURSE AND NO TRANSITION. The player is still flying, still
+            // holding whatever hull the last fight cost them, and only the
+            // target needs replacing -- so the next one simply arrives down the
+            // tunnel the way the first did. Cutting to black here would make a
+            // rep cost four seconds of dead air, and the whole value of a gym is
+            // how fast it comes round again.
+            vg_gym_spawn_opponent();
+            vg_state_go(VG_PLAYING);
+            return;
+        }
         award_purse();
         vg_state_go(VG_ROUND_WON);
     }
@@ -716,6 +787,11 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
             if (vg_course.named) vg_state_cut(VG_BRACKET);
             break;
         case PAUSE_QUIT:
+            // Cleared here rather than in enter_attract, which the attract screen
+            // also reaches by other routes. Walking out of the workshop is the
+            // one act that ends a gym session.
+            vg.gym     = false;
+            vg.gym_arm = false;
             vg_state_cut(VG_ATTRACT);
             break;
         default: break;
@@ -885,7 +961,12 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
             // of it, they did, and the reason is between you and the wall. That also
             // means a kamikaze, a stray missile and a boundary hit all settle the same
             // way, which is the same rule the bracket already uses.
-            if (vg.state == VG_OVER && vg.champion) vg_title_lost();
+            // NOT IN THE GYM, AND THIS IS THE IMPORTANT ONE. vg_title_lost
+            // strips the title, empties the bank, resets the callsign and the
+            // ship, and WRITES ALL OF THAT TO THE SAVE. Dying in a workshop is
+            // meant to cost nothing, so without this guard a champion who came
+            // in to feel out a CHARIOT would lose the run to a test.
+            if (!vg.gym && vg.state == VG_OVER && vg.champion) vg_title_lost();
             if (vg.state == VG_OVER) {
                 // Your own ship, left drifting just ahead of the camera.
                 // There is no third-person view in a renderer where the
@@ -968,6 +1049,22 @@ void vg_upd_over(float dt, const VgInput* in, const Tap* tap) {
     // as an effect, the two together read as a machine coming apart.
     vg_shake.x += vg_frand(-3.4f, 3.4f);
     vg_shake.y += vg_frand(-3.4f, 3.4f);
+
+    // IN THE GYM, DYING IS A REP AND NOT AN ENDING. Same wreck, same tumble, same
+    // beat before anything is accepted -- being killed should still read as being
+    // killed -- and then a whole new fight instead of the title card.
+    //
+    // On the same tap, so it is unmistakably the player asking. A gym that
+    // respawned on a timer would take the moment away from them, and watching
+    // your own wreck is how you work out what went wrong.
+    if (vg.gym) {
+        if (vg.state_t > 2.2f && tap->up) {
+            vg_cine_clear();
+            vg.gym_arm = true;
+            vg_state_cut(VG_PLAYING);
+        }
+        return;
+    }
 
     // Knocked out is knocked out: back to the main menu, not a restart.
     if (vg.state_t > 2.2f && tap->up) { vg_cine_clear(); vg_state_cut(VG_ATTRACT); }

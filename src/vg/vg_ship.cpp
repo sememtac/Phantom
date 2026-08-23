@@ -68,7 +68,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
         /* warhead    */ 20.0f, 18.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.22f,
-        /* seeker     */ 0.50f, 2.0f, 0.9f,
+        /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_FIGHTER,
         /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
@@ -86,7 +86,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 285.0f, /* shake */ 1.30f,
         /* warhead    */ 32.0f, 14.0f, 0.20f, 520.0f, 1.20f, 10.0f, 0.35f,
-        /* seeker     */ 0.50f, 2.0f, 0.9f,
+        /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_GEOMETRY,
         /* fire ctrl  */ 0.90f, 0.90f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
@@ -107,7 +107,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
         /* warhead    */ 12.0f, 22.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.12f,
-        /* seeker     */ 0.52f, 2.0f, 0.9f,
+        /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_SLASH,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
@@ -115,8 +115,16 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // ---- BALLISTA -- the range -----------------------------------------------
     // A missile at 200 -- HALF the speed of the airframes it is shooting at, and
     // alive for thirty-two seconds. It cannot run anything down, it just refuses to
-    // go away, and it is the only seeker in the game that RE-ACQUIRES, so breaking
-    // its lock buys a pass rather than a kill.
+    // go away -- for as long as the pilot who fired it keeps looking at you.
+    //
+    // SEMI-ACTIVE, AND NO RE-ACQUISITION. It used to be the only seeker in the game
+    // that came back after a broken lock, on the reasoning that breaking it should
+    // buy a pass rather than a kill. Flown, the two together were too much: the
+    // round could be fired, watched briefly, and left to find its own way home
+    // while the pilot looked somewhere else entirely -- so the aiming this class is
+    // supposed to be about stopped after the trigger. The reach is the same and the
+    // round is as patient as it ever was; what it costs now is the pilot's
+    // attention for the whole twenty seconds it is in the air.
     //
     // The slowness is the aiming cost, paid AFTER the trigger. At 320 the round
     // arrived almost as soon as it was sent, so the shot was over the moment the
@@ -158,7 +166,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 270.0f, /* shake */ 0.55f,
         /* warhead    */ 30.0f, 17.0f, 0.50f, 200.0f, 2.30f, 32.0f, 0.30f,
-        /* seeker     */ 0.42f, -0.30f, 0.9f,
+        /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
         /* tactic     */ TACTIC_STANDOFF,
         /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },

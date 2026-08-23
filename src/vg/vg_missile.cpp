@@ -24,7 +24,7 @@ uint32_t g_msl_end[2]   = { 0, 0 };   // rounds that have finished, any way
 uint32_t g_msl_hit[2]   = { 0, 0 };   // ...of which these arrived
 uint32_t g_msl_dmg[2]   = { 0, 0 };   // hull points delivered
 
-bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
+bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int shooter,
                        const ShipSpec* spec) {
     Missile* m = nullptr;
     for (int i = 0; i < MAX_MISSILES; i++) if (!vg.msl[i].alive) { m = &vg.msl[i]; break; }
@@ -42,6 +42,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
     m->life        = spec->msl_life;
     m->age         = 0;
     m->target      = target;
+    m->shooter     = shooter;
     m->have_last   = false;
     g_msl_fired[from_player ? 1 : 0]++;
     trail_clear(m->trail);
@@ -179,6 +180,39 @@ void vg_update_missiles(float dt) {
         //
         // Which is a different threat from an unbreakable one. You can beat it
         // twice, or three times; you just cannot beat it once and forget it.
+        // SEMI-ACTIVE: IS ANYBODY STILL LOOKING AT THE TARGET?
+        //
+        // Asked before everything else, because it does not care what the round's
+        // own seeker thinks -- a semi-active round has no opinion of its own. It
+        // rides the LAUNCHER's lock, so the launcher letting go is the end of it:
+        // the round keeps its heading and sails on, exactly as a broken seeker
+        // lock does, and nothing brings it back.
+        //
+        // The two sides ask the same question of two different pilots. The player
+        // must still hold a lock ON THIS TARGET -- switching to somebody else drops
+        // the round as surely as losing them does, which is what stops one BALLISTA
+        // rack being aimed at three ships at once. An enemy only ever shoots at the
+        // player, so its own lock flag is the whole answer.
+        //
+        // A DEAD LAUNCHER STOPS ILLUMINATING, and that falls out for free: the
+        // index goes stale, `alive` is false, and the rounds already in the air go
+        // dumb. Killing the ship that is lighting you up is a real counter now,
+        // and nobody had to write it.
+        if (m->locked && m->spec->msl_saam) {
+            bool lit;
+            if (m->from_player) {
+                lit = vg_wpn.locked && vg_wpn.target == m->target;
+            } else {
+                lit = (m->shooter >= 0 && m->shooter < MAX_ENEMIES
+                       && vg.enemy[m->shooter].alive
+                       && vg.enemy[m->shooter].locked);
+            }
+            if (!lit) {
+                m->locked  = false;
+                m->lost_at = m->age;
+            }
+        }
+
         if (!m->locked && have_target && m->lost_at >= 0.0f
             && m->spec->msl_reacq_cos <= 1.0f
             && (m->age - m->lost_at) > m->spec->msl_reacq_delay) {

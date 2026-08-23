@@ -53,7 +53,11 @@ Vec3  vg_mote_spawn(float zmin, float zmax);
 // The idle camera: a long lazy arc that holds the centreline of the tube.
 // Put a fighter in slot `i`. Public only because vg_upd_attract's VG_BENCH load
 // generator spawns a full complement, and the handlers now live in vg_states.cpp.
-void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue);
+// `skill` is the turn-rate scale, already modulated by whatever the caller knows
+// about the entrant. The rest of the pilot comes from `pilot`; pass null for the
+// default character -- see vg_pilot.h.
+void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
+                    const PilotSpec* pilot);
 
 void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in);
 
@@ -115,7 +119,9 @@ void        vg_vfx_tick(float dt);
 // missile no matter who it is chasing.
 // False if the rack is full and nothing could be launched -- the caller must not
 // charge a round for a missile that was never created.
-bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target,
+// `shooter` is the enemy index that fired it, or -1 for the player. See
+// Missile::shooter -- semi-active rounds need to know whose lock they are riding.
+bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int shooter,
                        const ShipSpec* spec);
 void vg_update_missiles(float dt);
 

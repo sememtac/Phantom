@@ -159,7 +159,7 @@ void vg_player_fire(void) {
     // no missile existed there was no outcome to report either -- a shot that
     // vanished in both directions.
     if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
-                           vg_wpn.target, vg.spec))
+                           vg_wpn.target, -1, vg.spec))
         return;
 
     vg_wpn.rounds--;

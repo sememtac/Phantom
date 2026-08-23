@@ -74,12 +74,21 @@ static void stat_bar(int x, int y, int w, float t, uint16_t col) {
 }
 
 void vg_draw_select(void) {
-    centred(38, "SELECT SHIP", INK_MAX, 3);
+    // THE SAME SCREEN ASKS TWO QUESTIONS IN THE GYM, so the heading is the only
+    // thing that says which. Without it the second pass looks exactly like the
+    // first and the player re-picks their own ship.
+    const bool opp = (vg.gym && vg.sel_opp);
+    centred(38, vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
+                       : "SELECT SHIP", INK_MAX, 3);
+    if (vg.gym)
+        centred(68, opp ? "THEY RESPAWN UNTIL YOU LEAVE" : "PRACTICE -- NOTHING IS SCORED",
+                INK, 2);
 
     for (int i = 0; i < SHIP_CLASSES; i++) {
         const ShipSpec* s   = vg_spec((ShipClass)i);
+        // Which card reads as chosen depends on which question is being asked.
         const int       y   = SEL_CARD_Y0 + i * SEL_CARD_PITCH;
-        const bool      sel = ((int)vg.ship == i);
+        const bool      sel = opp ? ((int)vg.gym_opp == i) : ((int)vg.ship == i);
 
         vg_rect(SEL_CARD_X, y, SEL_CARD_W, SEL_CARD_H,
                 sel ? INK_BRIGHT : INK_TRACE);
@@ -113,7 +122,10 @@ void vg_draw_select(void) {
         vg_text(bx - 26, y + 49, "VOL", INK, 1);
     }
 
-    vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H, "ENTER", true, true);
+    // The gym's first confirm is not the last one, and a button that said ENTER
+    // both times would promise a fight and deliver another menu.
+    vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
+              (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true, true);
 }
 
 // ---------------------------------------------------------------------------

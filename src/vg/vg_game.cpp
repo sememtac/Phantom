@@ -62,21 +62,30 @@ void vg_spawn_asteroid(void) {
 // which point the viewpoint has drifted for twelve seconds and their position
 // relative to the arena means nothing.
 void vg_spawn_opponent(void) {
+    // THE GYM HAS NO BRACKET, and this is the one place that decides who is
+    // flown against -- both match set-up and the hand-over into flight come
+    // through here. Answering it once means the gym cannot be handed a stale
+    // entrant by a path somebody adds later.
+    if (vg.gym) { vg_gym_spawn_opponent(); return; }
+
     const Entrant* opp = vg_tourney_opponent();
     if (opp) {
         vg_spawn_enemy(0, opp->cls,
-                    ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue);
+                    ENEMY_SKILL * (0.75f + 0.35f * opp->rating), opp->hue,
+                    vg_pilot_for(opp->rating));
         vg.enemy[0].voice = opp->voice;
         for (int i = 0; i < 4; i++) vg.enemy[0].tag[i] = opp->tag[i];
     } else {
-        vg_spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f);
+        vg_spawn_enemy(0, SHIP_AEGIS, ENEMY_SKILL, 0.02f, vg_pilot_default());
     }
 }
 
-void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue) {
+void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
+                    const PilotSpec* pilot) {
     Ship* s = &vg.enemy[i];
 
     s->spec       = vg_spec(cls);
+    s->pilot      = pilot ? pilot : vg_pilot_default();
     s->skill      = skill;
     s->hue        = hue;
     s->scale      = ENEMY_SCALE;
@@ -96,11 +105,29 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->speed        = (s->spec->speed_min + s->spec->speed_max) * 0.5f;
     s->target_speed = s->speed;
     s->hull         = s->spec->hull;
+    // A FULL RACK, and a stagger before the first round rather than a stagger
+    // between every round. Four ships spawning with a loaded magazine and no
+    // offset would all open up together on the merge.
+    s->rounds       = s->spec->magazine;
+    s->reload_t     = 0.0f;
     s->fire_cd      = vg_frand(1.5f, 3.0f);
+    s->lock_t       = 0.0f;
+    s->locked       = false;
     s->evade_t      = 0;
     s->break_t      = 0;
     s->defend_t     = 0;
     s->defend_run   = false;
+    s->press_t      = 0;
+    s->press_run    = 0;
+    // The character's, jittered a little so two pilots of the same archetype are
+    // not the same pilot. The archetype decides the middle; the roll decides the
+    // person.
+    s->nerve        = s->pilot->nerve * vg_frand(0.94f, 1.06f);
+    s->aim_dir      = s->fwd;
+    s->aim_off      = v3(0, 0, 0);
+    s->aim_t        = 0.0f;
+    s->react_t      = 0.0f;
+    s->threat_seen  = false;
     s->offset_dir   = vg_rand_unit();
     s->roll_vis     = 0;
     s->hit_flash    = 0;
@@ -244,6 +271,60 @@ void vg_title_lost(void) {
     vg.health      = vg.health_max;
     vg_wpn.rounds  = vg.spec->magazine;
     vg_save_store();
+}
+
+// ---------------------------------------------------------------------------
+// The gym
+// ---------------------------------------------------------------------------
+
+// One opponent, the class the player nominated, at the same skill a tournament
+// would send. NOT the bracket's: there is no bracket here, and reading one would
+// be reading whatever the last run left behind.
+//
+// A FIXED HUE AND NO PILOT, because this is a test rig: the thing being fought is
+// the class, not somebody. vg_spawn_enemy leaves tag and voice alone, so they
+// carry whatever the previous occupant had -- which has to be overwritten, or a
+// gym CHARIOT would answer to a name out of the last tournament.
+//
+// THE BADGE IS THE CLASS, three letters of it. It cannot be left empty: the radio
+// caption draws the tag in a filled block whenever the channel is marked, so an
+// empty string is a small blank box beside every line. Naming the class instead
+// of inventing a pilot also keeps the caption honest about what is talking.
+void vg_gym_spawn_opponent(void) {
+    vg_spawn_enemy(0, (ShipClass)vg.gym_opp, ENEMY_SKILL, 0.02f, vg_pilot_default());
+    Ship* s = &vg.enemy[0];
+    s->voice = 0;
+    const char* n = s->spec->name;
+    for (int i = 0; i < 3; i++) s->tag[i] = n[i] ? n[i] : ' ';
+    s->tag[3] = 0;
+}
+
+void vg_gym_start(void) {
+    // BOTH HALVES OF STARTING A MATCH, because a match is both.
+    //
+    // vg_match_start is the match: arena weather, the player's rack, the throttle,
+    // the broadcast's one-shot flags. vg_begin_flight is TAKING THE SEAT, and it
+    // is where the things the player can see live -- which cockpit this hull
+    // flies, the canopy arriving a region at a time, the boot chain that lights
+    // the instruments and then opens the radio, and the input calibration.
+    //
+    // A tournament runs them at two ends of the cutscene, so calling only the
+    // first looked complete and was not: the gym came up with no cockpit drawing
+    // selected and the boot chain disarmed, so the canopy sequence never cued,
+    // the instruments hang off that cue and never drew, and vg_cockpit.ready --
+    // which both radio channels wait on -- was never set. A dark panel and a
+    // silent radio, reported as the ship not being initialised.
+    //
+    // There is no cutscene here to put between them, which is the point of a gym.
+    vg_match_start();
+    vg_begin_flight();
+
+    // AND A WHOLE HULL, after both, or vg_match_start's health_max would be set
+    // from a spec this has not read yet. This is the one place in the game that
+    // heals: damage is permanent for a tournament because the repair economy IS
+    // the difficulty curve, and a workshop has neither. Turning up to the next rep
+    // already hurt would make every rep after the first a different test.
+    vg.health = vg.health_max;
 }
 
 void vg_match_start(void) {

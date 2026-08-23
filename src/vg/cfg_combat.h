@@ -90,29 +90,53 @@
 #define ENEMY_SKILL          0.82f    // turn-rate scale; 1.0 = as good as a player
 #define ENEMY_FIRE_RANGE_K   0.875f   // fraction of its own lock range
 #define ENEMY_CLOSE_RANGE_K  0.94f    // ...at which it settles to a fighting speed
-// Fraction slower to shoot than the class's own sustained rate.
+// THE TRIGGER HANDICAP IS GONE, AND THE MAGAZINE IS THE HANDICAP NOW.
 //
-// Raised from 1.30 when the player's magazine became a whole-clip affair. The
-// sustained rate works out shorter than the old per-round reload for every class,
-// so at 1.30 every enemy would have silently got faster on the trigger.
+// ENEMY_FIRE_GAP_K was here: a fraction slower than the class's own SUSTAINED
+// rate -- magazine and reload averaged into one interval, a round sent on it for
+// ever, and this constant holding the average cadence across the four classes at
+// what it had been before fire control went per-class.
 //
-// 2.02 holds the AVERAGE cadence across the four classes at what it was before
-// fire control became per-class. It does NOT hold any individual class there, and
-// no single number could -- the classes have moved relative to each other, which
-// is the point. It is still a balance shift and not a neutral one:
+// It did that, and the averaging is what a playtest found. A class's cadence is
+// not an average, it is a BURST and then nothing: CHARIOT sends twelve rounds in
+// under two seconds and holds nothing for ten. Averaged it became a round every
+// 2.07s against AEGIS's 2.78, so the glass cannon and the reference fighter were
+// near enough the same on the trigger, and the deal a burst offers the player --
+// live through the pass, own the next ten seconds -- did not exist to be taken.
 //
-//   class      before   after
-//   AEGIS        4.16    2.78
-//   LANCE        5.20    4.54
-//   CHARIOT      1.82    2.07
-//   BALLISTA     7.80    9.59
+// An enemy carries a real rack now (see Enemy::rounds), fires at its class's own
+// sp->fire_gap, and sits out sp->reload when it runs dry. That is faster in the
+// burst and slower over a minute, which is the shape the ships were designed with
+// and the shape the player's own weapon has.
 //
-// -- so an enemy AEGIS is the one that got meaningfully harder, and an enemy
-// BALLISTA the one that got easier. Retune this whenever a class's magazine,
-// trigger or reload moves; it is derived from all three.
-#define ENEMY_FIRE_GAP_K     2.09f
+// NOTHING NEEDS RETUNING HERE WHEN A CLASS CHANGES ANY MORE, which was the other
+// cost of the old constant: it was derived from magazine, trigger AND reload, so
+// every table edit silently moved it.
 
-#define ENEMY_FIRE_COS       0.90f
+// THE CONE AN ENEMY MAY HOLD A LOCK IN, when its class says "the viewport".
+//
+// lock_hold_cos below -1 means "held for as long as the target is on screen",
+// which is an honest answer for the player and meaningless for an enemy: they
+// have no screen. This is that rule in the only terms an enemy has -- the cone
+// that reaches the CORNER of the player's panel, which the note on lock_hold_cos
+// works out at about 40 degrees off axis. So a class whose lock survives anywhere
+// in view keeps a lock that survives anywhere in the same solid angle.
+#define ENEMY_LOCK_HOLD_WIDE 0.766f
+
+// ENEMY_FIRE_COS WAS HERE, and it was the last piece of an enemy's fire control
+// that did not come from the ship it was flying.
+//
+// One cone, 0.90, for every class, and no lock time at all: an enemy pointed
+// roughly at the player could fire, where the player has to hold the nose on a
+// target for lock_time to earn the same shot. On LANCE that is the whole class --
+// 0.60s per acquisition, nearly a second and a half at a fighting speed -- so an
+// enemy LANCE put four rounds in the air for an aim the player would have been
+// charged four locks for. Reported from play as a volley that should not have
+// been permissible.
+//
+// Enemies now run the player's own acquisition: the class's lock_cos to acquire,
+// its lock_hold_cos to keep, its lock_range, and its lock_time scaled by speed
+// through the same LOCK_SPEED_PENALTY. See enemy_update_lock.
 
 // Enemies live under the same rule as the player: flat out, they cannot shoot.
 // Without this they would disengage AND keep firing, which strictly beats every
@@ -176,15 +200,97 @@
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 
+// --- an empty rack ----------------------------------------------------------
+//
+// A pilot holding nothing should not be flying at you as though they were. Once
+// an enemy carries a real magazine, running it dry is a state they are IN for
+// several seconds, and a ship that keeps boring in with no weapon reads as an AI
+// that cannot count -- it also throws away the deal a burst is supposed to offer,
+// which is that surviving the pass buys the reload.
+//
+// ONLY WHILE THE PLAYER IS NEAR ENOUGH TO MATTER. A dry ship at long range is in
+// no danger and has nothing to run from; making it run anyway would have BALLISTA,
+// which is dry more often than not, spend the match with its back turned. Inside
+// this it leaves; outside it, it goes on positioning.
+#define ENEMY_DRY_RANGE      1700.0f
+// Speed while extending on an empty rack. Flat out: there is nothing to slow down
+// for, since the firing gate is the only reason an enemy ever flies slowly.
+#define ENEMY_DRY_SPEED_K    1.00f
+
+// --- pressing a won position ------------------------------------------------
+//
+// Every tactic breaks off on a RANGE test, and range alone cannot tell a merge
+// that went well from one that went badly. A pass that ends with the enemy behind
+// the player, nose on, is the one pass worth not finishing -- and it was exactly
+// the pass they all abandoned, which is why fights read as a sequence of jousts
+// with no consequence to losing one.
+//
+// The mirror of on_my_six, and deliberately STRICTER than it. A pilot should
+// need a clearly won position to abandon the plan, where they need only a
+// suspicion of a threat to answer one.
+#define ENEMY_ANGLE_RANGE    1500.0f  // close enough for the position to be worth holding
+#define ENEMY_ANGLE_BEHIND   0.35f    // how far into the player's rear hemisphere
+#define ENEMY_ANGLE_NOSE     0.86f    // ...and how near their own nose the player sits
+// Committed for this long once taken, so losing the angle for a frame -- which a
+// hard turn does constantly -- does not drop the pursuit. It ends when the timer
+// runs out and the test fails again, which is the player having actually escaped.
+#define ENEMY_PRESS_TIME     1.5f
+// A ceiling on how long one pursuit can run before they have to let go and
+// re-merge. Without it a pilot who keeps just barely holding the angle never
+// disengages, and an opponent that can never be shaken is not a fight.
+#define ENEMY_PRESS_MAX      6.0f
+
+// --- temperament ------------------------------------------------------------
+//
+// NERVE MOVED TO THE PILOT. It was a bare random rolled per ship here, between
+// 0.80 and 1.30, which made two ships of the same class feel like two pilots but
+// could not make a FIRST ROUND opponent feel different from a finalist -- the
+// same range was drawn from at both ends of the bracket.
+//
+// It is a trait of the character now, in vg_pilot.h, alongside the two the game
+// never had: how steadily somebody points, and how long they take to notice. The
+// per-ship roll survives as a small jitter around the character's value, so an
+// archetype decides the middle and the roll decides the person.
+
+// --- how many of its own rounds a pilot will have in the air ----------------
+//
+// THE RATE LIMIT WAS NEVER THE PROBLEM, and it is worth writing down why, because
+// it was measured twice. An enemy has always spent sp->fire_gap between rounds:
+// instrumented, an enemy BALLISTA fires at 1.59s, 1.76s, 1.62s, 1.51s against a
+// table value of 1.60 with a ten per cent jitter, then goes quiet for its nine
+// second reload. Every class runs the same class-agnostic code.
+//
+// What a playtest saw was three rounds arriving together, and that is a different
+// fault. BALLISTA's round flies at 200 and lives for thirty-two seconds, so three
+// rounds fired 1.6s apart are ALL STILL IN THE AIR, converging from one bearing.
+// The rate limit is obeyed and the effect is a salvo anyway, because the rate is
+// fast relative to how long the ordnance lasts.
+//
+// That contradicts the class in its own words. vg_ship.cpp says a twenty-second
+// flight means "the pilot has to pick a moment that will still be true when it
+// gets there" -- and a pilot who empties the rack in 3.2 seconds is not picking
+// moments, they are covering the possibilities. Semi-active guidance sharpened it
+// further: all three ride ONE lock, so the aiming discipline the class is built
+// around gets paid once and buys three rounds.
+//
+// So the discipline is HOW MANY ROUNDS OF MINE ARE STILL FLYING, which is the
+// question a pilot would actually ask. A sniper fires and watches. A slasher
+// empties the rack, because that IS the class. Zero means no limit.
+#define ENEMY_INFLIGHT_STANDOFF  1   // fire, then watch it all the way in
+#define ENEMY_INFLIGHT_FIGHTER   2
+#define ENEMY_INFLIGHT_GEOMETRY  2   // clean hits only: a second round is the follow-up
+#define ENEMY_INFLIGHT_SLASH     0   // no limit -- emptying the rack in one pass is the ship
+
 // --- how each archetype positions itself ------------------------------------
 //
 // Everything above this is the fight EVERY enemy flies. These are the three that
 // fly a different one, and they are dispatched on ShipSpec::tactic.
 //
-// All of them still obey the two firing gates -- under ENEMY_ENGAGE_SPEED and
-// inside ENEMY_FIRE_COS -- because being slow and pointed at somebody to shoot
-// them is the trade the whole game is built on, and a class that was exempt from
-// it would not be a different tactic, it would be a different game.
+// All of them still obey the firing gates -- under ENEMY_ENGAGE_SPEED, and a LOCK
+// earned in the class's own cone over the class's own lock_time -- because being
+// slow and pointed at somebody to shoot them is the trade the whole game is built
+// on, and a class that was exempt from it would not be a different tactic, it
+// would be a different game.
 
 // STANDOFF -- BALLISTA. Holds a band at a fraction of its own lock range, faces
 // the player because the nose has to be on target to fire, and runs when
