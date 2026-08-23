@@ -128,7 +128,26 @@
 //
 // They will find each other regardless -- the AI closes on the player, so the
 // distance costs a few seconds of approach, not a stalemate.
-#define ENEMY_SPAWN_DIST     3800.0f
+//
+// THIS IS A REQUEST, NOT A DISTANCE. The spawn is placed along a ray and then
+// vg_arena_clamp_inside pulls it back toward the tube centreline, because a point
+// far along a straight line leaves a torus of r_major 4200 / r_minor 1100 very
+// quickly. So the number here is always larger than what the match gets, and it
+// SATURATES -- the arena runs out of room to put anyone. Measured against the real
+// spawn distribution, with the player on the centreline:
+//
+//     request   p10    median   p90
+//       2900   2179     2616   3243
+//       3800   2569     3202   4022
+//       5400   3078     3979   5008
+//       6500   3342     4342   5456
+//       8000   3599     4711   5883
+//
+// 6500 for a median of 4342, which is where a BALLISTA match opens at about its
+// own 4200 lock range -- often just outside it, so there is a moment of hunting
+// before the first contact. Asking for more buys almost nothing: 8000 is 1500
+// more on paper and 370 more in the arena.
+#define ENEMY_SPAWN_DIST     6500.0f
 #define ENEMY_EVADE_RANGE    540.0f   // break when a missile gets this close
 
 // Enemies aim at a point offset from the player rather than at the player, so
