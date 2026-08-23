@@ -468,6 +468,22 @@ struct VgGame {
     // one missile the end of the rep. So the latch: set where a rep is decided,
     // spent where the screen is black.
     bool     gym_arm;
+
+    // THE ATTRACT DEMO: the game playing itself on the title screen.
+    //
+    // A gym match with both seats flown, entered after the title has been up
+    // long enough that nobody is coming, and left on the first press. It is the
+    // oldest trick an arcade cabinet has and it is the whole reason the seat in
+    // vg_bot.h was made portable: a board sitting on a desk should be showing
+    // somebody what the game is, not a static title.
+    bool     demo;
+    // Its own clock. state_t cannot serve -- a demo runs through PLAYING, HIT,
+    // KILL and OVER, and every one of those resets it.
+    float    demo_t;
+    // The player's ship, parked. Entering a match selects one, and a demo that
+    // picked CHARIOT would leave the select screen and the save believing that
+    // is what the player flies.
+    uint8_t  demo_ship;
     // Which half of the pair the select screen is asking about. Only meaningful
     // while gym is set -- a tournament asks once.
     bool     sel_opp;
@@ -598,6 +614,21 @@ void vg_gym_start(void);
 // Just the opponent, for when the player is still flying and only the target
 // needs replacing.
 void vg_gym_spawn_opponent(void);
+// Drop straight into a gym match, skipping the title, the chord and both select
+// screens. For a harness: a matchup that runs without anybody choosing it.
+void vg_gym_enter(ShipClass mine, ShipClass theirs);
+
+// The title screen's demo. begin picks a matchup and hands both seats to the
+// game; end puts back everything begin borrowed.
+void vg_demo_begin(void);
+void vg_demo_end(void);
+
+// How long the title holds before the game starts playing itself, and how long
+// it plays for. The first is long enough that somebody who has just walked up
+// and is reading the crawl is not interrupted; the second is about one good
+// fight, after which the title deserves another turn.
+#define DEMO_AFTER      14.0f
+#define DEMO_LENGTH     42.0f
 
 // --- changing state ---------------------------------------------------------
 //

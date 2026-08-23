@@ -323,6 +323,12 @@ void vg_draw_overlays(void) {
     // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
     if (vg_state_flags(vg.state) & VGS_COMBAT) draw_missile_banner();
 
+    // THE DEMO SAYS SO. Without this the first press reads as the player having
+    // somehow started a match they are not flying -- and the prompt is also the
+    // instruction, because the way out of a demo is the way into the game.
+    if (vg.demo && fmodf(vg.state_t, 1.4f) < 0.9f)
+        centred(SCR_H - 54, "DEMO -- TOUCH TO PLAY", INK_BRIGHT, 2);
+
     switch (vg.state) {
     case VG_ATTRACT: {
         // Title and prompt fade out together and leave the whole screen to the

@@ -570,7 +570,16 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
         vg.gym = false;      // the tournament door clears the workshop
         vg_entry_reset();
         vg_state_go(VG_ENTRY);
+        return;
     }
+
+    // NOBODY IS COMING. The crawl has had its say and the title has been up long
+    // enough that whoever is in the room is not about to touch it, so the game
+    // starts playing itself. Measured on the state clock, which is right here and
+    // nowhere else: ATTRACT is the one state a demo can be launched from, and
+    // arriving back from a demo resets it, so the next one is another DEMO_AFTER
+    // away rather than immediate.
+    if (vg.state_t > DEMO_AFTER && vg_tv.phase == TV_NONE) vg_demo_begin();
 }
 
 void vg_upd_entry(float dt, const VgInput* in, const Tap* tap) {

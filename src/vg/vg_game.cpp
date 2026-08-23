@@ -16,6 +16,7 @@
 #include "vg_prof.h"
 #include "vg_canopy_set.h"
 #include "vg_anomaly.h"
+#include "vg_bot.h"
 #include "vg_flight.h"
 #include "vg_weapons.h"
 #include <Arduino.h>
@@ -299,6 +300,64 @@ void vg_gym_spawn_opponent(void) {
     s->tag[3] = 0;
 }
 
+// ---------------------------------------------------------------------------
+// The attract demo
+// ---------------------------------------------------------------------------
+
+void vg_demo_begin(void) {
+    if (vg.demo) return;
+
+    // The player's ship goes on the shelf. vg_game_select_ship is how a match
+    // picks one and it writes vg.ship, which the select screen opens on and the
+    // save keeps -- so a demo that chose for them would be a demo that changed
+    // what they fly.
+    vg.demo_ship = (uint8_t)vg.ship;
+    vg.demo      = true;
+    vg.demo_t    = 0.0f;
+
+    // A different pairing every time, because the point of a demo is to show the
+    // game and the game is four ships. Never a mirror: two of the same class is
+    // the least informative fight the game can put on.
+    const int a = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
+    int       b = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
+    if (b == a) b = (b + 1) % SHIP_CLASSES;
+
+    vg_bot_on = true;
+    vg_game_select_ship((ShipClass)a);
+    vg.gym     = true;
+    vg.sel_opp = false;
+    vg.gym_opp = (uint8_t)b;
+    vg.gym_arm = true;
+    // A CUT, not a jump. The set going off and coming back is how this game
+    // changes scene everywhere else, and it also puts the match set-up behind
+    // the dead air where PLAYING's entry hook expects to run it.
+    vg_state_cut(VG_PLAYING);
+}
+
+void vg_demo_end(void) {
+    if (!vg.demo) return;
+    vg.demo    = false;
+    vg.demo_t  = 0.0f;
+    vg_bot_on  = false;
+    vg.gym     = false;
+    vg.gym_arm = false;
+    // Everything the demo borrowed, put back.
+    vg_game_select_ship((ShipClass)((vg.demo_ship < SHIP_CLASSES)
+                                    ? vg.demo_ship : SHIP_AEGIS));
+    vg_state_cut(VG_ATTRACT);
+}
+
+void vg_gym_enter(ShipClass mine, ShipClass theirs) {
+    vg_game_select_ship(mine);
+    vg.gym     = true;
+    vg.sel_opp = false;
+    vg.gym_opp = (uint8_t)((theirs < SHIP_CLASSES) ? theirs : SHIP_AEGIS);
+    // Straight in, with no transition to wait through. The latch is what PLAYING's
+    // entry hook consumes, so this reaches the same set-up the chord does.
+    vg.gym_arm = true;
+    vg_state_go(VG_PLAYING);
+}
+
 void vg_gym_start(void) {
     // BOTH HALVES OF STARTING A MATCH, because a match is both.
     //
@@ -355,6 +414,7 @@ void vg_match_start(void) {
     vg_cockpit.radio_t     = 0;
     vg_cockpit.regions_lit = 0;
     vg_canopy_intro_reset();
+    vg_bot_reset();
     vg_cockpit.banner.ev   = MSL_NONE;
     vg_cockpit.banner.t = 0;
     vg_trail.n     = 0;
@@ -508,6 +568,40 @@ void vg_game_update(float dt, const VgInput* in) {
         gated = *in;
         gated.fire_edge = gated.alt_edge = gated.menu_edge = false;
         in = &gated;
+    }
+
+    // THE SEAT, FLOWN BY SOMETHING ELSE.
+    //
+    // Substituted here rather than in the port, and the difference matters: the
+    // port is one host's idea of a mouse, and this has to work identically on
+    // the board, in a replay and in a headless run with no port at all. This is
+    // the single place every one of those paths passes through.
+    //
+    // ONLY WHILE THERE IS A SHIP. Menus keep the real input, so whoever is at the
+    // desk can still steer the game around the bot -- start a match, pause it,
+    // leave. A bot that captured the menus as well would be a bot nobody could
+    // switch off.
+    // THE DEMO'S OWN CLOCK, AND ITS DOOR OUT.
+    //
+    // Both live here rather than in a state handler because a demo spans four
+    // states -- PLAYING, HIT, KILL, OVER -- and the press that ends one has to be
+    // read from the REAL input, which is about to be thrown away two lines below.
+    // A demo the player could not interrupt would be a demo holding the machine
+    // hostage.
+    if (vg.demo) {
+        vg.demo_t += dt;
+        const bool pressed = in->menu_edge || in->fire_edge || in->pwr_edge;
+        if (vg_tv.phase == TV_NONE && (pressed || vg.demo_t > DEMO_LENGTH)) {
+            vg_demo_end();
+        }
+    }
+
+    VgInput botin;
+    if (vg_bot_on && (vg_state_flags(vg.state) & VGS_LIVE) && vg_tv.phase == TV_NONE) {
+        VgObs obs;
+        vg_bot_observe(&obs);
+        vg_bot_act(&obs, &botin, dt);
+        in = &botin;
     }
 
     vg.state_t += dt;
