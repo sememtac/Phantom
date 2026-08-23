@@ -55,15 +55,20 @@ code that the board uses.
 | Centre the stick | Hold `C` or the right mouse button |
 | Throttle up | `W` or the up arrow |
 | Throttle down | `S` or the down arrow |
-| Fire | Space or the left mouse button |
-| Roll | Hold `Shift` and steer |
+| Fire a missile | The left mouse button, or space |
+| Roll left | Hold `A` |
+| Roll right | Hold `D` |
+| Roll with the mouse | Hold `Shift` and steer |
 | Look behind | Hold `R` |
-| Menu key | `Enter` |
+| Menu key | `Esc` or `Enter` |
 | Select a menu item | Move the mouse, then click |
-| Release the mouse | `Esc` |
 
-The window holds the mouse pointer while you fly. Press `Esc` to get the pointer
-back. Click the window to fly again.
+The window holds the mouse pointer while you fly. The window lets the pointer go
+when you open a menu, and when you move to another window.
+
+`A` and `D` roll the ship. The keys hold the roll control and move the steering
+finger to the side, so the roll starts in about a fifth of a second. The mouse
+still aims while you roll, and the ship returns to your aim when you let go.
 
 In a menu the window does not hold the pointer. Move the mouse to the item, then
 click it.

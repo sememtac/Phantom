@@ -18,7 +18,8 @@
 // was tuned.
 #include "vg_port.h"
 #include "cfg_display.h"
-#include "cfg_hud.h"        // the throttle strip and rear patch, in panel pixels
+#include "cfg_hud.h"        // the throttle strip and the rear patch
+#include "cfg_flight.h"     // STEER_RANGE: how far a swipe is a full roll
 #include "host_window.h"
 #include "host_opts.h"
 #include "vg_game.h"   // vg_state_is_menu: a menu wants a pointer, not a stick
@@ -91,6 +92,26 @@ static float s_ty = (float)THROTTLE_BOT - 0.55f * (float)(THROTTLE_BOT - THROTTL
 // why it has to be settable.
 float g_host_mouse_sens = 0.15f;
 
+// A AND D ROLL, and they do it by swiping rather than by a new control.
+//
+// Roll is not an input the game has. vg_input.cpp builds it out of the steering
+// axis: hold the modifier and the horizontal deflection BECOMES roll, with the
+// same deadzone, the same shaping and the same smoothing as everything else
+// (see the note at out->roll_btn). So a dedicated roll key here would have had
+// to reach past that and invent a second feel.
+//
+// Instead a key is a swipe. Holding one presses the modifier and slides the
+// reported finger sideways, ramped in over about a fifth of a second so the roll
+// comes on like a hand rather than a switch. It is an OFFSET on the reported
+// position and not a change to s_fx, so the mouse keeps aiming underneath it and
+// letting go puts the finger back exactly where the hand left it.
+//
+// Capped at STEER_RANGE, which is full deflection: any further and vg_input's
+// origin would start sliding after the finger, and the roll would leave a yaw
+// behind it when released.
+static float s_roll_off = 0.0f;
+#define HOST_ROLL_RAMP_SEC 0.20f
+
 bool vg_touch_init(void) { return true; }
 
 int vg_touch_read(uint16_t* xs, uint16_t* ys) {
@@ -161,8 +182,22 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // That is not an approximation of lifting a finger, it IS lifting a finger.
     const bool lifted = host_key_down('C') || host_key_down(VK_RBUTTON);
 
+    // ---- the roll swipe ----
+    const bool roll_l = host_key_down('A');
+    const bool roll_r = host_key_down('D');
+    const float roll_target = roll_l ? -(float)STEER_RANGE
+                            : roll_r ?  (float)STEER_RANGE : 0.0f;
+    {
+        const float rate = (float)STEER_RANGE / HOST_ROLL_RAMP_SEC;
+        if      (s_roll_off < roll_target) s_roll_off = fminf(roll_target, s_roll_off + rate * dt);
+        else if (s_roll_off > roll_target) s_roll_off = fmaxf(roll_target, s_roll_off - rate * dt);
+    }
+
     if (host_window_focused() && !lifted) {
-        xs[n] = (uint16_t)s_fx;
+        float rx = s_fx + s_roll_off;
+        if (rx < 0.0f)                 rx = 0.0f;
+        if (rx > (float)(SCR_W - 1))   rx = (float)(SCR_W - 1);
+        xs[n] = (uint16_t)rx;
         ys[n] = (uint16_t)s_fy;
         n++;
     }
@@ -213,7 +248,11 @@ uint8_t vg_buttons_read(void) {
     // it is the arrangement a PC player expects and it changes nothing the game
     // can see.
     if (host_key_down(VK_SPACE) || host_key_down(VK_LBUTTON)) m |= VG_BTN_A;
-    if (host_key_down(VK_SHIFT))                              m |= VG_BTN_B;
+    // The roll modifier. A and D press it themselves, so rolling is one key
+    // rather than a chord; Shift still holds it for a mouse-driven roll, which
+    // is what the board's own control is.
+    if (host_key_down(VK_SHIFT) || host_key_down('A') || host_key_down('D'))
+        m |= VG_BTN_B;
     return m;
 }
 
@@ -227,7 +266,7 @@ bool vg_pmu_pwr_pressed(void) {
     // An EDGE, like the device's interrupt register: the game asks whether the
     // key has been pressed since it last asked, not whether it is down.
     static bool prev = false;
-    const bool now = host_key_down(VK_RETURN);
+    const bool now = host_key_down(VK_ESCAPE) || host_key_down(VK_RETURN);
     const bool hit = now && !prev;
     prev = now;
     return hit;

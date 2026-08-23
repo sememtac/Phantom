@@ -9,7 +9,6 @@
 static HWND      s_hwnd    = nullptr;
 static int       s_scale   = 2;
 static bool      s_quit    = false;
-static bool      s_focus   = false;
 static uint32_t* s_bgra    = nullptr;   // SCR_W * SCR_H, what GDI actually blits
 static BITMAPINFO s_bmi;
 static bool       s_capture = true;
@@ -32,8 +31,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
         case WM_CLOSE:
         case WM_DESTROY:      s_quit = true; return 0;
-        case WM_SETFOCUS:     s_focus = true;  return 0;
-        case WM_KILLFOCUS:    s_focus = false; ShowCursor(TRUE); return 0;
+        case WM_KILLFOCUS:    ShowCursor(TRUE); return 0;
         case WM_INPUT: {
             // Only relative reports are steering. A tablet or a remote-desktop
             // session sends absolute ones, and treating those as a delta would
@@ -53,10 +51,15 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return DefWindowProc(h, m, w, l);
         }
         case WM_KEYDOWN:
-            // Escape releases the mouse rather than quitting, because the mouse
-            // is captured while flying and a window you cannot get out of is a
-            // worse problem than one that will not close.
-            if (w == VK_ESCAPE) { s_focus = false; ShowCursor(TRUE); }
+            // Escape is the PWR key now -- the menu key -- so it is read like
+            // any other key rather than acted on here.
+            //
+            // IT USED TO CLEAR s_focus, and that was a latch nothing could set
+            // again: WM_SETFOCUS only arrives when a window GAINS keyboard
+            // focus, and a window that already has it never gains it. One press
+            // of Escape therefore killed every key and every mouse button for
+            // the rest of the session. That is what "the left click does not
+            // fire" turned out to be. Focus is asked for now, not remembered.
             return 0;
         default: break;
     }
@@ -118,7 +121,6 @@ bool host_window_open(int scale, const char* title) {
 
     ShowWindow(s_hwnd, SW_SHOW);
     SetForegroundWindow(s_hwnd);
-    s_focus = true;
     return true;
 }
 
@@ -128,7 +130,12 @@ void host_window_close(void) {
 }
 
 bool host_window_quit_requested(void) { return s_quit; }
-bool host_window_focused(void)        { return s_focus; }
+// ASKED, NOT REMEMBERED. A latch was wrong twice over: it could be cleared with
+// no event able to set it again, and it could disagree with the window manager
+// after an alt-tab. The system already knows the answer.
+bool host_window_focused(void) {
+    return s_hwnd != nullptr && GetForegroundWindow() == s_hwnd;
+}
 
 bool host_window_pump(void) {
     MSG msg;
@@ -144,7 +151,7 @@ bool host_window_pump(void) {
     // GetForegroundWindow rather than our own focus flag alone: a window that
     // has been alt-tabbed away from must not still be dragging the pointer back
     // to its centre several times a second.
-    if (s_capture && s_focus && s_hwnd && !s_quit && GetForegroundWindow() == s_hwnd) {
+    if (s_capture && s_hwnd && !s_quit && host_window_focused()) {
         RECT cr; GetClientRect(s_hwnd, &cr);
         POINT mid = { (cr.right - cr.left) / 2, (cr.bottom - cr.top) / 2 };
         ClientToScreen(s_hwnd, &mid);
@@ -188,7 +195,7 @@ void host_mouse_take_delta(float* dx, float* dy) {
 }
 
 bool host_key_down(int vk) {
-    if (!s_focus) return false;
+    if (!host_window_focused()) return false;
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
