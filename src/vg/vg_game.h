@@ -57,6 +57,12 @@ struct Ship {
     float break_t;        // >0 while extending away after a firing pass
     Vec3  break_dir;
     Vec3  offset_dir;     // stable lateral offset for the aim point
+    // >0 while defending against something sitting on its tail. Separate from
+    // break_t because a break is part of a firing pass and this is the opposite:
+    // the pass has gone wrong and the fight is now about getting away.
+    float defend_t;
+    Vec3  defend_dir;
+    bool  defend_run;     // running from the attacker, rather than turning on them
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 

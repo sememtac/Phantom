@@ -99,6 +99,8 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue) {
     s->fire_cd      = vg_frand(1.5f, 3.0f);
     s->evade_t      = 0;
     s->break_t      = 0;
+    s->defend_t     = 0;
+    s->defend_run   = false;
     s->offset_dir   = vg_rand_unit();
     s->roll_vis     = 0;
     s->hit_flash    = 0;

@@ -11,8 +11,10 @@
 //   2. suicide run      -- once committed, nothing else matters, including a
 //                          missile on their tail
 //   3. missile evasion  -- break ACROSS the seeker, never away from it
-//   4. break-off        -- extend after a pass instead of boring in
-//   5. pursue           -- aim beside the player, not at them
+//   4. defend           -- somebody is on the tail: outrun them if they are
+//                          slow, force an overshoot if they are not
+//   5. the class tactic -- where this hull wants to be, and the only step of
+//                          the five that differs between the four
 //
 // Enemies live under the same physics the player does: bleeding speed buys turn
 // rate, and flat out they cannot shoot.
@@ -85,6 +87,51 @@ static void tactic_fighter(Ship* s, const ShipSpec* sp, Vec3 to, float range,
                           ? smax * 0.85f
                           : smin + (smax - smin) * 0.35f;
     }
+}
+
+// IS THE PLAYER ON MY TAIL AND TRACKING ME?
+//
+// Three things have to be true at once, and dropping any of them gives a jumpy
+// pilot that answers merely being near somebody. They must be CLOSE, they must
+// be BEHIND, and they must be POINTED AT ME -- a player crossing astern on the
+// way somewhere else is not an attack, and answering it would throw away a pass
+// for nothing.
+//
+// "Pointed at me" is the same test the player's own lock uses: they are the
+// origin and they look down +z, so the bearing to this ship is how near their
+// nose it sits.
+static bool on_my_six(const Ship* s, Vec3 to, float range) {
+    if (range > ENEMY_SIX_RANGE || range < 1.0f) return false;
+    if (vdot(s->fwd, vnorm(to)) > ENEMY_SIX_COS) return false;   // in front: not a tail
+    return vdot(vnorm(s->pos), v3(0, 0, 1)) > ENEMY_SIX_AIM_COS;
+}
+
+// WHAT TO DO ABOUT IT, and there are two answers because there are two attacks.
+//
+// Against a SLOW attacker, leave. Whoever is parked has the best turn rate in
+// the game and no ability to follow, so opening the range beats them outright
+// and makes them spend the throttle they were saving. That is the answer to
+// sitting at zero throttle on a tail, and it is the game's own trade rather than
+// a rule invented to punish it.
+//
+// Against a FAST one, turn across them and bleed speed. They cannot corner with
+// a ship that has slowed, so the overshoot is forced -- and a pilot who has
+// overshot is in front, which is the whole point of making them do it.
+//
+// COMMITTED for a second or two. Re-deciding every frame would give a ship that
+// jitters between running and turning and does neither.
+static void tactic_defend(Ship* s, Vec3 to, float smin, float smax, Vec3* desired) {
+    if (s->defend_t <= 0) {
+        const float span = vg.spec->speed_max - vg.spec->speed_min;
+        const float psn  = (span > 1.0f) ? (vg.speed - vg.spec->speed_min) / span : 0.0f;
+        s->defend_run = (psn < ENEMY_SIX_SLOW);
+        s->defend_dir = s->defend_run ? vnorm(vmul(to, -1.0f))
+                                      : break_across(vnorm(to), s->up, 0.15f);
+        s->defend_t   = vg_frand(ENEMY_DEFEND_MIN, ENEMY_DEFEND_MAX);
+    }
+    *desired = s->defend_dir;
+    // Run flat out; break slow. A turn is only tighter if the speed goes.
+    s->target_speed = s->defend_run ? smax : smin * 1.15f;
 }
 
 // STANDOFF -- the one that fights a different fight rather than the same fight
@@ -256,6 +303,15 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // Bleed speed to tighten the break -- the same trick the player has.
         s->target_speed = smin * 1.15f;
 
+    } else if (s->defend_t > 0
+               || on_my_six(s, vsub(v3(0, 0, 0), s->pos), vlen(s->pos))) {
+        // ABOVE THE TACTIC, BELOW THE MISSILE. A round already in the air is the
+        // more urgent of the two, and a pilot being tracked still has time to
+        // answer properly -- but neither can wait for the class's positioning
+        // plan, which assumes the fight is still being flown forwards.
+        s->evade_t = 0;
+        tactic_defend(s, vsub(v3(0, 0, 0), s->pos), smin, smax, &desired);
+
     } else {
         s->evade_t = 0;
 
@@ -279,8 +335,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         }
     }
 
-    if (s->evade_t > 0) s->evade_t -= dt;
-    if (s->break_t > 0) s->break_t -= dt;
+    if (s->evade_t  > 0) s->evade_t  -= dt;
+    if (s->break_t  > 0) s->break_t  -= dt;
+    if (s->defend_t > 0) s->defend_t -= dt;
 
     // Same trade the player gets: bleeding speed buys turn rate. Without this
     // their evasive break is too lazy to ever defeat a seeker.

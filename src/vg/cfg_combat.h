@@ -156,6 +156,26 @@
 #define ENEMY_OFFSET         150.0f   // lateral aim offset, world units
 #define ENEMY_BREAK_RANGE    560.0f
 
+// --- being chased ------------------------------------------------------------
+//
+// NOTHING USED TO ASK WHETHER ANYBODY WAS BEHIND THEM. Enemies reacted to a
+// missile already in the air and to raw proximity, and to nothing else -- so a
+// player who settled onto a tail was never answered. They flew their approach
+// pattern and were shot off it, and the fight was over the moment it began.
+//
+// The counter to a tail is not a better turn. It is making the attacker CHOOSE.
+// Parking at zero throttle buys the best turn rate in the game and the shortest
+// lock, and costs the ability to follow anything -- so an enemy that simply
+// leaves cannot be chased by a pilot who is parked. To give chase you have to
+// open the throttle, and that is the trade the whole game is built on, finally
+// pointed at the player instead of only at them.
+#define ENEMY_SIX_RANGE      900.0f   // near enough that a tail is a threat
+#define ENEMY_SIX_COS        0.15f    // bearing to the attacker, behind this is "behind me"
+#define ENEMY_SIX_AIM_COS    0.80f    // ...and they are pointed this near to me
+#define ENEMY_SIX_SLOW       0.35f    // attacker throttle under this: outrun them
+#define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
+#define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
+
 // --- how each archetype positions itself ------------------------------------
 //
 // Everything above this is the fight EVERY enemy flies. These are the three that
