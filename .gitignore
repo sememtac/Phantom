@@ -71,3 +71,8 @@ captures/*
 # and it carries a .exe and object files that would otherwise be tracked by the
 # *.bin rule above disagreeing with itself.
 host/build/
+
+# Which board play.ps1 last flashed. Two identical boards live on this desk and
+# the port moves between sessions, so the choice is remembered -- but it is a
+# fact about the desk, not about the project.
+.phantom-port

@@ -16,10 +16,36 @@ sky, the canopy and every sound are generated. There are no bitmaps and no sampl
 
 ---
 
+## How to play the latest
+
+One script builds and runs the game, on the PC or on the board:
+
+| command | what it does |
+|---|---|
+| `.\play.ps1` | build the PC version and run it |
+| `.\play.ps1 device` | build the firmware and write it to the board |
+| `.\play.ps1 both` | build both, write to the board, then run the PC version |
+| `.\play.ps1 check` | build both and stop. Nothing runs and nothing is written. |
+
+Use `check` after you change anything in `src/`. Both builds share every line of
+`src/`, so a change can build for one and fail for the other.
+
+The script also does three things you must otherwise remember. It sets
+`PYTHONIOENCODING`, without which an upload can stop and never continue. It finds
+the board instead of assuming a port. It warns you if the tray daemon is running,
+because that daemon restarts the board while you play.
+
+If two boards are attached, name one once with `-Port COM6`. The script remembers
+it.
+
+See `host/README.md` for the PC version on its own.
+
 ## How to put the game on the board
 
 You need [PlatformIO](https://platformio.org/). The first build downloads the board
 profile, the toolchain and the one library.
+
+You can use PlatformIO directly. `play.ps1` runs these commands for you.
 
 | command | what it does |
 |---|---|
