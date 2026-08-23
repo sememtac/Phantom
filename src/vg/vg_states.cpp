@@ -12,6 +12,7 @@
 #include "vg_screens.h"
 #include "vg_save.h"
 #include "vg_cine.h"
+#include "vg_bot.h"
 #include "vg_course.h"
 #include "vg_sfx.h"
 #include "vg_shake.h"
@@ -1066,8 +1067,14 @@ void vg_upd_over(float dt, const VgInput* in, const Tap* tap) {
     // On the same tap, so it is unmistakably the player asking. A gym that
     // respawned on a timer would take the moment away from them, and watching
     // your own wreck is how you work out what went wrong.
+    //
+    // UNLESS THERE IS NOBODY TO ASK. With the seat flown by the game there is no
+    // tap coming, ever, so the rule that gives the player their moment became a
+    // rule that ended the session: the first death parked it on the wreck for
+    // good. Found by counting -- a headless run of a thousand simulated seconds
+    // produced twenty seconds of flying and then nothing.
     if (vg.gym) {
-        if (vg.state_t > 2.2f && tap->up) {
+        if (vg.state_t > 2.2f && (tap->up || vg_bot_on)) {
             vg_cine_clear();
             vg.gym_arm = true;
             vg_state_cut(VG_PLAYING);

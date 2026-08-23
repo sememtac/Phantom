@@ -14,6 +14,7 @@
 #endif
 
 bool vg_bot_on = false;
+VgBotTap vg_bot_tap = nullptr;
 
 // ---------------------------------------------------------------------------
 // Observing
@@ -83,6 +84,16 @@ void vg_bot_observe(VgObs* o) {
     // which is one less thing for a policy to learn before it learns to fly.
     o->v[OBS_WALL] = clamp1(vg_wall.clearance / ARENA_ENEMY_MARGIN);
     o->v[OBS_ROLL] = clamp1(vg.roll / 3.14159265f);
+    o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
+    {
+        int air = 0;
+        for (int i = 0; i < MAX_MISSILES; i++) {
+            const Missile* m = &vg.msl[i];
+            if (m->alive && m->from_player && m->locked) air++;
+        }
+        o->v[OBS_OWN_INFLIGHT] = (sp->magazine > 0)
+                               ? clamp1((float)air / (float)sp->magazine) : 0.0f;
+    }
 
     // ---- the opponent ----
     float r = 0.0f;
@@ -151,8 +162,14 @@ static float s_break_t  = 0.0f;   // >0 while extending after a pass
 static float s_evade_t  = 0.0f;   // >0 while breaking across a missile
 static float s_evade_sx = 1.0f;   // which way it chose to break
 static float s_evade_sy = 0.0f;
+// The trigger's own memory: whether a press is already outstanding, and the rack
+// count it was made at. See the note where the trigger is decided.
+static bool  s_fired       = false;
+static float s_prev_rounds = 1.0f;
 
 void vg_bot_reset(void) {
+    s_fired       = false;
+    s_prev_rounds = 1.0f;
     s_break_t = s_evade_t = 0.0f;
     s_evade_sx = 1.0f;
     s_evade_sy = 0.0f;
@@ -186,7 +203,22 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
         want_speed = 0.55f;
         may_fire = false;
 
-    } else if (o->v[OBS_MSL_IN] > 0.5f && o->v[OBS_MSL_RANGE] < 1.0f) {
+    } else if (o->v[OBS_MSL_IN] > 0.5f && o->v[OBS_MSL_RANGE] < 1.0f
+               // GUIDING SOMETHING OF MY OWN OUTRANKS DODGING, up to a point.
+               //
+               // Breaking is right for a dogfighter and ruinous for a sniper: the
+               // turn that saves the ship is the turn that drops the lock every
+               // one of its rounds is riding. The bot did this every time -- it
+               // scored with three classes and never once with BALLISTA, across
+               // every opponent, because it threw its own shots away to dodge.
+               //
+               // So while rounds are out AND the incoming one is not yet at the
+               // door, hold the nose and keep illuminating. Inside the last
+               // fraction of the evade range it breaks anyway: a hit landed is
+               // worth nothing to a ship that is not there to see it.
+               && !(o->v[OBS_OWN_SAAM] > 0.5f
+                    && o->v[OBS_OWN_INFLIGHT] > 0.0f
+                    && o->v[OBS_MSL_RANGE] > 0.40f)) {
         // ACROSS the seeker, never away from it -- turning away is how you get run
         // down. Chosen once and held, or the break is a wobble.
         if (s_evade_t <= 0.0f) {
@@ -215,6 +247,32 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
         wx = -o->v[OBS_TGT_X]; wy = -o->v[OBS_TGT_Y]; wz = -o->v[OBS_TGT_Z];
         want_speed = 1.0f;
         may_fire = false;
+
+    } else if (o->v[OBS_OWN_SAAM] > 0.5f && o->v[OBS_TGT_RANGE_W] * BOT_RANGE_REF
+                                            > ENEMY_BREAK_RANGE * 1.6f) {
+        // A SEMI-ACTIVE WEAPON DOES NOT LET YOU LOOK AWAY, so it cannot be flown
+        // the way everything else here is flown. The merge below fires and then
+        // manoeuvres, and manoeuvring is exactly what drops the lock these rounds
+        // are riding -- so every shot went ballistic and a thousand simulated
+        // seconds of it did no damage at all.
+        //
+        // Hold the range and keep them near the nose instead: aim PAST them by
+        // enough to stop the range closing, but not so far that the bearing
+        // leaves the firing cone. That is the same trick tactic_standoff plays
+        // from the other seat, and for the same reason -- this ship cannot fly
+        // backwards, so holding a distance means never pointing straight at what
+        // it is holding away from.
+        float lx = o->v[OBS_TGT_VX], ly = o->v[OBS_TGT_VY], lz = o->v[OBS_TGT_VZ];
+        const float along = lx * wx + ly * wy + lz * wz;
+        lx -= along * wx; ly -= along * wy; lz -= along * wz;
+        const float ln = sqrtf(lx * lx + ly * ly + lz * lz);
+        if (ln > 1e-3f) {
+            const float k = STANDOFF_ARC / ln;
+            wx += lx * k; wy += ly * k; wz += lz * k;
+        }
+        // Slow, because the firing gate demands it and because closing is the one
+        // thing this ship must not do.
+        want_speed = 0.15f;
 
     } else {
         // The merge, and this is where the bot used to kill itself.
@@ -318,11 +376,24 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     in->throttle = t;
 
     // ---- the trigger ----
-    // On the lock, and only on the frame it completes: fire_edge is a press, and
-    // holding it would do nothing anyway. The rack and the reload are the
-    // weapon's business, not the pilot's -- vg_player_fire refuses if there is
-    // nothing to send.
+    //
+    // AN EDGE, WHICH IS WHAT THE FIELD IS CALLED AND WAS NOT WHAT IT HELD. This
+    // used to be a level -- true for as long as a lock stood -- so the bot flew
+    // with the trigger squeezed and the flag read 1 on 13.7% of all frames while
+    // the weapon's own gates quietly threw nearly all of them away. As behaviour
+    // that is merely untidy. As a TRAINING LABEL it is a lie: a policy learning
+    // from it would learn to hold a trigger that nobody presses, and the one
+    // action that matters would be the noisiest column in the set.
+    //
+    // Re-armed when the rack count drops, so there is exactly one press per round
+    // that actually leaves the rail.
     const bool locked = (o->v[OBS_OWN_LOCK] >= 0.999f);
-    in->fire_edge = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
+    const bool want   = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
+    const float rounds_now = o->v[OBS_OWN_ROUNDS];
+    if (rounds_now < s_prev_rounds - 1e-4f) s_fired = false;   // one left the rail
+    in->fire_edge = want && !s_fired;
     in->fire_btn  = in->fire_edge;
+    if (in->fire_edge) s_fired = true;
+    if (!want)         s_fired = false;
+    s_prev_rounds = rounds_now;
 }

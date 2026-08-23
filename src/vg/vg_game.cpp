@@ -304,6 +304,9 @@ void vg_gym_spawn_opponent(void) {
 // The attract demo
 // ---------------------------------------------------------------------------
 
+// Set by the desktop only; see the note in vg_sim.h.
+bool vg_headless = false;
+
 void vg_demo_begin(void) {
     if (vg.demo) return;
 
@@ -596,12 +599,22 @@ void vg_game_update(float dt, const VgInput* in) {
         }
     }
 
+    // THE SEAT: FLOWN, AND WATCHED.
+    //
+    // One observation serves both. The bot needs it to decide; the tap needs it
+    // paired with whatever control ends up being used, which is the bot's when
+    // the bot is flying and the PLAYER'S when it is not. That symmetry is what
+    // makes a human session and a self-play session the same kind of data.
     VgInput botin;
-    if (vg_bot_on && (vg_state_flags(vg.state) & VGS_LIVE) && vg_tv.phase == TV_NONE) {
+    const bool live = (vg_state_flags(vg.state) & VGS_LIVE) && vg_tv.phase == TV_NONE;
+    if (live && (vg_bot_on || vg_bot_tap)) {
         VgObs obs;
         vg_bot_observe(&obs);
-        vg_bot_act(&obs, &botin, dt);
-        in = &botin;
+        if (vg_bot_on) {
+            vg_bot_act(&obs, &botin, dt);
+            in = &botin;
+        }
+        if (vg_bot_tap) vg_bot_tap(&obs, in);
     }
 
     vg.state_t += dt;

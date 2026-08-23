@@ -43,7 +43,7 @@ struct VgInput;
 // know from the canopy and the panel -- there is no privileged state, no reading
 // the opponent's intentions, and nothing that would let a policy learn to cheat
 // in a way a player could not copy.
-#define VG_OBS_N 25
+#define VG_OBS_N 27
 
 // Roughly -1..1, all of it, because that is what a network wants and because a
 // human reading a dump of one should be able to see at a glance which numbers
@@ -90,6 +90,28 @@ enum {
     // distance on every hull. Collisions, break-off and the width of a pass are
     // all absolute, and this is the number they are judged with.
     OBS_TGT_RANGE_W,
+    // DOES MY WEAPON NEED ME TO KEEP LOOKING AT THEM. 1 for a semi-active class,
+    // 0 for fire-and-forget.
+    //
+    // The first fact about the SHIP rather than the situation to enter the
+    // observation, and it is here because a policy that does not know this
+    // cannot fly a BALLISTA at all: it fires, manoeuvres, and every round it has
+    // ever launched goes ballistic behind it. Measured -- a thousand simulated
+    // seconds of scripted BALLISTA did exactly zero damage.
+    //
+    // It is also the first step of the thing that makes a trained policy survive
+    // tuning: feed it the ship's own numbers and it can generalise across them,
+    // instead of memorising one table and being wrong the moment the table moves.
+    OBS_OWN_SAAM,
+    // HOW MANY OF MY OWN ROUNDS ARE STILL FLYING, over the rack size.
+    //
+    // A pilot knows this -- they fired them, and for a semi-active class it is the
+    // single most important thing on the panel: it is the difference between "I
+    // may manoeuvre freely" and "manoeuvring now throws away everything I have
+    // spent". Without it a policy cannot tell those two situations apart, and the
+    // scripted one could not: it evaded every incoming round, correctly for a
+    // dogfighter and fatally for a sniper, and killed its own shots every time.
+    OBS_OWN_INFLIGHT,
 };
 
 // What OBS_TGT_RANGE_W is divided by. Not a tuning value -- it is the scale that
@@ -116,3 +138,19 @@ extern bool vg_bot_on;
 // Back to a clean sheet: called when a match starts, so the bot's own smoothing
 // and commitment timers do not carry across from the last one.
 void vg_bot_reset(void);
+
+// ===========================================================================
+// THE TAP: WHAT THE SEAT SAW, AND WHAT IT DID ABOUT IT.
+//
+// Called once a frame while a ship is being flown, with the observation and the
+// control that was actually used -- WHOEVER produced it. That last part is the
+// whole value: the same hook records the scripted policy, a trained one, and a
+// HUMAN. Training a network to fly like the author needs the author's own
+// flying paired with what they could see, and this is the only place both exist
+// at once.
+//
+// A FUNCTION POINTER, NULL BY DEFAULT, because writing files is not something
+// src/vg does -- the board has no business with a dataset, and one null check a
+// frame is what that costs. The desktop points it at a writer.
+typedef void (*VgBotTap)(const VgObs* o, const VgInput* in);
+extern VgBotTap vg_bot_tap;

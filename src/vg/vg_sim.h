@@ -129,6 +129,22 @@ void vg_update_missiles(float dt);
 
 void vg_update_enemy(Ship* s, int index, float dt);
 
+// ===========================================================================
+// RUNNING THE GAME WITH NOBODY WATCHING.
+//
+// Set on the desktop only, and false everywhere else -- the board has a panel
+// and it is the point of the board.
+//
+// Two things change. The frame is a FIXED 1/60 rather than measured, because a
+// simulation whose step depends on how busy the host was is not reproducible and
+// cannot be a training environment. And the frame ends after the update: no
+// render, no audio, no panel, which is where nearly all of the time goes.
+//
+// The result runs as fast as the machine allows and produces exactly the same
+// fight every time from the same seed, which is what makes a measured matchup
+// mean anything.
+extern bool vg_headless;
+
 // Debris with the speed and the lifetime turned up: a hull letting go rather
 // than a scrape. `speed_k` and `life_k` multiply the defaults. `radius` scales
 // how long each shard is; `out` is how far from the centre they launch, and

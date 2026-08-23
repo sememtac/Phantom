@@ -30,6 +30,7 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include "vg/vg_canopy_draw.h"
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
+#include "vg/vg_sim.h"   // vg_headless
 #include "vg/vg_render.h"
 #include "vg/vg_prof.h"
 #include "vg/vg_capture.h"
@@ -327,6 +328,12 @@ void loop(void) {
     // Sub-stepping keeps real time AND keeps the guarantee the clamp existed for
     // -- no single step long enough to put a missile through a hull. Normal play
     // is a 16ms frame and one step, exactly as before.
+    // A MEASURED FRAME IS THE WRONG CLOCK WITH NOBODY WATCHING. Free-running,
+    // frames arrive in microseconds and the world would advance in microseconds
+    // with them -- and two runs of the same fight would differ because the host
+    // was differently busy. Pinned to the rate the game is designed around.
+    if (vg_headless) frame_dt = 1.0f / 60.0f;
+
     float sim_dt = frame_dt;
 
     uint32_t t0 = micros();
@@ -406,6 +413,11 @@ void loop(void) {
 
     // Straight after the step, so seeds drawn during it belong to this frame.
     vg_replay_note_frame(sim_dt, &in);
+
+    // AND THAT IS THE WHOLE FRAME WITH NOBODY WATCHING. Everything below draws,
+    // sounds or reports; the simulation is complete. Placed after the replay note
+    // so a headless run can still be recorded, which is the point of having one.
+    if (vg_headless) return;
 
     uint32_t t2 = micros();
     // SNAPSHOT THE UPDATE'S SPANS HERE, because the telemetry block below zeroes them
