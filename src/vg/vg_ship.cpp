@@ -7,16 +7,40 @@
 // change makes AEGIS feel worse, the change is wrong regardless of what it does
 // for the other three.
 //
-// Reading the table: against a 110-hull AEGIS these come out at roughly AEGIS 6
-// clean hits, LANCE 4 clean but 17 if it keeps grazing, CHARIOT 10 out of a
-// twelve-round magazine, BALLISTA 4.
+// EVERY HULL IS THREE TIMES WHAT IT WAS, and that is an experiment about TIME TO
+// KILL, not a re-tune of the classes. The complaint it answers: an opponent could
+// die in a flyby, which reads as cheap rather than as decisive. Warheads are
+// untouched, so the ratios between the four are exactly what they were and only the
+// clock moved.
+//
+// DOUBLE WAS FLOWN FIRST and it worked -- the report was that the fight came alive,
+// because a pilot who lost the first exchange now has time to answer instead of the
+// match being decided by whoever got the drop. This is that result taken one step
+// further to find where it stops improving. It is a probe, and the number to beat
+// is 2x, not the original 1x.
+//
+// Reading the table: against a 330-hull AEGIS these come out at roughly AEGIS 17
+// clean hits, LANCE 10 clean but 52 if it keeps grazing, CHARIOT 28 out of a
+// twelve-round magazine, BALLISTA 11.
+//
+// WHAT TO WATCH IS THE OPPOSITE FAILURE NOW. Seventeen clean hits is three AEGIS
+// magazines with two five-second reloads inside it, and that is the count if
+// nothing misses. If the fight starts reading as a war of attrition -- long stretches
+// where neither pilot can convert and the reload is most of the match -- 3x has gone
+// past the point 2x found, and the answer is somewhere between the two.
+//
+// CHARIOT IS STILL THE ROW THAT CHANGES MOST. Its premise below is that it empties
+// the rack into somebody and deletes them in one pass; a full magazine is 144,
+// which killed a 110 AEGIS outright, was two thirds of the doubled 220, and is
+// under half of this. If it feels toothless rather than fast, the correction is
+// CHARIOT's warhead rather than putting the hulls back.
 //
 // BALLISTA was 3, which meant one rack was a kill on any hull in the game -- fly
 // out past what anyone can answer, land the magazine, win. A sniper should be
 // able to kill from range; it should not be able to do it with a magazine that
-// cannot fail to be lethal. At 30 a full rack is 90 against 110: a serious wound
-// that has to be followed up, and still the most a single round carries after
-// LANCE's clean hit.
+// cannot fail to be lethal. At 30 a full rack is 90, which was a serious wound that
+// had to be followed up against the old 110 and is under a third of this -- still
+// the most a single round carries after LANCE's clean hit.
 
 // CONSTEXPR ON THE FIRMWARE BUILD ONLY, and it is not a preference.
 //
@@ -42,7 +66,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         "AEGIS", "NO WEAKNESS, NO EDGE",
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
-        /* hull       */ 110.0f, /* shake */ 1.00f,
+        /* hull       */ 330.0f, /* shake */ 1.00f,
         /* warhead    */ 20.0f, 18.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_FIGHTER,
@@ -60,7 +84,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         "LANCE", "CLEAN HITS ONLY",
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
-        /* hull       */ 95.0f,  /* shake */ 1.30f,
+        /* hull       */ 285.0f, /* shake */ 1.30f,
         /* warhead    */ 32.0f, 14.0f, 0.20f, 520.0f, 1.20f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_GEOMETRY,
@@ -81,7 +105,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         "CHARIOT", "FAST, LOUD, FRAGILE",
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
-        /* hull       */ 70.0f,  /* shake */ 1.70f,
+        /* hull       */ 210.0f, /* shake */ 1.70f,
         /* warhead    */ 12.0f, 22.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_SLASH,
@@ -132,7 +156,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         "BALLISTA", "KILL THEM FIRST",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
-        /* hull       */ 90.0f,  /* shake */ 0.55f,
+        /* hull       */ 270.0f, /* shake */ 0.55f,
         /* warhead    */ 30.0f, 17.0f, 0.50f, 200.0f, 2.30f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, -0.30f, 0.9f,
         /* tactic     */ TACTIC_STANDOFF,

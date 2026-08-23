@@ -99,7 +99,7 @@ void vg_draw_select(void) {
         // the bars are comparable down the column.
         const int bx = SEL_CARD_X + 300, bw = 100;
         stat_bar(bx, y + 8,  bw, (s->speed_max - 300.0f) / 180.0f,  INK_BRIGHT);
-        stat_bar(bx, y + 22, bw, s->hull / 120.0f,                  INK_BRIGHT);
+        stat_bar(bx, y + 22, bw, s->hull / 360.0f,                  INK_BRIGHT);
         stat_bar(bx, y + 36, bw, s->msl_damage / 44.0f,             INK_BRIGHT);
         // Guarded: reload is a divisor and a zero here would take the select
         // screen out, which is the one place every class is drawn at once.
