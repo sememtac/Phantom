@@ -105,6 +105,28 @@ static float s_ty = (float)THROTTLE_BOT - 0.55f * (float)(THROTTLE_BOT - THROTTL
 // is close to what a thumb does and slow enough to hold a cruise setting.
 #define HOST_THROTTLE_PX_PER_SEC 235.0f
 
+// --- easing the stick back when the hand stops ------------------------------
+// A THUMB KNOWS WHERE IT IS AND A HAND ON A MOUSE DOES NOT, which is the reason
+// given at the top of this file for anchoring the stick to the middle of the
+// screen. The same sentence is the reason for this: the anchor made neutral a
+// FIXED PLACE, but it did not give the hand any way to feel where the stick is
+// sitting inside it. A drag that ends near the stop leaves the ship turning
+// steadily while the hand, which has no spring and no stop of its own, feels
+// like it is doing nothing.
+//
+// So a mouse that has come to rest is read as a hand that has stopped asking for
+// anything, and the stick eases home. Stopping is how you level out.
+//
+// GATED ON MOTION, NOT APPLIED CONTINUOUSLY, and that is the whole difference
+// between this and a spring. A spring decays while you are still pushing, so
+// holding deflection means feeding it faster than it bleeds -- deflection becomes
+// mouse SPEED, which is a different control and not the board's. Here any motion
+// at all holds the stick exactly where it was dragged, so a sustained turn costs
+// a slow drift rather than a sprint.
+#define HOST_CENTER_IDLE 0.05f   // seconds of stillness before it starts easing
+#define HOST_CENTER_TAU  0.055f  // e-fold of the ease; ~0.2s to arrive
+#define HOST_CENTER_SNAP 0.5f    // px below which it is simply centred
+
 // Logical pixels per mouse count. See host_opts.h for why this is not 1.0 and
 // why it has to be settable.
 float g_host_mouse_sens = 0.10f;
@@ -196,6 +218,26 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         const float k = lim / len;
         s_ox *= k;
         s_oy *= k;
+    }
+
+    // Idle is measured in MOUSE COUNTS, not in the offset those counts produce,
+    // so the test means "the device reported nothing" and does not change with
+    // --sens. A resting mouse sends no counts at all; the threshold is here for
+    // a sensor that dithers by one, not to forgive a slow deliberate drift.
+    static float s_still = 0.0f;
+    if (fabsf(mdx) + fabsf(mdy) > 0.5f) s_still = 0.0f;
+    else                                s_still += dt;
+
+    if (s_still > HOST_CENTER_IDLE) {
+        const float k = expf(-dt / HOST_CENTER_TAU);
+        s_ox *= k;
+        s_oy *= k;
+        // Snapped rather than left to approach for ever. The exponential never
+        // reaches zero, and a stick parked a third of a pixel off centre would
+        // make the middle of the screen not quite level -- which is the one
+        // thing the anchor above exists to guarantee.
+        if (fabsf(s_ox) < HOST_CENTER_SNAP) s_ox = 0.0f;
+        if (fabsf(s_oy) < HOST_CENTER_SNAP) s_oy = 0.0f;
     }
 
     // LIFTING THE FINGER, which is the one thing an always-engaged mouse cannot
