@@ -12,6 +12,32 @@ static bool      s_quit    = false;
 static uint32_t* s_bgra    = nullptr;   // SCR_W * SCR_H, what GDI actually blits
 static BITMAPINFO s_bmi;
 static bool       s_capture = true;
+
+// THE VIEWPORT: where the picture actually sits inside the client area.
+//
+// The panel is square and a window is whatever the player drags it to, so the
+// picture is letterboxed -- the largest rectangle of the panel's aspect that
+// fits, centred, with black either side. Stretching to the client instead would
+// make a resize squash the game, and a circle drawn by the game has to stay a
+// circle or nothing on the HUD can be trusted.
+//
+// Computed in one place because TWO things need it and they must agree: the
+// blit, and the pointer. A menu click maps back through this, so if the two ever
+// disagreed the cursor would select something other than what it is over.
+struct HostView { int x, y, w, h; };
+
+static HostView view_of(HWND h) {
+    RECT cr; GetClientRect(h, &cr);
+    const int cw = cr.right - cr.left, ch = cr.bottom - cr.top;
+    HostView v = { 0, 0, cw, ch };
+    if (cw <= 0 || ch <= 0) return v;
+    // Fit by whichever axis runs out first.
+    if (cw * SCR_H > ch * SCR_W) { v.h = ch; v.w = ch * SCR_W / SCR_H; }
+    else                          { v.w = cw; v.h = cw * SCR_H / SCR_W; }
+    v.x = (cw - v.w) / 2;
+    v.y = (ch - v.h) / 2;
+    return v;
+}
 static float      s_rawx    = 0.0f;   // device counts since the last read
 static float      s_rawy    = 0.0f;
 
@@ -50,6 +76,56 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             }
             return DefWindowProc(h, m, w, l);
         }
+        case WM_ERASEBKGND:
+            // The presenter paints every pixel of the client every frame, so
+            // letting Windows erase it first only adds a flash of white.
+            return 1;
+
+        case WM_GETMINMAXINFO: {
+            // Small enough to be useful, large enough that the letterbox
+            // arithmetic never divides into nothing.
+            MINMAXINFO* mm = (MINMAXINFO*)l;
+            RECT t = { 0, 0, 240, 240 };
+            AdjustWindowRect(&t, (DWORD)GetWindowLongPtr(h, GWL_STYLE), FALSE);
+            mm->ptMinTrackSize.x = t.right - t.left;
+            mm->ptMinTrackSize.y = t.bottom - t.top;
+            return 0;
+        }
+
+        case WM_SIZING: {
+            // HOLD THE ASPECT WHILE IT IS BEING DRAGGED, so the window itself
+            // tells the player the shape is fixed. Letterboxing alone would let
+            // them drag a long thin window and watch the game sit in the middle
+            // of it, which looks like a bug rather than a rule.
+            RECT* r = (RECT*)l;
+            RECT pad = { 0, 0, 100, 100 };
+            AdjustWindowRect(&pad, (DWORD)GetWindowLongPtr(h, GWL_STYLE), FALSE);
+            const int padx = (pad.right - pad.left) - 100;
+            const int pady = (pad.bottom - pad.top) - 100;
+
+            int cw = (r->right - r->left) - padx;
+            int ch = (r->bottom - r->top) - pady;
+            if (cw < 1) cw = 1;
+            if (ch < 1) ch = 1;
+
+            const bool horiz = (w == WMSZ_LEFT || w == WMSZ_RIGHT);
+            const bool vert  = (w == WMSZ_TOP  || w == WMSZ_BOTTOM);
+            if (horiz)      ch = cw * SCR_H / SCR_W;   // dragging a side: width leads
+            else if (vert)  cw = ch * SCR_W / SCR_H;   // dragging top or bottom
+            else if (cw * SCR_H > ch * SCR_W) ch = cw * SCR_H / SCR_W;  // a corner:
+            else                              cw = ch * SCR_W / SCR_H;  // follow the larger
+
+            // Move only the edges the player has hold of.
+            if (w == WMSZ_LEFT || w == WMSZ_TOPLEFT || w == WMSZ_BOTTOMLEFT)
+                 r->left = r->right - (cw + padx);
+            else r->right = r->left + (cw + padx);
+
+            if (w == WMSZ_TOP || w == WMSZ_TOPLEFT || w == WMSZ_TOPRIGHT)
+                 r->top = r->bottom - (ch + pady);
+            else r->bottom = r->top + (ch + pady);
+            return TRUE;
+        }
+
         case WM_KEYDOWN:
             // Escape is the PWR key now -- the menu key -- so it is read like
             // any other key rather than acted on here.
@@ -152,8 +228,8 @@ bool host_window_pump(void) {
     // has been alt-tabbed away from must not still be dragging the pointer back
     // to its centre several times a second.
     if (s_capture && s_hwnd && !s_quit && host_window_focused()) {
-        RECT cr; GetClientRect(s_hwnd, &cr);
-        POINT mid = { (cr.right - cr.left) / 2, (cr.bottom - cr.top) / 2 };
+        const HostView v = view_of(s_hwnd);
+        POINT mid = { v.x + v.w / 2, v.y + v.h / 2 };
         ClientToScreen(s_hwnd, &mid);
         // The pointer is still parked in the middle every frame, but only so it
         // cannot wander onto another window and take a click with it. The motion
@@ -179,12 +255,15 @@ bool host_mouse_logical(float* x, float* y) {
     if (!s_hwnd) return false;
     POINT p; GetCursorPos(&p);
     ScreenToClient(s_hwnd, &p);
-    RECT cr; GetClientRect(s_hwnd, &cr);
-    const int w = cr.right - cr.left, h = cr.bottom - cr.top;
-    if (w <= 0 || h <= 0) return false;
-    if (p.x < 0 || p.y < 0 || p.x >= w || p.y >= h) return false;
-    if (x) *x = (float)p.x * (float)SCR_W / (float)w;
-    if (y) *y = (float)p.y * (float)SCR_H / (float)h;
+    // Through the viewport, not the client: with a letterbox the two differ, and
+    // a pointer mapped through the wrong one selects something other than what it
+    // is sitting on.
+    const HostView v = view_of(s_hwnd);
+    if (v.w <= 0 || v.h <= 0) return false;
+    const int px = p.x - v.x, py = p.y - v.y;
+    if (px < 0 || py < 0 || px >= v.w || py >= v.h) return false;   // on a bar
+    if (x) *x = (float)px * (float)SCR_W / (float)v.w;
+    if (y) *y = (float)py * (float)SCR_H / (float)v.h;
     return true;
 }
 
@@ -231,8 +310,25 @@ void host_window_present(const uint16_t* panel) {
 
     HDC dc = GetDC(s_hwnd);
     RECT cr; GetClientRect(s_hwnd, &cr);
+    const HostView v = view_of(s_hwnd);
+
+    // The bars, and only the bars. Painting the whole client and then drawing
+    // over it would flash the picture off and on again every frame.
+    if (v.x > 0 || v.y > 0) {
+        HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        RECT b;
+        if (v.x > 0) {
+            b = { 0, 0, v.x, cr.bottom };                    FillRect(dc, &b, black);
+            b = { v.x + v.w, 0, cr.right, cr.bottom };       FillRect(dc, &b, black);
+        }
+        if (v.y > 0) {
+            b = { 0, 0, cr.right, v.y };                     FillRect(dc, &b, black);
+            b = { 0, v.y + v.h, cr.right, cr.bottom };       FillRect(dc, &b, black);
+        }
+    }
+
     SetStretchBltMode(dc, COLORONCOLOR);   // no smoothing: these are 1 px lines
-    StretchDIBits(dc, 0, 0, cr.right - cr.left, cr.bottom - cr.top,
+    StretchDIBits(dc, v.x, v.y, v.w, v.h,
                   0, 0, SCR_W, SCR_H, s_bgra, &s_bmi, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(s_hwnd, dc);
 

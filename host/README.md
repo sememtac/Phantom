@@ -49,6 +49,11 @@ output.
 The game keeps its progress in `phantom_save.bin`. The game writes the file
 beside the executable.
 
+You can resize the window. The window keeps the shape of the panel while you
+drag it, so the picture cannot stretch. If the window is not the shape of the
+panel, for example when you make it full screen, the game draws in the middle
+and fills the rest with black.
+
 ## Controls
 
 The mouse is a finger on the glass. The game reads it through the same steering
