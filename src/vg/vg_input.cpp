@@ -372,6 +372,35 @@ void vg_input_update(float dt, VgInput* out) {
     // one the throttle uses to keep hold of its own thumb: a real finger moves
     // tens of pixels a frame, not hundreds, so anything close to where the stick
     // was last frame IS the stick, wherever it has got to.
+    // A CONTACT OUTSIDE THE PATCH IS ALREADY THE STICK, and that has to be
+    // settled before the proximity test below, because distance alone cannot
+    // tell the two cases apart.
+    //
+    // The case the test exists for is ONE contact that has travelled into the
+    // patch -- a turn carried up into the top right. The case it got wrong is
+    // TWO: a thumb holding the patch while the other flies. Both look like
+    // "close enough to be the stick", so the held patch was handed to the
+    // steering finger and the view fell back to the canopy in the middle of
+    // looking behind.
+    //
+    // If anything is out here steering, then whatever is in the patch is a
+    // different finger, whatever the distance between them says.
+    //
+    // FOUND ON THE DESKTOP, WHERE THE GEOMETRY MAKES IT CERTAIN rather than
+    // occasional. The mouse reports the stick as a fixed disc of STEER_RANGE
+    // about the middle of the screen and the R key reports the patch at its
+    // centre; the closest those two ever come is about 106px, inside
+    // THROTTLE_MAX_JUMP. So steering up and to the right dropped the rear view
+    // every time, while the board only meets it when two thumbs happen to
+    // close within 160px of each other.
+    int n_outside = 0;
+    for (int i = 0; i < n; i++) {
+        if (xs[i] <= THROTTLE_ZONE_X1) continue;
+        if (xs[i] >= REAR_ZONE_X0 && xs[i] <= REAR_ZONE_X1 &&
+            ys[i] >= REAR_ZONE_Y0 && ys[i] <= REAR_ZONE_Y1) continue;
+        n_outside++;
+    }
+
     bool rear = false;
     for (int i = 0; i < n; i++) {
         if (xs[i] <= THROTTLE_ZONE_X1) {
@@ -383,7 +412,7 @@ void vg_input_update(float dt, VgInput* out) {
                               ys[i] >= REAR_ZONE_Y0 && ys[i] <= REAR_ZONE_Y1);
         if (in_rear) {
             bool is_stick = false;
-            if (s_steer_active) {
+            if (s_steer_active && n_outside == 0) {
                 const float dx = (float)xs[i] - s_steer_x;
                 const float dy = (float)ys[i] - s_steer_y;
                 is_stick = (dx * dx + dy * dy) <=
