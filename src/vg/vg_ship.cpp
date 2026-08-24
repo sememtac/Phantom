@@ -23,11 +23,27 @@
 // clean hits, LANCE 10 clean but 52 if it keeps grazing, CHARIOT 28 out of a
 // twelve-round magazine, BALLISTA 11.
 //
-// WHAT TO WATCH IS THE OPPOSITE FAILURE NOW. Seventeen clean hits is three AEGIS
-// magazines with two five-second reloads inside it, and that is the count if
-// nothing misses. If the fight starts reading as a war of attrition -- long stretches
-// where neither pilot can convert and the reload is most of the match -- 3x has gone
-// past the point 2x found, and the answer is somewhere between the two.
+// SETTLED, AND THE FEAR WAS WRONG. The worry was attrition: long stretches where
+// neither pilot can convert and the reload becomes most of the match. Measured on
+// the control matchup, AEGIS against AEGIS, both sides hand-written, four fixed
+// seeds of twelve simulated minutes each:
+//
+//     hull   kills/min   mean fight   holding nothing to fire
+//      1x       0.80        74.6s              2.9%
+//      2x       0.51       118.6s              4.7%
+//      3x       0.35       170.1s              5.2%
+//
+// The reload never becomes the match at any scaling. What changes is the clock,
+// and it does NOT change in proportion -- doubling the hull buys 59% more fight
+// and tripling buys 128%, because more hull is also more time to land hits and
+// the two partly cancel. Worth knowing before anybody reaches for this dial again
+// expecting it to be linear.
+//
+// 3x stays, on the author's call: it is the room a pilot who lost the first
+// exchange needs to answer, which is what 2x was liked for.
+//
+// THESE ARE BOT FIGHTS and the scripted pilot converts badly, so the absolute
+// seconds overstate a human match. The ratios are the part to trust.
 //
 // CHARIOT IS STILL THE ROW THAT CHANGES MOST. Its premise below is that it empties
 // the rack into somebody and deletes them in one pass; a full magazine is 144,
