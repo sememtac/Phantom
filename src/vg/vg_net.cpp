@@ -55,6 +55,9 @@ bool vg_net_available(void) { return true; }
 
 bool vg_net_knows_ship(const float* obs, int n) {
 #if defined(PILOT_SHIPS) && PILOT_SHIPS > 0
+#  ifndef PILOT_SHIP_TOL
+#    define PILOT_SHIP_TOL 0.005f   // an older header that did not record one
+#  endif
     if (!obs || n < PILOT_NET_IN) return false;
     // The airframe fields are the LAST PILOT_SHIP_N of the observation, which is
     // the layout rule again: they were appended, so they stay at the end.
@@ -65,10 +68,18 @@ bool vg_net_knows_ship(const float* obs, int n) {
         for (int i = 0; i < PILOT_SHIP_N && same; i++) {
             float d = mine[i] - row[i];
             if (d < 0.0f) d = -d;
-            // Loose enough to survive the trip through float32 and a rounded
-            // table, tight enough that two classes never look like one -- the
-            // closest pair in the table differ by 0.02 on their nearest field.
-            if (d > 0.005f) same = false;
+            // THE TOLERANCE IS THE JITTER THE NETWORK WAS TRAINED THROUGH, and
+            // that is the whole reason the jitter is worth having.
+            //
+            // Trained on exact values, this is a rounding allowance, and then the
+            // gate is brutal: measured, moving one class's hull by 11% -- an
+            // ordinary tuning pass -- put the ship outside the list, the network
+            // declined, and its whole advantage went back to the rules. The
+            // policy had not got worse. It had stopped being asked.
+            //
+            // Trained through a spread of tables, the gate can accept that same
+            // spread, because those are tables it has actually flown.
+            if (d > PILOT_SHIP_TOL) same = false;
         }
         if (same) return true;
     }

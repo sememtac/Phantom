@@ -9,6 +9,26 @@ flies badly, the network flies badly in the same way.
 
 The script trains four outputs: pitch, yaw, throttle and the trigger.
 
+WHAT JITTER DOES AND DOES NOT BUY. The airframe fields are nudged while
+training, and the same figure becomes how far a ship may be retuned and still be
+flown by the network. The second half is the important half. Measured, with one
+class's hull moved 11% -- an ordinary tuning pass -- as the hull a trained opponent
+takes off the player per minute:
+
+    flown by                        stock    retuned
+    hand-written tactics            0.18%      0.18%
+    network, no jitter              1.85%      0.18%
+    network, jittered               1.45%      0.38%
+
+Without jitter the gate rejects the retuned ship and the class goes back to the
+rules -- the policy did not get worse, it stopped being asked. With jitter it is
+still asked. But it is much weaker than it was: most of the advantage goes
+anyway.
+
+So jitter is insurance against a tuning pass silently switching the network off.
+It is NOT the thing that makes a policy survive a retune. Fitting to one table
+teaches one table, and an input that is noised is not an environment that varied.
+
 THE TRIGGER IS A QUESTION ABOUT THE NEXT SECOND, not about this frame. A press
 is 0.3% of rows in one recording, and a model that never fires is 99.7% correct
 on that. Asked instead whether the pilot fires WITHIN the horizon, the same data
@@ -146,7 +166,8 @@ def emit_static(name, values, add, per_line=8):
     add("};")
 
 
-def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5):
+def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5,
+                 ship_tol=0.005):
     """Write the weights as a C header that the firmware can compile."""
     import torch
 
@@ -169,6 +190,12 @@ def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5):
         add("// is guessing, and it guesses by flying the class it does know.")
         add("// The firmware compares the ship it is in against these and declines")
         add("// when there is no match.")
+        add("// HOW FAR A SHIP MAY HAVE BEEN RETUNED AND STILL COUNT AS ONE OF")
+        add("// THESE. It is the jitter the network was trained through, because")
+        add("// that is exactly the spread of tables it has seen. Trained with no")
+        add("// jitter, the tolerance is a rounding allowance -- and then any tuning")
+        add("// pass at all hands the class straight back to the rules.")
+        add("#define PILOT_SHIP_TOL %.4ff" % ship_tol)
         add("#define PILOT_SHIPS    %d" % len(ships))
         add("#define PILOT_SHIP_N   %d" % SHIP_FIELDS)
         emit_static("PILOT_SHIP_SEEN", ships, add)
@@ -227,6 +254,10 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="random seed")
     ap.add_argument("--split", choices=["time", "random"], default="time",
                     help="how to hold data back. Use time for an honest score.")
+    ap.add_argument("--jitter", type=float, default=0.12,
+                    help="randomly scale the airframe fields by this much while "
+                         "training. Also becomes how far a ship may be retuned "
+                         "and still be flown. Default 0.12.")
     ap.add_argument("--horizon", type=int, default=60,
                     help="frames to look ahead for the target (default 60)")
     args = ap.parse_args()
@@ -387,8 +418,27 @@ def main():
         perm = torch.randperm(n, device=dev)
         for i in range(0, n, args.batch):
             idx = perm[i:i + args.batch]
+            xb = xt[idx]
+            if args.jitter > 0.0:
+                # THE AIRFRAME FIELDS, MOVED A LITTLE, AND ONLY THOSE.
+                #
+                # The data holds two ships. Nothing stops a network from reading
+                # one field, deciding which of the two it is in, and running two
+                # memorised modes -- and a network that did that would fly a third
+                # class as one of the first two, and would break the first time
+                # the class table is tuned.
+                #
+                # Nudging those columns each batch makes the exact values
+                # unreliable, so the useful thing to learn from them is the
+                # direction they point rather than the identity they spell.
+                nz = xb.clone()
+                k = xb.shape[1] - SHIP_FIELDS
+                noise = 1.0 + (torch.rand(xb.shape[0], SHIP_FIELDS, device=dev)
+                               * 2.0 - 1.0) * args.jitter
+                nz[:, k:] = xb[:, k:] * noise
+                xb = nz
             opt.zero_grad()
-            loss = lossf(squash(model(xt[idx])), yt[idx])
+            loss = lossf(squash(model(xb)), yt[idx])
             loss.backward()
             opt.step()
 
@@ -456,7 +506,8 @@ def main():
         "The output is a target: the mean stick over the next %d frames," % h,
         "and whether the pilot fires within that window.",
     ]
-    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n), fire_t)
+    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n), fire_t,
+                 max(0.005, args.jitter))
     print("")
     print("wrote %s" % args.out)
     print("%d weights, %d bytes as float32" % (params, params * 4))
