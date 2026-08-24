@@ -7,9 +7,16 @@ reads that file and fits a network to it.
 The network copies the pilot. It does not learn to win. If the recorded pilot
 flies badly, the network flies badly in the same way.
 
-The script trains three outputs: pitch, yaw and throttle. It does not train the
-trigger. A trigger press is rare, so a recording holds too few examples of it.
-Use a rule for the trigger instead.
+The script trains four outputs: pitch, yaw, throttle and the trigger.
+
+THE TRIGGER IS A QUESTION ABOUT THE NEXT SECOND, not about this frame. A press
+is 0.3% of rows in one recording, and a model that never fires is 99.7% correct
+on that. Asked instead whether the pilot fires WITHIN the horizon, the same data
+answers yes on 16% to 31% of rows, which is an ordinary question.
+
+That is the right question anyway. For a sniper, when to fire is the skill: in
+one recording the pilot held a full lock on 69.5% of frames and fired on 0.4% of
+them. A lock is permission. The decision is what this learns.
 
 THE NETWORK GIVES A TARGET, NOT A STICK POSITION. It says where the stick must
 go over the next half second. The caller then moves the stick toward that
@@ -60,9 +67,8 @@ import numpy as np
 MAGIC = b"PHOB"
 VERSION = 1
 
-# The number of values that the network gives. The order is pitch, yaw and
-# throttle. The trigger is not one of them. See the note at the top.
-ACT_OUT = 3
+# The number of values that the network gives: pitch, yaw, throttle, trigger.
+ACT_OUT = 4
 
 
 def read_dataset(path):
@@ -106,10 +112,11 @@ def build(obs_n, hidden):
 def squash(y):
     """Put each output in the range that the control accepts."""
     import torch
-    # Pitch and yaw move both ways from the middle. The throttle does not.
+    # Pitch and yaw move both ways from the middle. The throttle does not, and
+    # the trigger is a probability.
     pitch_yaw = torch.tanh(y[:, :2])
-    throttle = torch.sigmoid(y[:, 2:3])
-    return torch.cat([pitch_yaw, throttle], dim=1)
+    rest = torch.sigmoid(y[:, 2:4])
+    return torch.cat([pitch_yaw, rest], dim=1)
 
 
 # The eleven airframe fields sit at the end of the observation. See vg_bot.h.
@@ -135,7 +142,7 @@ def emit_static(name, values, add, per_line=8):
     add("};")
 
 
-def write_header(path, model, mean, std, obs_n, meta, ships=None):
+def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5):
     """Write the weights as a C header that the firmware can compile."""
     import torch
 
@@ -162,6 +169,11 @@ def write_header(path, model, mean, std, obs_n, meta, ships=None):
         add("#define PILOT_SHIP_N   %d" % SHIP_FIELDS)
         emit_static("PILOT_SHIP_SEEN", ships, add)
         add("")
+    add("// The cut for the trigger output, calibrated so the network fires about")
+    add("// as often as the pilot it was fitted to. Not 0.5: the trigger is")
+    add("// weighted up in training, which biases it toward saying yes.")
+    add("#define PILOT_FIRE_T   %.4ff" % fire_t)
+    add("")
     add("#define PILOT_NET_IN   %d" % obs_n)
     add("#define PILOT_NET_H    %d" % layers[0].out_features)
     add("#define PILOT_NET_OUT  %d" % ACT_OUT)
@@ -248,8 +260,13 @@ def main():
         print("error: the data is shorter than the horizon.")
         return 1
     box = np.ones(h) / float(h)
-    Y = np.stack([np.convolve(Yraw[:, i], box, mode="valid")
-                  for i in range(ACT_OUT)], axis=1).astype(np.float32)
+    # THE THREE AXES TAKE A MEAN AND THE TRIGGER TAKES A MAXIMUM, because they
+    # are different questions. "Where will the stick be" averages; "will they
+    # fire" does not -- one press inside the window is a yes.
+    cols = [np.convolve(Yraw[:, i], box, mode="valid") for i in range(3)]
+    fired = (np.convolve(Yraw[:, 3], np.ones(h), mode="valid") > 0.5).astype(np.float32)
+    cols.append(fired)
+    Y = np.stack(cols, axis=1).astype(np.float32)
     # The mean starts at the row it looks forward from, so drop the last rows
     # that have no full window after them.
     X = X[: Y.shape[0]]
@@ -259,10 +276,8 @@ def main():
     if X.shape[0] < 5000:
         print("warning: this is a small dataset. Record more flying.")
 
-    # The trigger column is in the file but the network does not learn it.
-    # Report how rare it is, because that is the reason.
     fire = np.concatenate(ys)[:, 3]
-    print("trigger presses in the data: %d (%.2f%% of rows). Not trained."
+    print("trigger presses in the data: %d (%.2f%% of rows)"
           % (int(fire.sum()), 100.0 * fire.mean()))
 
     torch.manual_seed(args.seed)
@@ -333,7 +348,26 @@ def main():
 
     model = build(obs_n, args.hidden).to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    lossf = nn.MSELoss()
+    mse = nn.MSELoss()
+
+    # THE TRIGGER IS WEIGHTED UP. Even asked about a whole second it is the
+    # minority answer, and an unweighted fit gets a good score by rarely saying
+    # yes. The weight is the ratio of the two classes, so both carry the same
+    # total pull.
+    pos = float(Y[tr][:, 3].mean())
+    w_pos = (1.0 - pos) / max(pos, 1e-3)
+    print("trigger says yes on %.1f%% of training rows, weighted x%.1f"
+          % (100.0 * pos, w_pos))
+    bce = nn.BCELoss(reduction="none")
+
+    def lossf(pred, truth):
+        axes = mse(pred[:, :3], truth[:, :3])
+        w = 1.0 + (w_pos - 1.0) * truth[:, 3]
+        trig = (bce(pred[:, 3].clamp(1e-6, 1 - 1e-6), truth[:, 3]) * w).mean()
+        # Scaled so neither half drowns the other. The axes loss runs around
+        # 0.03 and a balanced BCE around 0.7, so the trigger is divided down to
+        # sit in the same range rather than dominating the gradient.
+        return axes + 0.05 * trig
 
     # The score to beat. A pilot that always gives the average control gets
     # this loss. A network above it learned nothing.
@@ -374,6 +408,33 @@ def main():
     for i, name in enumerate(["pitch", "yaw", "throttle"]):
         err = np.abs(pred[:, i] - truth[:, i]).mean()
         print("  %-10s %7.4f   %7.4f" % (name, err, truth[:, i].std()))
+    # THE THRESHOLD IS CALIBRATED, NOT ASSUMED.
+    #
+    # Half is the obvious cut and it is the wrong one here. The trigger is
+    # weighted up during training so that a rare answer is learned at all, and a
+    # weighted fit is deliberately biased toward saying yes. At 0.5 this one said
+    # yes on 58% of rows where the pilot said yes on 28%.
+    #
+    # So the cut is moved until the network fires as OFTEN as the pilot did. That
+    # is a weak form of calibration and the right one here: the question is not
+    # "is this frame a shot" but "does this pilot shoot about this much", and a
+    # trigger that fires twice as often as its teacher is not copying them.
+    t = truth[:, 3] >= 0.5
+    want = float(t.mean())
+    fire_t = 0.5
+    best_gap = 1e9
+    for cand in np.linspace(0.05, 0.95, 91):
+        gap = abs(float((pred[:, 3] >= cand).mean()) - want)
+        if gap < best_gap:
+            best_gap, fire_t = gap, float(cand)
+    print("  trigger     threshold %.2f, chosen so it fires as often as the pilot did"
+          % fire_t)
+    p = pred[:, 3] >= fire_t
+    tp = float((p & t).sum()); fp = float((p & ~t).sum()); fn = float((~p & t).sum())
+    print("  trigger     says yes on %.1f%% of rows, truth %.1f%%"
+          % (100.0 * p.mean(), 100.0 * t.mean()))
+    print("              caught %.0f%% of the shots, %.0f%% of its calls were right"
+          % (100.0 * tp / max(tp + fn, 1), 100.0 * tp / max(tp + fp, 1)))
     print("")
     print("best test loss %.5f" % best)
     print("  against the average control  %.5f  (%+.0f%%)"
@@ -388,9 +449,10 @@ def main():
         "Rows: %d. Inputs: %d. Hidden: %d." % (X.shape[0], obs_n, args.hidden),
         "Weights: %d, which is %d bytes as float32." % (params, params * 4),
         "Test loss: %.5f. A still stick scores %.5f." % (best, hold),
-        "The output is a target: the mean stick over the next %d frames." % h,
+        "The output is a target: the mean stick over the next %d frames," % h,
+        "and whether the pilot fires within that window.",
     ]
-    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n))
+    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n), fire_t)
     print("")
     print("wrote %s" % args.out)
     print("%d weights, %d bytes as float32" % (params, params * 4))

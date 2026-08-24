@@ -21,6 +21,15 @@ struct VgNetOut {
     float pitch;      // -1..1
     float yaw;        // -1..1
     float throttle;   // 0..1
+    // WHETHER TO SHOOT, already decided. The raw output is a probability that
+    // the pilot fires within the horizon, and the cut that turns it into a yes
+    // is calibrated by the trainer rather than assumed -- see PILOT_FIRE_T.
+    //
+    // It is a WISH and not a launch. Every gate the weapon has still applies: a
+    // lock has to exist, the rack has to hold something, the trigger has its own
+    // interval. This says the pilot wants to shoot, which is the half a rule
+    // could never judge.
+    bool  fire;
     // False when the network was not run. The one case that matters is a width
     // mismatch: the observation grew and nobody retrained.
     bool  valid;

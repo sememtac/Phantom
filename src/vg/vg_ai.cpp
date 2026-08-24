@@ -682,11 +682,19 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // holding fire because a round of theirs is still out there has done
     // everything else right -- earned the lock, slowed down, closed the range --
     // and is choosing to wait. That is what the ships with a cap are for.
-    const int cap = inflight_cap(sp->tactic);
+    //
+    // A TRAINED PILOT ANSWERS THIS ITSELF. The cap is a rule standing in for a
+    // judgement, and a policy fitted to somebody who held a lock on 69.5% of
+    // frames and fired on 0.4% of them has learned the judgement. Where it has an
+    // opinion the cap steps aside; where it has none -- an untrained class, or a
+    // frame it declined -- the rule is still there.
+    const int judged = vg_bot_enemy_fire(index);
+    const int cap = (judged >= 0) ? 0 : inflight_cap(sp->tactic);
 
     if (s->rounds > 0 && s->fire_cd <= 0 && s->locked &&
         range < fire_r && range > 60.0f &&
         fire_sn < ENEMY_ENGAGE_SPEED &&
+        (judged != 0) &&
         (cap <= 0 || rounds_in_flight(index) < cap)) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
         // is -- but the round leaves on the direction this pilot thinks is the

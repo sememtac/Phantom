@@ -355,12 +355,24 @@ void vg_bot_observe_enemy(int index, VgObs* o) {
 static float s_enp[MAX_ENEMIES] = { 0 };
 static float s_eny[MAX_ENEMIES] = { 0 };
 static float s_ent[MAX_ENEMIES] = { 0 };
+// What the policy said about each enemy's trigger, and whether it said anything.
+static bool  s_enf[MAX_ENEMIES] = { false };
+static bool  s_enf_ok[MAX_ENEMIES] = { false };
+
+int vg_bot_enemy_fire(int index) {
+    if (index < 0 || index >= MAX_ENEMIES) return -1;
+    if (!s_enf_ok[index]) return -1;
+    return s_enf[index] ? 1 : 0;
+}
 
 bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
                       float* target_speed, float dt) {
     if (!vg_enemy_net || !vg_net_available()) return false;
     if (index < 0 || index >= MAX_ENEMIES) return false;
     if (!s || !desired || !target_speed) return false;
+    // Cleared up front, so a frame the policy declines leaves no stale opinion
+    // behind for the firing code to act on.
+    s_enf_ok[index] = false;
 
     VgObs o;
     vg_bot_observe_enemy(index, &o);
@@ -379,6 +391,9 @@ bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
     vg_bot_net_us = micros() - t0;
     g_upd_ai += vg_bot_net_us;
     if (!n.valid) return false;
+
+    s_enf[index]    = n.fire;
+    s_enf_ok[index] = true;
 
     const float k = dt * 3.2f > 1.0f ? 1.0f : dt * 3.2f;
     s_enp[index] += (n.pitch    - s_enp[index]) * k;
@@ -473,6 +488,8 @@ static float s_prev_rounds = 1.0f;
 // this frame, so something has to hold the stick and move it. A hand does this
 // without being asked; here it is three floats and a lerp.
 static float s_np = 0.0f, s_ny = 0.0f, s_nt = 0.5f;
+// What the policy said about the trigger on the frame it last ran.
+static bool  s_net_fire = false;
 
 void vg_bot_reset(void) {
     s_np = s_ny = 0.0f;
@@ -495,15 +512,26 @@ void vg_bot_reset(void) {
 // already in the air -- 0.072 against 0.190 across every locked frame. They wait
 // to see the last one resolve. That is the discipline the ENEMY snipers already
 // have, as ENEMY_INFLIGHT_STANDOFF, and the seat never got it.
-static void trigger(const VgObs* o, VgInput* in, bool may_fire) {
+// `judged` is the policy's opinion, or -1 when nothing has one. The GATES are
+// never the policy's business: a lock has to exist and the rack has to hold
+// something, whoever is flying.
+static void trigger(const VgObs* o, VgInput* in, bool may_fire, int judged) {
     const bool locked = (o->v[OBS_OWN_LOCK] >= 0.999f);
     bool want = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
 
-    // A semi-active round rides the launcher's lock, so a second one launched
-    // while the first is still guiding does not double the threat -- both share
-    // the one lock, and both die together the moment it breaks.
-    if (want && o->v[OBS_OWN_SAAM] > 0.5f && o->v[OBS_OWN_INFLIGHT] > 0.0f)
+    if (judged >= 0) {
+        // THE POLICY DECIDES, INSIDE THE GATES. It was fitted to a pilot who held
+        // a full lock on 69.5% of frames and fired on 0.4% of them, so the thing
+        // it learned is exactly the judgement the rule below could only
+        // approximate -- including waiting for a round to resolve, which is why
+        // that rule is not applied on top of it.
+        want = want && (judged != 0);
+    } else if (want && o->v[OBS_OWN_SAAM] > 0.5f && o->v[OBS_OWN_INFLIGHT] > 0.0f) {
+        // No opinion, so the rule stands: a semi-active round rides the
+        // launcher's lock, and a second one launched while the first is still
+        // guiding shares that lock and dies with it.
         want = false;
+    }
 
     const float rounds_now = o->v[OBS_OWN_ROUNDS];
     if (rounds_now < s_prev_rounds - 1e-4f) s_fired = false;
@@ -546,6 +574,8 @@ static bool net_act(const VgObs* o, VgInput* in, float dt) {
     in->pitch    = s_np;
     in->yaw      = s_ny;
     in->throttle = s_nt;
+    // Not eased. A trigger is a decision, not a position.
+    s_net_fire = n.fire;
     return true;
 }
 
@@ -561,7 +591,7 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     const bool flown_by_net = net_act(o, in, dt);
     if (!vg_bot_net || !flown_by_net) vg_bot_net_us = 0;
     if (flown_by_net) {
-        trigger(o, in, true);
+        trigger(o, in, true, s_net_fire ? 1 : 0);
         return;
     }
 
@@ -766,5 +796,5 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     if (t > 1.0f) t = 1.0f;
     in->throttle = t;
 
-    trigger(o, in, may_fire);
+    trigger(o, in, may_fire, -1);
 }

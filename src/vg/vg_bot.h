@@ -217,6 +217,10 @@ extern float vg_agg_bias;
 bool vg_bot_fly_enemy(int index, const struct Ship* s, Vec3* desired,
                       float* target_speed, float dt);
 
+// Does the policy want THIS enemy to shoot, on the frame it last flew them?
+// 1 yes, 0 no, -1 nothing has an opinion and the class discipline stands.
+int vg_bot_enemy_fire(int index);
+
 // ...and decide. Reads nothing but the observation.
 //
 // SCRIPTED FOR NOW, and it is written to be a fair opponent rather than a good

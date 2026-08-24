@@ -118,5 +118,11 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     out->pitch    = fast_tanh(y[0]);
     out->yaw      = fast_tanh(y[1]);
     out->throttle = 0.5f * (fast_tanh(0.5f * y[2]) + 1.0f);   // = sigmoid(y)
+#if PILOT_NET_OUT > 3
+    const float pfire = 0.5f * (fast_tanh(0.5f * y[3]) + 1.0f);
+    out->fire = (pfire >= PILOT_FIRE_T);
+#else
+    out->fire = false;
+#endif
     out->valid    = true;
 }
