@@ -47,6 +47,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--headless")) headless = true;
         else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
         else if (!strcmp(argv[i], "--rotate")) rotate = true;
+        // The opponent is flown by the network. This is the one you fight.
+        else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
@@ -65,6 +67,8 @@ int main(int argc, char** argv) {
                    "               as the machine allows.\n"
                    "  --dump F     write (observation, action) pairs to F.\n"
                    "  --scripted   fly the hand-written policy, not the network.\n"
+                   "  --enemy-net  the OPPONENT is flown by the network. Fly the\n"
+                   "               gym as usual and you are fighting it.\n"
                    "  --rotate     send a different opponent class each respawn.\n"
                    "               Use it when you record: one sitting then\n"
                    "               covers all four instead of one.\n"

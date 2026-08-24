@@ -175,6 +175,210 @@ void vg_bot_observe(VgObs* o) {
 }
 
 // ---------------------------------------------------------------------------
+// The same observation, from an enemy's seat
+// ---------------------------------------------------------------------------
+
+bool vg_enemy_net = false;
+
+// The closest PLAYER missile tracking this enemy. The mirror of incoming().
+static const Missile* incoming_at(int index, float* out_r) {
+    const Missile* best = nullptr;
+    float bestr = 1e30f;
+    for (int i = 0; i < MAX_MISSILES; i++) {
+        const Missile* m = &vg.msl[i];
+        if (!m->alive || !m->from_player || !m->locked) continue;
+        if (m->target != index) continue;
+        const float r = vlen(vsub(m->pos, vg.enemy[index].pos));
+        if (r < bestr) { bestr = r; best = m; }
+    }
+    if (out_r) *out_r = bestr;
+    return best;
+}
+
+// A bearing in view space, rotated into one ship's own axes. Its nose becomes
+// +z, which is what +z already means to the player -- and that single agreement
+// is the whole reason a policy can cross between the two seats.
+static inline Vec3 to_local(Vec3 v, Vec3 right, Vec3 up, Vec3 fwd) {
+    return v3(vdot(v, right), vdot(v, up), vdot(v, fwd));
+}
+
+void vg_bot_observe_enemy(int index, VgObs* o) {
+    if (!o) return;
+    for (int i = 0; i < VG_OBS_N; i++) o->v[i] = 0.0f;
+    o->has_target = false;
+    if (index < 0 || index >= MAX_ENEMIES) return;
+
+    const Ship* s = &vg.enemy[index];
+    if (!s->alive) return;
+    const ShipSpec* sp = s->spec;
+
+    // THE ENEMY'S OWN AXES. right = cross(up, fwd) is the basis vg_ai.cpp already
+    // builds for its bank, so the two cannot disagree about handedness.
+    const Vec3 fwd   = s->fwd;
+    const Vec3 up    = s->up;
+    const Vec3 right = vcross(up, fwd);
+
+    const float own_span = sp->speed_max - sp->speed_min;
+    o->v[OBS_OWN_HULL]  = (sp->hull > 0.0f) ? s->hull / sp->hull : 0.0f;
+    o->v[OBS_OWN_SPEED] = (own_span > 1.0f) ? (s->speed - sp->speed_min) / own_span : 0.0f;
+    // An enemy has no throttle lever. What it has is a speed it is asking for,
+    // which is the same command under another name.
+    o->v[OBS_OWN_THROTTLE] = (own_span > 1.0f)
+                           ? clamp1((s->target_speed - sp->speed_min) / own_span) : 0.0f;
+    o->v[OBS_OWN_ROUNDS]    = (sp->magazine > 0)
+                            ? (float)s->rounds / (float)sp->magazine : 0.0f;
+    o->v[OBS_OWN_RELOADING] = (s->reload_t > 0.0f) ? 1.0f : 0.0f;
+    {
+        float sn = o->v[OBS_OWN_SPEED];
+        if (sn < 0.0f) sn = 0.0f; else if (sn > 1.0f) sn = 1.0f;
+        const float need = sp->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
+        o->v[OBS_OWN_LOCK] = s->locked ? 1.0f
+                           : ((need > 1e-4f) ? clamp1(s->lock_t / need) : 0.0f);
+    }
+
+    // The boundary, measured where THIS ship is and not where the player is.
+    const Vec3 local = vg_arena_local_of(s->pos);
+    o->v[OBS_WALL] = clamp1(vg_arena_clearance(local) / ARENA_ENEMY_MARGIN);
+    {
+        const Vec3 inward = to_local(vg_arena_dir_to_view(vg_arena_inward(local)),
+                                     right, up, fwd);
+        o->v[OBS_WALL_X] = inward.x;
+        o->v[OBS_WALL_Y] = inward.y;
+        o->v[OBS_WALL_Z] = inward.z;
+    }
+    o->v[OBS_ROLL] = clamp1(s->roll_vis / 3.14159265f);
+
+    // ---- the target, which for an enemy is the player, at the origin ----
+    const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+    const float r  = vlen(to);
+    if (r > 1.0f) {
+        o->has_target = true;
+        const Vec3 los = to_local(vmul(to, 1.0f / r), right, up, fwd);
+        o->v[OBS_TGT_X] = los.x;
+        o->v[OBS_TGT_Y] = los.y;
+        o->v[OBS_TGT_Z] = los.z;
+        o->v[OBS_TGT_RANGE]   = clamp1(r / (sp->lock_range > 1.0f ? sp->lock_range : 1.0f));
+        o->v[OBS_TGT_RANGE_W] = clamp1(r / BOT_RANGE_REF);
+
+        // The player's motion as THIS ship sees it. In view space the player
+        // stands still and the world slides past at the player's speed, so the
+        // player's velocity relative to this ship is the world's motion less its
+        // own -- the same sum the player's observation makes, reversed.
+        const float comb = sp->speed_max + vg.spec->speed_max;
+        const Vec3  rel  = vsub(v3(0, 0, vg.speed), vmul(fwd, s->speed));
+        const Vec3  tv   = to_local(rel, right, up, fwd);
+        o->v[OBS_TGT_VX] = clamp1(tv.x / comb);
+        o->v[OBS_TGT_VY] = clamp1(tv.y / comb);
+        o->v[OBS_TGT_VZ] = clamp1(tv.z / comb);
+        o->v[OBS_TGT_CLOSURE] = clamp1(-vdot(tv, los) / comb);
+
+        // Who is pointed at whom. Our nose is +z in our own frame, so offbore is
+        // the z of the bearing; aspect asks the same of the player, whose nose is
+        // +z in view space.
+        o->v[OBS_TGT_OFFBORE] = los.z;
+        o->v[OBS_TGT_ASPECT]  = clamp1(vdot(vnorm(vmul(to, -1.0f)), v3(0, 0, 1)));
+        o->v[OBS_TGT_HULL] = (vg.health_max > 0.0f) ? vg.health / vg.health_max : 0.0f;
+    }
+
+    float mr = 0.0f;
+    const Missile* m = incoming_at(index, &mr);
+    if (m) {
+        const Vec3 d = vsub(m->pos, s->pos);
+        const Vec3 mlos = (mr > 1e-3f)
+                        ? to_local(vmul(d, 1.0f / mr), right, up, fwd) : v3(0, 0, 1);
+        o->v[OBS_MSL_IN] = 1.0f;
+        o->v[OBS_MSL_X]  = mlos.x;
+        o->v[OBS_MSL_Y]  = mlos.y;
+        o->v[OBS_MSL_Z]  = mlos.z;
+        o->v[OBS_MSL_RANGE] = clamp1(mr / ENEMY_EVADE_RANGE);
+    }
+
+    o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
+    {
+        int air = 0;
+        for (int i = 0; i < MAX_MISSILES; i++) {
+            const Missile* mm = &vg.msl[i];
+            if (mm->alive && !mm->from_player && mm->shooter == index && mm->locked) air++;
+        }
+        o->v[OBS_OWN_INFLIGHT] = (sp->magazine > 0)
+                               ? clamp1((float)air / (float)sp->magazine) : 0.0f;
+    }
+
+    o->v[OBS_SHIP_TURN]      = sp->turn_rate          / OBSREF_TURN;
+    o->v[OBS_SHIP_AGI_SLOW]  = sp->agility_slow_bonus;
+    o->v[OBS_SHIP_AGI_FAST]  = sp->agility_fast_malus;
+    o->v[OBS_SHIP_SPEED]     = sp->speed_max          / OBSREF_SPEED;
+    o->v[OBS_SHIP_HULL]      = sp->hull               / OBSREF_HULL;
+    o->v[OBS_SHIP_LOCKRANGE] = sp->lock_range         / OBSREF_LOCKRANGE;
+    o->v[OBS_SHIP_LOCKTIME]  = sp->lock_time          / OBSREF_LOCKTIME;
+    o->v[OBS_SHIP_MAG]       = (float)sp->magazine    / OBSREF_MAG;
+    o->v[OBS_SHIP_GAP]       = sp->fire_gap           / OBSREF_GAP;
+    o->v[OBS_SHIP_RELOAD]    = sp->reload             / OBSREF_RELOAD;
+    o->v[OBS_SHIP_MSLSPEED]  = sp->msl_speed          / OBSREF_MSLSPEED;
+}
+
+// THE CONTROL, TRANSLATED BACK.
+//
+// A policy gives pitch and yaw, which in the player's seat are stick deflections
+// that turn the world. For an enemy the same two numbers must become a
+// DIRECTION, because a direction is the only thing vg_ai.cpp knows how to be
+// given.
+//
+// They mean the same thing on both sides -- which way to pull, and how hard -- so
+// the translation lays them off the nose in the ship's own axes and hands back
+// where that points. Full deflection asks for about 45 degrees, and
+// vg_turn_toward closes on it at whatever rate the airframe has.
+//
+// THE TURN RATE IS NOT APPLIED HERE, on purpose. That is the ship's business: an
+// enemy CHARIOT must get there faster than an enemy BALLISTA for the same
+// command, which is exactly what the class table is for.
+//
+// A HELD STICK PER SHIP, for the same reason the player's seat holds one: the
+// network gives a target a second out, and something has to move toward it.
+static float s_enp[MAX_ENEMIES] = { 0 };
+static float s_eny[MAX_ENEMIES] = { 0 };
+static float s_ent[MAX_ENEMIES] = { 0 };
+
+bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
+                      float* target_speed, float dt) {
+    if (!vg_enemy_net || !vg_net_available()) return false;
+    if (index < 0 || index >= MAX_ENEMIES) return false;
+    if (!s || !desired || !target_speed) return false;
+
+    VgObs o;
+    vg_bot_observe_enemy(index, &o);
+    if (!o.has_target) return false;
+    // The wall stays with the tactic, exactly as it does in the player's seat:
+    // the recordings hold no boundary crash to learn from, and the boundary is
+    // fatal.
+    if (o.v[OBS_WALL] < BOT_WALL_TURN) return false;
+
+    const uint32_t t0 = micros();
+    VgNetOut n;
+    vg_net_run(o.v, VG_OBS_N, &n);
+    vg_bot_net_us = micros() - t0;
+    g_upd_ai += vg_bot_net_us;
+    if (!n.valid) return false;
+
+    const float k = dt * 3.2f > 1.0f ? 1.0f : dt * 3.2f;
+    s_enp[index] += (n.pitch    - s_enp[index]) * k;
+    s_eny[index] += (n.yaw      - s_eny[index]) * k;
+    s_ent[index] += (n.throttle - s_ent[index]) * k;
+
+    const Vec3 fwd   = s->fwd;
+    const Vec3 up    = s->up;
+    const Vec3 right = vcross(up, fwd);
+    // Pitch is negated, because a negative pitch command aims UP in the player's
+    // seat -- see the sign note in vg_bot_act. The two seats have to mean the same
+    // thing by the same number, or a policy cannot cross between them.
+    *desired = vnorm(vadd(fwd, vadd(vmul(right, s_eny[index]),
+                                    vmul(up,   -s_enp[index]))));
+    *target_speed = s->spec->speed_min
+                  + (s->spec->speed_max - s->spec->speed_min) * s_ent[index];
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Deciding
 // ---------------------------------------------------------------------------
 //

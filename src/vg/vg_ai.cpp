@@ -1,5 +1,6 @@
 #include "vg_sim.h"
 #include "vg_arena.h"
+#include "vg_bot.h"
 #include <math.h>
 
 // Enemy fighter behaviour, in strict priority order:
@@ -545,6 +546,23 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                           range < ENEMY_DRY_RANGE);
         if (dry) {
             tactic_dry(s, to, smax, &desired);
+        } else
+        // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
+        //
+        // It sits exactly where a class tactic sits, and that is the whole design
+        // of this function paying off: everything above -- the wall, the suicide
+        // run, the missile, the tail -- is survival that every hull does the same
+        // way, and everything here is POSITIONING. A network is another opinion
+        // about positioning.
+        //
+        // It declines near the boundary and when there is nothing to fight, and
+        // then the class tactic flies as it always did. There is no frame where
+        // nobody is steering.
+        if (vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
+            // The firing gates below are untouched, so a network-flown enemy
+            // still has to be slow enough and hold a lock long enough, in its own
+            // class's cone. It gets a different opinion about where to be, not a
+            // different game.
         } else
         switch (sp->tactic) {
             case TACTIC_STANDOFF:

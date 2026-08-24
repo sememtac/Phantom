@@ -189,6 +189,31 @@ enum {
 // Fill an observation from the PLAYER's seat. The one place that reads the world.
 void vg_bot_observe(VgObs* o);
 
+// ...and from an ENEMY's, which is the same question asked from the other side.
+//
+// THE POINT OF THE WHOLE MODULE. The observation was built to be seat-agnostic --
+// every field is a fact a pilot has, expressed in that pilot's own frame -- so a
+// policy fitted in one seat means something in the other. This is where that
+// claim is paid for.
+//
+// The work is entirely the CHANGE OF FRAME. The player is the origin and the
+// world turns around them; an enemy is a position and a heading inside that
+// world. So every bearing here is rotated into the enemy's own axes, where +z is
+// its nose, which is exactly what +z means to the player.
+void vg_bot_observe_enemy(int index, VgObs* o);
+
+// Whether opponents are flown by the network rather than by vg_ai.cpp.
+//
+// Off by default. The hand-written AI is the game; this is the experiment, and
+// it takes the wheel only when asked.
+extern bool vg_enemy_net;
+
+// Turn a policy's control into an enemy's steering. `desired` comes back as a
+// direction to turn toward, in view space, and target_speed as a speed. Returns
+// false when the network declined, and then the class tactic flies as usual.
+bool vg_bot_fly_enemy(int index, const struct Ship* s, Vec3* desired,
+                      float* target_speed, float dt);
+
 // ...and decide. Reads nothing but the observation.
 //
 // SCRIPTED FOR NOW, and it is written to be a fair opponent rather than a good
