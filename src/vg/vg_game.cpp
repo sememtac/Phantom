@@ -317,6 +317,8 @@ void vg_gym_spawn_opponent(void) {
 // Set by the desktop only; see the note in vg_sim.h.
 bool vg_headless = false;
 
+bool vg_demo_wanted = false;
+
 void vg_demo_begin(void) {
     if (vg.demo) return;
 

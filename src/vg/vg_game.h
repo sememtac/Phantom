@@ -635,6 +635,9 @@ void vg_gym_enter(ShipClass mine, ShipClass theirs);
 
 // The title screen's demo. begin picks a matchup and hands both seats to the
 // game; end puts back everything begin borrowed.
+// Off unless something asks. The title screen does not run this by itself; see
+// the note at its old trigger in vg_upd_attract.
+extern bool vg_demo_wanted;
 void vg_demo_begin(void);
 void vg_demo_end(void);
 

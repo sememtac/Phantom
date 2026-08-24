@@ -32,5 +32,18 @@ bool vg_net_available(void);
 int  vg_net_inputs(void);
 int  vg_net_weights(void);
 
+// DOES IT KNOW THIS SHIP?
+//
+// A policy asked to fly a class it never saw does not refuse -- it guesses, and
+// it guesses by flying the class it does know. Measured before there was any way
+// to ask: a network fitted to BALLISTA recordings flew all four like a BALLISTA,
+// and the attract demo had to be pinned to one class to hide it.
+//
+// The trainer writes down which airframes appeared in its data, so the question
+// has an answer that cannot go stale. A class that was never recorded is flown
+// by the hand-written tactics instead, which is the right outcome: a good rule
+// beats a confident guess.
+bool vg_net_knows_ship(const float* obs, int n);
+
 // Run it. `n` is the caller's observation width and is checked, not trusted.
 void vg_net_run(const float* obs, int n, VgNetOut* out);

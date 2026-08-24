@@ -52,6 +52,32 @@ static void layer(const float* w, const float* b, const float* in, float* out,
 }
 
 bool vg_net_available(void) { return true; }
+
+bool vg_net_knows_ship(const float* obs, int n) {
+#if defined(PILOT_SHIPS) && PILOT_SHIPS > 0
+    if (!obs || n < PILOT_NET_IN) return false;
+    // The airframe fields are the LAST PILOT_SHIP_N of the observation, which is
+    // the layout rule again: they were appended, so they stay at the end.
+    const float* mine = obs + (n - PILOT_SHIP_N);
+    for (int k = 0; k < PILOT_SHIPS; k++) {
+        const float* row = PILOT_SHIP_SEEN + (size_t)k * PILOT_SHIP_N;
+        bool same = true;
+        for (int i = 0; i < PILOT_SHIP_N && same; i++) {
+            float d = mine[i] - row[i];
+            if (d < 0.0f) d = -d;
+            // Loose enough to survive the trip through float32 and a rounded
+            // table, tight enough that two classes never look like one -- the
+            // closest pair in the table differ by 0.02 on their nearest field.
+            if (d > 0.005f) same = false;
+        }
+        if (same) return true;
+    }
+    return false;
+#else
+    (void)obs; (void)n;
+    return true;   // an older header that did not record what it saw
+#endif
+}
 int  vg_net_inputs(void)    { return PILOT_NET_IN; }
 int  vg_net_weights(void)   { return PILOT_NET_IN * PILOT_NET_H + PILOT_NET_H
                                    + PILOT_NET_H * PILOT_NET_H + PILOT_NET_H

@@ -112,7 +112,30 @@ def squash(y):
     return torch.cat([pitch_yaw, throttle], dim=1)
 
 
-def write_header(path, model, mean, std, obs_n, meta):
+# The eleven airframe fields sit at the end of the observation. See vg_bot.h.
+SHIP_FIELDS = 11
+
+
+def seen_ships(X, obs_n):
+    """Return the distinct airframes in the data, one row each."""
+    # The last SHIP_FIELDS columns do not change during a flight, so each
+    # distinct row is one class that was recorded. Rounded, because the values
+    # come back through float32 and two rows of the same class must not look
+    # like two classes.
+    ships = np.unique(np.round(X[:, obs_n - SHIP_FIELDS:], 4), axis=0)
+    return ships
+
+
+def emit_static(name, values, add, per_line=8):
+    """Write one float array as a C initialiser."""
+    add("static const float %s[] = {" % name)
+    flat = np.asarray(values, dtype=np.float32).reshape(-1)
+    for i in range(0, flat.size, per_line):
+        add("    %s," % ", ".join("%.7ff" % v for v in flat[i:i + per_line]))
+    add("};")
+
+
+def write_header(path, model, mean, std, obs_n, meta, ships=None):
     """Write the weights as a C header that the firmware can compile."""
     import torch
 
@@ -129,6 +152,16 @@ def write_header(path, model, mean, std, obs_n, meta):
     for line in meta:
         add("// %s" % line)
     add("")
+    if ships is not None and len(ships):
+        add("// WHICH SHIPS THIS NETWORK HAS ACTUALLY SEEN, one row of airframe")
+        add("// fields each. A policy asked to fly a class it was never trained on")
+        add("// is guessing, and it guesses by flying the class it does know.")
+        add("// The firmware compares the ship it is in against these and declines")
+        add("// when there is no match.")
+        add("#define PILOT_SHIPS    %d" % len(ships))
+        add("#define PILOT_SHIP_N   %d" % SHIP_FIELDS)
+        emit_static("PILOT_SHIP_SEEN", ships, add)
+        add("")
     add("#define PILOT_NET_IN   %d" % obs_n)
     add("#define PILOT_NET_H    %d" % layers[0].out_features)
     add("#define PILOT_NET_OUT  %d" % ACT_OUT)
@@ -357,7 +390,7 @@ def main():
         "Test loss: %.5f. A still stick scores %.5f." % (best, hold),
         "The output is a target: the mean stick over the next %d frames." % h,
     ]
-    write_header(args.out, model, mean, std, obs_n, meta)
+    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n))
     print("")
     print("wrote %s" % args.out)
     print("%d weights, %d bytes as float32" % (params, params * 4))

@@ -574,13 +574,17 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
         return;
     }
 
-    // NOBODY IS COMING. The crawl has had its say and the title has been up long
-    // enough that whoever is in the room is not about to touch it, so the game
-    // starts playing itself. Measured on the state clock, which is right here and
-    // nowhere else: ATTRACT is the one state a demo can be launched from, and
-    // arriving back from a demo resets it, so the next one is another DEMO_AFTER
-    // away rather than immediate.
-    if (vg.state_t > DEMO_AFTER && vg_tv.phase == TV_NONE) vg_demo_begin();
+    // THE TITLE SCREEN DOES NOT PLAY THE GAME TO ITSELF ANY MORE.
+    //
+    // It did, and it worked, and it is the wrong thing to ship: what a player
+    // wants from this game is a fight that is hard and worth playing, and combat
+    // footage of nobody playing is not that. Author's call.
+    //
+    // The demo itself is kept and reachable -- vg_demo_begin, and --demo on the
+    // desktop -- because it is still the only way to watch the trained pilot fly
+    // the player's seat on the board, where there is no command line to ask with.
+    if (vg_demo_wanted && vg.state_t > DEMO_AFTER && vg_tv.phase == TV_NONE)
+        vg_demo_begin();
 }
 
 void vg_upd_entry(float dt, const VgInput* in, const Tap* tap) {

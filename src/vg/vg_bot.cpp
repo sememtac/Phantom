@@ -179,7 +179,15 @@ void vg_bot_observe(VgObs* o) {
 // The same observation, from an enemy's seat
 // ---------------------------------------------------------------------------
 
-bool vg_enemy_net = false;
+// ON, because the trained pilot is a better opponent than the tactics on the
+// classes it has learned -- measured, a network CHARIOT takes 11.52% of the
+// player's hull per minute against the hand-written 8.67% -- and a harder, less
+// predictable opponent is the whole point of the game being played.
+//
+// It is not a takeover. It declines any class it was not trained on, it declines
+// near the boundary, and every firing gate below it is untouched, so the tactics
+// still fly most of what the player meets.
+bool vg_enemy_net = true;
 // HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
 //
 // A dial rather than a constant because the first attempt to settle this compared
@@ -357,6 +365,9 @@ bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
     VgObs o;
     vg_bot_observe_enemy(index, &o);
     if (!o.has_target) return false;
+    // NOT A CLASS IT HAS NEVER FLOWN. It would not refuse on its own -- it would
+    // fly the class it does know and do it badly.
+    if (!vg_net_knows_ship(o.v, VG_OBS_N)) return false;
     // The wall stays with the tactic, exactly as it does in the player's seat:
     // the recordings hold no boundary crash to learn from, and the boundary is
     // fatal.
@@ -513,6 +524,7 @@ static void trigger(const VgObs* o, VgInput* in, bool may_fire) {
 static bool net_act(const VgObs* o, VgInput* in, float dt) {
     if (!vg_bot_net || !vg_net_available()) return false;
     if (o->v[OBS_WALL] < BOT_WALL_TURN || !o->has_target) return false;
+    if (!vg_net_knows_ship(o->v, VG_OBS_N)) return false;
 
     const uint32_t t0 = micros();
     VgNetOut n;

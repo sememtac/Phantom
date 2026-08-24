@@ -9,6 +9,19 @@
 // Test loss: 0.02718. A still stick scores 0.03034.
 // The output is a target: the mean stick over the next 60 frames.
 
+// WHICH SHIPS THIS NETWORK HAS ACTUALLY SEEN, one row of airframe
+// fields each. A policy asked to fly a class it was never trained on
+// is guessing, and it guesses by flying the class it does know.
+// The firmware compares the ship it is in against these and declines
+// when there is no match.
+#define PILOT_SHIPS    2
+#define PILOT_SHIP_N   11
+static const float PILOT_SHIP_SEEN[] = {
+    0.6400000f, 0.8500000f, 0.4500000f, 0.6800000f, 0.7714000f, 1.0000000f, 0.0000000f, 0.2500000f,
+    0.8000000f, 0.9000000f, 0.3636000f, 0.8800000f, 0.6000000f, 0.1500000f, 0.9200000f, 0.6000000f,
+    0.3095000f, 0.2500000f, 1.0000000f, 0.0800000f, 1.0000000f, 0.6909000f,
+};
+
 #define PILOT_NET_IN   41
 #define PILOT_NET_H    64
 #define PILOT_NET_OUT  3
