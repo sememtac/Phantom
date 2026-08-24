@@ -1,5 +1,6 @@
 #include "vg_bot.h"
 #include "vg_net.h"
+#include "vg_pilot.h"
 #include "vg_sim.h"
 #include "vg_input.h"
 #include "vg_weapons.h"
@@ -179,6 +180,14 @@ void vg_bot_observe(VgObs* o) {
 // ---------------------------------------------------------------------------
 
 bool vg_enemy_net = false;
+// HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
+//
+// A dial rather than a constant because the first attempt to settle this compared
+// one run against one run, and the runs turn out to vary more than the change
+// did: the same build measured a hull floor of 0.721 and then 1.000. An extreme
+// like a minimum is the worst statistic to compare on, and a single fight is the
+// worst sample size.
+float vg_agg_bias = 0.0f;
 
 // The closest PLAYER missile tracking this enemy. The mirror of incoming().
 static const Missile* incoming_at(int index, float* out_r) {
@@ -371,10 +380,55 @@ bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
     // Pitch is negated, because a negative pitch command aims UP in the player's
     // seat -- see the sign note in vg_bot_act. The two seats have to mean the same
     // thing by the same number, or a policy cannot cross between them.
-    *desired = vnorm(vadd(fwd, vadd(vmul(right, s_eny[index]),
-                                    vmul(up,   -s_enp[index]))));
+    Vec3 want = vnorm(vadd(fwd, vadd(vmul(right, s_eny[index]),
+                                     vmul(up,   -s_enp[index]))));
+
+    // COMMITMENT IS THE PILOT'S, BUT IT IS NOT A HEADING, AND THAT WAS MEASURED.
+    //
+    // The obvious version -- bias the network's heading toward the player, in
+    // proportion to how aggressive this pilot is -- was built and flown, and it
+    // made the opponent worse. It pointed at us harder (+0.393 to +0.457) and
+    // did less damage (our hull floor 0.721 back up to 0.905).
+    //
+    // The reason is the class. A semi-active pilot holds its lock by ARCING past
+    // the target, near enough the nose to keep the bearing inside the cone and
+    // wide enough that the range does not collapse. Pulling the heading at the
+    // target is exactly the manoeuvre that ruins it. Aiming and going are not the
+    // same act, and for this ship they are opposed.
+    //
+    // So aggression stays out of the steering. The network says where to point,
+    // and it is right about that.
+    const float agg = s->pilot ? s->pilot->aggression : 0.7f;
+    const Vec3  to  = vsub(v3(0, 0, 0), s->pos);
+    const float r   = vlen(to);
+    // Kept behind a dial set to zero, because the first measurement of it was one
+    // run against one run and that is not a measurement. See vg_agg_bias.
+    if (vg_agg_bias > 0.0f && r > 1.0f) {
+        const float k2 = vg_agg_bias * agg;
+        want = vnorm(vadd(vmul(want, 1.0f - k2), vmul(vmul(to, 1.0f / r), k2)));
+    }
+    *desired = want;
+
     *target_speed = s->spec->speed_min
                   + (s->spec->speed_max - s->spec->speed_min) * s_ent[index];
+
+    // WHERE IT DOES BELONG: outside its own reach, an aggressive pilot hurries.
+    // Somebody who cannot shoot from here gains nothing by creeping, and a
+    // recorded pilot had no reason to learn otherwise because they were already
+    // where they wanted to be. Below the firing range this does nothing, so the
+    // slow-to-shoot trade the whole game rests on is untouched.
+    //
+    // INERT FOR A BALLISTA, and that is not a bug in the term, it is the class:
+    // its firing range is 3675 against an arena radius of 4200, so it is almost
+    // never outside its own reach. This is a lever for the short-ranged classes,
+    // and it will do nothing until there is a policy that can fly one.
+    const float fire_r = s->spec->lock_range * ENEMY_FIRE_RANGE_K;
+    if (r > fire_r) {
+        const float hurry = s->spec->speed_min
+                          + (s->spec->speed_max - s->spec->speed_min)
+                            * (0.55f + 0.40f * agg);
+        if (hurry > *target_speed) *target_speed = hurry;
+    }
     return true;
 }
 

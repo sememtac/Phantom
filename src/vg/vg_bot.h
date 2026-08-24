@@ -208,6 +208,9 @@ void vg_bot_observe_enemy(int index, VgObs* o);
 // it takes the wheel only when asked.
 extern bool vg_enemy_net;
 
+// See vg_bot.cpp. 0 disables the heading bias; 0.45 was the first guess.
+extern float vg_agg_bias;
+
 // Turn a policy's control into an enemy's steering. `desired` comes back as a
 // direction to turn toward, in view space, and target_speed as a speed. Returns
 // false when the network declined, and then the class tactic flies as usual.

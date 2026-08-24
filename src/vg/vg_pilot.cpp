@@ -19,29 +19,34 @@ const PilotSpec vg_pilot_kind[PILOT_KINDS] = {
     // three separate reasons the same fight is survivable, which is better than
     // one big handicap because the player can see each of them happening.
     { "RAW", /* fly */ 0.62f, /* aim */ 0.090f, /* hold */ 1.30f,
-             /* react */ 0.62f, /* nerve */ 0.80f, /* press */ 0.55f },
+             /* react */ 0.62f, /* nerve */ 0.80f, /* press */ 0.55f,
+             /* aggression */ 0.25f },
 
     // Has flown a few. Still loose on the trigger and still breaks off a merge
     // they were winning.
     { "JRN", /* fly */ 0.74f, /* aim */ 0.055f, /* hold */ 1.05f,
-             /* react */ 0.44f, /* nerve */ 0.92f, /* press */ 0.75f },
+             /* react */ 0.44f, /* nerve */ 0.92f, /* press */ 0.75f,
+             /* aggression */ 0.45f },
 
     // The middle of the table, and the one the gym sends. This is roughly what
     // every enemy in the game used to be, ENEMY_SKILL having been 0.82.
     { "PRO", /* fly */ 0.82f, /* aim */ 0.034f, /* hold */ 0.85f,
-             /* react */ 0.30f, /* nerve */ 1.00f, /* press */ 1.00f },
+             /* react */ 0.30f, /* nerve */ 1.00f, /* press */ 1.00f,
+             /* aggression */ 0.70f },
 
     // Stays in fights. The step up here is `press` more than `fly`: this is the
     // first pilot in the table who will sit on a tail rather than take the shot
     // and leave, and being unable to shake somebody is a different kind of hard
     // from being out-turned.
     { "VET", /* fly */ 0.90f, /* aim */ 0.021f, /* hold */ 0.70f,
-             /* react */ 0.20f, /* nerve */ 1.14f, /* press */ 1.30f },
+             /* react */ 0.20f, /* nerve */ 1.14f, /* press */ 1.30f,
+             /* aggression */ 0.88f },
 
     // The far side of the draw. Quick to answer, steady on the nose, and does
     // not give a won position back.
     { "ACE", /* fly */ 0.97f, /* aim */ 0.012f, /* hold */ 0.55f,
-             /* react */ 0.13f, /* nerve */ 1.28f, /* press */ 1.55f },
+             /* react */ 0.13f, /* nerve */ 1.28f, /* press */ 1.55f,
+             /* aggression */ 1.00f },
 };
 
 const PilotSpec* vg_pilot_default(void) { return &vg_pilot_kind[2]; }

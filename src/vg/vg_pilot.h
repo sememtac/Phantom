@@ -69,6 +69,23 @@ struct PilotSpec {
     // on how long a pursuit may run. A cautious pilot takes the shot and leaves;
     // somebody confident sits there.
     float press;
+
+    // HOW HARD THEY COMMIT, 0 to 1, and it only means anything to a pilot flown
+    // by the network.
+    //
+    // A trained policy is a copy of whoever was recorded, INCLUDING how careful
+    // they were. The first one flew a BALLISTA at a mean throttle of 0.286 and
+    // won by picking shots, so the policy picks shots too -- measured against the
+    // hand-written AI it points at the player far more (+0.393 against -0.320)
+    // and keeps five times as many rounds in the air, and still reads as passive
+    // from the cockpit. It hovers. It never comes.
+    //
+    // What is missing is not skill, it is COMMITMENT, and that is a property of
+    // the person and not of the flying. So the network says where to point and
+    // this says how much of the distance to close while doing it. The two are
+    // separable in a way that is worth keeping separable: retraining changes the
+    // flying, and this stays the dial for what kind of pilot is doing it.
+    float aggression;
 };
 
 #define PILOT_KINDS 5

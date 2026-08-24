@@ -49,6 +49,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--rotate")) rotate = true;
         // The opponent is flown by the network. This is the one you fight.
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
+        else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
+            vg_agg_bias = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
