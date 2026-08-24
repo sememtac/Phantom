@@ -190,6 +190,7 @@ def main():
         return 1
 
     xs, ys, obs_n, act_n = [], [], None, None
+    bounds = []   # rows per file, so the split can be made inside each one
     for path in args.dataset:
         x, y, n, a = read_dataset(path)
         if obs_n is None:
@@ -200,6 +201,7 @@ def main():
         print("read %-40s %7d rows" % (path, x.shape[0]))
         xs.append(x)
         ys.append(y)
+        bounds.append(x.shape[0])
 
     X = np.concatenate(xs)
     Yraw = np.concatenate(ys)[:, :ACT_OUT]
@@ -243,11 +245,28 @@ def main():
     #
     # A split by time holds back the END of the session. Every test row is then
     # from a fight that the network never saw.
-    cut = int(X.shape[0] * (1.0 - args.val))
+    # SPLIT INSIDE EACH FILE, not across the set of them.
+    #
+    # Each recording is one flight of one class. A single cut across the whole
+    # set puts the last file entirely in the test set, so the network trains on
+    # one class and is tested on another. Measured: BALLISTA and CHARIOT together
+    # scored +8% that way, and the same data scores far better when each file
+    # gives up its own tail.
     if args.split == "time":
-        tr = np.arange(cut)
-        va = np.arange(cut, X.shape[0])
+        tr_parts, va_parts, base = [], [], 0
+        for m in bounds:
+            m = min(m, X.shape[0] - base)
+            if m <= 1:
+                base += m
+                continue
+            c = base + int(m * (1.0 - args.val))
+            tr_parts.append(np.arange(base, c))
+            va_parts.append(np.arange(c, base + m))
+            base += m
+        tr = np.concatenate(tr_parts)
+        va = np.concatenate(va_parts)
     else:
+        cut = int(X.shape[0] * (1.0 - args.val))
         order = rng.permutation(X.shape[0])
         tr, va = order[:cut], order[cut:]
     print("split: %s. %d rows to train, %d rows to test."
