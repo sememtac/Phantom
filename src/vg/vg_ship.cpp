@@ -67,7 +67,9 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
-        /* warhead    */ 20.0f, 18.0f, 0.60f, 340.0f, 2.50f, 10.0f, 0.22f,
+        /* warhead    */ 20.0f, 18.0f, 0.60f,
+        /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f,
+        /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_FIGHTER,
         /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
@@ -85,7 +87,9 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 285.0f, /* shake */ 1.30f,
-        /* warhead    */ 32.0f, 14.0f, 0.20f, 520.0f, 1.20f, 10.0f, 0.35f,
+        /* warhead    */ 32.0f, 14.0f, 0.20f,
+        /* speed      */ 520.0f, /* accel */ 0.0f, /* max */ 520.0f,
+        /* seeker arc */ 1.20f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_GEOMETRY,
         /* fire ctrl  */ 0.90f, 0.90f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
@@ -106,16 +110,30 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
-        /* warhead    */ 12.0f, 22.0f, 0.85f, 380.0f, 1.70f, 7.0f, 0.12f,
+        /* warhead    */ 12.0f, 22.0f, 0.85f,
+        /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f,
+        /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_SLASH,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
     // ---- BALLISTA -- the range -----------------------------------------------
-    // A missile at 200 -- HALF the speed of the airframes it is shooting at, and
-    // alive for thirty-two seconds. It cannot run anything down, it just refuses to
-    // go away -- for as long as the pilot who fired it keeps looking at you.
+    // A missile that LEAVES THE RAIL at 200 -- half the speed of the airframes it
+    // is shooting at -- and then builds speed for every second the pilot keeps the
+    // target in view, to a ceiling of 480. Alive for thirty-two seconds.
+    //
+    // THE AIM IS THE ENGINE. Semi-active guidance already killed the round the
+    // moment the launcher looked away, which made holding the lock a tax. This
+    // makes it an investment as well: twenty seconds of holding somebody in view
+    // is a long time to be predictable and it should buy something, and what it
+    // buys is a round nothing in the game can outrun. The counter is not speed any
+    // more, it is breaking the lock -- which is the counter the class was always
+    // supposed to have.
+    //
+    // IT ALSO SETTLES AN ABSURDITY. The airframe does 340 and the round left at
+    // 200, so the sniper outran its own ordnance. It still does at the moment of
+    // launch, and stops doing so after about five seconds of holding the aim.
     //
     // SEMI-ACTIVE, AND NO RE-ACQUISITION. It used to be the only seeker in the game
     // that came back after a broken lock, on the reasoning that breaking it should
@@ -165,7 +183,9 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 270.0f, /* shake */ 0.55f,
-        /* warhead    */ 30.0f, 17.0f, 0.50f, 200.0f, 2.30f, 32.0f, 0.30f,
+        /* warhead    */ 30.0f, 17.0f, 0.50f,
+        /* speed      */ 200.0f, /* accel */ 30.0f, /* max */ 480.0f,
+        /* seeker arc */ 2.30f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
         /* tactic     */ TACTIC_STANDOFF,
         /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,

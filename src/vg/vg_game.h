@@ -172,6 +172,10 @@ struct Missile {
     Vec3    dir;          // unit heading
     float   life;
     float   age;
+    // ITS OWN SPEED, because a round that accelerates no longer has the one its
+    // class was built with. Starts at ShipSpec::msl_speed and climbs while the
+    // lock holds.
+    float   speed;
     int     target;       // enemy index; -1 means the player
     // WHO FIRED IT: enemy index, or -1 for the player. Only a semi-active round
     // reads this, and only to ask whether that pilot still holds the lock.
@@ -462,6 +466,10 @@ struct VgGame {
     // the opponent on each respawn covers all four in a single sitting, which is
     // the difference between four recordings and sixteen.
     bool     gym_rotate;
+    // Which pilot the gym sends, as an index into vg_pilot_kind. -1 for the
+    // default, which is the middle of the table. The gym is where difficulty is
+    // supposed to be dialled, and the table already holds five of them.
+    int8_t   gym_pilot;
     // A REP IS DUE, consumed by PLAYING's entry hook.
     //
     // The set-up cannot run at the button. vg_state_cut's own note says why: a

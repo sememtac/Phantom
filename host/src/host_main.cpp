@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
+    int  pilot  = -1;      // which of the five characters the gym sends
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -47,6 +48,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--headless")) headless = true;
         else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
         else if (!strcmp(argv[i], "--rotate")) rotate = true;
+        else if (!strcmp(argv[i], "--pilot") && i + 1 < argc) pilot = atoi(argv[++i]);
         // The opponent is flown by the network. This is the one you fight.
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
@@ -71,6 +73,8 @@ int main(int argc, char** argv) {
                    "  --scripted   fly the hand-written policy, not the network.\n"
                    "  --enemy-net  the OPPONENT is flown by the network. Fly the\n"
                    "               gym as usual and you are fighting it.\n"
+                   "  --pilot N    which character the gym sends: 0 RAW, 1 JRN,\n"
+                   "               2 PRO, 3 VET, 4 ACE. Default 2.\n"
                    "  --rotate     send a different opponent class each respawn.\n"
                    "               Use it when you record: one sitting then\n"
                    "               covers all four instead of one.\n"
@@ -108,6 +112,7 @@ int main(int argc, char** argv) {
         vg_gym_enter((ShipClass)(gym_mine   % SHIP_CLASSES),
                      (ShipClass)(gym_theirs % SHIP_CLASSES));
         vg.gym_rotate = rotate;
+        vg.gym_pilot  = (int8_t)pilot;
     }
 
     if (dump && !host_dataset_open(dump)) {

@@ -297,7 +297,12 @@ void vg_gym_spawn_opponent(void) {
     // selection, so it changes on every respawn and not once per session.
     if (vg.gym_rotate)
         vg.gym_opp = (uint8_t)((int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES);
-    vg_spawn_enemy(0, (ShipClass)vg.gym_opp, ENEMY_SKILL, 0.02f, vg_pilot_default());
+    const PilotSpec* who = (vg.gym_pilot >= 0 && vg.gym_pilot < PILOT_KINDS)
+                         ? &vg_pilot_kind[vg.gym_pilot] : vg_pilot_default();
+    // The pilot scales the turn rate as well as choosing the character, so the
+    // two have to move together or a RAW pilot flies an ACE's airframe.
+    vg_spawn_enemy(0, (ShipClass)vg.gym_opp, ENEMY_SKILL * (who->fly / 0.82f),
+                   0.02f, who);
     Ship* s = &vg.enemy[0];
     s->voice = 0;
     const char* n = s->spec->name;
@@ -374,6 +379,7 @@ void vg_demo_end(void) {
 
 void vg_gym_enter(ShipClass mine, ShipClass theirs) {
     vg_game_select_ship(mine);
+    vg.gym_pilot = -1;
     vg.gym     = true;
     vg.sel_opp = false;
     vg.gym_opp = (uint8_t)((theirs < SHIP_CLASSES) ? theirs : SHIP_AEGIS);

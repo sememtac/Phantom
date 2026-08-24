@@ -42,6 +42,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int sho
     m->life        = spec->msl_life;
     m->age         = 0;
     m->target      = target;
+    m->speed       = spec->msl_speed;
     m->shooter     = shooter;
     m->have_last   = false;
     g_msl_fired[from_player ? 1 : 0]++;
@@ -225,6 +226,23 @@ void vg_update_missiles(float dt) {
             }
         }
 
+        // THE AIM IS THE ENGINE, and this is the whole of it.
+        //
+        // While the round is guided it accelerates; the frame it stops being
+        // guided it stops accelerating and keeps whatever speed it had earned.
+        // For a semi-active class "guided" means the launcher is still looking,
+        // so a pilot who holds a target in view for twenty seconds is building a
+        // faster and faster round, and a pilot who looks away is left with
+        // whatever it had reached, flying straight.
+        //
+        // Nothing decays. A round that has been let go is not slowed down as
+        // well -- losing the lock is already the whole punishment, and taking the
+        // speed back would mean the pilot is charged twice for one mistake.
+        if (m->locked && m->spec->msl_accel > 0.0f) {
+            m->speed += m->spec->msl_accel * dt;
+            if (m->speed > m->spec->msl_speed_max) m->speed = m->spec->msl_speed_max;
+        }
+
         if (m->locked && have_target) {
             Vec3  to    = vsub(tpos, m->pos);
             float range = vlen(to);
@@ -244,7 +262,7 @@ void vg_update_missiles(float dt) {
                     // bends the flight path into the arc you actually see.
                     Vec3 aim = tpos;
                     if (m->age > m->spec->msl_arm_time) {
-                        float t_int = range / m->spec->msl_speed;
+                        float t_int = range / m->speed;
                         if (t_int > 1.2f) t_int = 1.2f;
                         aim = vadd(tpos, vmul(tvel, t_int));
                     }
@@ -307,7 +325,7 @@ void vg_update_missiles(float dt) {
             m->have_last = true;
         }
 
-        m->pos = vadd(m->pos, vmul(m->dir, m->spec->msl_speed * dt));
+        m->pos = vadd(m->pos, vmul(m->dir, m->speed * dt));
 
         trail_sample(m->trail, dt, m->pos, TRAIL_SAMPLE_DT);
 

@@ -82,7 +82,27 @@ struct ShipSpec {
     // the simulation can resolve is a lie.
     float msl_splash;
     float msl_graze_floor;     // fraction of that at the rim of the fuse radius
+    // The speed it LEAVES THE RAIL at. Not the speed it flies at, if the class
+    // accelerates -- see msl_accel.
     float msl_speed;
+    // HOW MUCH FASTER IT GETS FOR EVERY SECOND THE LAUNCHER KEEPS THE LOCK, in
+    // units per second per second. Zero for a class whose round flies at one
+    // speed, which is three of the four.
+    //
+    // THE AIM IS THE ENGINE. A semi-active round already dies the moment the
+    // launcher looks away; this makes holding the lock do something POSITIVE as
+    // well as merely staying alive, so the aim is paid for rather than only
+    // policed. Twenty seconds of holding somebody in view is a long time to be
+    // predictable, and it should buy something.
+    //
+    // It also settles a plain absurdity: a BALLISTA airframe does 340 and its
+    // round left the rail at 200, so the sniper outran its own ordnance. It still
+    // does at the moment of launch, and stops doing so a few seconds later if the
+    // pilot earns it.
+    float msl_accel;
+    // ...and the ceiling. Equal to msl_speed for a class that does not
+    // accelerate, so the two fields together are always the true speed range.
+    float msl_speed_max;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a
