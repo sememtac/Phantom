@@ -37,18 +37,22 @@ than one moment does. These are the measured results for one recording:
     2.0 s          0.04989            0.02382     the observation wins by 52%
     4.0 s          0.06097            0.02028     the observation wins by 67%
 
-A longer window scores better on the test and flies worse. The score rewards a
-target near the mean of the whole flight, which no pilot ever holds. Measured by
-how much damage the trained pilot did in the same fight:
+A longer window scores better on the test and does not fly better. Measured
+properly -- paired across four fixed seeds, since two runs of the same build
+differ -- as the hull a trained opponent takes off the player per minute:
 
-    window     the score    damage it did in the air
-    0.2 s          weak     target down to 0.685
-    0.5 s          weak     target down to 0.648
-    1.0 s        middle     target down to 0.560
-    2.0 s          best     target down to 0.910
+    window     result           spread
+    0.5 s      0.00%            0.00     dead: it never lands anything
+    1.0 s      1.85%            0.72
+    2.0 s      1.60%            1.37
 
-So the default window is 1 second, and it is the one that flies best, not the
-one that tests best. Pick the horizon by flying, not by the loss.
+Half a second is decisively wrong. One second and two are within noise of each
+other, and one second is the default because it holds the same mean with half
+the spread.
+
+AN EARLIER SWEEP OF THIS RAN ONE SAMPLE PER HORIZON and reported 2.0s as much
+the worst. That was noise. Pick the horizon by flying, not by the loss, and by
+more than one flight.
 
 Run this script from the root of the repository:
 

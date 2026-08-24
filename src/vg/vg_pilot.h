@@ -88,6 +88,24 @@ struct PilotSpec {
     float aggression;
 };
 
+// THE TIERS DO NOT SEPARATE A PILOT THE NETWORK IS FLYING, and that is measured
+// rather than suspected. Paired across four fixed seeds, against the class where
+// the network is demonstrably better than the rules:
+//
+//     RAW  1.33%    PRO  1.85%    ACE  1.44%     (hull taken off the player)
+//     ACE minus RAW, paired: +0.11, spread 0.63
+//
+// Two of the four seeds came out IDENTICAL across all three tiers. The reason is
+// structural: most of this table modulates the class TACTIC, and a network
+// replaces the tactic outright. Only `fly` and `aim` still reach it, through the
+// turn rate and the lock.
+//
+// So difficulty tiering works on the hand-written opponents and is close to
+// inert on the trained ones. Anything that wants a ladder for a trained pilot
+// has to come from the training, not from here.
+
+
+
 #define PILOT_KINDS 5
 
 extern const PilotSpec vg_pilot_kind[PILOT_KINDS];
