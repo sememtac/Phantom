@@ -106,11 +106,23 @@ BaseType_t xPortInIsrContext(void)      { return pdFALSE; }
 // ---------------------------------------------------------------------------
 // The rest of the system.
 // ---------------------------------------------------------------------------
+// A FIXED SEED, WHEN ONE IS ASKED FOR.
+//
+// Zero means take the clock, which is what a session wants: two runs of the game
+// should not be the same game. Anything else makes the run REPRODUCIBLE, and
+// that is not a nicety -- without it two headless runs of the same build differ,
+// so every A against B comparison is one sample of A against one sample of B and
+// says nothing. Several were made that way before anybody checked.
+static uint32_t s_seed_request = 0;
+
+void host_random_seed(uint32_t seed) { s_seed_request = seed; }
+
 uint32_t esp_random(void) {
     // Not the hardware RNG, and it does not need to be: a replay carries its own
     // numbers, so this only ever seeds a fresh session.
     static uint32_t s = 0;
-    if (!s) s = (uint32_t)(ticks_since_base() | 1ull);
+    if (!s) s = s_seed_request ? (s_seed_request | 1u)
+                               : (uint32_t)(ticks_since_base() | 1ull);
     s ^= s << 13; s ^= s >> 17; s ^= s << 5;
     return s;
 }
