@@ -11,6 +11,28 @@ The script trains three outputs: pitch, yaw and throttle. It does not train the
 trigger. A trigger press is rare, so a recording holds too few examples of it.
 Use a rule for the trigger instead.
 
+THE NETWORK GIVES A TARGET, NOT A STICK POSITION. It says where the stick must
+go over the next half second. The caller then moves the stick toward that
+target. A hand moves this way, and the measurements say the game must too.
+
+The stick changes very little between two frames. Frame to frame, the pilot's
+next stick position matches the last one to better than 0.998. So a network
+that must give the position each frame learns to copy the last position, and
+that teaches it nothing about flight.
+
+The same measurement, at a range of horizons, shows where the useful signal
+starts. The target is a mean over a window, so the window must reach further
+than one moment does. These are the measured results for one recording:
+
+    window    a still stick    the observation
+    0.5 s          0.01854            0.03574     the still stick wins
+    1.0 s          0.03512            0.02834     the observation wins
+    2.0 s          0.04989            0.02382     the observation wins by 52%
+    4.0 s          0.06097            0.02028     the observation wins by 67%
+
+The default window is 2 seconds. A longer window scores better and says less:
+it moves toward the mean of the whole flight, which no pilot ever holds.
+
 Run this script from the root of the repository:
 
     python tools/train_pilot.py captures/ballista.obs
@@ -146,6 +168,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="random seed")
     ap.add_argument("--split", choices=["time", "random"], default="time",
                     help="how to hold data back. Use time for an honest score.")
+    ap.add_argument("--horizon", type=int, default=120,
+                    help="frames to look ahead for the target (default 120)")
     args = ap.parse_args()
 
     try:
@@ -168,8 +192,25 @@ def main():
         ys.append(y)
 
     X = np.concatenate(xs)
-    Y = np.concatenate(ys)[:, :ACT_OUT]
+    Yraw = np.concatenate(ys)[:, :ACT_OUT]
+
+    # THE TARGET IS THE MEAN STICK POSITION OVER THE NEXT FEW FRAMES.
+    #
+    # A mean, and not the position at one moment. A single frame that far ahead
+    # holds the hand shake as well as the decision, and the mean removes it.
+    h = max(1, args.horizon)
+    if X.shape[0] <= h:
+        print("error: the data is shorter than the horizon.")
+        return 1
+    box = np.ones(h) / float(h)
+    Y = np.stack([np.convolve(Yraw[:, i], box, mode="valid")
+                  for i in range(ACT_OUT)], axis=1).astype(np.float32)
+    # The mean starts at the row it looks forward from, so drop the last rows
+    # that have no full window after them.
+    X = X[: Y.shape[0]]
+    Ynow = Yraw[: Y.shape[0]]
     print("total %d rows, %d inputs, %d outputs" % (X.shape[0], obs_n, ACT_OUT))
+    print("target: mean stick over the next %d frames (%.2f s)" % (h, h / 60.0))
     if X.shape[0] < 5000:
         print("warning: this is a small dataset. Record more flying.")
 
@@ -202,6 +243,13 @@ def main():
     print("split: %s. %d rows to train, %d rows to test."
           % (args.split, tr.size, va.size))
 
+    # THE SCORE TO BEAT IS INERTIA, not the average control.
+    #
+    # A pilot that holds the stick still already predicts the near future well.
+    # A network is only useful if it beats that, so this is the number that
+    # matters. The average control is reported too, but it is a weak test.
+    hold = float(((Ynow[va] - Y[va]) ** 2).mean())
+
     mean = X[tr].mean(axis=0)
     std = X[tr].std(axis=0)
     # A column that never changes gives a deviation of zero. Division by zero
@@ -228,7 +276,8 @@ def main():
     # The score to beat. A pilot that always gives the average control gets
     # this loss. A network above it learned nothing.
     base = float(((yv - yt.mean(dim=0)) ** 2).mean())
-    print("baseline loss (always give the average control): %.5f" % base)
+    print("baseline: always the average control  %.5f" % base)
+    print("baseline: hold the stick still        %.5f   <- the one to beat" % hold)
 
     n = xt.shape[0]
     best = float("inf")
@@ -264,16 +313,20 @@ def main():
         err = np.abs(pred[:, i] - truth[:, i]).mean()
         print("  %-10s %7.4f   %7.4f" % (name, err, truth[:, i].std()))
     print("")
-    print("best test loss %.5f against a baseline of %.5f (%.0f%% better)"
-          % (best, base, 100.0 * (1.0 - best / base)))
-    if best >= base:
-        print("The network is no better than the average. Record more flying.")
+    print("best test loss %.5f" % best)
+    print("  against the average control  %.5f  (%+.0f%%)"
+          % (base, 100.0 * (1.0 - best / base)))
+    print("  against holding the stick    %.5f  (%+.0f%%)"
+          % (hold, 100.0 * (1.0 - best / hold)))
+    if best >= hold:
+        print("The network does not beat a still stick. It is not ready to fly.")
 
     params = sum(p.numel() for p in model.parameters())
     meta = [
         "Rows: %d. Inputs: %d. Hidden: %d." % (X.shape[0], obs_n, args.hidden),
         "Weights: %d, which is %d bytes as float32." % (params, params * 4),
-        "Test loss: %.5f. Baseline: %.5f." % (best, base),
+        "Test loss: %.5f. A still stick scores %.5f." % (best, hold),
+        "The output is a target: the mean stick over the next %d frames." % h,
     ]
     write_header(args.out, model, mean, std, obs_n, meta)
     print("")
