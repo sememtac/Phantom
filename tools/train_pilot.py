@@ -254,6 +254,9 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="random seed")
     ap.add_argument("--split", choices=["time", "random"], default="time",
                     help="how to hold data back. Use time for an honest score.")
+    ap.add_argument("--balance", choices=["ship", "none"], default="ship",
+                    help="give every ship class the same weight, whatever share "
+                         "of the recordings it happens to be")
     ap.add_argument("--jitter", type=float, default=0.12,
                     help="randomly scale the airframe fields by this much while "
                          "training. Also becomes how far a ship may be retuned "
@@ -361,6 +364,29 @@ def main():
     # A network is only useful if it beats that, so this is the number that
     # matters. The average control is reported too, but it is a weak test.
     hold = float(((Ynow[va] - Y[va]) ** 2).mean())
+
+    # BALANCE THE CLASSES, because in a fitted policy the mix of the data IS the
+    # policy's priorities.
+    #
+    # Measured: adding a third recording of one class moved the set from 55/45 to
+    # 38/62, and the under-represented class went from taking 1.45% of the
+    # player's hull per minute to taking NONE, on four seeds out of four. Its
+    # behaviour -- holding a lock through a long missile flight -- is exactly what a
+    # set dominated by close-range flying will not teach.
+    #
+    # So each distinct airframe is weighted to the same total, and a session spent
+    # on one class stops quietly outvoting the others.
+    if args.balance == "ship":
+        key = np.round(X[tr][:, obs_n - SHIP_FIELDS:], 4)
+        _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+        share = cnt[inv].astype(np.float64)
+        w = share.mean() / share
+        # Resampled rather than loss-weighted: it keeps the batch composition even
+        # as well as the totals, which matters when one class is a third of the set.
+        take = rng.choice(len(tr), size=len(tr), replace=True, p=w / w.sum())
+        tr = tr[take]
+        print("balanced: %d ships, %d training rows resampled"
+              % (len(cnt), len(tr)))
 
     mean = X[tr].mean(axis=0)
     std = X[tr].std(axis=0)
