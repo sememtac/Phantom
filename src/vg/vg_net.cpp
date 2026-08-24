@@ -62,9 +62,16 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
 
     // A LAYOUT MISMATCH IS SILENT, so it is checked. The observation and the
     // weights are both just arrays of floats: feed one to the other with the
-    // widths out of step and it runs happily and flies into the ground. This
-    // happens when VG_OBS_N changes and the network is not retrained.
-    if (n != PILOT_NET_IN) {
+    // widths out of step and it runs happily and flies into the ground.
+    //
+    // A WIDER OBSERVATION IS ACCEPTED, and only because the layout rule in
+    // vg_bot.h says new fields go at the END. The first PILOT_NET_IN values then
+    // mean exactly what they meant when the weights were fitted, so an older
+    // network keeps flying while the observation grows around it. Retraining
+    // picks up the new fields; until then they are simply unread.
+    //
+    // A NARROWER one is refused. There is nothing to read.
+    if (n < PILOT_NET_IN) {
         out->valid = false;
         return;
     }

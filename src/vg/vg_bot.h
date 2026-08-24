@@ -44,7 +44,7 @@ struct VgInput;
 // know from the canopy and the panel -- there is no privileged state, no reading
 // the opponent's intentions, and nothing that would let a policy learn to cheat
 // in a way a player could not copy.
-#define VG_OBS_N 27
+#define VG_OBS_N 30
 
 // Roughly -1..1, all of it, because that is what a network wants and because a
 // human reading a dump of one should be able to see at a glance which numbers
@@ -113,12 +113,30 @@ enum {
     // scripted one could not: it evaded every incoming round, correctly for a
     // dogfighter and fatally for a sniper, and killed its own shots every time.
     OBS_OWN_INFLIGHT,
+    // WHICH WAY IS BACK INSIDE, as a unit bearing in view space.
+    //
+    // OBS_WALL says a wall is coming. It does not say where to go, and without
+    // that neither a rule nor a network can turn away from one -- the scripted
+    // policy "avoided" the boundary by flying straight ahead more slowly, which
+    // is not avoidance, and the board flew into the wall over and over.
+    //
+    // The enemies never had this problem: vg_ai.cpp asks the arena for an inward
+    // normal and steers down it. This is that same answer, moved into the
+    // observation so that whatever is flying can use it.
+    OBS_WALL_X,
+    OBS_WALL_Y,
+    OBS_WALL_Z,
 };
 
 // What OBS_TGT_RANGE_W is divided by. Not a tuning value -- it is the scale that
 // turns the field back into world units, and anything reading the observation has
 // to agree with it.
 #define BOT_RANGE_REF 2000.0f
+
+// How near the boundary the seat stops fighting and turns inward, as a fraction
+// of OBS_WALL. Near the whole margin on purpose: the enemies turn at the full
+// margin, and hitting the wall is fatal at any speed.
+#define BOT_WALL_TURN 0.85f
 
 // Fill an observation from the PLAYER's seat. The one place that reads the world.
 void vg_bot_observe(VgObs* o);

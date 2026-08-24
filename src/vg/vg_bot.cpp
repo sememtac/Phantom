@@ -6,6 +6,7 @@
 #include "cfg_combat.h"
 #include "cfg_flight.h"
 #include "cfg_world.h"
+#include "vg_arena.h"
 #include "vg_prof.h"
 #include <Arduino.h>   // micros(), for timing the forward pass
 #include <math.h>
@@ -89,6 +90,17 @@ void vg_bot_observe(VgObs* o) {
     // which is one less thing for a policy to learn before it learns to fly.
     o->v[OBS_WALL] = clamp1(vg_wall.clearance / ARENA_ENEMY_MARGIN);
     o->v[OBS_ROLL] = clamp1(vg.roll / 3.14159265f);
+    {
+        // The player is the origin, so their arena-local position is the origin
+        // mapped through the arena's own transform. The inward normal comes back
+        // in arena-local space and has to be turned into a view-space bearing,
+        // which is the same pair of calls the enemy AI makes.
+        const Vec3 local  = vg_arena_local_of(v3(0, 0, 0));
+        const Vec3 inward = vg_arena_dir_to_view(vg_arena_inward(local));
+        o->v[OBS_WALL_X] = inward.x;
+        o->v[OBS_WALL_Y] = inward.y;
+        o->v[OBS_WALL_Z] = inward.z;
+    }
     o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
     {
         int air = 0;
@@ -197,7 +209,7 @@ void vg_bot_reset(void) {
 // so the data cannot teach the one mistake that is always fatal.
 static bool net_act(const VgObs* o, VgInput* in, float dt) {
     if (!vg_bot_net || !vg_net_available()) return false;
-    if (o->v[OBS_WALL] < 0.35f || !o->has_target) return false;
+    if (o->v[OBS_WALL] < BOT_WALL_TURN || !o->has_target) return false;
 
     const uint32_t t0 = micros();
     VgNetOut n;
@@ -258,14 +270,21 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     bool  may_fire   = true;
 
     // ---- the wall outranks everybody, exactly as it does for an enemy ----
-    if (o->v[OBS_WALL] < 0.35f) {
-        // There is no inward bearing in the observation -- a pilot does not get a
-        // vector to the middle of the arena, they get a wall coming up. Turning
-        // away from the boundary is the same as turning toward the middle only
-        // because the arena is convex; that is worth knowing when this is
-        // replaced by something trained, which will have to learn it.
-        wz = 1.0f; wx = 0.0f; wy = 0.0f;   // fly out along the nose and level off
-        want_speed = 0.55f;
+    if (o->v[OBS_WALL] < BOT_WALL_TURN) {
+        // TURN INWARD, which this could not do before and is why the board kept
+        // flying into the boundary. The old version set the desired bearing to
+        // straight ahead and slowed down: it read as avoidance and was a ship
+        // holding its heading into a wall at reduced speed.
+        //
+        // The threshold is close to the whole margin rather than a fraction of
+        // it, because the enemies turn at the full margin and a collision is
+        // fatal at any speed. Turning early costs a pass; turning late costs the
+        // ship.
+        wx = o->v[OBS_WALL_X];
+        wy = o->v[OBS_WALL_Y];
+        wz = o->v[OBS_WALL_Z];
+        // Slow, because the turn has to be tight and the wall does not move.
+        want_speed = 0.25f;
         may_fire = false;
 
     } else if (o->v[OBS_MSL_IN] > 0.5f && o->v[OBS_MSL_RANGE] < 1.0f
