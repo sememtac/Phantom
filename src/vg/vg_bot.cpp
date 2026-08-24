@@ -215,6 +215,36 @@ void vg_bot_reset(void) {
     s_evade_sy = 0.0f;
 }
 
+// THE TRIGGER, for whichever pilot is flying.
+//
+// It was written twice, once on each path, and both copies fired on every frame
+// a lock stood. Measured against the recording, that is not what a pilot does:
+// the human held a full lock on 69.5% of frames and fired on 0.4% of them. A
+// lock is permission, not a reason.
+//
+// WHAT SEPARATES THE FRAMES THEY FIRED ON is how much of their own ordnance was
+// already in the air -- 0.072 against 0.190 across every locked frame. They wait
+// to see the last one resolve. That is the discipline the ENEMY snipers already
+// have, as ENEMY_INFLIGHT_STANDOFF, and the seat never got it.
+static void trigger(const VgObs* o, VgInput* in, bool may_fire) {
+    const bool locked = (o->v[OBS_OWN_LOCK] >= 0.999f);
+    bool want = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
+
+    // A semi-active round rides the launcher's lock, so a second one launched
+    // while the first is still guiding does not double the threat -- both share
+    // the one lock, and both die together the moment it breaks.
+    if (want && o->v[OBS_OWN_SAAM] > 0.5f && o->v[OBS_OWN_INFLIGHT] > 0.0f)
+        want = false;
+
+    const float rounds_now = o->v[OBS_OWN_ROUNDS];
+    if (rounds_now < s_prev_rounds - 1e-4f) s_fired = false;
+    in->fire_edge = want && !s_fired;
+    in->fire_btn  = in->fire_edge;
+    if (in->fire_edge) s_fired = true;
+    if (!want)         s_fired = false;
+    s_prev_rounds = rounds_now;
+}
+
 // THE TRAINED PILOT. Returns false when it declines, and then the scripted one
 // flies instead -- there is no frame where nobody is holding the stick.
 //
@@ -261,15 +291,7 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     const bool flown_by_net = net_act(o, in, dt);
     if (!vg_bot_net || !flown_by_net) vg_bot_net_us = 0;
     if (flown_by_net) {
-        const bool locked_n = (o->v[OBS_OWN_LOCK] >= 0.999f);
-        const bool want_n   = locked_n && o->v[OBS_OWN_ROUNDS] > 0.0f;
-        const float rn      = o->v[OBS_OWN_ROUNDS];
-        if (rn < s_prev_rounds - 1e-4f) s_fired = false;
-        in->fire_edge = want_n && !s_fired;
-        in->fire_btn  = in->fire_edge;
-        if (in->fire_edge) s_fired = true;
-        if (!want_n)       s_fired = false;
-        s_prev_rounds = rn;
+        trigger(o, in, true);
         return;
     }
 
@@ -474,25 +496,5 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     if (t > 1.0f) t = 1.0f;
     in->throttle = t;
 
-    // ---- the trigger ----
-    //
-    // AN EDGE, WHICH IS WHAT THE FIELD IS CALLED AND WAS NOT WHAT IT HELD. This
-    // used to be a level -- true for as long as a lock stood -- so the bot flew
-    // with the trigger squeezed and the flag read 1 on 13.7% of all frames while
-    // the weapon's own gates quietly threw nearly all of them away. As behaviour
-    // that is merely untidy. As a TRAINING LABEL it is a lie: a policy learning
-    // from it would learn to hold a trigger that nobody presses, and the one
-    // action that matters would be the noisiest column in the set.
-    //
-    // Re-armed when the rack count drops, so there is exactly one press per round
-    // that actually leaves the rail.
-    const bool locked = (o->v[OBS_OWN_LOCK] >= 0.999f);
-    const bool want   = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
-    const float rounds_now = o->v[OBS_OWN_ROUNDS];
-    if (rounds_now < s_prev_rounds - 1e-4f) s_fired = false;   // one left the rail
-    in->fire_edge = want && !s_fired;
-    in->fire_btn  = in->fire_edge;
-    if (in->fire_edge) s_fired = true;
-    if (!want)         s_fired = false;
-    s_prev_rounds = rounds_now;
+    trigger(o, in, may_fire);
 }

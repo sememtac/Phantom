@@ -30,8 +30,18 @@ than one moment does. These are the measured results for one recording:
     2.0 s          0.04989            0.02382     the observation wins by 52%
     4.0 s          0.06097            0.02028     the observation wins by 67%
 
-The default window is 2 seconds. A longer window scores better and says less:
-it moves toward the mean of the whole flight, which no pilot ever holds.
+A longer window scores better on the test and flies worse. The score rewards a
+target near the mean of the whole flight, which no pilot ever holds. Measured by
+how much damage the trained pilot did in the same fight:
+
+    window     the score    damage it did in the air
+    0.2 s          weak     target down to 0.685
+    0.5 s          weak     target down to 0.648
+    1.0 s        middle     target down to 0.560
+    2.0 s          best     target down to 0.910
+
+So the default window is 1 second, and it is the one that flies best, not the
+one that tests best. Pick the horizon by flying, not by the loss.
 
 Run this script from the root of the repository:
 
@@ -168,8 +178,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="random seed")
     ap.add_argument("--split", choices=["time", "random"], default="time",
                     help="how to hold data back. Use time for an honest score.")
-    ap.add_argument("--horizon", type=int, default=120,
-                    help="frames to look ahead for the target (default 120)")
+    ap.add_argument("--horizon", type=int, default=60,
+                    help="frames to look ahead for the target (default 60)")
     args = ap.parse_args()
 
     try:
