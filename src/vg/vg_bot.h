@@ -44,7 +44,7 @@ struct VgInput;
 // know from the canopy and the panel -- there is no privileged state, no reading
 // the opponent's intentions, and nothing that would let a policy learn to cheat
 // in a way a player could not copy.
-#define VG_OBS_N 30
+#define VG_OBS_N 41
 
 // Roughly -1..1, all of it, because that is what a network wants and because a
 // human reading a dump of one should be able to see at a glance which numbers
@@ -126,7 +126,55 @@ enum {
     OBS_WALL_X,
     OBS_WALL_Y,
     OBS_WALL_Z,
+
+    // ---- WHAT THIS SHIP IS, AND WHY IT IS IN AN OBSERVATION AT ALL ----------
+    //
+    // Everything above is the situation. These eleven are the AIRFRAME, and they
+    // do not change during a fight. A network does not need to be told a
+    // constant, so putting them here looks like waste. It is not, and it fixes
+    // two separate problems that would otherwise both be dead ends.
+    //
+    // ONE POLICY CANNOT FLY FOUR SHIPS WITHOUT THEM. A network fitted to BALLISTA
+    // recordings has no way to know that a CHARIOT turns half again as fast,
+    // reaches a third as far and empties its rack in two seconds. It flies all
+    // four like the one it saw, badly. Measured on the board: the attract demo
+    // had to be pinned to BALLISTA to hide it.
+    //
+    // AND THE TABLE IS GOING TO KEEP MOVING. Hulls have already tripled once this
+    // year and the classes are still being tuned. A policy that memorised one
+    // table is wrong the moment the table changes, which is a retraining
+    // treadmill nobody will keep up with. A policy that is TOLD the numbers can
+    // be trained across a spread of them and generalise to values it never saw,
+    // so a tune becomes something it already expects.
+    //
+    // Each one is divided by a fixed reference rather than by the biggest value
+    // in the table. A reference is a constant; the biggest value in the table is
+    // itself a tuning knob, and dividing by it would silently rescale every other
+    // class whenever one of them changed.
+    OBS_SHIP_TURN,        // turn rate
+    OBS_SHIP_AGI_SLOW,    // extra turn at idle
+    OBS_SHIP_AGI_FAST,    // turn lost at full throttle
+    OBS_SHIP_SPEED,       // top speed
+    OBS_SHIP_HULL,        // hull points at full
+    OBS_SHIP_LOCKRANGE,   // how far it can shoot
+    OBS_SHIP_LOCKTIME,    // how long the nose must hold
+    OBS_SHIP_MAG,         // rounds per rack
+    OBS_SHIP_GAP,         // seconds between two rounds
+    OBS_SHIP_RELOAD,      // seconds to refill the rack
+    OBS_SHIP_MSLSPEED,    // how fast the round flies
 };
+
+// The references the eleven airframe fields are divided by. Fixed numbers, not
+// the largest value in the table: see the note above.
+#define OBSREF_TURN       2.5f
+#define OBSREF_SPEED      500.0f
+#define OBSREF_HULL       350.0f
+#define OBSREF_LOCKRANGE  4200.0f
+#define OBSREF_LOCKTIME   1.0f
+#define OBSREF_MAG        12.0f
+#define OBSREF_GAP        2.0f
+#define OBSREF_RELOAD     10.0f
+#define OBSREF_MSLSPEED   550.0f
 
 // What OBS_TGT_RANGE_W is divided by. Not a tuning value -- it is the scale that
 // turns the field back into world units, and anything reading the observation has

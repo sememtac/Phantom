@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
+    bool rotate = false;   // a different opponent class on every respawn
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -45,6 +46,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--bot")) vg_bot_on = true;
         else if (!strcmp(argv[i], "--headless")) headless = true;
         else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
+        else if (!strcmp(argv[i], "--rotate")) rotate = true;
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
@@ -63,6 +65,9 @@ int main(int argc, char** argv) {
                    "               as the machine allows.\n"
                    "  --dump F     write (observation, action) pairs to F.\n"
                    "  --scripted   fly the hand-written policy, not the network.\n"
+                   "  --rotate     send a different opponent class each respawn.\n"
+                   "               Use it when you record: one sitting then\n"
+                   "               covers all four instead of one.\n"
                    "  --gym A B    start a gym match at once: class A against\n"
                    "               class B. 0 AEGIS 1 LANCE 2 CHARIOT 3 BALLISTA.\n"
                    "  --bot        the game flies the player's seat too. With\n"
@@ -96,6 +101,7 @@ int main(int argc, char** argv) {
     if (gym_mine >= 0 && gym_theirs >= 0) {
         vg_gym_enter((ShipClass)(gym_mine   % SHIP_CLASSES),
                      (ShipClass)(gym_theirs % SHIP_CLASSES));
+        vg.gym_rotate = rotate;
     }
 
     if (dump && !host_dataset_open(dump)) {

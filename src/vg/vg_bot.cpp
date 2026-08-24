@@ -101,6 +101,21 @@ void vg_bot_observe(VgObs* o) {
         o->v[OBS_WALL_Y] = inward.y;
         o->v[OBS_WALL_Z] = inward.z;
     }
+
+    // The airframe. Constant for a whole match, and read straight off the same
+    // table the flight model uses, so these cannot drift away from the ship the
+    // policy is actually flying.
+    o->v[OBS_SHIP_TURN]      = sp->turn_rate          / OBSREF_TURN;
+    o->v[OBS_SHIP_AGI_SLOW]  = sp->agility_slow_bonus;
+    o->v[OBS_SHIP_AGI_FAST]  = sp->agility_fast_malus;
+    o->v[OBS_SHIP_SPEED]     = sp->speed_max          / OBSREF_SPEED;
+    o->v[OBS_SHIP_HULL]      = sp->hull               / OBSREF_HULL;
+    o->v[OBS_SHIP_LOCKRANGE] = sp->lock_range         / OBSREF_LOCKRANGE;
+    o->v[OBS_SHIP_LOCKTIME]  = sp->lock_time          / OBSREF_LOCKTIME;
+    o->v[OBS_SHIP_MAG]       = (float)sp->magazine    / OBSREF_MAG;
+    o->v[OBS_SHIP_GAP]       = sp->fire_gap           / OBSREF_GAP;
+    o->v[OBS_SHIP_RELOAD]    = sp->reload             / OBSREF_RELOAD;
+    o->v[OBS_SHIP_MSLSPEED]  = sp->msl_speed          / OBSREF_MSLSPEED;
     o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
     {
         int air = 0;

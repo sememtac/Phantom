@@ -455,6 +455,13 @@ struct VgGame {
     // a save that came back up in it would be a save that had lost its run.
     bool     gym;
     uint8_t  gym_opp;        // ShipClass the gym keeps sending
+    // ...unless this is set, and then it sends a different one every time.
+    //
+    // FOR RECORDING. A policy learns what it is shown, and one session against
+    // one class teaches it that every opponent turns like that class. Rotating
+    // the opponent on each respawn covers all four in a single sitting, which is
+    // the difference between four recordings and sixteen.
+    bool     gym_rotate;
     // A REP IS DUE, consumed by PLAYING's entry hook.
     //
     // The set-up cannot run at the button. vg_state_cut's own note says why: a

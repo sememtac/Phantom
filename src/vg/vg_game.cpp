@@ -293,6 +293,10 @@ void vg_title_lost(void) {
 // empty string is a small blank box beside every line. Naming the class instead
 // of inventing a pilot also keeps the caption honest about what is talking.
 void vg_gym_spawn_opponent(void) {
+    // A new class each rep when the gym is rotating. Rolled here rather than at
+    // selection, so it changes on every respawn and not once per session.
+    if (vg.gym_rotate)
+        vg.gym_opp = (uint8_t)((int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES);
     vg_spawn_enemy(0, (ShipClass)vg.gym_opp, ENEMY_SKILL, 0.02f, vg_pilot_default());
     Ship* s = &vg.enemy[0];
     s->voice = 0;
