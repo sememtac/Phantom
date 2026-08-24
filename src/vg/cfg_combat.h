@@ -324,7 +324,17 @@
 // per pilot at spawn, so a given opponent either is that sort or is not, and it
 // stays true for the whole match. Rolling it per frame would make every enemy
 // occasionally suicidal, which reads as a bug rather than as a character.
-#define ENEMY_KAMIKAZE_CHANCE   0.35f   // of pilots who would do it at all
+//
+// DOWN FROM 0.35, on a playtest report of dying to rams more often than the
+// mechanic was meant to fire. At a third of all pilots it was not a character
+// trait any more, it was the standard ending to a won fight.
+//
+// THE GYM MAKES IT LOOK WORSE THAN IT IS, and that is worth knowing before this
+// number is touched again. A tournament run meets four opponents; the gym hands
+// out a fresh pilot on every respawn, so a session there samples this dozens of
+// times an hour where a run samples it four times. Judge the frequency in a
+// tournament, not in the workshop.
+#define ENEMY_KAMIKAZE_CHANCE   0.18f   // of pilots who would do it at all
 
 // A willing pilot commits when their hull is this low. They are going to die to
 // the next hit anyway, so the ship stops being an asset to protect and becomes
