@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
         // run for as long as it takes to mean something.
         else if (!strcmp(argv[i], "--bot")) vg_bot_on = true;
         else if (!strcmp(argv[i], "--headless")) headless = true;
+        else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
@@ -61,6 +62,7 @@ int main(int argc, char** argv) {
                    "  --headless   no window drawn, fixed 1/60 step. Runs as fast\n"
                    "               as the machine allows.\n"
                    "  --dump F     write (observation, action) pairs to F.\n"
+                   "  --scripted   fly the hand-written policy, not the network.\n"
                    "  --gym A B    start a gym match at once: class A against\n"
                    "               class B. 0 AEGIS 1 LANCE 2 CHARIOT 3 BALLISTA.\n"
                    "  --bot        the game flies the player's seat too. With\n"

@@ -1,5 +1,6 @@
 #pragma once
 #include "vg_vec.h"
+#include <stdint.h>
 
 struct VgInput;
 
@@ -134,6 +135,24 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt);
 // Whether the seat is being flown by the bot at all. Off unless something turns
 // it on -- the desktop's --bot flag today.
 extern bool vg_bot_on;
+
+// WHICH PILOT FLIES IT: the trained network, or the hand-written policy.
+//
+// On by default where a network is compiled in, because the network is the
+// point. The desktop's --scripted turns it off, which is how the two are
+// compared in the same fight.
+//
+// THE NETWORK DOES NOT FLY ALL OF IT, and the split is deliberate. It steers
+// and sets the throttle. It does NOT decide about the wall or pull the trigger.
+// The wall is fatal and the recorded pilot never hit one, so there is nothing in
+// the data to learn it from -- a policy trained only on flights that went well
+// has never seen the one mistake it cannot survive. The trigger is a rule for
+// the same kind of reason: a press is a third of a per cent of the rows.
+extern bool vg_bot_net;
+
+// Microseconds the network's forward pass took on the last frame it ran. Zero
+// when the scripted policy is flying. Read by the telemetry.
+extern uint32_t vg_bot_net_us;
 
 // Back to a clean sheet: called when a match starts, so the bot's own smoothing
 // and commitment timers do not carry across from the last one.

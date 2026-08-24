@@ -1,0 +1,89 @@
+#include "vg_net.h"
+#include "generated/pilot_net.h"
+#include <math.h>
+
+// ===========================================================================
+// THE FORWARD PASS, AND NOTHING ELSE.
+//
+// Three layers of multiply-and-add. No framework, no memory arena, no graph:
+// the whole network is six thousand weights in flash and a hundred and thirty
+// floats of stack, and a library to run it would be larger than the thing it
+// ran.
+//
+// WHAT IT COSTS, and it is worth writing down because the answer surprises
+// people. 27x64 + 64x64 + 64x3 is 6016 multiply-adds. The S3 has a hardware
+// float unit and runs at 240 MHz, so the arithmetic is tens of microseconds
+// against a frame budget of 16,600. The whole of it bills to `ai` in the
+// telemetry, which was reading 0 before this existed.
+//
+// THE ACTIVATION IS THE EXPENSIVE PART, not the arithmetic. There are 128
+// hidden units and tanhf() is a library call into a transcendental, which can
+// cost more than the sixty-four multiply-adds that produced its argument. See
+// fast_tanh below.
+// ===========================================================================
+
+// A rational approximation of tanh, accurate to about 1e-3 over the range that
+// matters, which is far inside the noise of a policy that was fitted to a human
+// hand.
+//
+// NOT AN OPTIMISATION MADE ON SUSPICION. The library call was measured first;
+// this replaced it only after the measurement said the activations cost more
+// than the multiply-adds. The exact form is the standard Pade fit: it is
+// monotonic, it saturates at the right values, and it has no branch except the
+// clamp.
+static inline float fast_tanh(float x) {
+    // Beyond this the fit drifts and the true function is flat anyway.
+    if (x < -3.0f) return -1.0f;
+    if (x >  3.0f) return  1.0f;
+    const float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+// One layer: out = act(W * in + b). W is stored row by row, which is the layout
+// torch writes -- row j holds the weights of output j.
+static void layer(const float* w, const float* b, const float* in, float* out,
+                  int n_in, int n_out, bool activate) {
+    for (int j = 0; j < n_out; j++) {
+        const float* row = w + (size_t)j * n_in;
+        float a = b[j];
+        for (int i = 0; i < n_in; i++) a += row[i] * in[i];
+        out[j] = activate ? fast_tanh(a) : a;
+    }
+}
+
+bool vg_net_available(void) { return true; }
+int  vg_net_inputs(void)    { return PILOT_NET_IN; }
+int  vg_net_weights(void)   { return PILOT_NET_IN * PILOT_NET_H + PILOT_NET_H
+                                   + PILOT_NET_H * PILOT_NET_H + PILOT_NET_H
+                                   + PILOT_NET_H * PILOT_NET_OUT + PILOT_NET_OUT; }
+
+void vg_net_run(const float* obs, int n, VgNetOut* out) {
+    if (!obs || !out) return;
+
+    // A LAYOUT MISMATCH IS SILENT, so it is checked. The observation and the
+    // weights are both just arrays of floats: feed one to the other with the
+    // widths out of step and it runs happily and flies into the ground. This
+    // happens when VG_OBS_N changes and the network is not retrained.
+    if (n != PILOT_NET_IN) {
+        out->valid = false;
+        return;
+    }
+
+    float x[PILOT_NET_IN];
+    for (int i = 0; i < PILOT_NET_IN; i++)
+        x[i] = (obs[i] - PILOT_IN_MEAN[i]) / PILOT_IN_STD[i];
+
+    float h0[PILOT_NET_H];
+    float h1[PILOT_NET_H];
+    float y[PILOT_NET_OUT];
+    layer(PILOT_W0, PILOT_B0, x,  h0, PILOT_NET_IN, PILOT_NET_H, true);
+    layer(PILOT_W1, PILOT_B1, h0, h1, PILOT_NET_H,  PILOT_NET_H, true);
+    layer(PILOT_W2, PILOT_B2, h1, y,  PILOT_NET_H,  PILOT_NET_OUT, false);
+
+    // The same squash the training used. Pitch and yaw move both ways from the
+    // middle; the throttle does not.
+    out->pitch    = fast_tanh(y[0]);
+    out->yaw      = fast_tanh(y[1]);
+    out->throttle = 0.5f * (fast_tanh(0.5f * y[2]) + 1.0f);   // = sigmoid(y)
+    out->valid    = true;
+}

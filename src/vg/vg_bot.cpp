@@ -1,10 +1,13 @@
 #include "vg_bot.h"
+#include "vg_net.h"
 #include "vg_sim.h"
 #include "vg_input.h"
 #include "vg_weapons.h"
 #include "cfg_combat.h"
 #include "cfg_flight.h"
 #include "cfg_world.h"
+#include "vg_prof.h"
+#include <Arduino.h>   // micros(), for timing the forward pass
 #include <math.h>
 #ifndef VG_BOT_TRACE
 #define VG_BOT_TRACE 0
@@ -14,6 +17,8 @@
 #endif
 
 bool vg_bot_on = false;
+bool vg_bot_net = true;
+uint32_t vg_bot_net_us = 0;
 VgBotTap vg_bot_tap = nullptr;
 
 // ---------------------------------------------------------------------------
@@ -166,8 +171,16 @@ static float s_evade_sy = 0.0f;
 // count it was made at. See the note where the trigger is decided.
 static bool  s_fired       = false;
 static float s_prev_rounds = 1.0f;
+// WHERE THE STICK IS, for the trained pilot only.
+//
+// The network gives a target for the next couple of seconds, not a position for
+// this frame, so something has to hold the stick and move it. A hand does this
+// without being asked; here it is three floats and a lerp.
+static float s_np = 0.0f, s_ny = 0.0f, s_nt = 0.5f;
 
 void vg_bot_reset(void) {
+    s_np = s_ny = 0.0f;
+    s_nt = 0.5f;
     s_fired       = false;
     s_prev_rounds = 1.0f;
     s_break_t = s_evade_t = 0.0f;
@@ -175,11 +188,63 @@ void vg_bot_reset(void) {
     s_evade_sy = 0.0f;
 }
 
+// THE TRAINED PILOT. Returns false when it declines, and then the scripted one
+// flies instead -- there is no frame where nobody is holding the stick.
+//
+// It declines in two cases and both are real. The network may be absent or the
+// wrong width, which is what happens when the observation grows and nobody
+// retrains. And it does not fly near the wall: the recorded pilot never hit one,
+// so the data cannot teach the one mistake that is always fatal.
+static bool net_act(const VgObs* o, VgInput* in, float dt) {
+    if (!vg_bot_net || !vg_net_available()) return false;
+    if (o->v[OBS_WALL] < 0.35f || !o->has_target) return false;
+
+    const uint32_t t0 = micros();
+    VgNetOut n;
+    vg_net_run(o->v, VG_OBS_N, &n);
+    vg_bot_net_us = micros() - t0;
+    // Billed to `ai` in the telemetry, which is the counter for the only
+    // THINKING in the frame and read 0 before a network existed.
+    g_upd_ai += vg_bot_net_us;
+    if (!n.valid) return false;
+
+    // EASED, NOT SNAPPED. The target is where the stick should be over the next
+    // couple of seconds; moving there instantly would be a hand that teleports,
+    // and would also undo the whole reason the network predicts a horizon.
+    const float k = dt * 3.2f > 1.0f ? 1.0f : dt * 3.2f;
+    s_np += (n.pitch    - s_np) * k;
+    s_ny += (n.yaw      - s_ny) * k;
+    s_nt += (n.throttle - s_nt) * k;
+
+    in->pitch    = s_np;
+    in->yaw      = s_ny;
+    in->throttle = s_nt;
+    return true;
+}
+
 void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     if (!o || !in) return;
 
     *in = VgInput{};
     in->throttle = o->v[OBS_OWN_THROTTLE];
+
+    // The trained pilot steers, and if it does the scripted one is skipped --
+    // but the TRIGGER below runs either way, because the network does not have
+    // one. See the note on vg_bot_net.
+    const bool flown_by_net = net_act(o, in, dt);
+    if (!vg_bot_net || !flown_by_net) vg_bot_net_us = 0;
+    if (flown_by_net) {
+        const bool locked_n = (o->v[OBS_OWN_LOCK] >= 0.999f);
+        const bool want_n   = locked_n && o->v[OBS_OWN_ROUNDS] > 0.0f;
+        const float rn      = o->v[OBS_OWN_ROUNDS];
+        if (rn < s_prev_rounds - 1e-4f) s_fired = false;
+        in->fire_edge = want_n && !s_fired;
+        in->fire_btn  = in->fire_edge;
+        if (in->fire_edge) s_fired = true;
+        if (!want_n)       s_fired = false;
+        s_prev_rounds = rn;
+        return;
+    }
 
     if (s_break_t > 0.0f) s_break_t -= dt;
     if (s_evade_t > 0.0f) s_evade_t -= dt;

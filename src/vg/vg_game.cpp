@@ -17,6 +17,7 @@
 #include "vg_canopy_set.h"
 #include "vg_anomaly.h"
 #include "vg_bot.h"
+#include "vg_net.h"
 #include "vg_flight.h"
 #include "vg_weapons.h"
 #include <Arduino.h>
@@ -321,8 +322,25 @@ void vg_demo_begin(void) {
     // A different pairing every time, because the point of a demo is to show the
     // game and the game is four ships. Never a mirror: two of the same class is
     // the least informative fight the game can put on.
-    const int a = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
-    int       b = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
+    int a = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
+    int b = (int)(vg_frand01() * (float)SHIP_CLASSES) % SHIP_CLASSES;
+
+    // THE TRAINED PILOT ONLY KNOWS ONE SHIP, so the demo flies that one when the
+    // network is the one flying.
+    //
+    // This is the first real cost of the design and it is worth stating plainly.
+    // The observation carries what the pilot can SEE, plus one fact about the
+    // ship: whether its weapon is semi-active. Everything else about the
+    // airframe -- its turn rate, its reach, how long its lock takes -- reaches the
+    // network only through the flying it was trained on. A policy fitted to
+    // BALLISTA recordings has never seen any other class and is guessing on all
+    // three, so it flies them like a BALLISTA and does it badly.
+    //
+    // Two ways out, and neither is done: train one network per class, or put the
+    // ship's own numbers into the observation and train across all four. The
+    // second is the better one and it is the same idea that would let a policy
+    // survive the table being retuned.
+    if (vg_bot_net && vg_net_available()) a = SHIP_BALLISTA;
     if (b == a) b = (b + 1) % SHIP_CLASSES;
 
     vg_bot_on = true;

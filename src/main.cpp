@@ -31,6 +31,7 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include "vg/vg_input.h"
 #include "vg/vg_game.h"
 #include "vg/vg_sim.h"   // vg_headless
+#include "vg/vg_bot.h"   // vg_bot_net_us
 #include "vg/vg_render.h"
 #include "vg/vg_prof.h"
 #include "vg/vg_capture.h"
@@ -700,12 +701,15 @@ void loop(void) {
         // to blit by construction, and WHICH of them dominates decides what is
         // worth optimising -- push says the wire gates the frame, over says the
         // raster is spilling out of the transfer window.
+        // `net` is the trained pilot's forward pass, in microseconds, on the last
+        // frame it ran, and 0 when nothing is flying itself. Appended at the END of
+        // the line so anything that reads the earlier fields keeps working.
         Serial.printf("%.1f fps | in %lu upd %lu sub %lu "
                       "| blit %lu = wait %lu rast %lu push %lu join %lu(mm %lu n %lu) res %lu "
                       "| sky %lu prim %lu scan %lu | over %lu.%lu/%d by %lu "
                       "| aa %lu ln %lu(%lupx %lun) tri %lu pt %lu gl %lu fl %lu oth %lu can %lu tnt %lu mir %lu "
                       "| canh %lu canw %lu cana %d i0 %lu "
-                      "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s\n",
+                      "| P %d/%d T %d | heap %luK stack %luB | pmu %02X%02X%02X%s | net %luus\n",
                       (double)fps,
                       (unsigned long)(acc_input  / frames),
                       (unsigned long)(acc_update / frames),
@@ -755,7 +759,8 @@ void loop(void) {
                       // Every AXP2101 interrupt bit seen since boot. The power
                       // key is in here somewhere; one press names it.
                       pmu_seen[0], pmu_seen[1], pmu_seen[2],
-                      vg_rast_overflowed() ? " OVERFLOW" : "");
+                      vg_rast_overflowed() ? " OVERFLOW" : "",
+                      (unsigned long)vg_bot_net_us);
         // A second line rather than a longer one: the first is already at the
         // edge of what a terminal shows without wrapping. It shares the guard
         // and the window of the first, so the two lines average the same frames.
