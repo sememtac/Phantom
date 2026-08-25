@@ -52,6 +52,27 @@ int  vg_net_weights(void);
 // has an answer that cannot go stale. A class that was never recorded is flown
 // by the hand-written tactics instead, which is the right outcome: a good rule
 // beats a confident guess.
+//
+// IT HAS EARNED ITS KEEP ONCE ALREADY, and not in the way it was written for.
+// All four classes were eventually recorded, and the fourth made everything
+// worse. Paired against the tactics on the same seat and seeds:
+//
+//     opponent    tactics   with LANCE   without
+//     AEGIS        13.98%       28.17%    31.21%
+//     LANCE         7.60%        0.26%     7.60%
+//     CHARIOT       8.23%       10.07%     8.96%
+//     BALLISTA      0.00%        1.63%     1.68%
+//
+// A network LANCE managed 0.26% against the rule's 7.60%, worse on four seeds
+// of four, and carrying that recording cost AEGIS three points as well. It is a
+// faithful clone of a hard session: LANCE has the longest lock in the game and
+// the tightest cone, the pilot held a full lock on 9.5% of frames against 57 to
+// 69 in every other session, and 371 trigger presses produced 49 launches.
+// Cloning a struggle produces a struggler.
+//
+// So the recording is simply left out, the airframe is absent from the list, and
+// LANCE flies at exactly the 7.60% it always did. The gate turns a bad clone
+// into a safe fallback without anybody having to notice in time.
 bool vg_net_knows_ship(const float* obs, int n);
 
 // Run it. `n` is the caller's observation width and is checked, not trusted.
