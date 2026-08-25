@@ -443,6 +443,18 @@ bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
         const float k2 = vg_agg_bias * agg;
         want = vnorm(vadd(vmul(want, 1.0f - k2), vmul(vmul(to, 1.0f / r), k2)));
     }
+    // THE MERGE FLOOR. Bent away from the other ship, in proportion to how far
+    // inside it the two of them are -- nothing at the floor, hardest at contact.
+    //
+    // Applied to a DIRECTION and not as a veto, so the ship keeps fighting while
+    // it does this: it is a near miss rather than a break, and everything the
+    // network wanted about the pass survives except the part that kills it.
+    if (r > 1.0f && r < NET_MERGE_FLOOR) {
+        float k2 = 1.0f - r / NET_MERGE_FLOOR;
+        k2 = k2 * k2 * 0.9f;                    // late and sharp, not early and soft
+        const Vec3 away = vmul(to, -1.0f / r);
+        want = vnorm(vadd(vmul(want, 1.0f - k2), vmul(away, k2)));
+    }
     *desired = want;
 
     *target_speed = s->spec->speed_min

@@ -186,6 +186,26 @@ enum {
 // margin, and hitting the wall is fatal at any speed.
 #define BOT_WALL_TURN 0.85f
 
+// HOW CLOSE THE NETWORK MAY LET A MERGE GET, in world units, before it is bent
+// away from the other ship.
+//
+// The hand-written tactics all break off at ENEMY_BREAK_RANGE, 560 -- the enemy
+// LEAVES. The network never learned to leave, because it was cloned from a pilot
+// who does not disengage from a fight they are winning, so it holds its ground
+// and a merge that used to end with somebody yielding now ends with somebody
+// dead. A collision is fatal at any speed on any hull.
+//
+// DELIBERATELY MUCH TIGHTER THAN 560. At the tactics' distance this would hand
+// back the whole merge and undo the thing that makes a trained opponent hard to
+// fly against. It is near PASS_RANGE instead, which is the distance this game
+// already calls a pass: once the two are that close the pass has happened, and
+// converging any further buys nothing that a near miss does not.
+//
+// It also ramps rather than switching, so there is no frame where the ship
+// suddenly decides to leave. At the floor it changes nothing; at contact it is
+// turning away as hard as it can.
+#define NET_MERGE_FLOOR 320.0f
+
 // Fill an observation from the PLAYER's seat. The one place that reads the world.
 void vg_bot_observe(VgObs* o);
 
