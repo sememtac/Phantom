@@ -208,6 +208,22 @@ void vg_bot_observe_enemy(int index, VgObs* o);
 // it takes the wheel only when asked.
 extern bool vg_enemy_net;
 
+// HOW MUCH OF THE FIGHT THE NETWORK IS ALLOWED TO OWN.
+//
+// False: it decides positioning only, and the hand-written layers above it --
+// breaking across an incoming missile, answering somebody on the tail -- take
+// those frames first.
+//
+// True: it is asked BEFORE them. The recordings contain those situations, so it
+// has seen a person fly them; it has simply never been the one asked. This is
+// what "can the network do more" actually means, and it is a question with a
+// measurable answer rather than an opinion.
+//
+// The wall and the suicide run stay above it either way. The wall because a
+// collision is fatal and the data holds almost none; the suicide run because it
+// is a decision already taken and not a steering problem.
+extern bool vg_net_owns_survival;
+
 // See vg_bot.cpp. 0 disables the heading bias; 0.45 was the first guess.
 extern float vg_agg_bias;
 

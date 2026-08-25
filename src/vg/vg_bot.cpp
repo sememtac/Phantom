@@ -188,6 +188,16 @@ void vg_bot_observe(VgObs* o) {
 // near the boundary, and every firing gate below it is untouched, so the tactics
 // still fly most of what the player meets.
 bool vg_enemy_net = true;
+// ON, measured. Asked before the missile-evasion and tail rules rather than
+// after them, the network both deals more damage and dies less, on every seed:
+//
+//     CHARIOT    15.01% -> 16.27% dealt, 0.29 -> 0.00 deaths a minute
+//     BALLISTA    1.97% ->  4.08% dealt, 0.16 -> 0.00 deaths a minute
+//
+// The hand-written break is a crude rule -- across the seeker, committed for a
+// second and a half. What the recordings hold is a person actually getting out
+// of the way, and the network had seen all of it and was never once asked.
+bool vg_net_owns_survival = true;
 // HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
 //
 // A dial rather than a constant because the first attempt to settle this compared

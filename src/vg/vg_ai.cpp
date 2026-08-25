@@ -473,6 +473,13 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->evade_t = 0;
         s->break_t = 0;
 
+    // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
+    // It declines a class it never learned and a boundary, so the layers below
+    // still fly everything it will not.
+    } else if (vg_net_owns_survival &&
+               vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
+        s->steer_by = STEER_NET;
+
     } else if (reacted && inc && inc_range < ENEMY_EVADE_RANGE) {
         s->steer_by = STEER_EVADE;
         // Turning across the seeker is what forces the bearing outside its cone;
