@@ -517,7 +517,19 @@ void vg_draw_lock_box(const VgCam& cam) {
         vg_fill_rect(bx + 2, by + 2, fw, 4, vg_mix(COL_HEALTH_LOW, INK_BRIGHT, hp));
 
     // What you are up against decides whether to close or extend, so name it.
-    vg_text(bx, by - 12, s->spec->name, INK_FAINT, 1);
+    //
+    // UNDER THE BRACKET, and centred on it. It sat above, left-aligned with the
+    // hull bar, which put three things in a stack over the target and left the
+    // space below it empty -- and the eye reading a reticle starts at the middle,
+    // so the name was the furthest thing from where it was wanted.
+    //
+    // Centred on the bracket rather than on the bar, because the bracket is what
+    // the name is labelling and the two are different widths.
+    {
+        const char* nm = s->spec->name;
+        const int   nx = (int)(cx - vg_text_width(nm, 1) * 0.5f);
+        vg_text(nx, (int)(cy + r + 6.0f), nm, INK_FAINT, 1);
+    }
 
     if (vg_wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
 }

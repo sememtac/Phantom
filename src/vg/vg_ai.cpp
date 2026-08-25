@@ -448,6 +448,21 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         vg_comms_say(s, VOICE_TAUNT);
     }
 
+    // IS THIS FIGHT GOING ANYWHERE? A hit either way resets the clock; otherwise
+    // it runs. The player's hull is read once, on the first ship, so four
+    // opponents do not each see the same hit as their own.
+    static float s_prev_player_hp = 1.0f;
+    if (index == 0) {
+        if (vg.health < s_prev_player_hp - 1e-4f) {
+            for (int i = 0; i < MAX_ENEMIES; i++) vg.enemy[i].stale_t = 0.0f;
+        }
+        s_prev_player_hp = vg.health;
+    }
+    if (s->hull < s->prev_hull - 1e-4f) s->stale_t = 0.0f;
+    else                                s->stale_t += dt;
+    s->prev_hull = s->hull;
+    if (s->reset_t > 0.0f) s->reset_t -= dt;
+
     s->steer_by = STEER_NONE;
     if (eclear < ARENA_ENEMY_MARGIN) {
         s->steer_by = STEER_WALL;
@@ -472,6 +487,25 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->target_speed = smax;
         s->evade_t = 0;
         s->break_t = 0;
+
+    // NOTHING IS WORKING, SO STOP DOING IT. Committed for a couple of seconds:
+    // away and across, at speed, with the approach offset re-rolled so the
+    // re-merge comes from a side the last one did not.
+    //
+    // ABOVE the network and below the wall and the missile, because it is a
+    // decision about the FIGHT rather than about this second -- but staying alive
+    // still outranks changing the subject.
+    } else if (s->reset_t > 0.0f || s->stale_t > ENEMY_STALE_TIME) {
+        if (s->reset_t <= 0.0f) {
+            s->reset_dir  = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.7f);
+            s->reset_t    = vg_frand(ENEMY_RESET_MIN, ENEMY_RESET_MAX);
+            s->offset_dir = vg_rand_unit();
+            s->stale_t    = 0.0f;
+            s->press_t    = 0.0f;   // a held position is part of what was not working
+        }
+        s->steer_by     = STEER_RESET;
+        desired         = s->reset_dir;
+        s->target_speed = smax;
 
     // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
     // It declines a class it never learned and a boundary, so the layers below

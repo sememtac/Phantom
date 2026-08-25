@@ -50,6 +50,7 @@ enum SteerBy : uint8_t {
     STEER_PRESS,     // holding a won position
     STEER_NET,       // the trained pilot
     STEER_TACTIC,    // the class's hand-written plan
+    STEER_RESET,     // breaking a stalemate on purpose
 };
 
 struct Ship {
@@ -135,6 +136,19 @@ struct Ship {
     // exists so that "the network is flying this one" is a thing a person can
     // SEE happening, and can watch hand over to a rule at a wall or a missile.
     uint8_t steer_by;
+    // NOTHING HAS LANDED FOR THIS LONG, in seconds, either way.
+    //
+    // A trained pilot has no idea a fight is going nowhere. Cloning teaches what
+    // a person did in each situation and never that a situation has REPEATED --
+    // so where the hand-written tactics break off and come back from a new angle,
+    // the network holds the orbit it is in. Measured: half of a CHARIOT fight and
+    // ninety-five per cent of a BALLISTA one was spent in stretches over twenty
+    // seconds with nobody landing anything.
+    float stale_t;
+    float prev_hull;   // to notice a hit at all
+    // >0 while deliberately throwing the geometry away and re-merging.
+    float reset_t;
+    Vec3  reset_dir;
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 

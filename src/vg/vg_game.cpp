@@ -121,6 +121,10 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->defend_run   = false;
     s->press_t      = 0;
     s->press_run    = 0;
+    s->stale_t      = 0;
+    s->prev_hull    = s->hull;
+    s->reset_t      = 0;
+    s->reset_dir    = s->fwd;
     // The character's, jittered a little so two pilots of the same archetype are
     // not the same pilot. The archetype decides the middle; the roll decides the
     // person.

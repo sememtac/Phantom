@@ -252,6 +252,23 @@
 // per-ship roll survives as a small jitter around the character's value, so an
 // archetype decides the middle and the roll decides the person.
 
+// --- breaking a stalemate ---------------------------------------------------
+//
+// How long a fight may go with nobody landing anything before one pilot throws
+// the geometry away and re-merges from somewhere else.
+//
+// A TRAINED PILOT CANNOT NOTICE THIS BY ITSELF. Cloning teaches what somebody
+// did in each situation; it never teaches that the situation has repeated forty
+// times. The hand-written tactics break off after every pass and come back from
+// a new angle, which is what keeps a fight moving, and a network fitted to a
+// pilot who does not disengage simply holds the orbit.
+//
+// Twelve seconds, against a median quiet stretch of three in a CHARIOT fight --
+// so it fires on a stall and not on an ordinary lull between passes.
+#define ENEMY_STALE_TIME     12.0f
+#define ENEMY_RESET_MIN      1.4f    // seconds committed to the re-merge
+#define ENEMY_RESET_MAX      2.2f
+
 // --- how many of its own rounds a pilot will have in the air ----------------
 //
 // THE RATE LIMIT WAS NEVER THE PROBLEM, and it is worth writing down why, because
