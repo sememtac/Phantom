@@ -677,6 +677,9 @@ extern bool vg_demo_wanted;
 
 // SHOW WHO IS FLYING THE OPPONENT, on the panel, while flying.
 //
+// ALWAYS ON IN THE GYM, whatever this says -- see the draw site. This flag is for
+// turning it on OUTSIDE the workshop, which only the desktop can ask for.
+//
 // A development readout and not a feature: it names the layer that decided the
 // nearest opponent's heading this frame, so "the network is flying this one" is
 // something a person can watch rather than something a measurement asserts. The

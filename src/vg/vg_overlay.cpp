@@ -330,7 +330,14 @@ void vg_draw_overlays(void) {
     // still: the labels are different lengths -- NET against TACTIC against
     // BALLISTA -- so anchoring the left edge would make the whole block twitch
     // every time the layer changed, which is exactly when it is being read.
-    if (vg_show_ai && (vg_state_flags(vg.state) & VGS_LIVE)) {
+    // ...AND ALWAYS IN THE GYM, which is the whole reason the gym exists. The
+    // board has no command line to ask with, so a flag alone put this on the
+    // desktop and nowhere else -- and the board is where the frame budget is real
+    // and where the fight is actually judged.
+    //
+    // The GYM and not the flag, so a tournament never shows it: a player who came
+    // for the game should not be reading which layer is steering.
+    if ((vg_show_ai || vg.gym) && (vg_state_flags(vg.state) & VGS_LIVE)) {
         int best = -1; float bestr = 1e30f;
         for (int i = 0; i < MAX_ENEMIES; i++) {
             if (!vg.enemy[i].alive) continue;
