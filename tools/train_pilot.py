@@ -146,6 +146,10 @@ def squash(y):
 # The eleven airframe fields sit at the end of the observation. See vg_bot.h.
 SHIP_FIELDS = 11
 
+# Where the rack count sits in the observation. See the enum in vg_bot.h -- this
+# is the one index this script needs to know by name.
+OBS_ROUNDS = 14
+
 
 def seen_ships(X, obs_n):
     """Return the distinct airframes in the data, one row each."""
@@ -302,7 +306,21 @@ def main():
     # are different questions. "Where will the stick be" averages; "will they
     # fire" does not -- one press inside the window is a yes.
     cols = [np.convolve(Yraw[:, i], box, mode="valid") for i in range(3)]
-    fired = (np.convolve(Yraw[:, 3], np.ones(h), mode="valid") > 0.5).astype(np.float32)
+
+    # THE TRIGGER LABEL IS A LAUNCH, NOT A BUTTON PRESS.
+    #
+    # The recorded action is what the pilot's hand did, and a hand mashes. In one
+    # AEGIS session only 56% of presses had both a lock and a round left -- the
+    # class can fire 45 a minute and the recording holds 67. Learning from the
+    # button teaches a policy to press when it cannot shoot.
+    #
+    # The rack count is in the observation, so a launch is visible directly: the
+    # rounds went DOWN. That is ground truth and it needs no new recording. Only
+    # decreases count, because the same column jumps up on a reload.
+    rounds = X[:, OBS_ROUNDS]
+    launched = np.zeros(len(rounds), dtype=np.float32)
+    launched[1:] = (np.diff(rounds) < -1e-4).astype(np.float32)
+    fired = (np.convolve(launched, np.ones(h), mode="valid") > 0.5).astype(np.float32)
     cols.append(fired)
     Y = np.stack(cols, axis=1).astype(np.float32)
     # The mean starts at the row it looks forward from, so drop the last rows
@@ -315,8 +333,10 @@ def main():
         print("warning: this is a small dataset. Record more flying.")
 
     fire = np.concatenate(ys)[:, 3]
-    print("trigger presses in the data: %d (%.2f%% of rows)"
-          % (int(fire.sum()), 100.0 * fire.mean()))
+    shots = float(launched.sum())
+    print("button presses %d (%.2f%% of rows), actual launches %d -- %.0f%% of presses did nothing"
+          % (int(fire.sum()), 100.0 * fire.mean(), int(shots),
+             100.0 * (1.0 - shots / max(fire.sum(), 1.0))))
 
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
