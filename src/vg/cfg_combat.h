@@ -252,6 +252,33 @@
 // per-ship roll survives as a small jitter around the character's value, so an
 // archetype decides the middle and the roll decides the person.
 
+// --- cornered ---------------------------------------------------------------
+//
+// A damaged pilot COMES AT YOU instead of nursing the wreck.
+//
+// WHY THIS HAD TO BE A RULE. A cloned policy copies its teacher's caution along
+// with their skill, and the recordings are unambiguous about what a person does
+// when hurt: over 70% hull they close at +0.082 and run the throttle at 0.34;
+// under 35% they close at +0.046 and 0.28. Half the closing rate. So the moment
+// the player damaged a trained opponent it stopped coming, and the fight got
+// EASIER exactly when it should have got worse. Reported from the cockpit as the
+// threat dropping once the upper hand was gained.
+//
+// AND THERE WAS NOWHERE FOR IT TO GO. The game already had "back off" and it had
+// "ram them at 34% hull" -- which is 18% of pilots and a suicide run, not a fight.
+// The whole space between was empty, and this is that space.
+//
+// NOT A SUICIDE RUN. It still obeys every firing gate, still evades a missile,
+// still turns away from the wall. It presses: nose on, closing, and willing to
+// take the exchange. The kamikaze is untouched and still sits below it.
+#define ENEMY_CORNERED_HULL  0.50f   // fraction of hull below which it presses
+// How much of the way to turn from wherever it wanted to point, toward the
+// player. Not all the way: a cornered pilot commits, it does not stop flying.
+#define ENEMY_CORNERED_PULL  0.55f
+// ...and the speed it asks for, as a fraction of its own span. Under the firing
+// gate on purpose, so pressing does not cost it the ability to shoot.
+#define ENEMY_CORNERED_SPEED 0.45f
+
 // --- breaking a stalemate ---------------------------------------------------
 //
 // How long a fight may go with nobody landing anything before one pilot throws

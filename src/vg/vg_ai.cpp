@@ -656,6 +656,27 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 * (1.0f + sp->agility_slow_bonus * (1.0f - snorm)
                         - sp->agility_fast_malus * snorm);
 
+    // CORNERED. Applied after every layer has had its say, because it is not a
+    // different plan -- it is the same plan, pressed. Whatever the ship decided to
+    // do, it does it while coming at the player rather than away from them.
+    //
+    // SKIPPED FOR THE THINGS THAT OUTRANK A FIGHT. Not into a wall, not while
+    // breaking from a missile, and not during a suicide run, which is already
+    // this taken to its end.
+    if (s->hull < sp->hull * ENEMY_CORNERED_HULL &&
+        s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE &&
+        s->steer_by != STEER_RAM) {
+        const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+        const float r  = vlen(to);
+        if (r > 1.0f) {
+            const float k = ENEMY_CORNERED_PULL;
+            desired = vnorm(vadd(vmul(desired, 1.0f - k), vmul(vmul(to, 1.0f / r), k)));
+            const float want = smin + (smax - smin) * ENEMY_CORNERED_SPEED;
+            if (want > s->target_speed) s->target_speed = want;
+            s->steer_by = STEER_CORNER;
+        }
+    }
+
     // Turn, and derive the visual bank from which way we are pulling.
     Vec3 before = s->fwd;
     s->fwd = vg_turn_toward(s->fwd, desired, erate * dt);

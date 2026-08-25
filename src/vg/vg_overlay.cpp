@@ -340,7 +340,7 @@ void vg_draw_overlays(void) {
         if (best >= 0) {
             static const char* WHO[] = { "-", "WALL", "RAM", "EVADE", "TAIL",
                                          "DRY", "PRESS", "NET", "TACTIC",
-                                         "RESET" };
+                                         "RESET", "CORNER" };
             const uint8_t w = vg.enemy[best].steer_by;
             const char* name = (w < (uint8_t)(sizeof(WHO)/sizeof(WHO[0]))) ? WHO[w] : "?";
             // The network gets the bright ramp and everything else the faint one,
