@@ -9,7 +9,24 @@
 // ===========================================================================
 
 // --- missiles --------------------------------------------------------------
-#define MAX_MISSILES         14
+// Sized so the WORST HONEST CASE fits, which it did not.
+//
+// A CHARIOT magazine is twelve and it empties in under two seconds, so a player
+// who does that leaves two slots for everything else in the game. A BALLISTA
+// opponent carries three, and its rounds stay alive for thirty-two seconds --
+// including after they have lost the lock and gone ballistic, because losing a
+// lock does not shorten the fuse. Twelve and three is fifteen against fourteen.
+//
+// WHAT THAT LOOKS LIKE FROM THE COCKPIT: press fire, and nothing happens. The
+// launch fails, the round is correctly not spent, and there is no sound and no
+// message because no missile ever existed to report on. Reported from the board
+// as being unable to fire after taking a hit, flying exactly that matchup.
+//
+// Instrumented, a bot that cannot even empty a CHARIOT rack still drove the pool
+// to eleven of fourteen. A person emptying one reaches twelve on their own.
+//
+// Twenty leaves room for a full player rack plus both opponents holding theirs.
+#define MAX_MISSILES         20
 #define MISSILE_TRAIL        30       // trail sample points per missile
 
 // LEVEL OF DETAIL ALONG THE ARC, and this was the one thing in the world with none.
