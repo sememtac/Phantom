@@ -37,6 +37,21 @@ struct Asteroid {
 // An enemy fighter. Orientation is carried as forward+up rather than a matrix
 // so that repeatedly folding in the world rotation cannot accumulate shear --
 // the pair is re-orthonormalised every frame, which a matrix would not be.
+// Who decided where a ship points, this frame. In priority order, which is the
+// order vg_update_enemy tries them in -- so the label is also a readout of how far
+// down the chain the frame got.
+enum SteerBy : uint8_t {
+    STEER_NONE = 0,
+    STEER_WALL,      // the boundary, which outranks everything
+    STEER_RAM,       // committed to a suicide run
+    STEER_EVADE,     // breaking across an incoming missile
+    STEER_TAIL,      // answering somebody on its six
+    STEER_DRY,       // extending on an empty rack
+    STEER_PRESS,     // holding a won position
+    STEER_NET,       // the trained pilot
+    STEER_TACTIC,    // the class's hand-written plan
+};
+
 struct Ship {
     bool  alive;
     // Which class this fighter is flying. Everything about its performance comes
@@ -114,6 +129,12 @@ struct Ship {
     // point the geometry says to leave. Rolled per ship rather than per class, so
     // four CHARIOTs are four pilots and a rematch is not a replay.
     float nerve;
+    // WHICH LAYER STEERED THIS SHIP ON THE LAST FRAME. See SteerBy.
+    //
+    // Written for the eye, not for the simulation: nothing reads it back. It
+    // exists so that "the network is flying this one" is a thing a person can
+    // SEE happening, and can watch hand over to a rule at a wall or a missile.
+    uint8_t steer_by;
     float roll_vis;       // visual bank, radians, applied at render time
     float hit_flash;
 
@@ -638,6 +659,15 @@ void vg_gym_enter(ShipClass mine, ShipClass theirs);
 // Off unless something asks. The title screen does not run this by itself; see
 // the note at its old trigger in vg_upd_attract.
 extern bool vg_demo_wanted;
+
+// SHOW WHO IS FLYING THE OPPONENT, on the panel, while flying.
+//
+// A development readout and not a feature: it names the layer that decided the
+// nearest opponent's heading this frame, so "the network is flying this one" is
+// something a person can watch rather than something a measurement asserts. The
+// interesting part is the HANDOVER -- it drops to WALL at a boundary, to EVADE
+// when a round is inbound, and to TACTIC on any class the network never learned.
+extern bool vg_show_ai;
 void vg_demo_begin(void);
 void vg_demo_end(void);
 

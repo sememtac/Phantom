@@ -318,6 +318,7 @@ void vg_gym_spawn_opponent(void) {
 bool vg_headless = false;
 
 bool vg_demo_wanted = false;
+bool vg_show_ai     = false;
 
 void vg_demo_begin(void) {
     if (vg.demo) return;

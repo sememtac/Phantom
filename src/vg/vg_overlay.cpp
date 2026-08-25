@@ -323,6 +323,44 @@ void vg_draw_overlays(void) {
     // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
     if (vg_state_flags(vg.state) & VGS_COMBAT) draw_missile_banner();
 
+    // WHO IS FLYING THE OPPONENT. Bottom right, small and on the faint ramp, and
+    // it must never compete with an instrument for attention.
+    //
+    // RIGHT-ALIGNED, which is the only thing that makes a corner readout hold
+    // still: the labels are different lengths -- NET against TACTIC against
+    // BALLISTA -- so anchoring the left edge would make the whole block twitch
+    // every time the layer changed, which is exactly when it is being read.
+    if (vg_show_ai && (vg_state_flags(vg.state) & VGS_LIVE)) {
+        int best = -1; float bestr = 1e30f;
+        for (int i = 0; i < MAX_ENEMIES; i++) {
+            if (!vg.enemy[i].alive) continue;
+            const float r = vlen(vg.enemy[i].pos);
+            if (r < bestr) { bestr = r; best = i; }
+        }
+        if (best >= 0) {
+            static const char* WHO[] = { "-", "WALL", "RAM", "EVADE", "TAIL",
+                                         "DRY", "PRESS", "NET", "TACTIC" };
+            const uint8_t w = vg.enemy[best].steer_by;
+            const char* name = (w < (uint8_t)(sizeof(WHO)/sizeof(WHO[0]))) ? WHO[w] : "?";
+            // The network gets the bright ramp and everything else the faint one,
+            // so the question the readout exists to answer is legible at a glance
+            // without reading the word.
+            const uint16_t ink = (w == STEER_NET) ? INK_BRIGHT : INK_FAINT;
+            const char* cls = vg.enemy[best].spec->name;
+            const int   x1  = SCR_W - SCR_SAFE;
+            const int   y1  = SCR_H - SCR_SAFE - 12;
+
+            // The class sits above, because "TACTIC" means something different on
+            // a ship the network was never trained for than on one that declined
+            // this frame.
+            vg_text(x1 - vg_text_width(cls, 1), y1 - 12, cls, INK_TRACE, 1);
+
+            const int nw = vg_text_width(name, 1);
+            vg_text(x1 - nw, y1, name, ink, 1);
+            vg_text(x1 - nw - 6 - vg_text_width("AI", 1), y1, "AI", INK_TRACE, 1);
+        }
+    }
+
     // THE DEMO SAYS SO. Without this the first press reads as the player having
     // somehow started a match they are not flying -- and the prompt is also the
     // instruction, because the way out of a demo is the way into the game.

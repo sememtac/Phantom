@@ -448,13 +448,16 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         vg_comms_say(s, VOICE_TAUNT);
     }
 
+    s->steer_by = STEER_NONE;
     if (eclear < ARENA_ENEMY_MARGIN) {
+        s->steer_by = STEER_WALL;
         desired = vg_arena_dir_to_view(vg_arena_inward(elocal));
         s->target_speed = (smin + smax) * 0.5f;
         s->evade_t = 0;
         s->break_t = 0;
 
     } else if (s->kamikaze_on) {
+        s->steer_by = STEER_RAM;
         // Straight at the player, everything open. Above missile evasion on
         // purpose: a pilot who has decided to ram does not care what is chasing
         // them. Still BELOW wall avoidance, because dying against the boundary
@@ -471,6 +474,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->break_t = 0;
 
     } else if (reacted && inc && inc_range < ENEMY_EVADE_RANGE) {
+        s->steer_by = STEER_EVADE;
         // Turning across the seeker is what forces the bearing outside its cone;
         // turning away from it just gets you run down.
         if (s->evade_t <= 0) {
@@ -490,6 +494,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // answer properly -- but neither can wait for the class's positioning
         // plan, which assumes the fight is still being flown forwards.
         s->evade_t = 0;
+        s->steer_by = STEER_TAIL;
         tactic_defend(s, vsub(v3(0, 0, 0), s->pos), smin, smax, &desired);
 
     } else {
@@ -545,6 +550,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         const bool dry = (s->rounds <= 0 && s->reload_t > 0.0f &&
                           range < ENEMY_DRY_RANGE);
         if (dry) {
+            s->steer_by = STEER_DRY;
             tactic_dry(s, to, smax, &desired);
         } else
         // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
@@ -559,6 +565,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // then the class tactic flies as it always did. There is no frame where
         // nobody is steering.
         if (vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
+            s->steer_by = STEER_NET;
             // The firing gates below are untouched, so a network-flown enemy
             // still has to be slow enough and hold a lock long enough, in its own
             // class's cone. It gets a different opinion about where to be, not a
@@ -579,12 +586,15 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);
                 break;
         }
+        if (s->steer_by == STEER_NONE) s->steer_by = STEER_TACTIC;
 
         // Holding the angle means holding the NOSE on them, and the tactic has
         // just aimed at a point beside the player so the pass does not converge.
         // Overriding it here rather than threading a flag through all four keeps
         // the tactics about positioning, which is the one thing they are for.
         if (pressing && !dry) {
+            // Last word, so it is the label too.
+            s->steer_by = STEER_PRESS;
             desired = to;
             // Slow enough to be allowed to shoot -- the firing gate applies to a
             // won position exactly as it does to a merge -- and slow is also what

@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
         else if (!strcmp(argv[i], "--no-enemy-net")) vg_enemy_net = false;
         else if (!strcmp(argv[i], "--demo")) vg_demo_wanted = true;
+        else if (!strcmp(argv[i], "--show-ai")) vg_show_ai = true;
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
@@ -79,6 +80,8 @@ int main(int argc, char** argv) {
                    "  --seed N     fix the random seed. Two runs with the same seed\n"
                    "               are the same fight, which is what a measured\n"
                    "               comparison needs.\n"
+                   "  --show-ai    name the layer flying the nearest opponent, on\n"
+                   "               the panel. NET is the trained pilot.\n"
                    "  --demo       let the title screen play the game to itself.\n"
                    "  --no-enemy-net  hand the opponents back to the tactics.\n"
                    "  --enemy-net  the OPPONENT is flown by the network. Fly the\n"
