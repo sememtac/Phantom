@@ -76,3 +76,15 @@ host/build/
 # the port moves between sessions, so the choice is remembered -- but it is a
 # fact about the desk, not about the project.
 .phantom-port
+
+# The pilot console, built with PyInstaller from tools/pilot_console.py in one
+# command. Named on its own rather than by the folder, because PhantomRecorder.exe
+# lives beside it and IS tracked -- ignoring the whole folder would hide it.
+#
+# The report is a picture of whatever weights are in the tree right now, not a
+# source file, so it is rebuilt rather than kept.
+tools/dist/PilotConsole.exe
+pilot_report.html
+
+# PyInstaller working directory. Rebuilt every time; nothing in it is source.
+.pyi-build/
