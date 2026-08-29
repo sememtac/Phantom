@@ -230,6 +230,11 @@ struct Missile {
     Vec3    last_rel;     // for the proximity fuse
     bool    have_last;    // ...false on the step it was launched
     float   lost_at;      // age at which the lock broke, for re-acquisition
+    // HOW LONG THIS ROUND HAS BEEN FLYING UNLIT, for a semi-active class only.
+    // Zero while the launcher is still looking. A round that goes dark keeps
+    // guiding on memory until this passes MSL_COAST_TIME, and only then gives up
+    // -- see the note at the illumination test in vg_missile.cpp.
+    float   dark_t;
     // The bare ring: no power bytes, because a missile burns at one brightness.
     MissileTrailRing trail;
 };

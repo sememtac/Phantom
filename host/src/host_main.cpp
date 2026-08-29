@@ -12,6 +12,7 @@
 
 bool host_dataset_open(const char* path);
 void host_random_seed(uint32_t seed);
+#include "vg_prof.h"
 void host_dataset_close(void);
 
 #include <stdio.h>
@@ -47,6 +48,20 @@ int main(int argc, char** argv) {
         // run for as long as it takes to mean something.
         else if (!strcmp(argv[i], "--bot")) vg_bot_on = true;
         else if (!strcmp(argv[i], "--headless")) headless = true;
+        // WHAT THE SHIP GATE SEES, printed and nothing else. The inspector reads
+        // this rather than parsing the class table, so the numbers it shows are
+        // the numbers the gate actually compares.
+        else if (!strcmp(argv[i], "--airframes")) {
+            for (int c = 0; c < SHIP_CLASSES; c++) {
+                const ShipSpec* sp = &vg_ship_class[c];
+                float f[11];
+                vg_bot_airframe(sp, f);
+                printf("airframe %s", sp->name);
+                for (int k = 0; k < 11; k++) printf(" %.6f", f[k]);
+                printf("\n");
+            }
+            return 0;
+        }
         else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
         else if (!strcmp(argv[i], "--rotate")) rotate = true;
         else if (!strcmp(argv[i], "--pilot") && i + 1 < argc) pilot = atoi(argv[++i]);
@@ -57,6 +72,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--show-ai")) vg_show_ai = true;
         else if (!strcmp(argv[i], "--net-survival")) vg_net_owns_survival = true;
         else if (!strcmp(argv[i], "--no-net-survival")) vg_net_owns_survival = false;
+        else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
@@ -144,6 +160,21 @@ int main(int argc, char** argv) {
     }
 
     host_dataset_close();
-    host_window_close();
+
+    // WHERE THE ROUNDS WENT. A headless run returns from the frame before the
+    // telemetry block, so the counters a played session prints every two seconds
+    // are never shown. They are the point of a measured run, so they are printed
+    // once on the way out.
+    if (g_msl_end[0] + g_msl_end[1] > 0) {
+        printf("mslend them = hit %lu near %lu fuse %lu wall %lu gone %lu"
+               " | lock %lu | lost illum %lu (dead %lu) cone %lu | dark %lu relit %lu | dmg %lu\n",
+               (unsigned long)g_msl_why[0][0], (unsigned long)g_msl_why[0][1],
+               (unsigned long)g_msl_why[0][2], (unsigned long)g_msl_why[0][3],
+               (unsigned long)g_msl_why[0][4], (unsigned long)g_msl_endlock[0],
+               (unsigned long)g_msl_lost[0][0], (unsigned long)g_msl_lost_dead[0],
+               (unsigned long)g_msl_lost[0][1],
+               (unsigned long)g_msl_dark[0], (unsigned long)g_msl_relit[0],
+               (unsigned long)g_msl_dmg[0]);
+    }
     return 0;
 }

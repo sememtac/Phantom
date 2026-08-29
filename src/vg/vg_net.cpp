@@ -1,4 +1,5 @@
 #include "vg_net.h"
+#include "vg_modes.h"
 #include "generated/pilot_net.h"
 #include <math.h>
 
@@ -101,14 +102,25 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     // weights are both just arrays of floats: feed one to the other with the
     // widths out of step and it runs happily and flies into the ground.
     //
-    // A WIDER OBSERVATION IS ACCEPTED, and only because the layout rule in
-    // vg_bot.h says new fields go at the END. The first PILOT_NET_IN values then
-    // mean exactly what they meant when the weights were fitted, so an older
-    // network keeps flying while the observation grows around it. Retraining
-    // picks up the new fields; until then they are simply unread.
+    // THE WIDTH MUST MATCH EXACTLY, and this used to be generous.
     //
-    // A NARROWER one is refused. There is nothing to read.
-    if (n < PILOT_NET_IN) {
+    // A wider observation was once accepted, on the rule that new fields go at the
+    // END so the leading values keep their meaning. The rule is sound and still
+    // holds -- but it is a rule about where a future edit puts things, and it was
+    // enforced by nothing except a comment.
+    //
+    // It got broken. The observation grew a block that had to go in FRONT of the
+    // eleven airframe fields, because vg_net_knows_ship finds those by counting
+    // back from the end. An old header then read the new fields as airframe and
+    // flew on the difference -- and it passed the ship gate the whole time, since
+    // the gate counts from the other end and was still perfectly correct. Those
+    // fields were removed again for measuring worse than nothing; the hole they
+    // went through was not.
+    //
+    // So the width is checked in both directions now. A mismatch declines, the
+    // tactics fly, and a layout mistake costs a network instead of hiding inside
+    // one.
+    if (n != PILOT_NET_IN) {
         out->valid = false;
         return;
     }
@@ -122,7 +134,15 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     float y[PILOT_NET_OUT];
     layer(PILOT_W0, PILOT_B0, x,  h0, PILOT_NET_IN, PILOT_NET_H, true);
     layer(PILOT_W1, PILOT_B1, h0, h1, PILOT_NET_H,  PILOT_NET_H, true);
+#if defined(PILOT_NET_L) && PILOT_NET_L >= 3
+    // A third hidden layer, if the weights were fitted with one. Ping-ponging
+    // between the two buffers rather than adding a third: only the last two
+    // layers' outputs are ever live at once.
+    layer(PILOT_W2, PILOT_B2, h1, h0, PILOT_NET_H, PILOT_NET_H, true);
+    layer(PILOT_W3, PILOT_B3, h0, y,  PILOT_NET_H, PILOT_NET_OUT, false);
+#else
     layer(PILOT_W2, PILOT_B2, h1, y,  PILOT_NET_H,  PILOT_NET_OUT, false);
+#endif
 
     // The same squash the training used. Pitch and yaw move both ways from the
     // middle; the throttle does not.
@@ -134,6 +154,26 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     out->fire = (pfire >= PILOT_FIRE_T);
 #else
     out->fire = false;
+#endif
+    // THE MODE, which is an argmax and needs no softmax to find.
+    //
+    // The trainer's last layer is a choice between the modes and it is trained
+    // through a softmax, but softmax is monotonic: whichever score is largest
+    // before it is largest after it. So the board skips the exponentials
+    // entirely and reads the winner straight off the raw outputs.
+    //
+    // THE COUNT IS CHECKED, and this is the same lesson as the input width. A
+    // mode added to vg_modes.h since these weights were fitted would be read off
+    // an output that means something else, and it would look like a strategy
+    // rather than like a bug.
+    out->mode = -1;
+#if defined(PILOT_MODE_N) && PILOT_MODE_N > 0
+    if (PILOT_MODE_N == VG_MODE_N && PILOT_NET_OUT >= 4 + PILOT_MODE_N) {
+        int best = 0;
+        for (int i = 1; i < PILOT_MODE_N; i++)
+            if (y[4 + i] > y[4 + best]) best = i;
+        out->mode = best;
+    }
 #endif
     out->valid    = true;
 }

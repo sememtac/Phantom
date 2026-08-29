@@ -1,6 +1,7 @@
 #include "vg_sim.h"
 #include "vg_arena.h"
 #include "vg_bot.h"
+#include "vg_modes.h"
 #include <math.h>
 
 // Enemy fighter behaviour, in strict priority order:
@@ -202,31 +203,34 @@ static void update_aim(Ship* s, float dt) {
     s->aim_dir = vnorm(vadd(s->fwd, s->aim_off));
 }
 
-// HOW MANY OF THIS PILOT'S OWN ROUNDS ARE STILL FLYING.
+// WHICH LAYER OWNS THE SHAPE OF THE FIGHT, per class.
 //
-// Counted rather than remembered, so it needs no bookkeeping and cannot drift: a
-// round that has hit, been dodged into uselessness or timed out simply is not
-// alive any more, and the pilot is free again. It reads Missile::shooter, which
-// exists for semi-active guidance -- the same field answers both questions.
-static int rounds_in_flight(int index) {
-    int n = 0;
-    for (int i = 0; i < MAX_MISSILES; i++) {
-        const Missile* m = &vg.msl[i];
-        if (m->alive && !m->from_player && m->shooter == index) n++;
-    }
-    return n;
-}
-
-// ...and how many this class is willing to have out there at once. See
-// cfg_combat.h: this is trigger DISCIPLINE, which is a different thing from the
-// rate limit, and it is the one the rate limit cannot express.
-static int inflight_cap(ShipTactic t) {
+// The network is a function of ONE FRAME. Breaking off, extending and coming
+// back in is a plan that runs for ten seconds, and no policy without memory can
+// hold one -- which is why asking it to own survival turned the classes that
+// have a plan into tail-chasers. The hand-written tactics DO have memory: it is
+// break_t, reset_t and press_t, and those timers are the plan.
+//
+// So the two classes whose identity is a shape rather than a reflex keep their
+// tactic above the network, and the network flies inside it -- still every
+// moment-to-moment decision, just no longer choosing whether the fight is a
+// merge or a break. Measured over six seeds, damage per run:
+//
+//     AEGIS    1241 net / 980 tactic     LANCE     322 net / 194 tactic
+//     CHARIOT   540 net / 652 tactic     BALLISTA  132 net / 207 tactic
+//
+// A reflex class is better served by the reflex, and a shape class by the shape.
+// This is not a tuning constant -- it is which of the two has the memory the
+// class needs, and the tactic enum already says which class is which.
+static bool net_owns_phase(ShipTactic t) {
     switch (t) {
-        case TACTIC_STANDOFF: return ENEMY_INFLIGHT_STANDOFF;
-        case TACTIC_SLASH:    return ENEMY_INFLIGHT_SLASH;
-        case TACTIC_GEOMETRY: return ENEMY_INFLIGHT_GEOMETRY;
+        case TACTIC_SLASH:      // CHARIOT -- the pass has to be set up
+        case TACTIC_STANDOFF:   // BALLISTA -- the whole class is holding a range
+            return false;
         case TACTIC_FIGHTER:
-        default:              return ENEMY_INFLIGHT_FIGHTER;
+        case TACTIC_GEOMETRY:
+        default:
+            return true;
     }
 }
 
@@ -396,7 +400,6 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     const float smin    = sp->speed_min;
     const float smax    = sp->speed_max;
     const float close_r = sp->lock_range * ENEMY_CLOSE_RANGE_K;
-    const float fire_r  = sp->lock_range * ENEMY_FIRE_RANGE_K;
 
     update_aim(s, dt);
 
@@ -510,7 +513,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
     // It declines a class it never learned and a boundary, so the layers below
     // still fly everything it will not.
-    } else if (vg_net_owns_survival &&
+    } else if (vg_net_owns_survival && net_owns_phase(sp->tactic) &&
                vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
         s->steer_by = STEER_NET;
 
@@ -605,13 +608,76 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // It declines near the boundary and when there is nothing to fight, and
         // then the class tactic flies as it always did. There is no frame where
         // nobody is steering.
-        if (vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
-            s->steer_by = STEER_NET;
-            // The firing gates below are untouched, so a network-flown enemy
-            // still has to be slow enough and hold a lock long enough, in its own
-            // class's cone. It gets a different opinion about where to be, not a
-            // different game.
-        } else
+        {
+            // THE NETWORK FIRST, because asking it is what decides the mode: one
+            // forward pass gives both where to point this frame and what the ship
+            // is trying to do over the next few seconds. Reading the mode before
+            // this had run would always read the previous frame's answer, and the
+            // whole strategy layer would sit in a branch that never executes --
+            // which is exactly what it did until this was measured.
+            //
+            // The firing gates below are untouched either way, so a network-flown
+            // enemy still has to be slow enough and hold a lock long enough, in its
+            // own class's cone. It gets a different opinion about where to be, not
+            // a different game.
+            const bool net_flew =
+                vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt);
+        // WHAT THE POLICY THINKS THIS SHIP IS DOING, if it has an opinion.
+        //
+        // This is the strategy layer and it sits ABOVE the class tactic rather
+        // than beside it: the tactic answers "how does this hull fight", the mode
+        // answers "what am I trying to do for the next few seconds". A CHARIOT
+        // that has decided to EXTEND leaves like a CHARIOT, and a BALLISTA that
+        // has decided to EXTEND leaves like a BALLISTA -- the mode picks the
+        // verb and the class still supplies the manner.
+        //
+        // PRESS is deliberately the class tactic itself rather than a fifth
+        // behaviour. Closing and taking the shot IS what every tactic here does;
+        // giving it a separate implementation would only mean two of them to keep
+        // in step.
+        //
+        // -1 means the network has no opinion -- an untrained class, older
+        // weights, a frame it declined -- and then this whole block is skipped and
+        // the class flies exactly as it did before modes existed.
+        const int mode = vg_bot_enemy_mode(index);
+        bool by_mode = true;
+        switch (mode) {
+            case VG_MODE_BREAK:
+                // Across whatever is coming, or across the player when nothing is.
+                // The same manoeuvre the evade path flies, chosen a second early
+                // and on purpose rather than as a reaction.
+                s->steer_by = STEER_EVADE;
+                if (s->evade_t <= 0) {
+                    const Vec3 away = inc ? inc->dir : vnorm(vsub(v3(0, 0, 0), s->pos));
+                    s->evade_dir = vnorm(vadd(break_across(away, s->up, 0.0f),
+                                              vmul(vg_rand_unit(), 0.35f)));
+                    s->evade_t   = vg_frand(0.9f, 1.6f);
+                }
+                desired = s->evade_dir;
+                s->target_speed = smin * 1.15f;
+                break;
+            case VG_MODE_EXTEND:
+                // Away and across at speed. tactic_dry is already exactly this --
+                // it is what a ship does when it has nothing to shoot with -- and
+                // leaving on purpose is the same manoeuvre for a better reason.
+                s->steer_by = STEER_DRY;
+                tactic_dry(s, to, smax, &desired);
+                break;
+            case VG_MODE_HOLD:
+                // Keep the range and keep the nose. Not a retreat and not a
+                // commitment: the seconds a lock is earned in.
+                s->steer_by = STEER_PRESS;
+                tactic_standoff(s, sp, to, range, smin, smax, &desired);
+                break;
+            default:
+                by_mode = false;   // PRESS, or no opinion at all
+                break;
+        }
+        // PRESS is the network's own flying: closing and taking the shot is what
+        // it was fitted to do, so there is nothing to add. No opinion at all falls
+        // back to the class tactic, exactly as before there were modes.
+        if (!by_mode && net_flew) s->steer_by = STEER_NET;
+        else if (!by_mode)
         switch (sp->tactic) {
             case TACTIC_STANDOFF:
                 tactic_standoff(s, sp, to, range, smin, smax, &desired);
@@ -626,6 +692,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             default:
                 tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);
                 break;
+        }
         }
         if (s->steer_by == STEER_NONE) s->steer_by = STEER_TACTIC;
 
@@ -760,14 +827,40 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // frames and fired on 0.4% of them has learned the judgement. Where it has an
     // opinion the cap steps aside; where it has none -- an untrained class, or a
     // frame it declined -- the rule is still there.
+    // WHETHER TO SHOOT IS THE POLICY'S. HOW MANY MAY BE IN THE AIR IS THE CLASS'S.
+    //
+    // These used to be one decision: a network with an opinion switched the cap
+    // off entirely, on the argument that a policy cloned from someone with good
+    // trigger discipline had learned the discipline. It had not. An AEGIS carries
+    // six rounds at half a second apart, so with nothing holding it back the whole
+    // rack goes up in three seconds -- which is what a flurry out of nowhere is,
+    // and it is not the ship the class table describes.
+    //
+    // The cap is an attribute of the hull, like the magazine and the reload, and
+    // an attribute does not stop applying because something clever is flying. The
+    // policy still decides whether this frame is a shot; it no longer decides how
+    // many of its own rounds may be in the air while it takes one.
+    // ONE SET OF RULES, AND THE PLAYER'S IS IT.
+    //
+    // Four conditions used to live here that the player has never been subject
+    // to: a cap on how many of its own rounds could be in the air, a maximum
+    // range short of its own lock, a minimum range, and a ceiling on throttle.
+    // None of them is in the class table. All of them were invisible from the
+    // cockpit, which is the whole problem -- an opponent held to rules the player
+    // cannot see is not a harder opponent, it is an inconsistent one, and every
+    // future balance pass would have had to be done twice.
+    //
+    // What is left is exactly what a player has: rounds in the rack, a trigger
+    // that has cooled, and a lock. Everything ELSE that should restrain a class
+    // belongs in the class table, where it binds both seats and is visible in the
+    // ship's own numbers.
+    //
+    // `judged` stays, and is not one of the four. It is the policy declining to
+    // shoot -- a pilot's finger, not a rule -- and the player's finger is under
+    // exactly the same lack of obligation.
     const int judged = vg_bot_enemy_fire(index);
-    const int cap = (judged >= 0) ? 0 : inflight_cap(sp->tactic);
 
-    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked &&
-        range < fire_r && range > 60.0f &&
-        fire_sn < ENEMY_ENGAGE_SPEED &&
-        (judged != 0) &&
-        (cap <= 0 || rounds_in_flight(index) < cap)) {
+    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && (judged != 0)) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
         // is -- but the round leaves on the direction this pilot thinks is the
         // target, which is the same error that made the lock slow to earn.

@@ -22,6 +22,20 @@
 uint32_t g_msl_fired[2] = { 0, 0 };
 uint32_t g_msl_end[2]   = { 0, 0 };   // rounds that have finished, any way
 uint32_t g_msl_hit[2]   = { 0, 0 };   // ...of which these arrived
+// WHY A ROUND STOPPED, which the hit rate alone cannot say. A class that fires
+// as often as another and does a fraction of the damage is failing somewhere
+// specific, and these are the places it can fail.
+uint32_t g_msl_why[2][5] = { { 0 } };  // hit, near miss, fuse, wall, left world
+uint32_t g_msl_endlock[2] = { 0, 0 };  // ...still guided at the end
+// WHERE A LOCK WENT. Illumination is the semi-active failure -- the launcher
+// stopped looking -- and the cone is the round's own seeker losing the target.
+uint32_t g_msl_lost[2][2] = { { 0 } };
+uint32_t g_msl_lost_dead[2] = { 0, 0 };
+// THE COAST, MEASURED. `dark` counts rounds that lost illumination at least
+// once; `relit` counts the times one got it back before the clock ran out. A
+// relit count near zero means the coast is buying nothing.
+uint32_t g_msl_dark[2]  = { 0, 0 };
+uint32_t g_msl_relit[2] = { 0, 0 };
 uint32_t g_msl_dmg[2]   = { 0, 0 };   // hull points delivered
 
 bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int shooter,
@@ -36,6 +50,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int sho
     m->from_player = from_player;
     m->locked      = true;
     m->lost_at     = -1.0f;
+    m->dark_t      = 0.0f;
     m->spec        = spec;
     m->pos         = pos;
     m->dir         = vnorm(dir);
@@ -109,10 +124,12 @@ static void report(MslEvent e) {
         vg_cockpit.banner.queue[vg_cockpit.banner.qn++] = e;
 }
 
-static void detonate(Missile* m, bool hit) {
+static void detonate(Missile* m, bool hit, int why) {
     const int who = m->from_player ? 1 : 0;
     g_msl_end[who]++;
     if (hit) g_msl_hit[who]++;
+    if (why >= 0 && why < 5) g_msl_why[who][why]++;
+    if (m->locked) g_msl_endlock[who]++;
 
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);
     // A round that runs out of fuel still goes off. It used to leave nothing but
@@ -166,7 +183,7 @@ void vg_update_missiles(float dt) {
 
         m->age  += dt;
         m->life -= dt;
-        if (m->life <= 0) { detonate(m, false); continue; }
+        if (m->life <= 0) { detonate(m, false, 2); continue; }
 
         Vec3 tpos, tvel;
         bool have_target = missile_target(m, &tpos, &tvel);
@@ -208,9 +225,34 @@ void vg_update_missiles(float dt) {
                        && vg.enemy[m->shooter].alive
                        && vg.enemy[m->shooter].locked);
             }
-            if (!lit) {
+            // GOING DARK IS NOT THE SAME AS LOSING IT. The launcher that turns
+            // away to miss a wall comes back, and a round that gave up on the
+            // first unlit frame threw away a shot over a manoeuvre lasting less
+            // than a second. The clock only runs while it is actually dark, and
+            // resets the moment the light comes back -- so a pilot who keeps
+            // glancing at the target keeps the round, and one who leaves does not.
+            const int w = m->from_player ? 1 : 0;
+            if (lit) {
+                if (m->dark_t > 0.0f) g_msl_relit[w]++;
+                m->dark_t = 0.0f;
+            } else {
+                if (m->dark_t <= 0.0f) g_msl_dark[w]++;
+                m->dark_t += dt;
+            }
+            if (!lit && m->dark_t > MSL_COAST_TIME) {
                 m->locked  = false;
                 m->lost_at = m->age;
+                const int w = m->from_player ? 1 : 0;
+                g_msl_lost[w][0]++;
+                // TWO VERY DIFFERENT FAILURES SHARE THIS BRANCH. A launcher that
+                // turned away threw the round away; a launcher that was SHOT did
+                // not. Counting them together says the pilot is at fault when the
+                // player may simply have killed it.
+                const bool dead = m->from_player
+                                ? false
+                                : !(m->shooter >= 0 && m->shooter < MAX_ENEMIES
+                                    && vg.enemy[m->shooter].alive);
+                if (dead) g_msl_lost_dead[w]++;
             }
         }
 
@@ -238,7 +280,7 @@ void vg_update_missiles(float dt) {
         // Nothing decays. A round that has been let go is not slowed down as
         // well -- losing the lock is already the whole punishment, and taking the
         // speed back would mean the pilot is charged twice for one mistake.
-        if (m->locked && m->spec->msl_accel > 0.0f) {
+        if (m->locked && m->dark_t <= 0.0f && m->spec->msl_accel > 0.0f) {
             m->speed += m->spec->msl_accel * dt;
             if (m->speed > m->spec->msl_speed_max) m->speed = m->spec->msl_speed_max;
         }
@@ -257,6 +299,7 @@ void vg_update_missiles(float dt) {
                 if (vdot(m->dir, los) < m->spec->msl_seeker_cos) {
                     m->locked  = false;
                     m->lost_at = m->age;
+                    g_msl_lost[m->from_player ? 1 : 0][1]++;
                 } else {
                     // Lead pursuit: aim where the target will be, which is what
                     // bends the flight path into the arc you actually see.
@@ -317,7 +360,7 @@ void vg_update_missiles(float dt) {
                                 report(killed ? MSL_DESTROYED : MSL_HIT);
                         }
                     }
-                    detonate(m, hit);
+                    detonate(m, hit, hit ? 0 : 1);
                     continue;
                 }
             }
@@ -332,7 +375,7 @@ void vg_update_missiles(float dt) {
         // A missile that runs out of world detonates against it, which makes
         // leading one into a wall a legitimate way to defeat it.
         if (vg_arena_clearance(vg_arena_local_of(m->pos)) < 0.0f) {
-            detonate(m, false);
+            detonate(m, false, 3);
             continue;
         }
 
@@ -353,6 +396,8 @@ void vg_update_missiles(float dt) {
             // Counted here as well as in detonate: a round that leaves the world
             // never detonates, and a miss that is not counted flatters the rate.
             g_msl_end[m->from_player ? 1 : 0]++;
+            g_msl_why[m->from_player ? 1 : 0][4]++;
+            if (m->locked) g_msl_endlock[m->from_player ? 1 : 0]++;
             if (m->from_player) report(MSL_MISSED);
             m->alive = false;
         }

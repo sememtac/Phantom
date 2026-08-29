@@ -253,6 +253,29 @@ extern float vg_agg_bias;
 bool vg_bot_fly_enemy(int index, const struct Ship* s, Vec3* desired,
                       float* target_speed, float dt);
 
+// WHICH MODE THIS ENEMY IS IN, as an index into VG_MODE_LIST, or -1 if the
+// network has no opinion -- an untrained class, a stale set of weights, or a
+// frame it declined.
+//
+// HELD, and that is the point of it. The network is asked every frame and would
+// otherwise change its mind sixty times a second, which is a reflex wearing a
+// plan's clothes. A mode has to survive VG_MODE_DWELL seconds before another can
+// replace it, so what comes out is something the ship is DOING rather than
+// something it thinks.
+// The eleven airframe fields for one class, written in observation order. The
+// ship gate compares against these, so anything that wants to know what the gate
+// sees must ask this rather than recompute it.
+void vg_bot_airframe(const struct ShipSpec* sp, float* out);
+
+// Whether the strategy layer is used at all. False makes every seat report no
+// opinion, so the class tactic flies -- the control arm for measuring the modes.
+extern bool vg_bot_modes_on;
+
+int vg_bot_enemy_mode(int index);
+
+// Clears every held mode. Call when a match starts.
+void vg_bot_modes_reset(void);
+
 // Does the policy want THIS enemy to shoot, on the frame it last flew them?
 // 1 yes, 0 no, -1 nothing has an opinion and the class discipline stands.
 int vg_bot_enemy_fire(int index);

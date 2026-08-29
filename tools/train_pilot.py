@@ -88,11 +88,105 @@ import sys
 
 import numpy as np
 
+# Where the rules read from. These must agree with the enum in src/vg/vg_bot.h.
+OBS_MSL_IN    = 17
+OBS_MSL_RANGE = 21
+OBS_RANGE_W   = 24
+
 MAGIC = b"PHOB"
 VERSION = 1
 
-# The number of values that the network gives: pitch, yaw, throttle, trigger.
-ACT_OUT = 4
+# The number of values a RECORDING holds for the hand: pitch, yaw, throttle,
+# trigger. This is the width of the action in a dump file and it does not change.
+STICK_OUT = 4
+
+# Where the shared mode list lives. See the note at the top of that file: it is
+# the one copy, and this script reads it so that the two cannot drift apart.
+MODES_H = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "src", "vg", "vg_modes.h")
+
+
+def read_modes(path=MODES_H):
+    """Return the mode names, in the order the header lists them."""
+    import re
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    names = [m[1] for m in re.findall(r'X\((\w+),\s*"([^"]+)"\)', text)]
+    if not names:
+        raise ValueError("%s holds no modes" % path)
+    return names
+
+
+MODE_NAMES = read_modes()
+
+# WHAT EACH MODE LOOKS LIKE IN A RECORDING.
+#
+# One rule for each mode. A rule reads the flight and says which frames were that
+# mode. It MAY look at the future, because it labels a recording that already
+# happened. The network may not: it sees one frame and must predict the mode from
+# that, which is what makes this worth learning instead of a rule to copy.
+#
+# Where two rules are true, the higher number wins. The lowest rule must always
+# be true, because every frame needs a label.
+#
+# TO ADD A MODE: add a row to VG_MODE_LIST in src/vg/vg_modes.h, then add a rule
+# here with the same name. A mode with no rule stops this script, on purpose.
+#
+# `a` is the observation rows, `n` is how many of them get a label, and `w` is
+# how many frames ahead a rule may look.
+def _drange(a, n, w):
+    """How much the range to the target opens over the next w frames."""
+    r = a[:, OBS_RANGE_W]
+    return r[w:w + n] - r[:n]
+
+
+MODE_RULES = {
+    # Something is tracking us and it is close. This outranks everything: a
+    # pilot who is being shot at is not doing anything else.
+    "BREAK":  (30, lambda a, n, w: (a[:n, OBS_MSL_IN] > 0.5)
+                                   & (a[:n, OBS_MSL_RANGE] < 0.45)),
+    # The range closes over the window. They are going in.
+    "PRESS":  (20, lambda a, n, w: _drange(a, n, w) < -0.03),
+    # The range opens over the window, and nothing is chasing them. They chose
+    # to leave.
+    "EXTEND": (20, lambda a, n, w: _drange(a, n, w) > 0.03),
+    # The default: the range holds. Working the lock, keeping the angle.
+    "HOLD":   (0,  lambda a, n, w: np.ones(n, dtype=bool)),
+}
+
+missing = [m for m in MODE_NAMES if m not in MODE_RULES]
+if missing:
+    raise ValueError("these modes have no rule in MODE_RULES: %s" % ", ".join(missing))
+
+# The number of values the NETWORK gives: the hand, then one score for each mode.
+ACT_OUT = STICK_OUT + len(MODE_NAMES)
+
+
+def label_modes(a, look, smooth):
+    """Give every row a mode. Return one whole number for each row.
+
+    `look` is how many frames ahead a rule may read. `smooth` is the width of a
+    majority filter. The filter matters: without it about a third of the labels
+    last less than half a second, and a network fitted to that learns to flicker
+    rather than to hold a plan.
+    """
+    n = a.shape[0] - look
+    if n <= 0:
+        return np.zeros(0, dtype=np.int64)
+    order = sorted(range(len(MODE_NAMES)),
+                   key=lambda k: MODE_RULES[MODE_NAMES[k]][0])
+    m = np.zeros(n, dtype=np.int64)
+    for k in order:                      # lowest rule first, highest wins last
+        rule = MODE_RULES[MODE_NAMES[k]][1]
+        m[rule(a, n, look)] = k
+    if smooth > 1:
+        # A majority filter, done as a box sum for each mode. Much faster than a
+        # window per row, and the same answer.
+        box = np.ones(smooth)
+        score = np.stack([np.convolve((m == k).astype(np.float32), box, mode="same")
+                          for k in range(len(MODE_NAMES))], axis=1)
+        m = score.argmax(axis=1).astype(np.int64)
+    return m
 
 
 def read_dataset(path):
@@ -122,15 +216,14 @@ def read_dataset(path):
     return table[:, :obs_n], table[:, obs_n:], obs_n, act_n
 
 
-def build(obs_n, hidden):
+def build(obs_n, hidden, layers=2):
+    """Stack `layers` hidden layers of `hidden` units."""
     import torch.nn as nn
-    # Two hidden layers are enough for this problem and small enough for the
-    # board. See the size report that this script prints at the end.
-    return nn.Sequential(
-        nn.Linear(obs_n, hidden), nn.Tanh(),
-        nn.Linear(hidden, hidden), nn.Tanh(),
-        nn.Linear(hidden, ACT_OUT),
-    )
+    seq = [nn.Linear(obs_n, hidden), nn.Tanh()]
+    for _ in range(layers - 1):
+        seq += [nn.Linear(hidden, hidden), nn.Tanh()]
+    seq += [nn.Linear(hidden, ACT_OUT)]
+    return nn.Sequential(*seq)
 
 
 def squash(y):
@@ -140,7 +233,10 @@ def squash(y):
     # the trigger is a probability.
     pitch_yaw = torch.tanh(y[:, :2])
     rest = torch.sigmoid(y[:, 2:4])
-    return torch.cat([pitch_yaw, rest], dim=1)
+    # The mode scores are a choice between the modes, so they are made to add up
+    # to one. The largest is the mode.
+    modes = torch.softmax(y[:, STICK_OUT:], dim=1)
+    return torch.cat([pitch_yaw, rest, modes], dim=1)
 
 
 # The eleven airframe fields sit at the end of the observation. See vg_bot.h.
@@ -211,7 +307,15 @@ def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5,
     add("")
     add("#define PILOT_NET_IN   %d" % obs_n)
     add("#define PILOT_NET_H    %d" % layers[0].out_features)
+    add("#define PILOT_NET_L    %d" % (len(layers) - 1))
     add("#define PILOT_NET_OUT  %d" % ACT_OUT)
+    add("")
+    add("// HOW MANY MODES THESE WEIGHTS WERE FITTED FOR, and their order. The")
+    add("// game checks this against VG_MODE_N in vg_modes.h and declines when")
+    add("// they differ: a mode added since these weights were trained would")
+    add("// otherwise be read off an output that means something else.")
+    add("#define PILOT_MODE_N   %d" % len(MODE_NAMES))
+    add("// %s" % "  ".join("%d=%s" % (k, n) for k, n in enumerate(MODE_NAMES)))
     add("")
     add("// The network needs each input near zero and near unit size. These are")
     add("// the mean and the deviation of the training data. Apply them first.")
@@ -249,6 +353,8 @@ def main():
                     help="where to write the C header")
     ap.add_argument("--hidden", type=int, default=64,
                     help="width of each hidden layer (default 64)")
+    ap.add_argument("--layers", type=int, default=2,
+                    help="how many hidden layers (default 2)")
     ap.add_argument("--epochs", type=int, default=400,
                     help="how many passes over the data (default 400)")
     ap.add_argument("--batch", type=int, default=256, help="batch size")
@@ -265,6 +371,9 @@ def main():
                     help="randomly scale the airframe fields by this much while "
                          "training. Also becomes how far a ship may be retuned "
                          "and still be flown. Default 0.12.")
+    ap.add_argument("--mode-smooth", type=int, default=91,
+                    help="width of the majority filter on the mode labels, in "
+                         "frames (default 91, about 1.5 seconds)")
     ap.add_argument("--horizon", type=int, default=60,
                     help="frames to look ahead for the target (default 60)")
     args = ap.parse_args()
@@ -322,6 +431,18 @@ def main():
     launched[1:] = (np.diff(rounds) < -1e-4).astype(np.float32)
     fired = (np.convolve(launched, np.ones(h), mode="valid") > 0.5).astype(np.float32)
     cols.append(fired)
+
+    # THE MODE, which is the plan rather than the hand.
+    #
+    # It rides as one more column of whole numbers, not as a mean: averaging a
+    # decision gives no decision. That is the whole reason a mode can use a long
+    # window where the stick cannot -- the mean of "break, then press" is nothing,
+    # but the majority of it is still a mode.
+    # The window is h - 1, not h, so that a label lines up with each mean above:
+    # a box filter of width h over N rows gives N - h + 1 of them.
+    modes = label_modes(X, h - 1, args.mode_smooth)
+    assert len(modes) == len(cols[0]), (len(modes), len(cols[0]))
+    cols.append(modes.astype(np.float32))
     Y = np.stack(cols, axis=1).astype(np.float32)
     # The mean starts at the row it looks forward from, so drop the last rows
     # that have no full window after them.
@@ -383,7 +504,9 @@ def main():
     # A pilot that holds the stick still already predicts the near future well.
     # A network is only useful if it beats that, so this is the number that
     # matters. The average control is reported too, but it is a weak test.
-    hold = float(((Ynow[va] - Y[va]) ** 2).mean())
+    # Only the four hand columns. The mode column is a whole number, and a
+    # squared error against it would mean nothing.
+    hold = float(((Ynow[va] - Y[va][:, :STICK_OUT]) ** 2).mean())
 
     # BALANCE THE CLASSES, because in a fitted policy the mix of the data IS the
     # policy's priorities.
@@ -427,7 +550,7 @@ def main():
     xv = torch.tensor(Xn[va], device=dev)
     yv = torch.tensor(Y[va], device=dev)
 
-    model = build(obs_n, args.hidden).to(dev)
+    model = build(obs_n, args.hidden, args.layers).to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     mse = nn.MSELoss()
 
@@ -441,18 +564,35 @@ def main():
           % (100.0 * pos, w_pos))
     bce = nn.BCELoss(reduction="none")
 
+    # THE RARE MODES ARE WEIGHTED UP, for the same reason the trigger is. BREAK
+    # is about 3% of frames, because the pilot is not shot at often, and an
+    # unweighted fit scores well by never choosing it -- which would drop exactly
+    # the mode that survival depends on.
+    counts = np.bincount(Y[tr][:, 4].astype(np.int64), minlength=len(MODE_NAMES))
+    mw = counts.sum() / (len(MODE_NAMES) * np.maximum(counts, 1))
+    print("modes in training: " + "  ".join(
+        "%s %.1f%% (x%.1f)" % (MODE_NAMES[k], 100.0 * counts[k] / counts.sum(), mw[k])
+        for k in range(len(MODE_NAMES))))
+    mode_w = torch.tensor(mw, dtype=torch.float32, device=dev)
+
     def lossf(pred, truth):
         axes = mse(pred[:, :3], truth[:, :3])
         w = 1.0 + (w_pos - 1.0) * truth[:, 3]
         trig = (bce(pred[:, 3].clamp(1e-6, 1 - 1e-6), truth[:, 3]) * w).mean()
+        # The mode is a choice, so it is scored by how much weight the network put
+        # on the right one.
+        mp = pred[:, STICK_OUT:].clamp(1e-6, 1.0)
+        idx = truth[:, 4].long()
+        mloss = -(torch.log(mp[torch.arange(len(idx), device=mp.device), idx])
+                  * mode_w[idx]).mean()
         # Scaled so neither half drowns the other. The axes loss runs around
         # 0.03 and a balanced BCE around 0.7, so the trigger is divided down to
         # sit in the same range rather than dominating the gradient.
-        return axes + 0.05 * trig
+        return axes + 0.05 * trig + 0.05 * mloss
 
     # The score to beat. A pilot that always gives the average control gets
     # this loss. A network above it learned nothing.
-    base = float(((yv - yt.mean(dim=0)) ** 2).mean())
+    base = float(((yv[:, :4] - yt[:, :4].mean(dim=0)) ** 2).mean())
     print("baseline: always the average control  %.5f" % base)
     print("baseline: hold the stick still        %.5f   <- the one to beat" % hold)
 
@@ -535,14 +675,39 @@ def main():
           % (100.0 * p.mean(), 100.0 * t.mean()))
     print("              caught %.0f%% of the shots, %.0f%% of its calls were right"
           % (100.0 * tp / max(tp + fn, 1), 100.0 * tp / max(tp + fp, 1)))
+    # THE HAND AND THE PLAN ARE SCORED APART.
+    #
+    # `best` is the whole loss, and it now holds a mode term as well as the hand.
+    # The two baselines below are about the HAND only, so comparing them with the
+    # whole loss says the network got worse the moment modes were added, which is
+    # not what happened. The hand is scored against the hand.
+    stick = float(((pred[:, :STICK_OUT] - truth[:, :STICK_OUT]) ** 2).mean())
     print("")
-    print("best test loss %.5f" % best)
+    print("hand: test error %.5f" % stick)
     print("  against the average control  %.5f  (%+.0f%%)"
-          % (base, 100.0 * (1.0 - best / base)))
+          % (base, 100.0 * (1.0 - stick / base)))
     print("  against holding the stick    %.5f  (%+.0f%%)"
-          % (hold, 100.0 * (1.0 - best / hold)))
-    if best >= hold:
-        print("The network does not beat a still stick. It is not ready to fly.")
+          % (hold, 100.0 * (1.0 - stick / hold)))
+    if stick >= hold:
+        print("The hand does not beat a still stick. It is not ready to fly.")
+
+    # THE PLAN, scored as what it is: a choice, judged by how often it is right,
+    # and judged per mode because the rare ones are the whole point. A network
+    # that never says BREAK can still look good overall.
+    got = pred[:, STICK_OUT:].argmax(axis=1)
+    want = truth[:, 4].astype(np.int64)
+    print("mode: right on %.0f%% of rows" % (100.0 * (got == want).mean()))
+    for k, nm in enumerate(MODE_NAMES):
+        m = want == k
+        if not m.any():
+            continue
+        picked = got == k
+        print("  %-7s %5.1f%% of rows | caught %3.0f%% | %3.0f%% of its calls right"
+              % (nm, 100.0 * m.mean(), 100.0 * (got[m] == k).mean(),
+                 100.0 * (want[picked] == k).mean() if picked.any() else 0.0))
+    print("  a guess that always said the commonest mode would be right on %.0f%%"
+          % (100.0 * np.bincount(want, minlength=len(MODE_NAMES)).max() / len(want)))
+    print("best test loss %.5f  (hand and plan together)" % best)
 
     params = sum(p.numel() for p in model.parameters())
     meta = [

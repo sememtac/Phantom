@@ -413,6 +413,7 @@ void vg_gym_start(void) {
     // silent radio, reported as the ship not being initialised.
     //
     // There is no cutscene here to put between them, which is the point of a gym.
+    vg_bot_modes_reset();   // nobody has an opinion until the network speaks
     vg_match_start();
     vg_begin_flight();
 

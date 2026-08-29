@@ -927,6 +927,16 @@ void loop(void) {
                           (unsigned long)g_msl_hit[0], (unsigned long)g_msl_end[0],
                           (unsigned long)(g_msl_end[0] ? g_msl_hit[0] * 100u / g_msl_end[0] : 0u),
                           (unsigned long)g_msl_dmg[0]);
+            // WHERE THE ENEMY'S ROUNDS GO. A class can fire as often as another
+            // and do a fraction of the damage, and the hit rate alone does not
+            // say which of the four ways it failed. `lock` is how many were
+            // still guided when they stopped: a low count next to a high `illum`
+            // is a semi-active round thrown away by its own launcher.
+            Serial.printf("        mslend them = hit %lu near %lu fuse %lu wall %lu gone %lu | lock %lu | lost illum %lu cone %lu\n",
+                          (unsigned long)g_msl_why[0][0], (unsigned long)g_msl_why[0][1],
+                          (unsigned long)g_msl_why[0][2], (unsigned long)g_msl_why[0][3],
+                          (unsigned long)g_msl_why[0][4], (unsigned long)g_msl_endlock[0],
+                          (unsigned long)g_msl_lost[0][0], (unsigned long)g_msl_lost[0][1]);
         }
 
         // Audio delivery. The window is the same two seconds as the lines above,

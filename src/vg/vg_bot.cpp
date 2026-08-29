@@ -1,5 +1,6 @@
 #include "vg_bot.h"
 #include "vg_net.h"
+#include "vg_modes.h"
 #include "vg_pilot.h"
 #include "vg_sim.h"
 #include "vg_input.h"
@@ -66,6 +67,27 @@ static inline float clamp1(float x) {
     return x < -1.0f ? -1.0f : (x > 1.0f ? 1.0f : x);
 }
 
+// THE ELEVEN NUMBERS THAT SAY WHICH SHIP THIS IS.
+//
+// One copy, called from both seats and from the inspector. It used to be written
+// out twice, and the ship gate compares against exactly these -- so a divergence
+// between the two would not have failed to compile, it would have quietly stopped
+// the network recognising one of the seats.
+void vg_bot_airframe(const ShipSpec* sp, float* out) {
+    if (!sp || !out) return;
+    out[0]  = sp->turn_rate          / OBSREF_TURN;
+    out[1]  = sp->agility_slow_bonus;
+    out[2]  = sp->agility_fast_malus;
+    out[3]  = sp->speed_max          / OBSREF_SPEED;
+    out[4]  = sp->hull               / OBSREF_HULL;
+    out[5]  = sp->lock_range         / OBSREF_LOCKRANGE;
+    out[6]  = sp->lock_time          / OBSREF_LOCKTIME;
+    out[7]  = (float)sp->magazine    / OBSREF_MAG;
+    out[8]  = sp->fire_gap           / OBSREF_GAP;
+    out[9]  = sp->reload             / OBSREF_RELOAD;
+    out[10] = sp->msl_speed          / OBSREF_MSLSPEED;
+}
+
 void vg_bot_observe(VgObs* o) {
     if (!o) return;
     for (int i = 0; i < VG_OBS_N; i++) o->v[i] = 0.0f;
@@ -106,17 +128,7 @@ void vg_bot_observe(VgObs* o) {
     // The airframe. Constant for a whole match, and read straight off the same
     // table the flight model uses, so these cannot drift away from the ship the
     // policy is actually flying.
-    o->v[OBS_SHIP_TURN]      = sp->turn_rate          / OBSREF_TURN;
-    o->v[OBS_SHIP_AGI_SLOW]  = sp->agility_slow_bonus;
-    o->v[OBS_SHIP_AGI_FAST]  = sp->agility_fast_malus;
-    o->v[OBS_SHIP_SPEED]     = sp->speed_max          / OBSREF_SPEED;
-    o->v[OBS_SHIP_HULL]      = sp->hull               / OBSREF_HULL;
-    o->v[OBS_SHIP_LOCKRANGE] = sp->lock_range         / OBSREF_LOCKRANGE;
-    o->v[OBS_SHIP_LOCKTIME]  = sp->lock_time          / OBSREF_LOCKTIME;
-    o->v[OBS_SHIP_MAG]       = (float)sp->magazine    / OBSREF_MAG;
-    o->v[OBS_SHIP_GAP]       = sp->fire_gap           / OBSREF_GAP;
-    o->v[OBS_SHIP_RELOAD]    = sp->reload             / OBSREF_RELOAD;
-    o->v[OBS_SHIP_MSLSPEED]  = sp->msl_speed          / OBSREF_MSLSPEED;
+    vg_bot_airframe(sp, &o->v[OBS_SHIP_TURN]);
     o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
     {
         int air = 0;
@@ -331,17 +343,7 @@ void vg_bot_observe_enemy(int index, VgObs* o) {
                                ? clamp1((float)air / (float)sp->magazine) : 0.0f;
     }
 
-    o->v[OBS_SHIP_TURN]      = sp->turn_rate          / OBSREF_TURN;
-    o->v[OBS_SHIP_AGI_SLOW]  = sp->agility_slow_bonus;
-    o->v[OBS_SHIP_AGI_FAST]  = sp->agility_fast_malus;
-    o->v[OBS_SHIP_SPEED]     = sp->speed_max          / OBSREF_SPEED;
-    o->v[OBS_SHIP_HULL]      = sp->hull               / OBSREF_HULL;
-    o->v[OBS_SHIP_LOCKRANGE] = sp->lock_range         / OBSREF_LOCKRANGE;
-    o->v[OBS_SHIP_LOCKTIME]  = sp->lock_time          / OBSREF_LOCKTIME;
-    o->v[OBS_SHIP_MAG]       = (float)sp->magazine    / OBSREF_MAG;
-    o->v[OBS_SHIP_GAP]       = sp->fire_gap           / OBSREF_GAP;
-    o->v[OBS_SHIP_RELOAD]    = sp->reload             / OBSREF_RELOAD;
-    o->v[OBS_SHIP_MSLSPEED]  = sp->msl_speed          / OBSREF_MSLSPEED;
+    vg_bot_airframe(sp, &o->v[OBS_SHIP_TURN]);
 }
 
 // THE CONTROL, TRANSLATED BACK.
@@ -362,6 +364,23 @@ void vg_bot_observe_enemy(int index, VgObs* o) {
 //
 // A HELD STICK PER SHIP, for the same reason the player's seat holds one: the
 // network gives a target a second out, and something has to move toward it.
+// The held mode, and how long before it may be replaced. -1 is "no opinion
+// yet", which is not any mode and must not be read as one: it is the state in
+// which the class tactic flies unaided, exactly as it did before the network.
+static int   s_enemy_mode[MAX_ENEMIES];
+static float s_mode_t[MAX_ENEMIES];
+
+// OFF SWITCH FOR THE STRATEGY LAYER, so the same weights can be flown with and
+// without it. Otherwise the only way to ask what the modes are worth is to train
+// a second network, and then the answer is confounded by the fit.
+bool vg_bot_modes_on = true;
+
+int vg_bot_enemy_mode(int index) {
+    if (!vg_bot_modes_on) return -1;
+    if (index < 0 || index >= MAX_ENEMIES) return -1;
+    return s_enemy_mode[index];
+}
+
 static float s_enp[MAX_ENEMIES] = { 0 };
 static float s_eny[MAX_ENEMIES] = { 0 };
 static float s_ent[MAX_ENEMIES] = { 0 };
@@ -373,6 +392,12 @@ int vg_bot_enemy_fire(int index) {
     if (index < 0 || index >= MAX_ENEMIES) return -1;
     if (!s_enf_ok[index]) return -1;
     return s_enf[index] ? 1 : 0;
+}
+
+// Every seat starts with no opinion. Zero would be PRESS, and a ship that
+// pressed until the network first spoke would be a bug that looked like nerve.
+void vg_bot_modes_reset(void) {
+    for (int i = 0; i < MAX_ENEMIES; i++) { s_enemy_mode[i] = -1; s_mode_t[i] = 0.0f; }
 }
 
 bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
@@ -404,6 +429,17 @@ bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
 
     s_enf[index]    = n.fire;
     s_enf_ok[index] = true;
+
+    // THE MODE, HELD. See the note in vg_bot.h: the network is asked every frame
+    // and a plan that can be abandoned on the next one is not a plan. The clock
+    // runs whatever the network says; only once it has run out may the answer
+    // change.
+    if (s_mode_t[index] > 0.0f) s_mode_t[index] -= dt;
+    if (n.mode >= 0 && (s_enemy_mode[index] < 0
+                        || (n.mode != s_enemy_mode[index] && s_mode_t[index] <= 0.0f))) {
+        s_enemy_mode[index] = n.mode;
+        s_mode_t[index]     = VG_MODE_DWELL;
+    }
 
     const float k = dt * 3.2f > 1.0f ? 1.0f : dt * 3.2f;
     s_enp[index] += (n.pitch    - s_enp[index]) * k;

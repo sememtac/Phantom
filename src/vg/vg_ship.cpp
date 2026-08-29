@@ -199,9 +199,34 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 270.0f, /* shake */ 0.55f,
-        /* warhead    */ 30.0f, 17.0f, 0.50f,
-        /* speed      */ 200.0f, /* accel */ 30.0f, /* max */ 480.0f,
-        /* seeker arc */ 2.30f, 32.0f, 0.30f,
+        // A SNIPER'S ROUND, and this is what the word has to mean in numbers.
+        //
+        // It was 30, and an AEGIS carries 330 hull: eleven dead centre hits, three
+        // rounds to a rack and nine seconds to reload, so about fifty-five seconds
+        // of perfect shooting to kill one thing. Measured over a real session the
+        // class landed its shots and converted almost nothing, which is why it
+        // read as harmless and got picked on.
+        //
+        // At 120 a rack that connects IS a kill: 2.8 hits on the toughest hull in
+        // the game, two on the lightest. That is the trade the class is built
+        // around -- three rounds, nine seconds dry, the slowest airframe here and
+        // the worst turn at both ends of the throttle, in exchange for the shot
+        // that ends it. Miss the rack and you have nothing for nine seconds.
+        /* warhead    */ 120.0f, 17.0f, 0.50f,
+        // THE ROUND IS THE CLASS. Reach is the privilege and it keeps it -- 4200,
+        // untouched -- but reach is worthless if a round that was aimed properly
+        // cannot arrive. It used to leave the rail at 200, slower than every ship
+        // in the game cruises, and turn at 2.30 against a CHARIOT that turns 2.20:
+        // a target that ran could not be caught and a target that turned barely
+        // could. Measured, 12.6% of rounds arrived, and the aiming that the whole
+        // class is built around bought almost nothing.
+        //
+        // 320 and 3.20 are what make aim pay: the same six seeds go to 42.4%
+        // arriving on HALF the rounds fired. The acceleration stays as the reward
+        // for keeping the nose on them, but at 60 it now crosses the fastest ship
+        // in the game after 2.3 seconds of held lock rather than 9.
+        /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f,
+        /* seeker arc */ 3.20f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
         /* tactic     */ TACTIC_STANDOFF,
         /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,

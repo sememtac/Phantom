@@ -309,6 +309,35 @@
 //
 // Twelve seconds, against a median quiet stretch of three in a CHARIOT fight --
 // so it fires on a stall and not on an ordinary lull between passes.
+// HOW LONG A SEMI-ACTIVE ROUND KEEPS GUIDING AFTER ITS LAUNCHER STOPS LOOKING.
+//
+// Without this the mechanic is unflyable by anything that must also avoid the
+// arena: measured, an enemy BALLISTA put 74 of 77 rounds into the wall and NOT
+// ONE was still guided when it stopped, because the boundary outranks every
+// other priority and a wall turn is exactly what breaks the lock. The tube is
+// 1100 units in radius and BALLISTA locks at 4200, so it is nearly always inside
+// the margin -- it does not get to choose a moment.
+//
+// A coast is the honest fix rather than a concession: a real semi-active weapon
+// flies on its last solution when the illumination drops, and it is the seconds
+// of a break rather than an abandonment that this has to cover.
+//
+// IT DOES NOT ACCELERATE WHILE DARK. "The aim is the engine" still holds -- a
+// round that is not being fed keeps what it earned and no more.
+#define MSL_COAST_TIME       1.4f
+
+// HOW LONG A MODE MUST SURVIVE before the network may pick another, in seconds.
+//
+// This is the whole of the policy's memory, and it is supplied here rather than
+// learned. The network is a function of one frame: asked sixty times a second it
+// answers sixty times, and a plan that can be abandoned on the next frame is a
+// reflex wearing a plan's clothes.
+//
+// Measured across every recording, a pilot's own mode lasts a median of 1.8
+// seconds once the labels are smoothed. A floor of one second sits under that on
+// purpose: it should stop the flicker, not stop the pilot changing their mind.
+#define VG_MODE_DWELL        1.0f
+
 #define ENEMY_STALE_TIME     12.0f
 #define ENEMY_RESET_MIN      1.4f    // seconds committed to the re-merge
 #define ENEMY_RESET_MAX      2.2f
@@ -337,6 +366,21 @@
 // So the discipline is HOW MANY ROUNDS OF MINE ARE STILL FLYING, which is the
 // question a pilot would actually ask. A sniper fires and watches. A slasher
 // empties the rack, because that IS the class. Zero means no limit.
+// RETIRED, AND KEPT ONLY FOR THE NUMBERS.
+//
+// These four -- the in-flight caps, ENEMY_FIRE_RANGE_K and ENEMY_ENGAGE_SPEED --
+// used to gate an enemy's trigger, and the player was never subject to any of
+// them. That made every balance question two questions, and it made an opponent
+// that was inconsistent rather than hard: none of it was visible from the
+// cockpit or written in the class table.
+//
+// The trigger now asks what the player's asks and nothing more: rounds in the
+// rack, a cooled trigger, a lock. Anything that should restrain a class goes in
+// the class table, where it binds both seats.
+//
+// The values stay here because they are TUNED, and because the judgements behind
+// them were sound even though the place they lived was not. If a class needs a
+// slower burst, the honest form of that is its own fire_gap.
 #define ENEMY_INFLIGHT_STANDOFF  1   // fire, then watch it all the way in
 #define ENEMY_INFLIGHT_FIGHTER   2
 #define ENEMY_INFLIGHT_GEOMETRY  2   // clean hits only: a second round is the follow-up

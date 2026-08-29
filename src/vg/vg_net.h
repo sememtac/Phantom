@@ -30,6 +30,14 @@ struct VgNetOut {
     // interval. This says the pilot wants to shoot, which is the half a rule
     // could never judge.
     bool  fire;
+    // WHICH MODE THE PILOT WOULD BE IN, as an index into VG_MODE_LIST. This is
+    // the strategy half: not where the stick goes this frame, but what the ship
+    // is trying to DO for the next few seconds.
+    //
+    // -1 when these weights were fitted before modes existed, or for a different
+    // number of them. The caller flies its class tactic in that case, exactly as
+    // it did before there was a network at all.
+    int   mode;
     // False when the network was not run. The one case that matters is a width
     // mismatch: the observation grew and nobody retrained.
     bool  valid;
