@@ -214,6 +214,24 @@
 #define ENEMY_SIX_COS        0.15f    // bearing to the attacker, behind this is "behind me"
 #define ENEMY_SIX_AIM_COS    0.80f    // ...and they are pointed this near to me
 #define ENEMY_SIX_SLOW       0.35f    // attacker throttle under this: outrun them
+
+// HOW MUCH A SLOW TARGET SHORTENS THE BREAK, as a fraction taken off the break
+// range at a dead stop.
+//
+// The break exists for two reasons and a parked ship defeats both. It stops a
+// merge becoming a collision -- but something that is not moving is not going to
+// run into anybody. And it stops a faster ship cornering you -- but a ship at
+// idle cannot chase what it just let go.
+//
+// So against somebody who has stopped, breaking off is not caution, it is a gift:
+// it hands them the seconds they need to line the next shot up, which is exactly
+// the loop a human finds in about a minute. Cut the throttle, hold the nose on
+// them, fire, and wait for the enemy to politely leave and come back.
+//
+// The AI knew the player's speed in exactly ONE place before this -- whether to
+// run or turn with somebody already on its six -- and nowhere in the decision
+// that mattered.
+#define ENEMY_PRESS_SLOW_K   0.70f
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 

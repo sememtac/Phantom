@@ -52,6 +52,26 @@ static Vec3 break_across(Vec3 along, Vec3 up, float toward_bias) {
     return vnorm(vadd(side, vmul(along, toward_bias)));
 }
 
+// HOW FAST THE PLAYER IS GOING, 0 at their own minimum and 1 at their maximum.
+//
+// Normalised against THEIR envelope rather than an absolute, because the question
+// is never "how many units a second" -- it is whether this ship can still chase,
+// dodge or run, and that is a question about how much of its own speed range it
+// has left.
+static float player_speed_norm(void) {
+    const float span = vg.spec->speed_max - vg.spec->speed_min;
+    if (span <= 1.0f) return 0.0f;
+    const float n = (vg.speed - vg.spec->speed_min) / span;
+    return n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
+}
+
+// The break range, shortened against somebody who has stopped. See the note at
+// ENEMY_PRESS_SLOW_K: a parked ship cannot be collided with, cannot chase, and
+// every break it is given is a free reset to aim with.
+static float break_range_for(float base) {
+    return base * (1.0f - ENEMY_PRESS_SLOW_K * (1.0f - player_speed_norm()));
+}
+
 // ---------------------------------------------------------------------------
 // THE TACTIC: what this class wants to be doing when nothing is trying to kill
 // it this instant.
@@ -74,7 +94,7 @@ static void tactic_fighter(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     // CLOSER before breaking, a nervy one leaves sooner. The extend that follows
     // is scaled the other way, so the same number makes one pilot commit and
     // another keep its distance.
-    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE / s->nerve) {
+    if (s->break_t > 0 || range < break_range_for(ENEMY_BREAK_RANGE / s->nerve)) {
         // Break off and extend. Holding the current heading here instead --
         // which pursuit had already pointed at the player -- flew them
         // straight into the player. Commit to a direction across AND away
@@ -310,6 +330,12 @@ static void tactic_dry(Ship* s, Vec3 to, float smax, Vec3* desired) {
 static void tactic_standoff(Ship* s, const ShipSpec* sp, Vec3 to, float range,
                             float smin, float smax, Vec3* desired) {
     const float hold = sp->lock_range * STANDOFF_HOLD_K;
+    // NOT shortened against a slow target, unlike the merge breaks. Those exist
+    // as caution about the other ship and a parked one is not worth being cautious
+    // about. This one is the CLASS: a standoff hull wants its range whoever it is
+    // facing, and handing it a reason to close because the target slowed down
+    // would trade the identity away for a press it does not need. It shoots from
+    // out there; that is the whole point of it.
     const float flee = ENEMY_BREAK_RANGE * STANDOFF_FLEE_K;
 
     if (s->break_t > 0 || range < flee) {
@@ -345,7 +371,8 @@ static void tactic_standoff(Ship* s, const ShipSpec* sp, Vec3 to, float range,
 static void tactic_slash(Ship* s, const ShipSpec* sp, Vec3 to, float range,
                          float close_r, float smin, float smax, Vec3* desired) {
     (void)sp;
-    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE * SLASH_BREAK_K / s->nerve) {
+    if (s->break_t > 0
+        || range < break_range_for(ENEMY_BREAK_RANGE * SLASH_BREAK_K / s->nerve)) {
         if (s->break_t <= 0) {
             s->break_dir = break_across(vnorm(to), s->up, -0.75f);
             s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN * SLASH_EXTEND_K,
@@ -370,7 +397,8 @@ static void tactic_slash(Ship* s, const ShipSpec* sp, Vec3 to, float range,
 static void tactic_geometry(Ship* s, const ShipSpec* sp, Vec3 to, float range,
                             float close_r, float smin, float smax, Vec3* desired) {
     (void)sp;
-    if (s->break_t > 0 || range < ENEMY_BREAK_RANGE * GEOM_BREAK_K / s->nerve) {
+    if (s->break_t > 0
+        || range < break_range_for(ENEMY_BREAK_RANGE * GEOM_BREAK_K / s->nerve)) {
         if (s->break_t <= 0) {
             s->break_dir = break_across(vnorm(to), s->up, -0.55f);
             s->break_t   = vg_frand(ENEMY_BREAK_TIME_MIN, ENEMY_BREAK_TIME_MAX)

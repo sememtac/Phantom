@@ -73,6 +73,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--net-survival")) vg_net_owns_survival = true;
         else if (!strcmp(argv[i], "--no-net-survival")) vg_net_owns_survival = false;
         else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
+        else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)

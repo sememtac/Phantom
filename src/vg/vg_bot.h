@@ -291,6 +291,10 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt);
 
 // Whether the seat is being flown by the bot at all. Off unless something turns
 // it on -- the desktop's --bot flag today.
+// Pins the scripted seat's throttle shut, so the parked-and-shooting exploit can
+// be measured. Test harness only; nothing in the game sets it.
+extern bool vg_bot_park;
+
 extern bool vg_bot_on;
 
 // WHICH PILOT FLIES IT: the trained network, or the hand-written policy.

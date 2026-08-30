@@ -19,6 +19,7 @@
 #include <stdio.h>
 #endif
 
+bool vg_bot_park = false;
 bool vg_bot_on = false;
 bool vg_bot_net = true;
 uint32_t vg_bot_net_us = 0;
@@ -867,6 +868,11 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     // The real control is a thumb on a strip and cannot jump, so this should not
     // either -- and a policy that learned to chatter the throttle would be
     // learning something the hardware cannot do.
+    // A TEST HARNESS ONLY. The exploit this exists to measure is a human one --
+    // cut the throttle, hold the nose on them, fire -- and the scripted seat never
+    // does it, so without this the fix for it cannot be measured at all.
+    if (vg_bot_park) want_speed = 0.0f;
+
     float t = in->throttle + (want_speed - in->throttle) * (dt * 2.6f);
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
