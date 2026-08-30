@@ -249,6 +249,25 @@
 // down enough for the lock to be quick, and points at them -- which is exactly
 // what the player is doing to it.
 #define ENEMY_PRESS_SLOW_AT  0.30f
+
+// The same test for a hull that closes for a living. It is higher because those
+// classes give up nothing by taking an aimed shot -- they were going to be in
+// close anyway -- so they should come for anybody who is loitering, not only for
+// somebody who has fully stopped.
+//
+// A STANDOFF hull keeps the lower number on purpose and it is not a tuning
+// choice. Measured at 0.55 it left its range against ordinary flying and its
+// damage went 0.55 -> 2.04, which is a sniper quietly becoming a brawler for the
+// second time in one evening. It abandons its distance for a target that has
+// actually parked, and for nothing less.
+#define ENEMY_PRESS_SLOW_CLOSE 0.55f
+
+// HOW FAR IN AN AIMED SHOT CLOSES BEFORE IT SETTLES, as a fraction of the
+// shooter's own lock range. Outside this it runs in at full throttle; inside it
+// slows down and works the lock. A firing solution held at maximum range is not
+// pressure -- the round takes so long to arrive that even a parked ship has
+// moved by the time it does.
+#define ENEMY_PRESS_CLOSE_K  0.35f
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 

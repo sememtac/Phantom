@@ -730,14 +730,37 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // point. It stays subject to every firing gate, and it stops the moment
         // they move again or the lock is in hand and the class can go back to
         // fighting properly.
-        if (!by_mode && player_speed_norm() < ENEMY_PRESS_SLOW_AT
-            && s->rounds > 0 && !s->locked && range < sp->lock_range) {
-            s->steer_by     = STEER_PRESS;
-            desired         = vsub(v3(0, 0, 0), s->pos);
-            // Slow, because the lock time is scaled by how fast the shooter is
-            // going -- LOCK_SPEED_PENALTY is 1.8, so a ship at full throttle needs
-            // nearly three times as long to earn the same lock. The player already
-            // knows this; it is why they stopped.
+        // HELD, and dropping out on `locked` was the whole of why this did not
+        // bite. The moment the lock was earned the ship went back to flying its
+        // curve, which pointed the nose away, which broke the lock, which brought
+        // it back here -- an oscillation that never held a firing solution long
+        // enough to spend more than a round or two of the rack.
+        //
+        // A pilot who has a parked target in their sights does not immediately
+        // look somewhere else. It holds until the rack is dry or they move.
+        const float press_at = (sp->tactic == TACTIC_STANDOFF)
+                             ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
+        if (!by_mode && player_speed_norm() < press_at
+            && s->rounds > 0 && range < sp->lock_range) {
+            s->steer_by = STEER_PRESS;
+            desired     = vsub(v3(0, 0, 0), s->pos);
+            // TWO PHASES, because holding a firing solution at fifteen hundred
+            // units is not pressure -- it is a threat nobody has to answer.
+            //
+            // Outside the working range, CLOSE, at speed: the lock is worthless
+            // until the round has a short enough flight for a parked ship to still
+            // be there when it arrives. Inside it, slow down, because the lock
+            // time is scaled by how fast the shooter is going -- LOCK_SPEED_PENALTY
+            // is 1.8, and a ship at full throttle needs nearly three times as long
+            // to earn the same lock. The player already knows this. It is why they
+            // stopped.
+            // SLOW THE WHOLE TIME, and closing at speed first was measured and
+            // thrown away: it arrives sooner and cannot shoot when it does,
+            // because LOCK_SPEED_PENALTY is 1.8 and a ship at full throttle needs
+            // nearly three times as long to earn the same lock. Damage against a
+            // parked target FELL on every class. At this speed the nose is already
+            // on them, so it drifts in while it works the lock, which is both the
+            // approach and the aim.
             s->target_speed = smin * 1.15f;
             by_mode         = true;
         }
