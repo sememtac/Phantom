@@ -262,6 +262,26 @@
 // actually parked, and for nothing less.
 #define ENEMY_PRESS_SLOW_CLOSE 0.55f
 
+// THE FIRING PASS: how long a ship commits its nose to a target, and how long it
+// waits before lining up another.
+//
+// The run ends by itself, or the break at ENEMY_BREAK_RANGE ends it -- which is
+// what makes the cycle line up, shoot, break, come back rather than one long
+// converging chase. The cooldown is what stops the break turning straight back
+// into a run and producing a merry-go-round.
+#define ENEMY_ATTACK_TIME_MIN 1.4f
+#define ENEMY_ATTACK_TIME_MAX 2.4f
+#define ENEMY_ATTACK_COOLDOWN 2.2f
+// How far out it is worth lining one up, as a fraction of the ship's lock range.
+// Beyond this the round spends too long in the air for a moving target to still
+// be there.
+#define ENEMY_ATTACK_RANGE_K  0.90f
+// ...and how close is too close to bother lining one up. Below this it is already
+// in the merge and the break owns the next second, not the aim. Deliberately far
+// under ENEMY_BREAK_RANGE: fights settle around 400 units, and a window that
+// started at the break range would almost never open.
+#define ENEMY_ATTACK_MIN      180.0f
+
 // HOW FAR IN AN AIMED SHOT CLOSES BEFORE IT SETTLES, as a fraction of the
 // shooter's own lock range. Outside this it runs in at full throttle; inside it
 // slows down and works the lock. A firing solution held at maximum range is not

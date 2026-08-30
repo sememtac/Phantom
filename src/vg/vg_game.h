@@ -108,6 +108,19 @@ struct Ship {
     float evade_t;        // >0 while breaking away from an incoming missile
     Vec3  evade_dir;
     float break_t;        // >0 while extending away after a firing pass
+    // >0 while COMMITTED TO A FIRING PASS: nose on them, slow enough to earn the
+    // lock, accepting the closure. The tactics fly a curve that deliberately
+    // misses, which is right for positioning and is exactly why the nose is never
+    // on anybody -- measured, an enemy holds its aim 76 degrees off target and has
+    // a lock, a round and a cool trigger together on 0.7% of frames.
+    //
+    // A run has to be COMMITTED or it is not a run. Re-deciding every frame gives
+    // a ship that half-points at somebody forever and never earns anything.
+    float attack_t;
+    // ...and how long before it may line up another. Without it a ship that broke
+    // off at 560 would turn straight back in, which is a merry-go-round rather
+    // than a fight.
+    float attack_cd;
     Vec3  break_dir;
     Vec3  offset_dir;     // stable lateral offset for the aim point
     // >0 while defending against something sitting on its tail. Separate from

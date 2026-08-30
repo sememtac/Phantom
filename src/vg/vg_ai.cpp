@@ -738,9 +738,46 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         //
         // A pilot who has a parked target in their sights does not immediately
         // look somewhere else. It holds until the rack is dry or they move.
+        // A FIRING PASS AT SOMETHING THAT IS MOVING.
+        //
+        // The slow-target press below is the easy half: a parked ship cannot
+        // punish an approach, so pointing at it costs nothing. This is the other
+        // half, and it costs something on purpose -- lining up on a ship that can
+        // shoot back means being pointed at by it too. That is what a pass IS.
+        //
+        // Committed, because a run decided fresh every frame is a ship that
+        // half-points at somebody forever. It ends on its own clock, or the break
+        // at ENEMY_BREAK_RANGE ends it -- and that is what turns a converging
+        // chase into line up, shoot, break, come back.
+        if (s->attack_cd > 0.0f) s->attack_cd -= dt;
+        if (s->attack_t  > 0.0f) s->attack_t  -= dt;
+        // NOT A STANDOFF HULL, for the third time tonight and for the same reason
+        // each time. A firing pass is a decision to close, and its lock range is
+        // 4200 -- so "in the window" is almost always true and it would spend the
+        // fight running at people. Measured, its damage in ordinary flying went
+        // 0.55 -> 1.94: the sniper stops sniping. It already has an aimed shot for
+        // a target that has parked, which is the only time it should leave.
+        if (sp->tactic != TACTIC_STANDOFF
+            && s->attack_t <= 0.0f && s->attack_cd <= 0.0f && reacted
+            && s->rounds > 0 && !s->locked
+            && range < sp->lock_range * ENEMY_ATTACK_RANGE_K
+            && range > ENEMY_ATTACK_MIN) {
+            s->attack_t  = vg_frand(ENEMY_ATTACK_TIME_MIN, ENEMY_ATTACK_TIME_MAX)
+                         * s->pilot->nerve;
+            s->attack_cd = ENEMY_ATTACK_COOLDOWN;
+        }
+
         const float press_at = (sp->tactic == TACTIC_STANDOFF)
                              ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
-        if (!by_mode && player_speed_norm() < press_at
+        if (!by_mode && s->attack_t > 0.0f && s->rounds > 0) {
+            s->steer_by     = STEER_PRESS;
+            desired         = vsub(v3(0, 0, 0), s->pos);
+            // Slow for the same reason the parked press is slow: LOCK_SPEED_PENALTY
+            // is 1.8, so a ship at full throttle needs nearly three times as long
+            // to earn the lock it came here for.
+            s->target_speed = smin * 1.25f;
+            by_mode         = true;
+        } else if (!by_mode && player_speed_norm() < press_at
             && s->rounds > 0 && range < sp->lock_range) {
             s->steer_by = STEER_PRESS;
             desired     = vsub(v3(0, 0, 0), s->pos);
