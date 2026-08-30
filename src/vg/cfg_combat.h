@@ -232,6 +232,23 @@
 // run or turn with somebody already on its six -- and nowhere in the decision
 // that mattered.
 #define ENEMY_PRESS_SLOW_K   0.70f
+
+// HOW SLOW A TARGET HAS TO BE before the AI stops flying a pattern and takes an
+// aimed shot at it, as a fraction of that ship's own speed range.
+//
+// An enemy's aim_dir IS its nose -- see update_aim, which only adds the pilot's
+// error to s->fwd. So it can only lock what it happens to be flying at, and what
+// it flies is a positioning curve that deliberately misses. Measured, it holds
+// its aim 76 degrees off target on average and has a lock, a round and a cool
+// trigger together on 0.7% of frames. It never TAKES a shot; it flies, and now
+// and then the curve points the right way.
+//
+// A moving target is worth flying a curve at, because a straight approach is
+// where they get their own shot. A parked one is not: it cannot punish the
+// approach and it cannot leave. So below this, the ship stops manoeuvring, slows
+// down enough for the lock to be quick, and points at them -- which is exactly
+// what the player is doing to it.
+#define ENEMY_PRESS_SLOW_AT  0.30f
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 

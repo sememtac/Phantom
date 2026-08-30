@@ -65,6 +65,24 @@ static float player_speed_norm(void) {
     return n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
 }
 
+// THE LATERAL AIM OFFSET, collapsed against somebody who has stopped.
+//
+// Every tactic aims at a point BESIDE the player rather than at them, so a
+// pursuit curve produces a firing pass instead of a collision. The nose follows
+// the flight path, so that offset is also the reason the nose is not on them --
+// measured, an enemy holds its aim 76 degrees off the target on average, against
+// a lock cone of 31, and has a lock, a round and a cool trigger all at once on
+// 0.7% of frames. It is not that it cannot lock a parked ship quickly. It is that
+// it never looks at one.
+//
+// The caution is real against a ship that is moving, because both of you are
+// choosing where to be. Against one that has parked it is a courtesy: it cannot
+// close the distance you leave, and it cannot make you hit it. So the offset goes
+// away as their speed does, the nose comes onto them, and the lock is earnable.
+static float aim_offset_for(float base) {
+    return base * (1.0f - ENEMY_PRESS_SLOW_K * (1.0f - player_speed_norm()));
+}
+
 // The break range, shortened against somebody who has stopped. See the note at
 // ENEMY_PRESS_SLOW_K: a parked ship cannot be collided with, cannot chase, and
 // every break it is given is a free reset to aim with.
@@ -113,7 +131,7 @@ static void tactic_fighter(Ship* s, const ShipSpec* sp, Vec3 to, float range,
         // Aim at a point BESIDE the player. A pursuit curve that converges
         // perfectly on its aim point then produces a firing pass rather than
         // a collision.
-        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET);
+        Vec3 aim  = vmul(s->offset_dir, aim_offset_for(ENEMY_OFFSET));
         *desired  = vsub(aim, s->pos);
         // Close fast, then bleed off to a speed they can actually fight at --
         // the same decision the player has to make.
@@ -385,7 +403,7 @@ static void tactic_slash(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     } else {
         // A wide offset, so the pass CROSSES instead of converging. A slash that
         // converges is a joust, and a joust is what the fighter already does.
-        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET * SLASH_OFFSET_K);
+        Vec3 aim  = vmul(s->offset_dir, aim_offset_for(ENEMY_OFFSET * SLASH_OFFSET_K));
         *desired  = vsub(aim, s->pos);
         s->target_speed = (range > close_r) ? smax
                         : smin + (smax - smin) * SLASH_SPEED_K;
@@ -408,7 +426,7 @@ static void tactic_geometry(Ship* s, const ShipSpec* sp, Vec3 to, float range,
         *desired = s->break_dir;
         s->target_speed = smax;
     } else {
-        Vec3 aim  = vmul(s->offset_dir, ENEMY_OFFSET * GEOM_OFFSET_K);
+        Vec3 aim  = vmul(s->offset_dir, aim_offset_for(ENEMY_OFFSET * GEOM_OFFSET_K));
         *desired  = vsub(aim, s->pos);
         s->target_speed = (range > close_r) ? smax * 0.85f
                         : smin + (smax - smin) * GEOM_SPEED_K;
@@ -701,6 +719,29 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 by_mode = false;   // PRESS, or no opinion at all
                 break;
         }
+        // THE AIMED SHOT, and it is the one thing the tactics never do.
+        //
+        // Every one of them flies a curve past the player. That is right against
+        // somebody who is moving -- a straight run at a ship that can shoot back
+        // is how you get shot -- but against one that has parked it means the nose
+        // is never on them and the lock is never earned. See ENEMY_PRESS_SLOW_AT.
+        //
+        // So: stop flying the pattern, slow to where the lock comes quickly, and
+        // point. It stays subject to every firing gate, and it stops the moment
+        // they move again or the lock is in hand and the class can go back to
+        // fighting properly.
+        if (!by_mode && player_speed_norm() < ENEMY_PRESS_SLOW_AT
+            && s->rounds > 0 && !s->locked && range < sp->lock_range) {
+            s->steer_by     = STEER_PRESS;
+            desired         = vsub(v3(0, 0, 0), s->pos);
+            // Slow, because the lock time is scaled by how fast the shooter is
+            // going -- LOCK_SPEED_PENALTY is 1.8, so a ship at full throttle needs
+            // nearly three times as long to earn the same lock. The player already
+            // knows this; it is why they stopped.
+            s->target_speed = smin * 1.15f;
+            by_mode         = true;
+        }
+
         // PRESS is the network's own flying: closing and taking the shot is what
         // it was fitted to do, so there is nothing to add. No opinion at all falls
         // back to the class tactic, exactly as before there were modes.
