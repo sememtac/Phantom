@@ -199,7 +199,25 @@ void vg_bot_observe(VgObs* o) {
 // It is not a takeover. It declines any class it was not trained on, it declines
 // near the boundary, and every firing gate below it is untouched, so the tactics
 // still fly most of what the player meets.
-bool vg_enemy_net = true;
+// OFF, AND THAT IS A MEASUREMENT RATHER THAN A RETREAT.
+//
+// The network is a function of one frame. It has no plan, and where it flies it
+// does not merely fail to make one -- it REPLACES the one the tactics have.
+// Counted over a fight, an AEGIS flown by the network spends 67% of its frames
+// in the network and 0% in evade, tail, extend, press or its class tactic. The
+// same ship on the tactics spends its time across all of them. Every behaviour
+// that makes a class read as a pilot rather than a tracker lives in that
+// second row.
+//
+// The cost of turning it off is 5% of an AEGIS's damage and 39% of a CHARIOT's,
+// measured. The gain is that break, extend, reset and press exist again on every
+// class -- and until they do, no question about class balance can be answered,
+// because the situations the classes are designed around never occur.
+//
+// --enemy-net turns it back on. It should go back on for good when it can hold a
+// plan rather than a frame: see the mode layer in vg_modes.h, which is the shape
+// of that, and is not there yet.
+bool vg_enemy_net = false;
 // ON, measured. Asked before the missile-evasion and tail rules rather than
 // after them, the network both deals more damage and dies less, on every seed:
 //

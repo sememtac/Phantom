@@ -103,6 +103,26 @@ struct ShipSpec {
     // ...and the ceiling. Equal to msl_speed for a class that does not
     // accelerate, so the two fields together are always the true speed range.
     float msl_speed_max;
+    // WHAT THE ROUND HAS TO BE DOING TO EARN THAT ACCELERATION, as the cosine
+    // between its own heading and the bearing to its target.
+    //
+    // -2.0f means no requirement, and a cosine can never reach it -- the same
+    // idiom msl_reacq_cos uses for "never". A class with the sentinel accelerates
+    // whenever it is guided, which is BALLISTA: there the engine is the LAUNCHER's
+    // aim, and holding somebody in view is what pays.
+    //
+    // A real cosine here makes the engine the ROUND's own geometry instead, and
+    // that is LANCE. Because the seeker flies lead pursuit, this splits the class
+    // by the shape of the fight rather than by any rule about it: head-on and
+    // stern chase put almost no lead on the round, its nose sits on the target,
+    // and it spools up the whole way in. A crossing shot is aimed AHEAD of where
+    // they are, so the nose is off the bearing and the round never gets fast.
+    //
+    // It compounds in both directions on purpose. A round that is not
+    // accelerating stays slow, which needs MORE lead, which keeps it off the
+    // nose. One that is accelerating gets faster, which needs LESS lead, which
+    // holds it on. Good geometry runs away with it; bad geometry never recovers.
+    float msl_accel_cos;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a

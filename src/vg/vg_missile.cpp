@@ -280,7 +280,20 @@ void vg_update_missiles(float dt) {
         // Nothing decays. A round that has been let go is not slowed down as
         // well -- losing the lock is already the whole punishment, and taking the
         // speed back would mean the pilot is charged twice for one mistake.
-        if (m->locked && m->dark_t <= 0.0f && m->spec->msl_accel > 0.0f) {
+        // HOW STRAIGHT IT IS FLYING AT THEM, worked out before the engine rather
+        // than after it, because for one class this IS the engine. Left at -2.0f
+        // when there is nothing to measure against, which no cosine can reach and
+        // which therefore reads as "no geometry" rather than as bad geometry.
+        float align = -2.0f;
+        if (m->locked && have_target) {
+            const Vec3  d = vsub(tpos, m->pos);
+            const float r = vlen(d);
+            if (r > 1e-3f) align = vdot(m->dir, vmul(d, 1.0f / r));
+        }
+
+        if (m->locked && m->dark_t <= 0.0f && m->spec->msl_accel > 0.0f
+            && (m->spec->msl_accel_cos < -1.0f
+                || align >= m->spec->msl_accel_cos)) {
             m->speed += m->spec->msl_accel * dt;
             if (m->speed > m->spec->msl_speed_max) m->speed = m->spec->msl_speed_max;
         }
