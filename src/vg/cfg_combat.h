@@ -282,6 +282,22 @@
 // started at the break range would almost never open.
 #define ENEMY_ATTACK_MIN      180.0f
 
+// THE HARD FLOOR ON A MERGE, below which a ship bends away whatever else it had
+// planned.
+//
+// Contact is INSTANT DEATH for the player -- vg_states.cpp calls vg_kill_player
+// on any touch, no hull check -- so the cost of an accidental merge is not a
+// dent, it is the match. The break at ENEMY_BREAK_RANGE was supposed to prevent
+// this, but it lives inside the class tactic and anything above the tactic
+// preempts it: evading a missile, answering a tail, or a firing pass. Played,
+// that reads as the enemy laying a trap.
+//
+// So this sits high in the chain instead, under only the wall and a suicide run
+// -- the wall is also fatal, and a pilot who has DECIDED to ram is doing this on
+// purpose and has already announced it. The network has had exactly this floor
+// since it started flying; the tactics never did.
+#define ENEMY_MERGE_FLOOR    150.0f
+
 // HOW FAR IN AN AIMED SHOT CLOSES BEFORE IT SETTLES, as a fraction of the
 // shooter's own lock range. Outside this it runs in at full throttle; inside it
 // slows down and works the lock. A firing solution held at maximum range is not

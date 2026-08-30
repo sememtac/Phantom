@@ -537,6 +537,18 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->evade_t = 0;
         s->break_t = 0;
 
+    // TOO CLOSE, AND CONTACT KILLS THE PLAYER OUTRIGHT. See ENEMY_MERGE_FLOOR:
+    // this is the floor the network has always had and the tactics never did,
+    // and without it an aggressive pilot converts its own aggression into the
+    // player's death by touching them. Under the wall and under a suicide run,
+    // because one is equally fatal and the other is a decision already taken.
+    } else if (vlen2(s->pos) < ENEMY_MERGE_FLOOR * ENEMY_MERGE_FLOOR) {
+        s->steer_by = STEER_EVADE;
+        desired     = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.75f);
+        s->target_speed = smax;
+        s->attack_t = 0.0f;      // the pass is over; it got what it was going to get
+        s->break_t  = 0.0f;
+
     // NOTHING IS WORKING, SO STOP DOING IT. Committed for a couple of seconds:
     // away and across, at speed, with the approach offset re-rolled so the
     // re-merge comes from a side the last one did not.
@@ -766,6 +778,19 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                          * s->pilot->nerve;
             s->attack_cd = ENEMY_ATTACK_COOLDOWN;
         }
+
+        // THE PASS ENDS AT THE BREAK RANGE, and leaving this out made it a ram.
+        //
+        // A run sets by_mode, which skips the class tactic -- and the break lives
+        // INSIDE the tactic. So the nose stayed on the player for the whole
+        // committed window with nothing left to call it off, and a manoeuvre meant
+        // to be line up, shoot, break became line up, shoot, arrive. Played, it
+        // read as the enemy laying a trap.
+        //
+        // Cancelling the run here rather than breaking directly hands the frame
+        // back to the tactic, whose own break test is immediately true at this
+        // range. One break, owned by one piece of code.
+        if (s->attack_t > 0.0f && range < ENEMY_BREAK_RANGE) s->attack_t = 0.0f;
 
         const float press_at = (sp->tactic == TACTIC_STANDOFF)
                              ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
