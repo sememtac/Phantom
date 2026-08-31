@@ -298,12 +298,6 @@
 // since it started flying; the tactics never did.
 #define ENEMY_MERGE_FLOOR    150.0f
 
-// HOW FAR IN AN AIMED SHOT CLOSES BEFORE IT SETTLES, as a fraction of the
-// shooter's own lock range. Outside this it runs in at full throttle; inside it
-// slows down and works the lock. A firing solution held at maximum range is not
-// pressure -- the round takes so long to arrive that even a parked ship has
-// moved by the time it does.
-#define ENEMY_PRESS_CLOSE_K  0.35f
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 

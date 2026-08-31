@@ -54,7 +54,13 @@ static uint32_t s_upd_mark;
 // goes into the world transform rather than into the camera, which is the whole
 // difference between a tumble and a rotated picture: once it is in R, the next
 // frame's pitch and yaw act in the rolled frame and the path actually
-// corkscrews. Flight passes zero -- the player's roll stays cosmetic.
+// corkscrews.
+//
+// FLIGHT PASSES vg_roll_angle, and this line used to say it passed zero and that
+// the player's roll was cosmetic. That stopped being true when roll gained its
+// own authority and its own per-class rate -- see the LANCE and CHARIOT note in
+// vg_roll_angle above. vg_states.cpp:678, :710 and :889 all pass it. The cinematic
+// and the attract mode still pass zero, which is what the old line described.
 // The roll command as an angle for this frame. Lives here rather than at the
 // three call sites because it is part of the flight model, and because the
 // throttle it depends on is the smoothed one -- roll authority should lag a
