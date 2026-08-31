@@ -77,7 +77,23 @@
 // tighter than this could not be turned around inside.
 #define ARENA_SPHERE_R       4200.0f
 #define ARENA_TORUS_RMAJ     4200.0f
-#define ARENA_TORUS_RMIN     1100.0f  // room to manoeuvre, tight enough to read
+// THE TUBE, and it was 1100 -- which sounds roomy until you put the AI's own
+// margin next to it. Pilots turn inward at ARENA_ENEMY_MARGIN, 700 units from the
+// wall, so only 400 of that 1100 was space anybody could fight in: 36% of the
+// radius. Measured, wall avoidance was 27-34% of EVERY pilot's frames, and the
+// player spent half the match inside the margin.
+//
+// At 1900 the free core goes from 400 to 1200 and the player's time near the wall
+// falls from 49.5% to 27.4%. It costs NOTHING on the board: the primitive stage
+// measures 2341 us at 1100 and 2341 us at 1900, and the worst frame does not move
+// -- the hoops are further away, so they are bigger and fainter rather than more
+// numerous.
+//
+// WHAT IT DOES NOT FIX, measured at every size from 1100 to 2400: the median
+// fighting range (about 610), the escape rate (about 30%), and the damage either
+// way. Fights collapse to knife range because the slower ship cannot refuse a
+// merge, and that is the pursuit, not the room.
+#define ARENA_TORUS_RMIN     1900.0f  // room to manoeuvre, tight enough to read
                                       // as a corridor
 
 
