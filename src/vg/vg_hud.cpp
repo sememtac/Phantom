@@ -461,23 +461,34 @@ void vg_draw_steer_indicator(const VgInput* in) {
 void vg_draw_lock_circle(void) {
     const ShipSpec* sp = vg.spec;
     if (!sp || sp->lock_hold_cos < -1.0f) return;
+    // ONLY WHEN THERE IS SOMETHING TO LOCK. A ring drawn over an empty sky is
+    // furniture; drawn the moment a contact is being worked it is an instrument.
+    if (vg_wpn.target < 0) return;
 
     const float c = sp->lock_cos < 0.999f ? sp->lock_cos : 0.999f;
-    const float r = FOCAL * tanf(acosf(c));
+    // DRAWN INSIDE THE CONE, at LOCK_RING_K of it. The ring is therefore a
+    // GUARANTEE rather than a boundary: hold them inside it and the lock is
+    // certain, because the angle actually enforced is wider than the one shown.
+    // A ring sitting exactly on the threshold flickers with the target, which
+    // reads as the instrument being unreliable rather than the shot being
+    // marginal.
+    const float r = FOCAL * tanf(acosf(c)) * LOCK_RING_K;
     if (r < 8.0f || r > SCR_W) return;
 
-    // Brighter once it is holding something, so the ring answers the question
-    // "am I keeping them?" without the pilot looking away from the enemy.
-    const uint16_t col = vg_wpn.locked ? INK_BRIGHT : INK_FAINT;
-    const int SEG = 28;
+    // ALWAYS ON THE BRIGHT RAMP. It is the one thing on the panel the pilot is
+    // supposed to be looking through, and a faint ring over a lit enemy is a ring
+    // nobody sees. It goes to the top of the ramp while the lock is held, so the
+    // change still answers "am I keeping them?" without a glance away.
+    const uint16_t col = vg_wpn.locked ? INK_MAX : INK_BRIGHT;
+    const int SEG = 64;
     float px = SCR_W * 0.5f + r, py = SCR_H * 0.5f;
     for (int i = 1; i <= SEG; i++) {
         const float a2 = (float)i * (6.28318531f / (float)SEG);
         const float nx = SCR_W * 0.5f + r * cosf(a2);
         const float ny = SCR_H * 0.5f + r * sinf(a2);
-        // Dashed: a solid ring this size reads as a windscreen crack on a vector
-        // panel, and the gaps cost nothing to draw.
-        if (i & 1) vg_line_w(px, py, nx, ny, col, 1);
+        // Two drawn, one skipped: a finer dash than the old alternate-segment
+        // pattern, which at this radius read as a dotted line rather than a ring.
+        if (i % 3) vg_line_w(px, py, nx, ny, col, 1);
         px = nx; py = ny;
     }
 }

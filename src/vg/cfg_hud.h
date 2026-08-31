@@ -411,3 +411,11 @@
 // a second a step lasts about a frame, and the ramp is a colour sweep rather than a brightness,
 // so nothing reads as stepped.
 #define CANOPY_INTRO_QSTEP     24
+
+// HOW BIG THE LOCK RING IS DRAWN, as a fraction of the cone it stands for.
+//
+// Under 1.0 on purpose. The ring is a GUARANTEE and not a boundary: inside it the
+// lock is certain, because the angle the game actually enforces is wider than the
+// one on the panel. Drawn exactly on the threshold it flickers with the target,
+// and an instrument that flickers reads as broken rather than as marginal.
+#define LOCK_RING_K          0.60f
