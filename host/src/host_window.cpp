@@ -1,4 +1,5 @@
 #include "host_window.h"
+#include "vg_sim.h"   // vg_headless
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -12,6 +13,15 @@ static bool      s_quit    = false;
 static uint32_t* s_bgra    = nullptr;   // SCR_W * SCR_H, what GDI actually blits
 static BITMAPINFO s_bmi;
 static bool       s_capture = true;
+// LET GO OF THE POINTER. Toggled with F2, and forced off for a headless run.
+//
+// The fence is right while somebody is flying -- where the pointer sits inside it
+// IS the stick -- and wrong the rest of the time. It was on whenever the window
+// had focus, which meant the only way to reach another window was alt-tab, and
+// that is painful when several instances are open for testing. A headless run is
+// worse: it opens a window it never draws into, and that window was fencing the
+// desktop's pointer for the whole run.
+static bool       s_fence_wanted = true;
 
 // THE VIEWPORT: where the picture actually sits inside the client area.
 //
@@ -189,7 +199,15 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return TRUE;
         }
 
+        // F2 LETS THE POINTER OUT, and puts it back. Nothing else in the game
+        // uses it, and a key is the only way out of a fence that is working: the
+        // pointer cannot reach another window to click on by definition.
         case WM_KEYDOWN:
+            if (w == VK_F2) {
+                s_fence_wanted = !s_fence_wanted;
+                if (!s_fence_wanted) { ClipCursor(nullptr); ShowCursor(TRUE); }
+                return 0;
+            }
             // Escape is the PWR key now -- the menu key -- so it is read like
             // any other key rather than acted on here.
             //
@@ -258,7 +276,11 @@ bool host_window_open(int scale, const char* title) {
         RegisterRawInputDevices(&rid, 1, sizeof(rid));
     }
 
-    ShowWindow(s_hwnd, SW_SHOW);
+    // NOT SHOWN WHEN HEADLESS. The window still exists, because the game reads the
+    // keyboard and the pointer through it and the message pump has to have
+    // somewhere to arrive -- but a run that draws nothing should not take the
+    // desktop's focus, and it certainly should not fence the pointer.
+    ShowWindow(s_hwnd, vg_headless ? SW_HIDE : SW_SHOW);
     SetForegroundWindow(s_hwnd);
     return true;
 }
@@ -305,7 +327,7 @@ bool host_window_pump(void) {
     // or a resize is followed with no message to hook. It is dropped the moment
     // focus goes -- on WM_KILLFOCUS above and here as the standing state -- so
     // alt-tab is never trapped.
-    if (s_hwnd && !s_quit && host_window_focused()) {
+    if (s_fence_wanted && !vg_headless && s_hwnd && !s_quit && host_window_focused()) {
         RECT rc;
         if (view_rect_screen(s_hwnd, &rc)) ClipCursor(&rc);
     } else {
@@ -322,7 +344,8 @@ bool host_window_pump(void) {
     //
     // Hidden while flying all the same. There is nothing to point at, and a
     // cursor sitting in the canopy is the desktop showing through.
-    if (s_capture && s_hwnd && !s_quit && host_window_focused()) {
+    if (s_fence_wanted && !vg_headless && s_capture && s_hwnd && !s_quit
+        && host_window_focused()) {
         while (ShowCursor(FALSE) >= 0) {}
     } else {
         while (ShowCursor(TRUE) < 0) {}
