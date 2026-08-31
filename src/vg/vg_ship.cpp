@@ -121,7 +121,22 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // and the reach are the same distance, so a shot taken at its own range
         // arrives at full speed and a knife-range shot gains nothing at all.
         /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f,
-        /* seeker arc */ 1.20f, 10.0f, 0.35f,
+        // FIRE AND FORGET, which is the half of the class the round could not keep.
+        //
+        // The bargain is that the PILOT earns the shot by lining the geometry up,
+        // and is then free to break away -- unlike a semi-active round, which is
+        // tethered to whoever fired it. That only works if the round can hold what
+        // it left with. At 1.20 it could not: the nimblest hull in the game turns
+        // 2.20, so any jink shook it, and measured it landed 11% of what it fired
+        // and put 279 rounds into the arena wall.
+        //
+        // 2.80 turns 27% harder than anything that can be aimed at, so a break has
+        // to be genuinely good rather than merely a turn. THE LINEAR IDENTITY DOES
+        // NOT LIVE HERE any more, and it is better where it now sits: a target that
+        // jinks forces the round to turn, turning costs it the acceleration, and it
+        // arrives slow. Set the geometry up and it is fast and unanswerable; make
+        // it work for the intercept and it is neither.
+        /* seeker arc */ 2.80f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_GEOMETRY,
         /* fire ctrl  */ 0.90f, 0.90f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
