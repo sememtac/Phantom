@@ -123,6 +123,19 @@ struct ShipSpec {
     // nose. One that is accelerating gets faster, which needs LESS lead, which
     // holds it on. Good geometry runs away with it; bad geometry never recovers.
     float msl_accel_cos;
+    // WHAT IS LEFT OF THE WARHEAD AT THE FAR END OF ITS REACH, as a fraction.
+    // 1.0f means no falloff, which is three of the four.
+    //
+    // A long shot is not free. A round that has flown two thousand units arrives
+    // with less than one that has flown two hundred, and that turns a reach class
+    // from "shoot from wherever they cannot answer" into a weapon with a BAND it
+    // wants to be in. Without it, the biggest lock range in the game plus a
+    // parked ship is simply the best play available -- the enemy locks at 1600,
+    // BALLISTA at 4200, and nothing that happens in between is a fight.
+    //
+    // It runs over the ship's own lock_range, so it is the class describing its
+    // own envelope rather than a distance imposed from outside.
+    float msl_reach_floor;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a

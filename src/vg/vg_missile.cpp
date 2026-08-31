@@ -51,6 +51,7 @@ bool vg_launch_missile(bool from_player, Vec3 pos, Vec3 dir, int target, int sho
     m->locked      = true;
     m->lost_at     = -1.0f;
     m->dark_t      = 0.0f;
+    m->travelled   = 0.0f;
     m->spec        = spec;
     m->pos         = pos;
     m->dir         = vnorm(dir);
@@ -152,7 +153,21 @@ static float impact_damage(const Missile* m, float range) {
     const ShipSpec* w = m->spec;
     float t = (w->msl_splash > 0.0f) ? 1.0f - range / w->msl_splash : 1.0f;
     if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
-    return w->msl_damage * (w->msl_graze_floor + (1.0f - w->msl_graze_floor) * t);
+    float dmg = w->msl_damage * (w->msl_graze_floor + (1.0f - w->msl_graze_floor) * t);
+
+    // ...AND HOW FAR IT CAME TO GET HERE. See msl_reach_floor.
+    //
+    // Two different falloffs, and they are asking different questions. The one
+    // above is about AIM -- how near the middle the fuse went off. This one is
+    // about RANGE, and it exists because the two are otherwise independent: a
+    // dead centre hit from four thousand units was worth exactly as much as one
+    // from two hundred, so the safest place to shoot from was also the best.
+    if (w->msl_reach_floor < 1.0f && w->lock_range > 1.0f) {
+        float u = m->travelled / w->lock_range;
+        if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
+        dmg *= 1.0f - (1.0f - w->msl_reach_floor) * u;
+    }
+    return dmg;
 }
 
 static void hit_enemy(int index, float dmg) {
@@ -383,6 +398,7 @@ void vg_update_missiles(float dt) {
 
         m->pos = vadd(m->pos, vmul(m->dir, m->speed * dt));
 
+        m->travelled += m->speed * dt;
         trail_sample(m->trail, dt, m->pos, TRAIL_SAMPLE_DT);
 
         // A missile that runs out of world detonates against it, which makes

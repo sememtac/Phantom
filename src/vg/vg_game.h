@@ -248,6 +248,10 @@ struct Missile {
     // guiding on memory until this passes MSL_COAST_TIME, and only then gives up
     // -- see the note at the illumination test in vg_missile.cpp.
     float   dark_t;
+    // HOW FAR IT HAS ACTUALLY FLOWN, in world units. Not derivable from age: a
+    // round that accelerates covers very different ground in the same seconds,
+    // and both accelerating classes vary by more than a factor of two.
+    float   travelled;
     // The bare ring: no power bytes, because a missile burns at one brightness.
     MissileTrailRing trail;
 };
