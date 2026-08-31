@@ -181,7 +181,22 @@
 // own distance -- so the wall you are closing on lights up while the far side
 // stays cool, telling you WHERE the danger is rather than merely that there is
 // some.
-#define ARENA_DANGER_RANGE   1400.0f  // TEMP for a visual check
+//
+// A FRACTION OF THE TUBE, because it was 1400 against a tube of radius 1100 and
+// the gradient is the whole point of it. A range wider than the tube cannot
+// produce one: every segment sits inside it, everything reads maximally red at
+// once, and a directional hint that points everywhere points nowhere. It was
+// marked TEMP for a visual check and the check had gone stale.
+//
+// 0.65 keeps it WIDE on purpose. This is the soft layer -- see the note below on
+// ARENA_ALERT_RANGE and ARENA_TINT_RANGE, which interrupt and are therefore far
+// tighter. Making this one narrow would just be a second annunciator. What it
+// buys instead is a calm core: inside the middle third of the tube nothing
+// reddens, so the reddening means something when it starts.
+//
+// Relative rather than absolute so that the next change to the arena carries it
+// along. This constant has already gone stale once that way.
+#define ARENA_DANGER_RANGE   (ARENA_TORUS_RMIN * 0.65f)
 
 #define ARENA_ENEMY_MARGIN   700.0f   // AI turns inward inside this
 #define ARENA_SPAWN_MARGIN   380.0f   // spawns get pushed this far off the wall
