@@ -444,6 +444,44 @@ void vg_draw_steer_indicator(const VgInput* in) {
 #endif
 }
 
+// THE LOCK CIRCLE, for a class that has a real one.
+//
+// A semi-active weapon asks the pilot to keep the target inside a fixed area of
+// the SCREEN -- not near the brackets, which follow the enemy, but inside a ring
+// that never moves. Hold them there and the round arrives; let them cross the
+// edge and the lock is gone and every round in the air with it.
+//
+// Drawn only for a class whose lock_hold_cos is a real cosine. The others use the
+// -2.0f sentinel, which means "hold it while they are anywhere on screen", and
+// there is no circle to draw because there is no circle: the whole viewport is
+// the cone and the canopy aperture already says so.
+//
+// The radius is the cone, not a decoration: FOCAL * tan(acos(lock_cos)) is where
+// that angle lands on the panel, so what is drawn is exactly what is enforced.
+void vg_draw_lock_circle(void) {
+    const ShipSpec* sp = vg.spec;
+    if (!sp || sp->lock_hold_cos < -1.0f) return;
+
+    const float c = sp->lock_cos < 0.999f ? sp->lock_cos : 0.999f;
+    const float r = FOCAL * tanf(acosf(c));
+    if (r < 8.0f || r > SCR_W) return;
+
+    // Brighter once it is holding something, so the ring answers the question
+    // "am I keeping them?" without the pilot looking away from the enemy.
+    const uint16_t col = vg_wpn.locked ? INK_BRIGHT : INK_FAINT;
+    const int SEG = 28;
+    float px = SCR_W * 0.5f + r, py = SCR_H * 0.5f;
+    for (int i = 1; i <= SEG; i++) {
+        const float a2 = (float)i * (6.28318531f / (float)SEG);
+        const float nx = SCR_W * 0.5f + r * cosf(a2);
+        const float ny = SCR_H * 0.5f + r * sinf(a2);
+        // Dashed: a solid ring this size reads as a windscreen crack on a vector
+        // panel, and the gaps cost nothing to draw.
+        if (i & 1) vg_line_w(px, py, nx, ny, col, 1);
+        px = nx; py = ny;
+    }
+}
+
 // Corner brackets around the tracked enemy: dim and wide while acquiring, tight
 // and bright once locked. Carries the target's hull bar.
 void vg_draw_lock_box(const VgCam& cam) {

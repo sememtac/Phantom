@@ -254,7 +254,10 @@ void vg_update_missiles(float dt) {
                 if (m->dark_t <= 0.0f) g_msl_dark[w]++;
                 m->dark_t += dt;
             }
-            if (!lit && m->dark_t > MSL_COAST_TIME) {
+            // ALL OR NOTHING, when the class asks for it. msl_coast of zero
+            // finishes the round on the frame the light goes out -- there is no
+            // grace, and losing them for an instant costs the shot.
+            if (!lit && m->dark_t > m->spec->msl_coast) {
                 m->locked  = false;
                 m->lost_at = m->age;
                 const int w = m->from_player ? 1 : 0;

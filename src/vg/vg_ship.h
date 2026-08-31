@@ -136,6 +136,14 @@ struct ShipSpec {
     // It runs over the ship's own lock_range, so it is the class describing its
     // own envelope rather than a distance imposed from outside.
     float msl_reach_floor;
+    // HOW LONG A SEMI-ACTIVE ROUND KEEPS GUIDING ONCE THE LIGHT GOES OUT.
+    //
+    // Per class rather than one number for the game, because it is the class's
+    // bargain and not the weapon's physics. Zero means ALL OR NOTHING: the light
+    // goes out and the round is finished on that frame, which is what a
+    // semi-active weapon is supposed to feel like. Hold them in the circle and
+    // the shot arrives; lose them for an instant and you have spent it.
+    float msl_coast;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a

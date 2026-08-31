@@ -84,7 +84,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
         /* warhead    */ 20.0f, 18.0f, 0.60f,
-        /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f, /* needs */ -2.0f, /* reach */ 1.00f,
+        /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f,
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_FIGHTER,
@@ -120,7 +120,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // the ceiling covers about 1550 units and LANCE locks at 1600 -- the ramp
         // and the reach are the same distance, so a shot taken at its own range
         // arrives at full speed and a knife-range shot gains nothing at all.
-        /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f,
+        /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f, /* coast */ 0.00f,
         // FIRE AND FORGET, which is the half of the class the round could not keep.
         //
         // The bargain is that the PILOT earns the shot by lining the geometry up,
@@ -158,7 +158,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
         /* warhead    */ 12.0f, 22.0f, 0.85f,
-        /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f, /* needs */ -2.0f, /* reach */ 1.00f,
+        /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f,
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_SLASH,
@@ -256,11 +256,23 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // arriving on HALF the rounds fired. The acceleration stays as the reward
         // for keeping the nose on them, but at 60 it now crosses the fastest ship
         // in the game after 2.3 seconds of held lock rather than 9.
-        /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f, /* needs */ -2.0f, /* reach */ 0.45f,
+        /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f, /* needs */ -2.0f, /* reach */ 0.45f, /* coast */ 0.00f,
         /* seeker arc */ 3.20f, 32.0f, 0.30f,
         /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
         /* tactic     */ TACTIC_STANDOFF,
-        /* fire ctrl  */ 0.86f, -2.0f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
+        // THE CIRCLE, AND IT IS THE WHOLE CLASS.
+        //
+        // lock_hold_cos was -2.0f, the sentinel meaning "hold it while they are
+        // anywhere ON SCREEN" -- about 31 degrees to the edge of the viewport and
+        // 41 to the corner. That is not an aiming mechanism, it is the absence of
+        // one, and it is why a BALLISTA never had to aim hard.
+        //
+        // 0.95 acquire and 0.94 hold is a circle of about eighteen degrees: keep
+        // them inside it and the round arrives, let them leave it and the lock is
+        // gone. Hold is a shade wider than acquire so a lock that has been earned
+        // does not flicker on the boundary -- it is not more forgiving, it is the
+        // same circle with hysteresis.
+        /* fire ctrl  */ 0.95f, 0.94f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
 

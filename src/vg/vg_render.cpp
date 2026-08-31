@@ -499,7 +499,8 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         return;
     }
 
-    { const uint32_t t = micros(); vg_draw_lock_box(cam); g_sub_lock = micros() - t; }
+    { const uint32_t t = micros(); vg_draw_lock_circle(); vg_draw_lock_box(cam);
+      g_sub_lock = micros() - t; }
 
 
     // Instruments are drawn onto the virtual canopy. The bend tracks speed, so

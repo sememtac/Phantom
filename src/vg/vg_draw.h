@@ -136,6 +136,10 @@ void vg_draw_overlays(void);
 // a compile error at the definition rather than an undefined reference at the end
 // of the build, and a new caller finds these where every other draw entry point
 // lives.
+// The fixed lock ring at screen centre, for a class whose lock_hold_cos is a real
+// cosine. Nothing is drawn for the classes that use the -2.0f sentinel: their cone
+// is the whole viewport and the canopy aperture already says so.
+void vg_draw_lock_circle(void);
 void vg_draw_lock_box(const VgCam& cam);
 void vg_draw_steer_indicator(const VgInput* in);
 void vg_draw_target_markers(const VgCam& cam);
