@@ -122,6 +122,16 @@ struct Ship {
     // off at 560 would turn straight back in, which is a merry-go-round rather
     // than a fight.
     float attack_cd;
+
+    // A STANDOFF HULL THAT TRIED TO LEAVE AND COULD NOT.
+    //
+    // flee_r0 is the range the run started at; flee_cd blocks another one for a
+    // while when it gained nothing. Without them a sniper slower than everything
+    // it fights runs for ever, points away for ever, and never fires -- measured,
+    // 57% of a BALLISTA's frames in its own class tactic at an aim of -0.29,
+    // which is the back of its head.
+    float flee_r0;
+    float flee_cd;
     Vec3  break_dir;
     Vec3  offset_dir;     // stable lateral offset for the aim point
     // >0 while defending against something sitting on its tail. Separate from

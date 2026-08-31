@@ -356,10 +356,23 @@ static void tactic_standoff(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     // out there; that is the whole point of it.
     const float flee = ENEMY_BREAK_RANGE * STANDOFF_FLEE_K;
 
-    if (s->break_t > 0 || range < flee) {
+    // DID THE LAST RUN ACHIEVE ANYTHING? Judged when it ends rather than while it
+    // is happening, because a run has to be given its whole length first.
+    //
+    // A standoff hull is the slowest thing in the game and it flees from ships
+    // that are faster, so running is not always available. A pilot who has just
+    // discovered that turns and fights instead of repeating it, which is the
+    // difference between a plan and a loop.
+    if (s->break_t <= 0.0f && s->flee_r0 > 0.0f) {
+        if (range < s->flee_r0 + STANDOFF_FLEE_GAIN) s->flee_cd = STANDOFF_FLEE_GIVEUP;
+        s->flee_r0 = 0.0f;
+    }
+
+    if (s->break_t > 0 || (range < flee && s->flee_cd <= 0.0f)) {
         if (s->break_t <= 0) {
             s->break_dir = vnorm(vmul(to, -1.0f));   // straight out, no cleverness
             s->break_t   = vg_frand(1.2f, 2.2f);
+            s->flee_r0   = range;                    // what the run will be judged on
         }
         *desired = s->break_dir;
         s->target_speed = smax;
@@ -446,12 +459,17 @@ static void tactic_geometry(Ship* s, const ShipSpec* sp, Vec3 to, float range,
 // increments on a path that already does far more work than this.
 // FLAT, so the declaration in vg_prof.h cannot disagree with the definition
 // about a dimension. It did, and a two-dimensional extern mangles differently.
-uint32_t g_ai_steer[SHIP_CLASSES * STEER_KINDS] = { 0 };
+// (int) on the first: multiplying two different enum types is deprecated in C++20.
+uint32_t g_ai_steer[(int)SHIP_CLASSES * STEER_KINDS] = { 0 };
 uint32_t g_ai_frames[SHIP_CLASSES]  = { 0 };
 uint32_t g_ai_locked[SHIP_CLASSES]  = { 0 };
 uint32_t g_ai_armed[SHIP_CLASSES]   = { 0 };   // lock + round + cool trigger at once
 float    g_ai_aim[SHIP_CLASSES]     = { 0 };   // summed cos(aim, target)
 float    g_ai_range[SHIP_CLASSES]   = { 0 };   // summed range, world units
+// ...and the same aim, split by what the pilot was DOING at the time. A mean over
+// the whole fight is dominated by the frames where not aiming is correct: a ship
+// with an empty rack should be leaving, not pointing.
+float    g_ai_aimk[(int)SHIP_CLASSES * STEER_KINDS] = { 0 };
 
 void vg_ai_census_reset(void) {
     for (int c = 0; c < SHIP_CLASSES; c++) {
@@ -909,10 +927,16 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             if (s->locked && s->rounds > 0 && s->fire_cd <= 0.0f) g_ai_armed[c]++;
             const float rr = vlen(s->pos);
             g_ai_range[c] += rr;
-            if (rr > 1.0f) g_ai_aim[c] += vdot(s->aim_dir, vmul(s->pos, -1.0f / rr));
+            if (rr > 1.0f) {
+                const float cs = vdot(s->aim_dir, vmul(s->pos, -1.0f / rr));
+                g_ai_aim[c] += cs;
+                if (s->steer_by < STEER_KINDS)
+                    g_ai_aimk[c * STEER_KINDS + s->steer_by] += cs;
+            }
         }
     }
 
+    if (s->flee_cd  > 0) s->flee_cd  -= dt;
     if (s->evade_t  > 0) s->evade_t  -= dt;
     if (s->break_t  > 0) s->break_t  -= dt;
     if (s->defend_t > 0) s->defend_t -= dt;

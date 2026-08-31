@@ -328,6 +328,7 @@ extern uint32_t g_ai_frames[];
 extern uint32_t g_ai_locked[];
 extern uint32_t g_ai_armed[];
 extern float    g_ai_aim[];
+extern float    g_ai_aimk[];  // [class * STEER_KINDS + kind]
 extern float    g_ai_range[];
 void vg_ai_census_reset(void);
 

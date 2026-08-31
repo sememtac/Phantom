@@ -495,6 +495,15 @@
 #define STANDOFF_HOLD_K      0.72f   // x its own lock range: the band it wants
 #define STANDOFF_FLEE_K      2.4f    // x ENEMY_BREAK_RANGE: inside this it runs
 #define STANDOFF_ARC         0.30f   // x range: how far beside the player it aims
+// HOW MUCH GROUND A RUN HAS TO GAIN to have been worth making, in world units,
+// and how long the ship stops trying when it does not.
+//
+// A standoff hull is the slowest thing in the game and it flees from ships that
+// are faster, so running is not always available to it. A pilot who has just
+// discovered that turns and fights instead of repeating it, which is the
+// difference between a plan and a loop.
+#define STANDOFF_FLEE_GAIN   220.0f
+#define STANDOFF_FLEE_GIVEUP 4.0f
 
 // SLASH -- CHARIOT. One fast pass, the rack emptied, and a long extend. It still
 // has to slow to shoot, so the speed on the merge sits just under the gate

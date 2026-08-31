@@ -177,8 +177,10 @@ int main(int argc, char** argv) {
                    g_ai_aim[c] / (float)g_ai_frames[c], g_ai_locked[c] * f,
                    g_ai_armed[c] * f, g_ai_range[c] / (float)g_ai_frames[c]);
             for (int k = 0; k < STEER_KINDS; k++)
-                if (g_ai_steer[c * STEER_KINDS + k]) printf(" %s=%.0f%%", K[k],
-                                                g_ai_steer[c * STEER_KINDS + k] * f);
+                if (g_ai_steer[c * STEER_KINDS + k])
+                    printf(" %s=%.0f%%/%.2f", K[k], g_ai_steer[c * STEER_KINDS + k] * f,
+                           g_ai_aimk[c * STEER_KINDS + k]
+                           / (float)g_ai_steer[c * STEER_KINDS + k]);
             printf("\n");
         }
     }
