@@ -88,3 +88,6 @@ pilot_report.html
 
 # PyInstaller working directory. Rebuilt every time; nothing in it is source.
 .pyi-build/
+
+# The behaviour report, rebuilt by tools/inspect_ai.py in one command.
+ai_report.html

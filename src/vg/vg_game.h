@@ -52,6 +52,7 @@ enum SteerBy : uint8_t {
     STEER_TACTIC,    // the class's hand-written plan
     STEER_RESET,     // breaking a stalemate on purpose
     STEER_CORNER,    // hurt, and coming at you anyway
+    STEER_KINDS      // how many there are; not a mode
 };
 
 struct Ship {

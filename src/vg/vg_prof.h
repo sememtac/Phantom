@@ -322,5 +322,14 @@ extern uint32_t g_msl_why[2][5];
 extern uint32_t g_msl_endlock[2];
 extern uint32_t g_msl_lost[2][2];
 extern uint32_t g_msl_lost_dead[2];
+// THE PILOT CENSUS. See the note at the definitions in vg_ai.cpp.
+extern uint32_t g_ai_steer[];   // [class * STEER_KINDS + kind]
+extern uint32_t g_ai_frames[];
+extern uint32_t g_ai_locked[];
+extern uint32_t g_ai_armed[];
+extern float    g_ai_aim[];
+extern float    g_ai_range[];
+void vg_ai_census_reset(void);
+
 extern uint32_t g_msl_dark[2];
 extern uint32_t g_msl_relit[2];

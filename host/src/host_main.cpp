@@ -162,6 +162,27 @@ int main(int argc, char** argv) {
 
     host_dataset_close();
 
+    // WHAT THE PILOTS DID, for the same reason the missile counters print here:
+    // a headless run returns from the frame before the telemetry block, so
+    // nothing it counted is ever shown otherwise.
+    {
+        static const char* K[] = { "-","WALL","RAM","EVADE","TAIL","DRY","PRESS",
+                                   "NET","TACTIC","RESET","CORNER","SUPPORT" };
+        for (int c = 0; c < SHIP_CLASSES; c++) {
+            if (!g_ai_frames[c]) continue;
+            const double f = 100.0 / (double)g_ai_frames[c];
+            printf("ai %-8s frames %lu | aim %.3f | locked %.0f%% | armed %.1f%%"
+                   " | mean range %.0f |",
+                   vg_ship_class[c].name, (unsigned long)g_ai_frames[c],
+                   g_ai_aim[c] / (float)g_ai_frames[c], g_ai_locked[c] * f,
+                   g_ai_armed[c] * f, g_ai_range[c] / (float)g_ai_frames[c]);
+            for (int k = 0; k < STEER_KINDS; k++)
+                if (g_ai_steer[c * STEER_KINDS + k]) printf(" %s=%.0f%%", K[k],
+                                                g_ai_steer[c * STEER_KINDS + k] * f);
+            printf("\n");
+        }
+    }
+
     // WHERE THE ROUNDS WENT. A headless run returns from the frame before the
     // telemetry block, so the counters a played session prints every two seconds
     // are never shown. They are the point of a measured run, so they are printed

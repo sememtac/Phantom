@@ -433,6 +433,40 @@ static void tactic_geometry(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     }
 }
 
+// WHAT THE PILOTS ARE ACTUALLY DOING, counted per class.
+//
+// This existed three times tonight as a throwaway probe and was deleted three
+// times, which is the definition of something that should be permanent. It is
+// how the biggest finding of the week was made: an AEGIS flown by the network
+// spends 67% of its frames in the network and 0% in evade, tail, extend, press
+// or its class tactic, where the same hull on the tactics spreads across all of
+// them. No amount of playing tells you that; one column of numbers does.
+//
+// Unconditional and cheap, like the missile counters next door: a handful of
+// increments on a path that already does far more work than this.
+// FLAT, so the declaration in vg_prof.h cannot disagree with the definition
+// about a dimension. It did, and a two-dimensional extern mangles differently.
+uint32_t g_ai_steer[SHIP_CLASSES * STEER_KINDS] = { 0 };
+uint32_t g_ai_frames[SHIP_CLASSES]  = { 0 };
+uint32_t g_ai_locked[SHIP_CLASSES]  = { 0 };
+uint32_t g_ai_armed[SHIP_CLASSES]   = { 0 };   // lock + round + cool trigger at once
+float    g_ai_aim[SHIP_CLASSES]     = { 0 };   // summed cos(aim, target)
+float    g_ai_range[SHIP_CLASSES]   = { 0 };   // summed range, world units
+
+void vg_ai_census_reset(void) {
+    for (int c = 0; c < SHIP_CLASSES; c++) {
+        for (int k = 0; k < STEER_KINDS; k++) g_ai_steer[c * STEER_KINDS + k] = 0;
+        g_ai_frames[c] = g_ai_locked[c] = g_ai_armed[c] = 0;
+        g_ai_aim[c] = g_ai_range[c] = 0.0f;
+    }
+}
+
+// Which row of the class table this hull is, or -1 if it is not one of them.
+static int class_of(const ShipSpec* sp) {
+    const int i = (int)(sp - &vg_ship_class[0]);
+    return (i >= 0 && i < SHIP_CLASSES) ? i : -1;
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) return;
     if (s->hit_flash > 0) s->hit_flash -= dt;
@@ -862,6 +896,20 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             // won position exactly as it does to a merge -- and slow is also what
             // lets them stay inside the player's turn.
             s->target_speed = smin + (smax - smin) * 0.30f;
+        }
+    }
+
+    {   // THE CENSUS. Taken after the whole chain has decided, so steer_by is
+        // final rather than whatever an earlier branch happened to leave.
+        const int c = class_of(sp);
+        if (c >= 0) {
+            g_ai_frames[c]++;
+            if (s->steer_by < STEER_KINDS) g_ai_steer[c * STEER_KINDS + s->steer_by]++;
+            if (s->locked) g_ai_locked[c]++;
+            if (s->locked && s->rounds > 0 && s->fire_cd <= 0.0f) g_ai_armed[c]++;
+            const float rr = vlen(s->pos);
+            g_ai_range[c] += rr;
+            if (rr > 1.0f) g_ai_aim[c] += vdot(s->aim_dir, vmul(s->pos, -1.0f / rr));
         }
     }
 
