@@ -257,7 +257,24 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // for keeping the nose on them, but at 60 it now crosses the fastest ship
         // in the game after 2.3 seconds of held lock rather than 9.
         /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f, /* needs */ -2.0f, /* reach */ 0.45f, /* coast */ 0.00f,
-        /* seeker arc */ 3.20f, 32.0f, 0.30f,
+        // SHORT LIVED AND EXTREMELY AGILE, which is this class stated as two
+        // numbers. The round is a LEASH rather than a launch: it goes where the
+        // nose goes for as long as the nose is on them, and then it is gone.
+        //
+        // 5.0 rad/s is more than twice the nimblest hull in the game, so nothing
+        // outruns a guided round by turning. The counter is not to dodge it, it is
+        // to break the SHOOTER's aim -- which is the whole of a semi-active weapon
+        // and the reason the circle exists.
+        //
+        // Twelve seconds against thirty-two, and thirty-two was not a limit at
+        // all: the round could fly seventeen thousand units against a lock range
+        // of four thousand two hundred, so life was decoration. Twelve gives a
+        // guided reach of 6240 -- the class reach plus the pursuit allowance and
+        // nothing spare. A shot at maximum range must now be guided for nine
+        // unbroken seconds, which is exactly when its pilot can least afford to be
+        // pointing straight at somebody. That is a better price for a long shot
+        // than any damage curve.
+        /* seeker arc */ 5.00f, 12.0f, 0.30f,
         /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
         /* tactic     */ TACTIC_STANDOFF,
         // THE CIRCLE, AND IT IS THE WHOLE CLASS.
@@ -277,9 +294,36 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // margin outside it and no lock to be had by clipping the edge. 0.978 to
         // hold is three thousandths of hysteresis, enough that a target sitting on
         // the line does not strobe the lock and not enough to be a second chance.
-        /* fire ctrl  */ 0.981f, 0.978f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
+        // TIGHTER AGAIN, reported as still guiding too generously. 0.990 is 57 px
+        // on the panel where 0.981 was 79 -- about eight degrees. The ring is
+        // drawn at exactly this, so what narrowed is the circle itself and not the
+        // gap between the circle and the rule.
+        /* fire ctrl  */ 0.990f, 0.988f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
+
+// HOW FAR A ROUND CAN ACTUALLY GET, for the reach test below.
+//
+// speed * life is the answer for a round that flies at one speed, and it is WRONG
+// for one that accelerates -- which is both of the interesting classes. It
+// understated a BALLISTA round by a factor of three, and that mattered the moment
+// the design called for a SHORT life: the assert refused a life the round could
+// comfortably fly, because it was pricing it at the speed it leaves the rail with
+// rather than the speed it spends most of the flight at.
+//
+// The ramp first, then whatever is left of the life at the ceiling.
+static constexpr float vg_msl_reach(const ShipSpec& s) {
+    return (s.msl_accel <= 0.0f)
+         ? s.msl_speed * s.msl_life
+         : ((s.msl_speed_max - s.msl_speed) / s.msl_accel >= s.msl_life
+            ? s.msl_speed * s.msl_life
+              + 0.5f * s.msl_accel * s.msl_life * s.msl_life
+            : s.msl_speed * ((s.msl_speed_max - s.msl_speed) / s.msl_accel)
+              + 0.5f * s.msl_accel * ((s.msl_speed_max - s.msl_speed) / s.msl_accel)
+                     * ((s.msl_speed_max - s.msl_speed) / s.msl_accel)
+              + (s.msl_life - (s.msl_speed_max - s.msl_speed) / s.msl_accel)
+                * s.msl_speed_max);
+}
 
 // WHAT THE TABLE IS NOT ALLOWED TO SAY.
 //
@@ -292,7 +336,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
 // its own lock range will let the player earn a LOCK, fire, and watch the missile
 // expire on the way -- which reads as a broken weapon, not as a range limit. 1.4x
 // is the pursuit-curve allowance: a seeker flies an arc, not a chord.
-#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_ship_class[C].msl_speed * vg_ship_class[C].msl_life                             > vg_ship_class[C].lock_range * 1.4f,                                              #C " cannot reach its own lock range")
+#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range")
 
 #if !defined(_MSC_VER)
 SHIP_INVARIANTS(SHIP_AEGIS);
