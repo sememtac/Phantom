@@ -589,25 +589,48 @@ void vg_draw_lock_box(const VgCam& cam) {
 
     if (vg_wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
 
-    // THE BANK, for a class that stacks its locks. One pip per round the bay
-    // holds, filled for every lock banked so far.
+    // THE BANK, DRAWN AS THE RETICLE ITSELF.
     //
-    // Drawn ON the bracket rather than on the panel because it belongs to the
-    // CONTACT: it is how much of this target has been earned, it dies with the
-    // lock, and a pilot reading it is already looking here. A row on the
-    // instruments would be the same information somewhere the eyes are not.
+    // The bracket subdivides into one cell per round the bay holds, and a cell
+    // fills as its lock is banked. A row of pips above the box was tried first and
+    // it did not read: the information belongs to the CONTACT and the eyes are on
+    // the contact, so anything sitting beside it is somewhere the pilot is not
+    // looking. Four filled squares inside the bracket cannot be missed, because
+    // they are the thing being aimed at.
+    //
+    // Laid out as square a grid as the magazine allows, so a class with a bay of
+    // some other size still gets something sensible rather than a special case.
     if (vg.spec->msl_stack_time > 0.0f && vg.spec->magazine > 0) {
-        const int   n    = vg.spec->magazine;
-        const float step = 9.0f;
-        const float x0   = cx - (float)(n - 1) * step * 0.5f;
-        const float y    = cy - r - 14.0f;
-        for (int i = 0; i < n; i++) {
-            const float px = x0 + (float)i * step;
-            const bool  on = (i < vg_wpn.stacks);
-            // Filled pips grow as well as brighten. On a monochrome panel one
-            // channel is not enough to read at a glance while manoeuvring.
-            const float h = on ? 5.0f : 2.5f;
-            vg_line_w(px, y - h, px, y + h, on ? INK_MAX : INK_TRACE, on ? 2 : 1);
+        const int n    = vg.spec->magazine;
+        int       cols = 1;
+        while (cols * cols < n) cols++;
+        const int rows = (n + cols - 1) / cols;
+
+        // Inside the brackets with room to spare: the corners are the lock and
+        // must stay readable as one shape.
+        const float span = r * 0.86f;
+        const float cw   = span / (float)cols;
+        const float ch   = span / (float)rows;
+        const float x0   = cx - span * 0.5f;
+        const float y0   = cy - span * 0.5f;
+
+        for (int k = 0; k < n; k++) {
+            const float l = x0 + (float)(k % cols) * cw;
+            const float t = y0 + (float)(k / cols) * ch;
+            const float rr = l + cw * 0.82f, bb = t + ch * 0.82f;
+            const bool on = (k < vg_wpn.stacks);
+            const uint16_t col = on ? INK_MAX : INK_TRACE;
+            const int      wdt = on ? 2 : 1;
+            vg_line_w(l,  t,  rr, t,  col, wdt);
+            vg_line_w(rr, t,  rr, bb, col, wdt);
+            vg_line_w(rr, bb, l,  bb, col, wdt);
+            vg_line_w(l,  bb, l,  t,  col, wdt);
+            // Filled once banked: an outline that only changes weight is not
+            // enough to count at a glance on a monochrome panel.
+            if (on) {
+                for (float yy = t + 2.0f; yy < bb - 1.0f; yy += 2.0f)
+                    vg_line_w(l + 2.0f, yy, rr - 2.0f, yy, INK_BRIGHT, 1);
+            }
         }
     }
 }
