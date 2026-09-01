@@ -144,6 +144,19 @@ struct ShipSpec {
     // semi-active weapon is supposed to feel like. Hold them in the circle and
     // the shot arrives; lose them for an instant and you have spent it.
     float msl_coast;
+    // HOW HARD THIS CLASS PAYS FOR SPEED IN AGILITY, as an exponent on
+    // launch_speed/speed. Zero is off and the table's turn rate stands.
+    //
+    // A missile holding a fixed sideways acceleration turns at a/v, so going
+    // faster necessarily means turning worse. At 1.0 that is modelled honestly and
+    // the speed a pilot earns by holding the lock is spent on commitment: the
+    // round is fastest exactly when it is least able to correct.
+    //
+    // Per class rather than global because it is a statement about what a class
+    // IS, and because the honest value takes a LANCE round to 1.06 rad/s at full
+    // speed -- under the 1.20 that made that class useless before its seeker was
+    // fixed. LANCE keeps 0.0 until its own rework says otherwise.
+    float msl_turn_trade;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a

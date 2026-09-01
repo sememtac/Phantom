@@ -340,8 +340,17 @@ void vg_update_missiles(float dt) {
                         if (t_int > 1.2f) t_int = 1.2f;
                         aim = vadd(tpos, vmul(tvel, t_int));
                     }
-                    m->dir = vg_turn_toward(m->dir, vsub(aim, m->pos),
-                                            m->spec->msl_turn * dt);
+                    // SPEED IS PAID FOR IN AGILITY. See MSL_TURN_TRADE: a round
+                    // holding a fixed sideways acceleration turns at a/v, so the
+                    // speed earned by keeping the lock is spent on commitment.
+                    // A class that does not accelerate has a ratio of one here.
+                    float turn = m->spec->msl_turn;
+                    if (m->spec->msl_turn_trade > 0.0f && m->speed > 1.0f) {
+                        const float k = m->spec->msl_speed / m->speed;
+                        const float tr = m->spec->msl_turn_trade;
+                        turn *= (tr >= 0.999f) ? k : powf(k, tr);
+                    }
+                    m->dir = vg_turn_toward(m->dir, vsub(aim, m->pos), turn * dt);
                 }
             }
 

@@ -428,6 +428,24 @@
 // round that is not being fed keeps what it earned and no more.
 #define MSL_COAST_TIME       1.4f
 
+// HOW HARD SPEED IS PAID FOR IN AGILITY, as an exponent on launch_speed/speed.
+//
+// A missile pulling a fixed sideways acceleration turns at a/v: going faster
+// necessarily means turning worse, and the turn radius grows with the square of
+// the speed. That is real, and it is also exactly the trade the classes want --
+// a round is fastest when it is least able to correct and nimblest when it is
+// slow, so the acceleration a pilot earns by holding the lock is spent on
+// commitment.
+//
+// It only touches a class that accelerates. The other two fly at one speed, so
+// the ratio is 1 and nothing changes.
+//
+// 1.0 is the honest physics. Lower blends toward the flat turn rate the table
+// states, and it is a dial because the honest answer takes a LANCE round to 1.06
+// at full speed -- under the 1.20 that made the class useless before its seeker
+// was fixed.
+#define MSL_TURN_TRADE       1.0f
+
 // HOW LONG A MODE MUST SURVIVE before the network may pick another, in seconds.
 //
 // This is the whole of the policy's memory, and it is supplied here rather than
