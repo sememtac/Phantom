@@ -618,7 +618,14 @@ void vg_draw_lock_box(const VgCam& cam) {
             const float l = x0 + (float)(k % cols) * cw;
             const float t = y0 + (float)(k / cols) * ch;
             const float rr = l + cw * 0.82f, bb = t + ch * 0.82f;
-            const bool on = (k < vg_wpn.stacks);
+            // THREE STATES, because two cannot say it. Filled is banked and will
+            // launch on this press. Outlined is a round in the bay with no lock
+            // on it yet. Absent is a cell with no round behind it at all, and
+            // leaving it out is the point: a part-spent rack must not draw the
+            // same instrument as a full one.
+            const bool have = (k < vg_wpn.rounds);
+            const bool on   = (k < vg_wpn.stacks);
+            if (!have) continue;
             const uint16_t col = on ? INK_MAX : INK_TRACE;
             const int      wdt = on ? 2 : 1;
             vg_line_w(l,  t,  rr, t,  col, wdt);

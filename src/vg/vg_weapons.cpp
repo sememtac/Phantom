@@ -130,13 +130,22 @@ void vg_update_lock(float dt) {
     // held, so the cost is unbroken contact rather than a precise cone.
     if (vg.spec->msl_stack_time > 0.0f) {
         if (vg_wpn.locked) {
+            // AGAINST WHAT IS IN THE BAY, not against what the bay holds. Banking
+            // a fifth lock with four rounds loaded is banking something that
+            // cannot be fired: the salvo is already clamped to the rack at the
+            // trigger, so the extra only ever showed as a filled cell that did
+            // nothing. Worse on a part-spent rack -- two rounds left and four
+            // cells lit is the instrument lying about what the press will do.
             vg_wpn.stack_t += dt;
             while (vg_wpn.stack_t >= vg.spec->msl_stack_time
-                   && vg_wpn.stacks < vg.spec->magazine) {
+                   && vg_wpn.stacks < vg_wpn.rounds) {
                 vg_wpn.stack_t -= vg.spec->msl_stack_time;
                 vg_wpn.stacks++;
             }
-            if (vg_wpn.stacks >= vg.spec->magazine) vg_wpn.stack_t = 0.0f;
+            if (vg_wpn.stacks >= vg_wpn.rounds) vg_wpn.stack_t = 0.0f;
+            // A rack that shrank under a bank -- there is no path that does this
+            // today, and a clamp costs nothing against one appearing later.
+            if (vg_wpn.stacks > vg_wpn.rounds) vg_wpn.stacks = vg_wpn.rounds;
         } else {
             vg_wpn.stacks  = 0;
             vg_wpn.stack_t = 0.0f;

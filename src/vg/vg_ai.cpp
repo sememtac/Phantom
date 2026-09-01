@@ -321,12 +321,14 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     // BANKING, exactly as the player's seat does it.
     if (sp->msl_stack_time > 0.0f) {
         if (s->locked) {
+            // Against the rack, not the bay. See the note in vg_weapons.cpp.
             s->stack_t += dt;
-            while (s->stack_t >= sp->msl_stack_time && s->stacks < sp->magazine) {
+            while (s->stack_t >= sp->msl_stack_time && s->stacks < s->rounds) {
                 s->stack_t -= sp->msl_stack_time;
                 s->stacks++;
             }
-            if (s->stacks >= sp->magazine) s->stack_t = 0.0f;
+            if (s->stacks >= s->rounds) s->stack_t = 0.0f;
+            if (s->stacks > s->rounds) s->stacks = s->rounds;
         } else {
             s->stacks = 0; s->stack_t = 0.0f;
         }
