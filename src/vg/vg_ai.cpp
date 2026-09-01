@@ -1126,6 +1126,10 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             s->rounds--;
         }
         s->stacks = 0; s->stack_t = 0.0f;
+        // The launch costs the lock, exactly as it does in the player's seat --
+        // see the note there. An enemy that kept its contact through a salvo would
+        // be spamming the thing the player cannot.
+        if (sp->msl_stack_time > 0.0f) { s->locked = false; s->lock_t = 0.0f; }
 
         // THE CLASS'S OWN TRIGGER SPEED, and ENEMY_FIRE_GAP_K is gone from it.
         // That constant existed to slow an average down to something survivable;

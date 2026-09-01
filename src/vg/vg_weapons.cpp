@@ -203,6 +203,23 @@ void vg_player_fire(void) {
     vg_wpn.stacks   = 0;          // the bank is spent, whatever left the rail
     vg_wpn.stack_t  = 0.0f;
     vg_wpn.fire_gap = vg.spec->fire_gap;
+
+    // LAUNCHING BREAKS THE LOCK, for a stacking class only.
+    //
+    // Without this the bank is permitted but never rewarded: one stack lands every
+    // 1.2 seconds and there is no reason on earth not to spend it immediately, so
+    // the optimal play is a single round every 1.2 seconds for ever -- which was
+    // reported from the cockpit as spam, and is the exact opposite of the class.
+    //
+    // Making the launch cost the LOCK fixes the incentive rather than papering
+    // over it with a longer trigger interval. The cycle becomes acquire, hold,
+    // release, re-acquire, so spending a small bank throws away the contact that
+    // earned it and holding for a fuller one is simply worth more. It is also the
+    // honest reading of what a full bay leaving at once does to a seeker.
+    if (vg.spec->msl_stack_time > 0.0f) {
+        vg_wpn.locked = false;
+        vg_wpn.lock_t = 0.0f;
+    }
     vg_sfx_play(SFX_LAUNCH, 1.0f);
 
     // Emptying the rack starts the clock. Doing it here rather than in the tick
