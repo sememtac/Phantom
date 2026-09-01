@@ -94,6 +94,8 @@ void vg_update_lock(float dt) {
         vg_wpn.target = -1;
         vg_wpn.lock_t      = 0;
         vg_wpn.locked      = false;
+        vg_wpn.stacks      = 0;    // the bank goes with the lock
+        vg_wpn.stack_t     = 0.0f;
         return;
     }
 
@@ -101,6 +103,8 @@ void vg_update_lock(float dt) {
         vg_wpn.target = best;
         vg_wpn.lock_t      = 0;
         vg_wpn.locked      = false;
+        vg_wpn.stacks      = 0;    // a new contact is a new bank
+        vg_wpn.stack_t     = 0.0f;
     }
     vg_wpn.lock_t += dt;
 
@@ -120,6 +124,24 @@ void vg_update_lock(float dt) {
     // enough. Acquiring at speed is still hard; that trade is the point and it
     // stays.
     if (vg_wpn.lock_t >= vg_wpn.lock_need) vg_wpn.locked = true;
+
+    // BANKING THE LOCK. A stacking class does not shoot when it has one, it saves
+    // it -- see msl_stack_time. The bank fills only while the lock is actually
+    // held, so the cost is unbroken contact rather than a precise cone.
+    if (vg.spec->msl_stack_time > 0.0f) {
+        if (vg_wpn.locked) {
+            vg_wpn.stack_t += dt;
+            while (vg_wpn.stack_t >= vg.spec->msl_stack_time
+                   && vg_wpn.stacks < vg.spec->magazine) {
+                vg_wpn.stack_t -= vg.spec->msl_stack_time;
+                vg_wpn.stacks++;
+            }
+            if (vg_wpn.stacks >= vg.spec->magazine) vg_wpn.stack_t = 0.0f;
+        } else {
+            vg_wpn.stacks  = 0;
+            vg_wpn.stack_t = 0.0f;
+        }
+    }
 }
 
 // The magazine refills ALL AT ONCE, and only from empty.
@@ -149,20 +171,37 @@ void vg_player_fire(void) {
     const Ship* s = &vg.enemy[vg_wpn.target];
     if (!s->alive) return;
 
-    // Alternate wing hardpoints so successive launches read as a pair.
+    // HOW MANY LEAVE ON THIS PRESS. One for a class that fires singly; for a
+    // stacking class, everything banked -- which is the whole trigger, and the
+    // reason the aim it asks for is loose. A partial release is a real choice and
+    // not a mistake: two now is often worth more than four in three seconds.
+    int salvo = 1;
+    if (vg.spec->msl_stack_time > 0.0f) {
+        salvo = vg_wpn.stacks;
+        if (salvo > vg_wpn.rounds) salvo = vg_wpn.rounds;
+        if (salvo <= 0) return;
+    }
+
     static int rail = 0;
-    rail ^= 1;
-    Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
+    int sent = 0;
+    for (int i = 0; i < salvo; i++) {
+        // Alternate wing hardpoints so successive launches read as a pair.
+        rail ^= 1;
+        Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
+        // Only spend the round if a missile actually left the rail. With every
+        // slot in the air this silently charged the player for nothing at all,
+        // and since no missile existed there was no outcome to report either --
+        // a shot that vanished in both directions.
+        if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
+                               vg_wpn.target, -1, vg.spec))
+            break;
+        vg_wpn.rounds--;
+        sent++;
+    }
+    if (sent == 0) return;
 
-    // Only spend the round if a missile actually left the rail. With every slot
-    // in the air this silently charged the player for nothing at all, and since
-    // no missile existed there was no outcome to report either -- a shot that
-    // vanished in both directions.
-    if (!vg_launch_missile(true, origin, vnorm(vsub(s->pos, origin)),
-                           vg_wpn.target, -1, vg.spec))
-        return;
-
-    vg_wpn.rounds--;
+    vg_wpn.stacks   = 0;          // the bank is spent, whatever left the rail
+    vg_wpn.stack_t  = 0.0f;
     vg_wpn.fire_gap = vg.spec->fire_gap;
     vg_sfx_play(SFX_LAUNCH, 1.0f);
 

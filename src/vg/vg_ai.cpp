@@ -309,12 +309,28 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
         // into an enemy's flying too, instead of only into the player's.
         s->lock_t  = 0.0f;
         s->locked  = false;
+        s->stacks  = 0;          // the bank goes with the lock
+        s->stack_t = 0.0f;
         return;
     }
 
     s->lock_t += dt;
     const float need = sp->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
     if (s->lock_t >= need) s->locked = true;
+
+    // BANKING, exactly as the player's seat does it.
+    if (sp->msl_stack_time > 0.0f) {
+        if (s->locked) {
+            s->stack_t += dt;
+            while (s->stack_t >= sp->msl_stack_time && s->stacks < sp->magazine) {
+                s->stack_t -= sp->msl_stack_time;
+                s->stacks++;
+            }
+            if (s->stacks >= sp->magazine) s->stack_t = 0.0f;
+        } else {
+            s->stacks = 0; s->stack_t = 0.0f;
+        }
+    }
 }
 
 // NOTHING IN THE RACK, AND THE PLAYER IS CLOSE ENOUGH FOR THAT TO MATTER.
@@ -1086,13 +1102,30 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // exactly the same lack of obligation.
     const int judged = vg_bot_enemy_fire(index);
 
-    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && (judged != 0)) {
+    // A stacking class with nothing banked has nothing to fire.
+    const bool banked = (sp->msl_stack_time <= 0.0f) || (s->stacks > 0);
+
+    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
         // is -- but the round leaves on the direction this pilot thinks is the
         // target, which is the same error that made the lock slow to earn.
-        vg_launch_missile(false, vadd(s->pos, vmul(s->fwd, 4.0f)), s->aim_dir, -1,
-                          index, sp);
-        s->rounds--;
+        // HOW MANY LEAVE ON THIS TRIGGER. One, unless the class banks -- and then
+        // everything banked, which is the player's rule and therefore this one.
+        int salvo = 1;
+        if (sp->msl_stack_time > 0.0f) {
+            salvo = s->stacks;
+            if (salvo > s->rounds) salvo = s->rounds;
+        }
+        for (int k = 0; k < salvo; k++) {
+            // ALONG THE AIM. The rail is still on the nose -- that is where the
+            // ship is -- but the round leaves on the direction this pilot thinks
+            // is the target.
+            if (!vg_launch_missile(false, vadd(s->pos, vmul(s->fwd, 4.0f)),
+                                   s->aim_dir, -1, index, sp))
+                break;
+            s->rounds--;
+        }
+        s->stacks = 0; s->stack_t = 0.0f;
 
         // THE CLASS'S OWN TRIGGER SPEED, and ENEMY_FIRE_GAP_K is gone from it.
         // That constant existed to slow an average down to something survivable;

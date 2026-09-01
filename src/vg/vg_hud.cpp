@@ -588,6 +588,28 @@ void vg_draw_lock_box(const VgCam& cam) {
     }
 
     if (vg_wpn.locked) vg_text((int)(cx - 24), (int)(cy - r - 36), "LOCK", INK_MAX, 2);
+
+    // THE BANK, for a class that stacks its locks. One pip per round the bay
+    // holds, filled for every lock banked so far.
+    //
+    // Drawn ON the bracket rather than on the panel because it belongs to the
+    // CONTACT: it is how much of this target has been earned, it dies with the
+    // lock, and a pilot reading it is already looking here. A row on the
+    // instruments would be the same information somewhere the eyes are not.
+    if (vg.spec->msl_stack_time > 0.0f && vg.spec->magazine > 0) {
+        const int   n    = vg.spec->magazine;
+        const float step = 9.0f;
+        const float x0   = cx - (float)(n - 1) * step * 0.5f;
+        const float y    = cy - r - 14.0f;
+        for (int i = 0; i < n; i++) {
+            const float px = x0 + (float)i * step;
+            const bool  on = (i < vg_wpn.stacks);
+            // Filled pips grow as well as brighten. On a monochrome panel one
+            // channel is not enough to read at a glance while manoeuvring.
+            const float h = on ? 5.0f : 2.5f;
+            vg_line_w(px, y - h, px, y + h, on ? INK_MAX : INK_TRACE, on ? 2 : 1);
+        }
+    }
 }
 
 // Triangle sitting on a ring around the crosshair, pointing outward along `ang`.

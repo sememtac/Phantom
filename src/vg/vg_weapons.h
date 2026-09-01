@@ -23,6 +23,10 @@ struct Weapons {
     float lock_t;      // time held inside the nose cone
     float lock_need;   // time required at the current speed
     bool  locked;
+    // HOW MANY LOCKS ARE BANKED, for a class with msl_stack_time. The trigger
+    // fires this many rounds at once. Emptied the moment the lock breaks.
+    int   stacks;
+    float stack_t;     // progress toward the next one
 };
 
 extern Weapons vg_wpn;

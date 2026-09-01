@@ -132,6 +132,13 @@ struct Ship {
     // which is the back of its head.
     float flee_r0;
     float flee_cd;
+
+    // The banked locks, for a stacking class. The same mechanic the player has --
+    // see msl_stack_time and the one-rulebook note in cfg_combat.h. An enemy that
+    // fired singly while the player had to bank would be flying a different
+    // weapon under the same name.
+    int   stacks;
+    float stack_t;
     Vec3  break_dir;
     Vec3  offset_dir;     // stable lateral offset for the aim point
     // >0 while defending against something sitting on its tail. Separate from

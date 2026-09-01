@@ -157,6 +157,18 @@ struct ShipSpec {
     // speed -- under the 1.20 that made that class useless before its seeker was
     // fixed. LANCE keeps 0.0 until its own rework says otherwise.
     float msl_turn_trade;
+    // SECONDS OF HELD LOCK PER STACK, or zero for a class that fires one at a time.
+    //
+    // A stacking class does not shoot when it has a lock; it BANKS the lock, and
+    // the trigger empties whatever has been banked in one salvo. The aim it asks
+    // for is loose -- keep them roughly in front -- and the cost is paid in TIME
+    // instead, which is a different skill from BALLISTA's and deliberately so.
+    //
+    // Losing them empties the bank on the frame it happens, so the demand is
+    // sustained contact rather than precision. Four stacks at 1.2s is nearly five
+    // seconds of unbroken tracking for a full salvo, in fights that turn over
+    // faster than that.
+    float msl_stack_time;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs
     // Seconds off the rail before the lead solution is allowed to steer. NOT a
