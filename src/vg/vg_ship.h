@@ -233,6 +233,14 @@ struct ShipSpec {
 
 extern const ShipSpec vg_ship_class[SHIP_CLASSES];
 
+// The lock cone this class actually enforces at a given range, as a cosine.
+//
+// For a class with a real lock_hold_cos it narrows as 1/range beyond
+// LOCK_TIGHTEN_REF -- see the note there. For the three that use the -2.0f
+// sentinel it is the cone unchanged, because their rule is the viewport and a
+// viewport does not narrow. `hold` picks the holding cone over the acquiring one.
+float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold);
+
 static inline const ShipSpec* vg_spec(ShipClass c) {
     return &vg_ship_class[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
 }

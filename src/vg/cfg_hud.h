@@ -422,3 +422,16 @@
 // cone was tightened to match the ring rather than the ring loosened to match the
 // cone, so the size on the panel did not change.
 #define LOCK_RING_K          1.00f
+
+// THE RANGE AT WHICH THE CIRCLE IS THE CLASS'S OWN CONE. Closer than this it stops
+// widening; further, it narrows as 1/range.
+//
+// A FIXED ANGLE GETS EASIER THE FURTHER YOU ARE, which is the fault this repairs.
+// The same sideways jink subtends a smaller angle at long range, so a target two
+// thousand units away barely moves inside the circle and sniping is free.
+// Narrowing as 1/range fixes the escape in WORLD units instead: about 85 of
+// lateral movement shakes the lock at any distance at all, so a pilot being shot
+// at always has the same physical move available and the shooter always has the
+// same physical tolerance to hold. Reported from the cockpit -- up close the
+// circle felt right, at range it was a freebie.
+#define LOCK_TIGHTEN_REF     600.0f

@@ -465,7 +465,14 @@ void vg_draw_lock_circle(void) {
     // furniture; drawn the moment a contact is being worked it is an instrument.
     if (vg_wpn.target < 0) return;
 
-    const float c = sp->lock_cos < 0.999f ? sp->lock_cos : 0.999f;
+    // AT THE RANGE OF THE THING BEING TRACKED, because the cone narrows with it.
+    // A ring drawn at the class's flat cone would be honest up close and a lie at
+    // every other distance -- and the shrinking IS the feedback: the circle
+    // visibly closing as a contact opens the range is what tells the pilot that a
+    // long shot is the hard one.
+    const float tr = vlen(vg.enemy[vg_wpn.target].pos);
+    float c = vg_lock_cos_at(sp, tr, vg_wpn.locked);
+    if (c > 0.9995f) c = 0.9995f;
     // DRAWN INSIDE THE CONE, at LOCK_RING_K of it. The ring is therefore a
     // GUARANTEE rather than a boundary: hold them inside it and the lock is
     // certain, because the angle actually enforced is wider than the one shown.

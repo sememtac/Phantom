@@ -295,11 +295,11 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     if (ok) {
         const float c = vdot(s->aim_dir, vnorm(to));
         if (!s->locked) {
-            ok = (c > sp->lock_cos);
+            ok = (c > vg_lock_cos_at(sp, range, false));
         } else if (sp->lock_hold_cos < -1.0f) {
             ok = (c > ENEMY_LOCK_HOLD_WIDE);
         } else {
-            ok = (c > sp->lock_hold_cos);
+            ok = (c > vg_lock_cos_at(sp, range, true));
         }
     }
 

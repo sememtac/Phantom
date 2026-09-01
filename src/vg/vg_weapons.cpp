@@ -63,7 +63,7 @@ void vg_update_lock(float dt) {
         const bool holding = (i == vg_wpn.target && vg_wpn.locked);
         bool ok;
         if (!holding) {
-            ok = (c > vg.spec->lock_cos);
+            ok = (c > vg_lock_cos_at(vg.spec, range, false));
         } else if (vg.spec->lock_hold_cos < -1.0f) {
             ok = false;
             if (s->pos.z > NEAR_Z) {
@@ -72,7 +72,7 @@ void vg_update_lock(float dt) {
                   && fabsf(s->pos.y * inv) <= SCR_H * 0.5f;
             }
         } else {
-            ok = (c > vg.spec->lock_hold_cos);
+            ok = (c > vg_lock_cos_at(vg.spec, range, true));
         }
         if (!ok) continue;
 

@@ -1,4 +1,6 @@
 #include "vg_ship.h"
+#include "cfg_hud.h"   // LOCK_TIGHTEN_REF
+#include <math.h>
 
 // First pass at the four classes. Every number here is internally consistent but
 // unvalidated on hardware -- see DESIGN.md, which is the authority on intent.
@@ -323,6 +325,19 @@ static constexpr float vg_msl_reach(const ShipSpec& s) {
                      * ((s.msl_speed_max - s.msl_speed) / s.msl_accel)
               + (s.msl_life - (s.msl_speed_max - s.msl_speed) / s.msl_accel)
                 * s.msl_speed_max);
+}
+
+float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold) {
+    const float base = hold ? sp->lock_hold_cos : sp->lock_cos;
+    if (!sp || base < -1.0f) return base;          // the viewport idiom, untouched
+    if (range <= LOCK_TIGHTEN_REF) return base;
+
+    // The lateral tolerance the class has at the reference range, held constant
+    // from there out. tan/atan rather than anything cleverer because this is
+    // called a handful of times a frame and it is the honest geometry.
+    const float th = acosf(base < -1.0f ? 0.0f : (base > 1.0f ? 1.0f : base));
+    const float w  = LOCK_TIGHTEN_REF * tanf(th);
+    return cosf(atanf(w / range));
 }
 
 // WHAT THE TABLE IS NOT ALLOWED TO SAY.
