@@ -475,7 +475,10 @@ static void collide_player(void) {
             vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
             vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
             s->alive = false;
-            vg_kill_player();
+            // DAMAGE, NOT AN OUTCOME. See SHIP_COLLIDE_DAMAGE: a ram is meant to
+            // be a desperate trade, and it stopped being one when it killed
+            // whatever it touched regardless of the hull it hit.
+            vg_damage_player(vg.health_max * SHIP_COLLIDE_DAMAGE);
         }
     }
 }

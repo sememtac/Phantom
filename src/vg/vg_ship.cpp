@@ -272,7 +272,12 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // gone. Hold is a shade wider than acquire so a lock that has been earned
         // does not flicker on the boundary -- it is not more forgiving, it is the
         // same circle with hysteresis.
-        /* fire ctrl  */ 0.95f, 0.94f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
+        // 0.981 IS THE DRAWN RING, exactly. FOCAL * tan(acos(0.981)) is 79 px on
+        // the 480 px panel, which is the circle the pilot sees -- there is no
+        // margin outside it and no lock to be had by clipping the edge. 0.978 to
+        // hold is three thousandths of hysteresis, enough that a target sitting on
+        // the line does not strobe the lock and not enough to be a second chance.
+        /* fire ctrl  */ 0.981f, 0.978f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
 

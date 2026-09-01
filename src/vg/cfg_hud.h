@@ -414,8 +414,11 @@
 
 // HOW BIG THE LOCK RING IS DRAWN, as a fraction of the cone it stands for.
 //
-// Under 1.0 on purpose. The ring is a GUARANTEE and not a boundary: inside it the
-// lock is certain, because the angle the game actually enforces is wider than the
-// one on the panel. Drawn exactly on the threshold it flickers with the target,
-// and an instrument that flickers reads as broken rather than as marginal.
-#define LOCK_RING_K          0.60f
+// 1.0, and it was 0.60. The ring was drawn inside the cone so that everything
+// within it was certainly locked -- which meant the angle the game enforced was
+// WIDER than the one on the panel, and a target could be held a little outside the
+// circle. Reported from the cockpit, and it is the wrong compromise for this
+// class: the circle IS the mechanic, so the circle has to be the boundary. The
+// cone was tightened to match the ring rather than the ring loosened to match the
+// cone, so the size on the panel did not change.
+#define LOCK_RING_K          1.00f

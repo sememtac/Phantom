@@ -162,6 +162,24 @@
 
 #define ENEMY_SCALE          7.0f
 #define ENEMY_HIT_RADIUS     16.0f
+
+// WHAT A COLLISION COSTS, as a fraction of the victim's own full hull.
+//
+// It used to cost the match. vg_states.cpp called vg_kill_player on any contact,
+// no hull check -- so a ram was not a threat, it was an outcome, and a pilot who
+// had decided to ram had already won. Reported from the cockpit: "what's meant for
+// a desperation move for some pilot ends up being the thing that kills me every
+// time... it's too cheap."
+//
+// At 0.55 a ram takes more than half of anything it hits. It is survivable at full
+// hull and lethal to somebody already hurt, which is what a desperation move
+// should be: the pilot trades their own life for most of yours, and whether that
+// finishes you depends on the fight so far rather than on the contact itself.
+//
+// The rammer still dies outright. They are under ENEMY_KAMIKAZE_HULL by the time
+// they commit -- a third of a hull -- so this kills them anyway, and saying so
+// here is cheaper than a special case.
+#define SHIP_COLLIDE_DAMAGE  0.55f
 // Far enough that a match opens with a search rather than a merge. At 1300 the
 // two of you were on top of each other before the HUD had finished coming up;
 // out here you have to hunt, the radar earns its place, and the first contact
@@ -532,7 +550,7 @@
 // out a fresh pilot on every respawn, so a session there samples this dozens of
 // times an hour where a run samples it four times. Judge the frequency in a
 // tournament, not in the workshop.
-#define ENEMY_KAMIKAZE_CHANCE   0.18f   // of pilots who would do it at all
+#define ENEMY_KAMIKAZE_CHANCE   0.09f   // of pilots who would do it at all
 
 // A willing pilot commits when their hull is this low. They are going to die to
 // the next hit anyway, so the ship stops being an asset to protect and becomes
