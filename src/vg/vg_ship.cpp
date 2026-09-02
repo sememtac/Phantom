@@ -90,7 +90,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_FIGHTER,
-        /* weapon     */ WPN_BORESIGHT,
+        /* weapon     */ WPN_ARAAM,
         /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
 
@@ -177,7 +177,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_SLASH,
-        /* weapon     */ WPN_RIPPLE,
+        /* weapon     */ WPN_RFAAM,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 

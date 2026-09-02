@@ -63,17 +63,39 @@ enum ShipTactic : uint8_t {
 // It is not a duplicate of the numbers beneath it -- the invariants at the foot
 // of vg_ship.cpp bind the two together, so a system and a round that disagree
 // fail the build rather than the playtest.
+//
+// One per hull, and no hull shares one:
+//
+//   AEGIS    AR-AAM   active radar    -- launch and leave
+//   CHARIOT  RF-AAM   rapid fire      -- the rate is the weapon
+//   LANCE    SL-AAM   salvo lock      -- bank the locks, empty the bay
+//   BALLISTA SAAM     semi-active     -- fly it all the way in
 enum WeaponSystem : uint8_t {
-    // Point the nose and shoot. No guidance to fly, nothing to bank, no circle:
-    // the reticle and the lock cone are the whole instrument. The baseline every
-    // other system is a departure from, and the reason AEGIS is the ship you are
-    // handed first.
-    WPN_BORESIGHT = 0,
+    // AR-AAM, active radar. The round carries its own seeker, so the pilot's work
+    // ends at the launch: point the nose, earn the lock, and let it go. No
+    // guidance to fly, nothing to bank, no circle -- the reticle and the lock cone
+    // are the whole instrument.
+    //
+    // The deliberate opposite of WPN_SAAM below, and the pair is meant to teach
+    // itself: one you fly all the way in, one you forget. AEGIS's, and the
+    // baseline every other system is a departure from, which is why it is the
+    // ship you are handed first.
+    WPN_ARAAM = 0,
 
-    // Many small rounds, launched faster than they can be aimed one at a time.
-    // The magazine IS the mechanic and the long reload is its price. CHARIOT's,
-    // and the class the separation was opened to fix -- see design/notes.
-    WPN_RIPPLE,
+    // RF-AAM, rapid fire. THE RATE IS THE WEAPON: twelve rounds 0.16 seconds
+    // apart, launched faster than they can be aimed one at a time, and everything
+    // else about the class follows from that rather than standing beside it. The
+    // small warhead, the wide splash, the short reach and the ten-second reload
+    // are all the price of the interval.
+    //
+    // CHARIOT's, and the class this separation was opened to fix. It has no
+    // instrument of its own yet -- it drew BALLISTA's guide circle until the
+    // system became a declaration, and what belongs there instead is the open
+    // question. Whatever it turns out to be, it is about the RACK: a class whose
+    // decision is when to commit the magazine needs to be told what it has left
+    // and what the reload will cost, and the shared rack tick answers neither
+    // while the rounds are leaving six times a second.
+    WPN_RFAAM,
 
     // Salvo-lock. Hold a loose contact and it BANKS locks, one per
     // msl_stack_time; the trigger spends everything banked and the launch costs
