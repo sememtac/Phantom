@@ -276,6 +276,15 @@ struct ShipSpec {
     // turns up NEAR you, which is what the splash is for. The counter is range and
     // angle -- get properly behind its nose -- rather than one hard turn.
     //
+    // AND THE WARHEAD CAME DOWN WITH IT, 12 to 10. Widening the cone did not make
+    // each round hit harder, it made most of them arrive at all -- so the class's
+    // output nearly doubled with no change to what a hit is worth, and the author
+    // flew it and reported it as very lethal. The cut is on the WARHEAD rather
+    // than the cone on purpose: narrowing the cone would have taken back the fix,
+    // where a smaller warhead leaves every round arriving and only makes each one
+    // matter less, which is what a chaff cloud is supposed to be. Connect stays at
+    // 72% either way -- measured across 10, 9, 8 and 7.
+    //
     // NOT INFINITE, and that was measured too. A sentinel meaning "never gives up"
     // was the obvious version and it took the connect rate to 100%: nothing
     // escaped, no round ever met a wall, and the header line above stopped being

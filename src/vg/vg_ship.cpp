@@ -172,7 +172,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
-        /* warhead    */ 12.0f, 22.0f, 0.85f,
+        /* warhead    */ 10.0f, 22.0f, 0.85f,
         /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ -0.60f, 2.0f, 0.9f,
