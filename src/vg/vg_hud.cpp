@@ -643,13 +643,20 @@ void vg_draw_lock_box(const VgCam& cam) {
 }
 
 // Triangle sitting on a ring around the crosshair, pointing outward along `ang`.
-static void draw_ring_arrow(float ang, float radius, float size, uint16_t col, int w) {
+// `solid` fills it instead of outlining it, which costs ONE primitive rather than
+// three and is the difference between a round and a ship -- see the note above
+// vg_draw_missile_bearings. The stroke width is ignored when it fills, because a
+// fill has no edge to widen.
+static void draw_ring_arrow(float ang, float radius, float size, uint16_t col,
+                            int w, bool solid = false) {
     float ax = SCR_CX + cosf(ang) * radius;
     float ay = SCR_CY + sinf(ang) * radius;
 
     float tipx = ax + cosf(ang) * size,               tipy = ay + sinf(ang) * size;
     float l1x  = ax + cosf(ang + 2.5f) * size * 0.8f, l1y  = ay + sinf(ang + 2.5f) * size * 0.8f;
     float l2x  = ax + cosf(ang - 2.5f) * size * 0.8f, l2y  = ay + sinf(ang - 2.5f) * size * 0.8f;
+
+    if (solid) { vg_tri(tipx, tipy, l1x, l1y, l2x, l2y, col); return; }
 
     vg_line_w(tipx, tipy, l1x, l1y, col, w);
     vg_line_w(l1x, l1y, l2x, l2y, col, w);
@@ -715,13 +722,8 @@ void vg_draw_target_markers(const VgCam& cam) {
     }
 }
 
-// A SOLID triangle riding every missile in the air, so a round in flight is
-// something you can watch rather than something you infer from a ring arrow.
-//
-// FILLED, and the bogey caret above a ship is the same triangle HOLLOW. That is
-// the whole of the distinction: a marker you can see through is a machine with a
-// pilot in it, and a solid one is a warhead. It used to be a diamond, which read
-// as a third kind of thing and had to be learned separately.
+// A diamond riding every missile in the air, so a round in flight is something
+// you can watch rather than something you infer from a ring arrow.
 //
 // HUE IS IDENTITY, which is the same rule the trails already follow: a hostile
 // round wears the radar's incoming-missile yellow and one of yours wears your
@@ -729,7 +731,7 @@ void vg_draw_target_markers(const VgCam& cam) {
 // thing about whose missile it is, and none of them is using hue to rank
 // anything -- the palette reserves that for brightness.
 //
-// A missile whose seeker has broken gets no marker. It is coasting ballistic
+// A missile whose seeker has broken gets no diamond. It is coasting ballistic
 // at that point and no longer tracking anybody, and a marker that keeps riding
 // it would claim a threat that has already stopped being one.
 //
@@ -770,7 +772,48 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
         if (h < hmin) h = hmin;
         if (h > hmax) h = hmax;
 
-        vg_tri_solid(sx, sy, h, col);
+        vg_diamond(sx, sy, h, col, 2);
+    }
+}
+
+// WHICH WAY EVERY ROUND IN THE AIR LIES, on a ring of its own.
+//
+// The diamond above rides the missile and says nothing at all about the ones you
+// cannot see, and the threat arrow answers for exactly one of them -- the nearest,
+// blinking, and only once it has been judged a threat. Neither told a pilot with
+// four rounds converging from three bearings what was actually happening.
+//
+// SOLID, and the bogey arrow on its own ring is the same triangle HOLLOW. That is
+// the whole of the distinction and it is meant to be read rather than learned: a
+// marker you can see through is a machine with a pilot in it, and a filled one is
+// a warhead. Hue still says WHOSE -- the radar's incoming yellow or your own trail
+// colour -- exactly as the diamond and the streak already do.
+//
+// DRAWN WHETHER OR NOT THE ROUND IS ON SCREEN, which is where this departs from
+// the bogey idiom on purpose. A bogey's caret and its ring arrow are the same
+// instrument in two places and swapping between them is free, because a ship you
+// are looking at is not going anywhere in the next half second. A missile is: the
+// bearing is the thing you actually fly against, it slews fastest exactly as the
+// round crosses the edge of the canopy, and an indicator that vanishes at that
+// moment loses the contact at the one moment it mattered. So the ring is
+// continuous and the diamond is the detail on top of it.
+//
+// It rides the canopy because screen_dir applies the camera's bank, which is the
+// same reason the bogey arrow does. Rolling the ship rolls the ring, and the
+// triangle keeps pointing at the round through the roll.
+void vg_draw_missile_bearings(const VgCam& cam) {
+    const uint16_t mine = vg_hue_col(vg.trail_hue);
+
+    for (int i = 0; i < MAX_MISSILES; i++) {
+        const Missile* m = &vg.msl[i];
+        if (!m->alive || !m->locked) continue;
+
+        const bool     hostile = !m->from_player;
+        const uint16_t col     = hostile ? COL_RADAR_MSL : vg_dim(mine, 0.70f);
+
+        float sx = 0, sy = 0, ang = 0;
+        screen_dir(cam, m->pos, &sx, &sy, &ang);
+        draw_ring_arrow(ang, MSL_RING_R, MSL_RING_SIZE, col, 2, true);
     }
 }
 

@@ -126,16 +126,10 @@ static void draw_rear_patch(const VgCam& base, float warp) {
     // 22 would be half the height of the window. A round closing from behind is
     // the single most useful thing this instrument shows, so it earns the four
     // strokes even here.
-    // FILLS BACK ON BEFORE THE MARKERS, and only just before them. A missile
-    // marker is a solid triangle now, and a solid triangle is a fill -- with
-    // fills off it drew nothing at all in the mirror, which is the one window
-    // where a round closing from behind has to be visible. Everything above
-    // this line is still stroked, so the patch pays for one primitive per
-    // round in the air and nothing else.
-    vg_rast_fills(true);
     vg_draw_missile_markers(rc, (float)(px + 3), (float)(py + 3),
                             (float)(px + REAR_W - 3), (float)(py + REAR_H - 3),
                             2.0f, 6.0f);
+    vg_rast_fills(true);
     vg_rast_viewport_full();
 
     // Frame last, over the picture, in the system colour. One pixel outside the
@@ -770,6 +764,7 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     vg_draw_target_markers(cam);
     vg_draw_missile_markers(cam, 26.0f, 26.0f, SCR_W - 26.0f, SCR_H - 26.0f,
                             7.0f, 22.0f);
+    vg_draw_missile_bearings(cam);
     vg_draw_threat_indicator(cam);
     g_sub_marks = micros() - t_marks;
 

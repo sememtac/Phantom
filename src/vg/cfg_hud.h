@@ -96,6 +96,14 @@
 #define ALERT_FLASH_FAST     0.50f    // ...and closest, 2 Hz. Never faster.
 #define ALERT_FLASH_DUTY     0.50f    // fraction of the period the block is lit
 
+// --- missile bearing ring --------------------------------------------------
+//
+// Between the bogey arrows at 150 and the threat arrow at 196, and clear of both:
+// three rings that meant three different things would be one ring of noise if any
+// two of them touched. See vg_draw_missile_bearings.
+#define MSL_RING_R           174.0f
+#define MSL_RING_SIZE        13.0f
+
 // --- rear view -------------------------------------------------------------
 // A patch in the top right, which is the one part of the panel with nothing in
 // it: the throttle owns the left edge, the radar the bottom, and the comms and

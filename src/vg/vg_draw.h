@@ -93,24 +93,6 @@ static inline void vg_diamond(float cx, float cy, float r, uint16_t col, int w) 
     vg_line_w(cx - r, cy,     cx,     cy - r, col, w);
 }
 
-// A SOLID triangle, apex UP and centred on what it marks.
-//
-// ONE fill primitive, not a stack of spans. The first version walked it as
-// horizontal strokes so that it would survive in the rear-view patch, which
-// draws with fills switched off -- and that cost up to 45 primitives per
-// marker. With a CHARIOT emptying twelve rounds into the air that is 540
-// primitives of markers alone against a 2000 ceiling, and the strokes that
-// land after the ceiling are simply lost. The patch turns fills on for the
-// marker pass instead; see the call in draw_rear_patch.
-//
-// The bogey caret above a ship is the same triangle HOLLOW. That is the whole
-// of the distinction, and it is meant to be readable without being taught: a
-// marker you can see through is a machine with a pilot in it, and a solid one
-// is a warhead.
-static inline void vg_tri_solid(float cx, float cy, float h, uint16_t col) {
-    vg_tri(cx, cy - h, cx + h, cy + h, cx - h, cy + h, col);
-}
-
 // Distance haze, as a brightness multiplier. Near things are full strength, far
 // things bottom out at `floor` rather than going to black, because a contact that
 // fades to nothing is indistinguishable from one that is not there -- and the
@@ -166,6 +148,12 @@ void vg_draw_target_markers(const VgCam& cam);
 void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
                              float x1, float y1, float hmin, float hmax);
 void vg_draw_threat_indicator(const VgCam& cam);
+
+// Which way every round in the air lies, as a SOLID triangle on its own ring.
+//
+// Main window only: it is drawn about the screen centre, and the rear-view patch
+// has neither the room nor the centre for it.
+void vg_draw_missile_bearings(const VgCam& cam);
 
 // The broadcast caption. Drawn by the render layer rather than by the HUD,
 // because the IFT speaks over the INTRO -- which has no instruments at all -- as
