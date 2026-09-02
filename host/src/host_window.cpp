@@ -21,7 +21,19 @@ static bool       s_capture = true;
 // that is painful when several instances are open for testing. A headless run is
 // worse: it opens a window it never draws into, and that window was fencing the
 // desktop's pointer for the whole run.
+//
+// AND A RUN THE BOT IS FLYING IS THE SAME CASE. --bot draws a window, so neither
+// of the guards above catches it, and the fence took the desktop's pointer the
+// moment the run stole focus -- which is every automated run started while
+// somebody was working. There is no human stick to read in that seat: the bot
+// writes the input itself and host_mouse_logical's answer is discarded. So the
+// pointer is not ours to hold, and this is the condition that says so rather
+// than another window flag to remember to set.
 static bool       s_fence_wanted = true;
+
+// Set by --bot, in host_main. Declared rather than included: this file is the
+// platform layer and has no other business with the game's own headers.
+extern bool vg_bot_on;
 
 // THE VIEWPORT: where the picture actually sits inside the client area.
 //
@@ -327,7 +339,8 @@ bool host_window_pump(void) {
     // or a resize is followed with no message to hook. It is dropped the moment
     // focus goes -- on WM_KILLFOCUS above and here as the standing state -- so
     // alt-tab is never trapped.
-    if (s_fence_wanted && !vg_headless && s_hwnd && !s_quit && host_window_focused()) {
+    if (s_fence_wanted && !vg_headless && !vg_bot_on && s_hwnd && !s_quit
+        && host_window_focused()) {
         RECT rc;
         if (view_rect_screen(s_hwnd, &rc)) ClipCursor(&rc);
     } else {
@@ -344,8 +357,8 @@ bool host_window_pump(void) {
     //
     // Hidden while flying all the same. There is nothing to point at, and a
     // cursor sitting in the canopy is the desktop showing through.
-    if (s_fence_wanted && !vg_headless && s_capture && s_hwnd && !s_quit
-        && host_window_focused()) {
+    if (s_fence_wanted && !vg_headless && !vg_bot_on && s_capture && s_hwnd
+        && !s_quit && host_window_focused()) {
         while (ShowCursor(FALSE) >= 0) {}
     } else {
         while (ShowCursor(TRUE) < 0) {}
@@ -395,6 +408,39 @@ bool host_key_down(int vk) {
 }
 
 void host_window_present(const uint16_t* panel) {
+    // ONE FRAME TO A FILE, when --shot asks for it.
+    //
+    // The only way to look at what the renderer actually produced. A rendering
+    // fault that is described rather than seen costs hours: the gym's black
+    // backdrop was diagnosed in one frame here after a long walk through the
+    // sky code that found nothing, because the fill was correct and it was the
+    // reveal that was never raised.
+    //
+    // PPM because it is eight lines and no library. Panel byte order and panel
+    // orientation, exactly as the bands are handed over -- so what lands in the
+    // file is what would have gone down the wire to the display.
+    {
+        extern int g_host_shot;
+        static int fn = 0;
+        if (g_host_shot && ++fn == g_host_shot) {
+            FILE* f = fopen("shot.ppm", "wb");
+            if (f) {
+                fprintf(f, "P6\n%d %d\n255\n", SCR_W, SCR_H);
+                for (int i = 0; i < SCR_W * SCR_H; i++) {
+                    unsigned p16 = panel[i];
+                    p16 = ((p16 & 0xff) << 8) | (p16 >> 8);   // panel byte order
+                    unsigned char rgb[3] = {
+                        (unsigned char)(((p16 >> 11) & 31) * 255 / 31),
+                        (unsigned char)(((p16 >>  5) & 63) * 255 / 63),
+                        (unsigned char)(( p16        & 31) * 255 / 31) };
+                    fwrite(rgb, 1, 3, f);
+                }
+                fclose(f);
+                printf("SHOT written at frame %d\n", fn);
+            }
+        }
+    }
+
     if (!s_hwnd || !s_bgra || !panel) return;
 
     // THE PANEL STORES RGB565 BYTE-SWAPPED. VGC() swaps the halves of a native

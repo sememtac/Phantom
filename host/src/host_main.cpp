@@ -11,6 +11,7 @@
 #include "vg_sim.h"
 
 bool host_dataset_open(const char* path);
+int g_host_shot = 0;   // --shot N: write frame N to shot.ppm, then carry on
 void host_random_seed(uint32_t seed);
 #include "vg_prof.h"
 void host_dataset_close(void);
@@ -32,6 +33,7 @@ int main(int argc, char** argv) {
     int scale = 2;
     int frames = 0;   // 0 = run until the window is closed
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
+    bool course = false;                  // start on the practice range
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
@@ -74,6 +76,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--no-net-survival")) vg_net_owns_survival = false;
         else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
+        else if (!strcmp(argv[i], "--course")) course = true;
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_host_shot = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
@@ -116,6 +120,8 @@ int main(int argc, char** argv) {
                    "               class B. 0 AEGIS 1 LANCE 2 CHARIOT 3 BALLISTA.\n"
                    "  --bot        the game flies the player's seat too. With\n"
                    "               --gym that is a fight nobody is holding.\n"
+                   "  --course     start on the practice range, past the menus.\n"
+                   "  --shot N     write frame N to shot.ppm and keep running.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
@@ -148,6 +154,11 @@ int main(int argc, char** argv) {
         vg.gym_rotate = rotate;
         vg.gym_pilot  = (int8_t)pilot;
     }
+
+    // Past the menus and onto the practice range. After setup() for the
+    // same reason the gym is: the boot sequence lands on the title screen
+    // and would replace anything set up before it.
+    if (course) vg_state_cut(VG_COURSE);
 
     if (dump && !host_dataset_open(dump)) {
         fprintf(stderr, "could not open %s for writing\n", dump);
