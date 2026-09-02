@@ -149,7 +149,7 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
                              float x1, float y1, float hmin, float hmax);
 void vg_draw_threat_indicator(const VgCam& cam);
 
-// Which way every round in the air lies, as a SOLID triangle on its own ring.
+// Which way every INCOMING round lies, as a solid triangle on its own ring.
 //
 // Main window only: it is drawn about the screen centre, and the rear-view patch
 // has neither the room nor the centre for it.

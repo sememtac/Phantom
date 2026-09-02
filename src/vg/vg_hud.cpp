@@ -786,8 +786,14 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
 // SOLID, and the bogey arrow on its own ring is the same triangle HOLLOW. That is
 // the whole of the distinction and it is meant to be read rather than learned: a
 // marker you can see through is a machine with a pilot in it, and a filled one is
-// a warhead. Hue still says WHOSE -- the radar's incoming yellow or your own trail
-// colour -- exactly as the diamond and the streak already do.
+// a warhead.
+//
+// INCOMING ONLY. The diamond marks every round because a round in flight is worth
+// watching whoever fired it, but this ring answers one question -- which way do I
+// break -- and your own rounds are not an answer to it. Drawing them put three or
+// four triangles on the ring that a pilot had to identify and then discard, in the
+// one instrument that has to be read without being looked at. So hue is not doing
+// any work here and the ring is the radar's incoming yellow throughout.
 //
 // DRAWN WHETHER OR NOT THE ROUND IS ON SCREEN, which is where this departs from
 // the bogey idiom on purpose. A bogey's caret and its ring arrow are the same
@@ -802,18 +808,13 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
 // same reason the bogey arrow does. Rolling the ship rolls the ring, and the
 // triangle keeps pointing at the round through the roll.
 void vg_draw_missile_bearings(const VgCam& cam) {
-    const uint16_t mine = vg_hue_col(vg.trail_hue);
-
     for (int i = 0; i < MAX_MISSILES; i++) {
         const Missile* m = &vg.msl[i];
-        if (!m->alive || !m->locked) continue;
-
-        const bool     hostile = !m->from_player;
-        const uint16_t col     = hostile ? COL_RADAR_MSL : vg_dim(mine, 0.70f);
+        if (!m->alive || !m->locked || m->from_player) continue;
 
         float sx = 0, sy = 0, ang = 0;
         screen_dir(cam, m->pos, &sx, &sy, &ang);
-        draw_ring_arrow(ang, MSL_RING_R, MSL_RING_SIZE, col, 2, true);
+        draw_ring_arrow(ang, MSL_RING_R, MSL_RING_SIZE, COL_RADAR_MSL, 2, true);
     }
 }
 
