@@ -200,16 +200,28 @@ int main(int argc, char** argv) {
     // telemetry block, so the counters a played session prints every two seconds
     // are never shown. They are the point of a measured run, so they are printed
     // once on the way out.
-    if (g_msl_end[0] + g_msl_end[1] > 0) {
-        printf("mslend them = hit %lu near %lu fuse %lu wall %lu gone %lu"
+    // BOTH SIDES. The counters are indexed [0] the enemy fired it, [1] the player
+    // did -- and for as long as this existed only [0] was ever printed. The
+    // player's half was counted every frame and thrown away at the door.
+    //
+    // Not a cosmetic omission. It made a HUMAN's flying the one thing the
+    // instruments could not see, which is exactly the comparison worth having:
+    // the scripted seat is a weak pilot, and every class number ever read off
+    // this was the weak pilot's. A player flew a CHARIOT for five minutes to
+    // settle whether it was too lethal, and the run reported only what the AEGIS
+    // had done to them.
+    for (int side = 0; side < 2; side++) {
+        if (g_msl_end[side] == 0) continue;
+        printf("mslend %-4s = hit %lu near %lu fuse %lu wall %lu gone %lu"
                " | lock %lu | lost illum %lu (dead %lu) cone %lu | dark %lu relit %lu | dmg %lu\n",
-               (unsigned long)g_msl_why[0][0], (unsigned long)g_msl_why[0][1],
-               (unsigned long)g_msl_why[0][2], (unsigned long)g_msl_why[0][3],
-               (unsigned long)g_msl_why[0][4], (unsigned long)g_msl_endlock[0],
-               (unsigned long)g_msl_lost[0][0], (unsigned long)g_msl_lost_dead[0],
-               (unsigned long)g_msl_lost[0][1],
-               (unsigned long)g_msl_dark[0], (unsigned long)g_msl_relit[0],
-               (unsigned long)g_msl_dmg[0]);
+               side ? "you" : "them",
+               (unsigned long)g_msl_why[side][0], (unsigned long)g_msl_why[side][1],
+               (unsigned long)g_msl_why[side][2], (unsigned long)g_msl_why[side][3],
+               (unsigned long)g_msl_why[side][4], (unsigned long)g_msl_endlock[side],
+               (unsigned long)g_msl_lost[side][0], (unsigned long)g_msl_lost_dead[side],
+               (unsigned long)g_msl_lost[side][1],
+               (unsigned long)g_msl_dark[side], (unsigned long)g_msl_relit[side],
+               (unsigned long)g_msl_dmg[side]);
     }
     return 0;
 }

@@ -932,11 +932,18 @@ void loop(void) {
             // say which of the four ways it failed. `lock` is how many were
             // still guided when they stopped: a low count next to a high `illum`
             // is a semi-active round thrown away by its own launcher.
-            Serial.printf("        mslend them = hit %lu near %lu fuse %lu wall %lu gone %lu | lock %lu | lost illum %lu cone %lu\n",
-                          (unsigned long)g_msl_why[0][0], (unsigned long)g_msl_why[0][1],
-                          (unsigned long)g_msl_why[0][2], (unsigned long)g_msl_why[0][3],
-                          (unsigned long)g_msl_why[0][4], (unsigned long)g_msl_endlock[0],
-                          (unsigned long)g_msl_lost[0][0], (unsigned long)g_msl_lost[0][1]);
+            // BOTH SIDES, and [1] is the player's. It was counted every frame and
+            // never printed, which made the pilot holding the stick the one thing
+            // this could not see. See the note in host_main.cpp.
+            for (int side = 0; side < 2; side++) {
+                if (g_msl_end[side] == 0) continue;
+                Serial.printf("        mslend %-4s = hit %lu near %lu fuse %lu wall %lu gone %lu | lock %lu | lost illum %lu cone %lu\n",
+                          side ? "you" : "them",
+                          (unsigned long)g_msl_why[side][0], (unsigned long)g_msl_why[side][1],
+                          (unsigned long)g_msl_why[side][2], (unsigned long)g_msl_why[side][3],
+                          (unsigned long)g_msl_why[side][4], (unsigned long)g_msl_endlock[side],
+                          (unsigned long)g_msl_lost[side][0], (unsigned long)g_msl_lost[side][1]);
+            }
         }
 
         // Audio delivery. The window is the same two seconds as the lines above,
