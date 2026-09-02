@@ -417,6 +417,23 @@ void vg_gym_start(void) {
     vg_match_start();
     vg_begin_flight();
 
+    // AND THE BACKDROP THE CUTSCENE WOULD HAVE BROUGHT UP.
+    //
+    // vg_begin_flight generates the venue and then hides it -- reveal zero -- because a
+    // tournament dissolves it in across the opening drift, so the match ARRIVES somewhere
+    // rather than simply starting there. The gym has no cutscene to run that dissolve, so
+    // nothing ever raised it again and every gym match was flown against a black sky.
+    //
+    // It hid for as long as it did because of WHERE it shows. The fill blacks out only the
+    // rows the reveal has not reached, and the rear-view patch does not consult the reveal
+    // at all -- so the mirror showed the venue correctly while the window in front of it
+    // showed nothing, which reads as a fault in the mirror rather than as a backdrop that
+    // was never turned on.
+    //
+    // Same shape as the fault the note above describes, and the same cure: what the
+    // cutscene did at its far end has to be done here by name.
+    vg_sky_set_reveal(1.0f);
+
     // AND A WHOLE HULL, after both, or vg_match_start's health_max would be set
     // from a spec this has not read yet. This is the one place in the game that
     // heals: damage is permanent for a tournament because the repair economy IS
