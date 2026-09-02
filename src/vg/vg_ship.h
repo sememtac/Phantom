@@ -93,9 +93,17 @@ enum WeaponSystem : uint8_t {
     // round back faster than a pilot can use one has no dry time in it whatever
     // its size, and 1.2s is inside the time it takes to reacquire and fire.
     //
-    // TWO AT 2.5 SECONDS. Empty the bay and there is a real hole afterwards: long
-    // enough to be a phase of the fight rather than a hitch, short enough that it
-    // is still a quarter of what every other class pays for a full reload.
+    // TWO AT FOUR SECONDS, and it took three cockpit passes to get there: 1.0,
+    // then 1.2, then 2.5, each one flown and each one still reported as spammable.
+    // The lesson in that sequence is that a rearm interval does nothing until it
+    // is LONGER THAN THE PILOT'S OWN LOOP -- reacquire, close, aim, fire. Under
+    // that, the bay refills inside the gap between shots and the rack may as well
+    // be infinite whatever its size.
+    //
+    // The number that finally showed it is not the firing rate but the FRACTION OF
+    // THE BAY'S CEILING the pilot consumes. At 1.0s they used 51% of what the bay
+    // could make and never waited on it; at 2.5s, 76% and starting to. That ratio
+    // is the honest measure of starvation and the raw rate is not.
     //
     // AND THE WARHEAD WENT UP WITH IT, 20 to 63. Starvation and output are the
     // SAME DIAL on a rate-limited weapon, and there is no way round it: halving
@@ -104,12 +112,24 @@ enum WeaponSystem : uint8_t {
     // between 393 and 910 a run -- well under everything else.
     //
     // So the rounds got heavier as they got scarcer, which is the trade that keeps
-    // both and the right one for a bay holding two. WATCH THIS ONE: at 0.18 rounds
-    // a second and 42 damage a connecting round, the class now has BALLISTA's
-    // numeric shape, and the two are kept apart by mechanic alone -- fire and
-    // forget at 1600 against a round flown by hand to 4200. If they start to read
-    // as the same ship in the cockpit, the answer is to let AEGIS be the low
-    // output hull it can afford to be with 330 of armour, at a warhead nearer 45.
+    // both and the right one for a bay holding two.
+    //
+    // THE TABLE UNDER-READS THIS CLASS BY ROUGHLY 2.3x AND THAT IS THE MECHANIC
+    // WORKING. The bay only fills while the target is in front, so output is now
+    // a function of how well the nose is kept on somebody -- and the scripted seat
+    // is bad at exactly that. Measured on one matchup: the bot takes 45% of the
+    // bay's ceiling, a player 76%, and the player's hits are more central besides.
+    // So a warhead tuned until the HARNESS reads in band overpays a human twice
+    // over, which is how 63 came to double a real pilot's damage.
+    //
+    // The roster table therefore says AEGIS is the weakest of the four and it is
+    // not. Do not "fix" that by raising the warhead: the cockpit is the instrument
+    // here, and the harness number for this one class is known to be low.
+    //
+    // WATCH THE OTHER COLLISION. At this rate and this warhead the class has
+    // BALLISTA's numeric shape, and only the mechanic keeps them apart -- fire and
+    // forget at 1600 against a round flown by hand to 4200. Fixing a confusion
+    // with LANCE must not quietly make one with BALLISTA.
     //
     // It is not LANCE's 32 by accident of arithmetic and it does not read as it.
     // LANCE's graze floor is 0.20, all or nothing; this one is 0.60 and forgives.
