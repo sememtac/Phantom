@@ -128,7 +128,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // full four is a payoff. The round profile is untouched: these are the
         // same geometry-gated darts, so a salvo on a good line is devastating and
         // one thrown across a turn is four rounds wasted at once.
-        /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 1.20f,
+        /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.95f,
         // FIRE AND FORGET, which is the half of the class the round could not keep.
         //
         // The bargain is that the PILOT earns the shot by lining the geometry up,

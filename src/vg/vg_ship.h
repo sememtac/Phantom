@@ -165,9 +165,15 @@ struct ShipSpec {
     // instead, which is a different skill from BALLISTA's and deliberately so.
     //
     // Losing them empties the bank on the frame it happens, so the demand is
-    // sustained contact rather than precision. Four stacks at 1.2s is nearly five
-    // seconds of unbroken tracking for a full salvo, in fights that turn over
-    // faster than that.
+    // sustained contact rather than precision. Four stacks at 0.95s is a little
+    // under four seconds of unbroken tracking for a full salvo, in fights that
+    // turn over faster than that.
+    //
+    // It was 1.2s, which flew correctly and read as slightly too long a toll: the
+    // build-up was a trade being weighed rather than a rhythm being played. The
+    // interval is the tempo dial for this class and the only one -- lock_time
+    // decides how hard the FIRST stack is to earn, and the two are different
+    // questions.
     float msl_stack_time;
     float msl_turn;            // rad/sec -- the seeker's agility
     float msl_life;            // seconds before it self-destructs

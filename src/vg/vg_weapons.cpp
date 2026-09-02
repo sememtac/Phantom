@@ -216,8 +216,8 @@ void vg_player_fire(void) {
     // LAUNCHING BREAKS THE LOCK, for a stacking class only.
     //
     // Without this the bank is permitted but never rewarded: one stack lands every
-    // 1.2 seconds and there is no reason on earth not to spend it immediately, so
-    // the optimal play is a single round every 1.2 seconds for ever -- which was
+    // msl_stack_time and there is no reason on earth not to spend it immediately,
+    // so the optimal play is a single round on that interval for ever -- which was
     // reported from the cockpit as spam, and is the exact opposite of the class.
     //
     // Making the launch cost the LOCK fixes the incentive rather than papering
