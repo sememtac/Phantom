@@ -715,8 +715,13 @@ void vg_draw_target_markers(const VgCam& cam) {
     }
 }
 
-// A diamond riding every missile in the air, so a round in flight is something
-// you can watch rather than something you infer from a ring arrow.
+// A SOLID triangle riding every missile in the air, so a round in flight is
+// something you can watch rather than something you infer from a ring arrow.
+//
+// FILLED, and the bogey caret above a ship is the same triangle HOLLOW. That is
+// the whole of the distinction: a marker you can see through is a machine with a
+// pilot in it, and a solid one is a warhead. It used to be a diamond, which read
+// as a third kind of thing and had to be learned separately.
 //
 // HUE IS IDENTITY, which is the same rule the trails already follow: a hostile
 // round wears the radar's incoming-missile yellow and one of yours wears your
@@ -724,7 +729,7 @@ void vg_draw_target_markers(const VgCam& cam) {
 // thing about whose missile it is, and none of them is using hue to rank
 // anything -- the palette reserves that for brightness.
 //
-// A missile whose seeker has broken gets no diamond. It is coasting ballistic
+// A missile whose seeker has broken gets no marker. It is coasting ballistic
 // at that point and no longer tracking anybody, and a marker that keeps riding
 // it would claim a threat that has already stopped being one.
 //
@@ -765,7 +770,7 @@ void vg_draw_missile_markers(const VgCam& cam, float x0, float y0,
         if (h < hmin) h = hmin;
         if (h > hmax) h = hmax;
 
-        vg_diamond(sx, sy, h, col, 2);
+        vg_tri_solid(sx, sy, h, col);
     }
 }
 
