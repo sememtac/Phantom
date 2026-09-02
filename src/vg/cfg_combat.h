@@ -103,7 +103,7 @@
 //
 // This is a placeholder for real per-archetype behaviour. It stops a BALLISTA
 // throwing away its range advantage, but it will not make one FIGHT like a
-// gunner. See DESIGN.md.
+// gunner. See design/notes/, which is the authority on intent.
 #define ENEMY_SKILL          0.82f    // turn-rate scale; 1.0 = as good as a player
 #define ENEMY_FIRE_RANGE_K   0.875f   // fraction of its own lock range
 #define ENEMY_CLOSE_RANGE_K  0.94f    // ...at which it settles to a fighting speed

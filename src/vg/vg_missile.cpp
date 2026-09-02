@@ -231,7 +231,7 @@ void vg_update_missiles(float dt) {
         // index goes stale, `alive` is false, and the rounds already in the air go
         // dumb. Killing the ship that is lighting you up is a real counter now,
         // and nobody had to write it.
-        if (m->locked && m->spec->msl_saam) {
+        if (m->locked && vg_msl_semi_active(m->spec)) {
             bool lit;
             if (m->from_player) {
                 lit = vg_wpn.locked && vg_wpn.target == m->target;

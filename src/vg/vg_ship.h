@@ -274,28 +274,6 @@ struct ShipSpec {
     // whole mechanism exists to avoid.
     float msl_reacq_delay;
 
-    // SEMI-ACTIVE: THE LAUNCHER HAS TO KEEP LOOKING AT THEM.
-    //
-    // A normal round here is fire-and-forget -- it carries its own seeker, and
-    // once it is away the launcher may do as it likes. A semi-active one has no
-    // seeker worth the name: it flies down a target the LAUNCHER is holding, and
-    // the moment that lock is lost the round has nothing to follow. Immediately,
-    // and for good -- it keeps its heading and sails on like any other broken
-    // lock.
-    //
-    // BALLISTA'S FANTASY, STATED AS A RULE. Its reach is the longest in the game
-    // and its round is alive for thirty-two seconds; what pays for that is not
-    // being allowed to look away. Firing across the arena now means holding the
-    // target in view for the twenty seconds the round takes to arrive -- twenty
-    // seconds of not manoeuvring, not turning on anybody else, and being
-    // perfectly predictable to the person being shot at. Reported from play as
-    // the class feeling too strong precisely because none of that was true.
-    //
-    // WHOSE VIEW NEEDS NO CONE OF ITS OWN. It is the class's lock_hold_cos, and
-    // BALLISTA's is the viewport idiom -- so the lock holds for exactly as long
-    // as the target is on screen, which is the promise the fantasy makes.
-    bool  msl_saam;
-
     // --- how the AI flies it -------------------------------------------------
     ShipTactic tactic;
 
@@ -345,10 +323,30 @@ extern const ShipSpec vg_ship_class[SHIP_CLASSES];
 // The lock cone this class actually enforces at a given range, as a cosine.
 //
 // For a class with a real lock_hold_cos it narrows as 1/range beyond
-// LOCK_TIGHTEN_REF -- see the note there. For the three that use the -2.0f
-// sentinel it is the cone unchanged, because their rule is the viewport and a
-// viewport does not narrow. `hold` picks the holding cone over the acquiring one.
+// LOCK_TIGHTEN_REF -- see the note there. For one that uses the -2.0f sentinel it
+// is the cone unchanged, because its rule is the viewport and a viewport does not
+// narrow.
+//
+// It said THREE when it was written and LANCE is the only one now. That drift is
+// not harmless trivia: the guide circle was gated on this same sentinel, on the
+// same stale assumption about how many classes wore it, and it silently handed
+// AEGIS and CHARIOT a mechanic belonging to BALLISTA. A count in a comment is a
+// fact with no way to check itself, so do not put one here again. `hold` picks the holding cone over the acquiring one.
 float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold);
+
+// Whether this class's rounds are flown by the SHOOTER for their whole life.
+//
+// Derived, and that is the entire point. It was a `msl_saam` bool sitting beside
+// the system in the table -- two fields carrying one fact, kept honest by a
+// static_assert that tested them against each other. An assert is the right tool
+// when two independent numbers must agree; it is the wrong one when the second
+// number was never independent. Now there is nothing to disagree.
+//
+// The reading site still gets to ask its own question: the missile code wants to
+// know about the ROUND, not about the designation on the box.
+static inline bool vg_msl_semi_active(const ShipSpec* sp) {
+    return sp && sp->wpn == WPN_SAAAM;
+}
 
 static inline const ShipSpec* vg_spec(ShipClass c) {
     return &vg_ship_class[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];

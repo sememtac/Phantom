@@ -2,6 +2,7 @@
 #include "vg_arena.h"
 #include "vg_bot.h"
 #include "vg_modes.h"
+#include "vg_wpnsys.h"
 #include <math.h>
 
 // Enemy fighter behaviour, in strict priority order:
@@ -309,8 +310,7 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
         // into an enemy's flying too, instead of only into the player's.
         s->lock_t  = 0.0f;
         s->locked  = false;
-        s->stacks  = 0;          // the bank goes with the lock
-        s->stack_t = 0.0f;
+        vg_wpn_bank_drop(*s);    // the bank goes with the lock
         return;
     }
 
@@ -318,21 +318,10 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     const float need = sp->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
     if (s->lock_t >= need) s->locked = true;
 
-    // BANKING, exactly as the player's seat does it.
-    if (sp->wpn == WPN_SLAAM) {
-        if (s->locked) {
-            // Against the rack, not the bay. See the note in vg_weapons.cpp.
-            s->stack_t += dt;
-            while (s->stack_t >= sp->msl_stack_time && s->stacks < s->rounds) {
-                s->stack_t -= sp->msl_stack_time;
-                s->stacks++;
-            }
-            if (s->stacks >= s->rounds) s->stack_t = 0.0f;
-            if (s->stacks > s->rounds) s->stacks = s->rounds;
-        } else {
-            s->stacks = 0; s->stack_t = 0.0f;
-        }
-    }
+    // BANKING. Not "exactly as the player's seat does it" any more -- the SAME
+    // CALL the player's seat makes, which is the only version of that claim a
+    // reader can check. See vg_wpnsys.h.
+    vg_wpn_bank_step(*s, sp, dt);
 }
 
 // NOTHING IN THE RACK, AND THE PLAYER IS CLOSE ENOUGH FOR THAT TO MATTER.
@@ -1104,8 +1093,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // exactly the same lack of obligation.
     const int judged = vg_bot_enemy_fire(index);
 
-    // A stacking class with nothing banked has nothing to fire.
-    const bool banked = (sp->wpn != WPN_SLAAM) || (s->stacks > 0);
+    // A stacking class with nothing banked has nothing to fire. The player's
+    // trigger asks the same function.
+    const bool banked = vg_wpn_has_shot(*s, sp);
 
     if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
@@ -1113,11 +1103,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // target, which is the same error that made the lock slow to earn.
         // HOW MANY LEAVE ON THIS TRIGGER. One, unless the class banks -- and then
         // everything banked, which is the player's rule and therefore this one.
-        int salvo = 1;
-        if (sp->wpn == WPN_SLAAM) {
-            salvo = s->stacks;
-            if (salvo > s->rounds) salvo = s->rounds;
-        }
+        const int salvo = vg_wpn_salvo(*s, sp);
         for (int k = 0; k < salvo; k++) {
             // ALONG THE AIM. The rail is still on the nose -- that is where the
             // ship is -- but the round leaves on the direction this pilot thinks
@@ -1127,11 +1113,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 break;
             s->rounds--;
         }
-        s->stacks = 0; s->stack_t = 0.0f;
-        // The launch costs the lock, exactly as it does in the player's seat --
-        // see the note there. An enemy that kept its contact through a salvo would
-        // be spamming the thing the player cannot.
-        if (sp->wpn == WPN_SLAAM) { s->locked = false; s->lock_t = 0.0f; }
+        // What the press cost. The player's trigger runs this same function, so
+        // an enemy cannot keep a contact through a salvo the player would lose.
+        vg_wpn_spend(*s, sp);
 
         // THE CLASS'S OWN TRIGGER SPEED, and ENEMY_FIRE_GAP_K is gone from it.
         // That constant existed to slow an average down to something survivable;

@@ -1,5 +1,6 @@
 ﻿#include "vg_sim.h"
 #include "vg_weapons.h"
+#include "vg_wpnsys.h"
 #include "vg_shake.h"
 #include "vg_sfx.h"
 #include "vg_canopy_draw.h"
@@ -94,8 +95,7 @@ void vg_update_lock(float dt) {
         vg_wpn.target = -1;
         vg_wpn.lock_t      = 0;
         vg_wpn.locked      = false;
-        vg_wpn.stacks      = 0;    // the bank goes with the lock
-        vg_wpn.stack_t     = 0.0f;
+        vg_wpn_bank_drop(vg_wpn);  // the bank goes with the lock
         return;
     }
 
@@ -103,8 +103,7 @@ void vg_update_lock(float dt) {
         vg_wpn.target = best;
         vg_wpn.lock_t      = 0;
         vg_wpn.locked      = false;
-        vg_wpn.stacks      = 0;    // a new contact is a new bank
-        vg_wpn.stack_t     = 0.0f;
+        vg_wpn_bank_drop(vg_wpn);  // a new contact is a new bank
     }
     vg_wpn.lock_t += dt;
 
@@ -125,32 +124,11 @@ void vg_update_lock(float dt) {
     // stays.
     if (vg_wpn.lock_t >= vg_wpn.lock_need) vg_wpn.locked = true;
 
-    // BANKING THE LOCK. A stacking class does not shoot when it has one, it saves
-    // it -- see msl_stack_time. The bank fills only while the lock is actually
-    // held, so the cost is unbroken contact rather than a precise cone.
-    if (vg.spec->wpn == WPN_SLAAM) {
-        if (vg_wpn.locked) {
-            // AGAINST WHAT IS IN THE BAY, not against what the bay holds. Banking
-            // a fifth lock with four rounds loaded is banking something that
-            // cannot be fired: the salvo is already clamped to the rack at the
-            // trigger, so the extra only ever showed as a filled cell that did
-            // nothing. Worse on a part-spent rack -- two rounds left and four
-            // cells lit is the instrument lying about what the press will do.
-            vg_wpn.stack_t += dt;
-            while (vg_wpn.stack_t >= vg.spec->msl_stack_time
-                   && vg_wpn.stacks < vg_wpn.rounds) {
-                vg_wpn.stack_t -= vg.spec->msl_stack_time;
-                vg_wpn.stacks++;
-            }
-            if (vg_wpn.stacks >= vg_wpn.rounds) vg_wpn.stack_t = 0.0f;
-            // A rack that shrank under a bank -- there is no path that does this
-            // today, and a clamp costs nothing against one appearing later.
-            if (vg_wpn.stacks > vg_wpn.rounds) vg_wpn.stacks = vg_wpn.rounds;
-        } else {
-            vg_wpn.stacks  = 0;
-            vg_wpn.stack_t = 0.0f;
-        }
-    }
+    // BANKING THE LOCK, by the shared rule. A stacking class does not shoot when it
+    // has one, it saves it; the bank fills only while the lock is actually held,
+    // so the cost is unbroken contact rather than a precise cone. The enemy runs
+    // this same call -- see vg_wpnsys.h.
+    vg_wpn_bank_step(vg_wpn, vg.spec, dt);
 }
 
 // The magazine refills ALL AT ONCE, and only from empty.
@@ -184,12 +162,8 @@ void vg_player_fire(void) {
     // stacking class, everything banked -- which is the whole trigger, and the
     // reason the aim it asks for is loose. A partial release is a real choice and
     // not a mistake: two now is often worth more than four in three seconds.
-    int salvo = 1;
-    if (vg.spec->wpn == WPN_SLAAM) {
-        salvo = vg_wpn.stacks;
-        if (salvo > vg_wpn.rounds) salvo = vg_wpn.rounds;
-        if (salvo <= 0) return;
-    }
+    const int salvo = vg_wpn_salvo(vg_wpn, vg.spec);
+    if (salvo <= 0) return;
 
     static int rail = 0;
     int sent = 0;
@@ -209,26 +183,12 @@ void vg_player_fire(void) {
     }
     if (sent == 0) return;
 
-    vg_wpn.stacks   = 0;          // the bank is spent, whatever left the rail
-    vg_wpn.stack_t  = 0.0f;
+    // WHAT THE PRESS COST: the bank, whatever left the rail, and for a stacking
+    // class the lock as well. Shared with the enemy seat -- see vg_wpnsys.h,
+    // which carries the reasoning.
+    vg_wpn_spend(vg_wpn, vg.spec);
     vg_wpn.fire_gap = vg.spec->fire_gap;
 
-    // LAUNCHING BREAKS THE LOCK, for a stacking class only.
-    //
-    // Without this the bank is permitted but never rewarded: one stack lands every
-    // msl_stack_time and there is no reason on earth not to spend it immediately,
-    // so the optimal play is a single round on that interval for ever -- which was
-    // reported from the cockpit as spam, and is the exact opposite of the class.
-    //
-    // Making the launch cost the LOCK fixes the incentive rather than papering
-    // over it with a longer trigger interval. The cycle becomes acquire, hold,
-    // release, re-acquire, so spending a small bank throws away the contact that
-    // earned it and holding for a fuller one is simply worth more. It is also the
-    // honest reading of what a full bay leaving at once does to a seeker.
-    if (vg.spec->wpn == WPN_SLAAM) {
-        vg_wpn.locked = false;
-        vg_wpn.lock_t = 0.0f;
-    }
     vg_sfx_play(SFX_LAUNCH, 1.0f);
 
     // Emptying the rack starts the clock. Doing it here rather than in the tick

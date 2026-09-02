@@ -3,7 +3,7 @@
 #include <math.h>
 
 // First pass at the four classes. Every number here is internally consistent but
-// unvalidated on hardware -- see DESIGN.md, which is the authority on intent.
+// unvalidated on hardware -- see design/notes/, which is the authority on intent.
 //
 // AEGIS reproduces the tuning the game shipped with, so it is the control: if a
 // change makes AEGIS feel worse, the change is wrong regardless of what it does
@@ -88,7 +88,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* warhead    */ 20.0f, 18.0f, 0.60f,
         /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
-        /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
+        /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_FIGHTER,
         /* weapon     */ WPN_ARAAM,
         /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
@@ -146,7 +146,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // arrives slow. Set the geometry up and it is fast and unanswerable; make
         // it work for the intercept and it is neither.
         /* seeker arc */ 2.80f, 10.0f, 0.35f,
-        /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
+        /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_GEOMETRY,
         // HOLD IS THE VIEWPORT AGAIN, on purpose and for the opposite reason to
         // BALLISTA. This class does not ask for a circle -- it asks you to keep
@@ -175,7 +175,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* warhead    */ 12.0f, 22.0f, 0.85f,
         /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
-        /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
+        /* seeker     */ 0.52f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_SLASH,
         /* weapon     */ WPN_RFAAM,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
@@ -291,7 +291,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // pointing straight at somebody. That is a better price for a long shot
         // than any damage curve.
         /* seeker arc */ 5.00f, 12.0f, 0.30f,
-        /* seeker     */ 0.42f, 2.0f, 0.9f, /* saam */ true,
+        /* seeker     */ 0.42f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_STANDOFF,
         // THE CIRCLE, AND IT IS THE WHOLE CLASS.
         //
@@ -379,7 +379,7 @@ float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold) {
 // that could tell it had happened. Tuning a cone can no longer hand a class
 // somebody else's fantasy: it has to be declared, and declaring it wrongly does not
 // build.
-#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range");                                                                                    static_assert((vg_ship_class[C].wpn == WPN_SAAAM) == vg_ship_class[C].msl_saam,                   #C " an SA-AAM system and a semi-active round are the same claim");     static_assert((vg_ship_class[C].wpn == WPN_SLAAM) == (vg_ship_class[C].msl_stack_time > 0.0f),    #C " an SL-AAM system and a banking lock are the same claim")
+#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range");     static_assert((vg_ship_class[C].wpn == WPN_SLAAM) == (vg_ship_class[C].msl_stack_time > 0.0f),    #C " an SL-AAM system and a banking lock are the same claim")
 
 #if !defined(_MSC_VER)
 SHIP_INVARIANTS(SHIP_AEGIS);

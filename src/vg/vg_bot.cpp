@@ -130,7 +130,7 @@ void vg_bot_observe(VgObs* o) {
     // table the flight model uses, so these cannot drift away from the ship the
     // policy is actually flying.
     vg_bot_airframe(sp, &o->v[OBS_SHIP_TURN]);
-    o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
+    o->v[OBS_OWN_SAAM] = vg_msl_semi_active(sp) ? 1.0f : 0.0f;
     {
         int air = 0;
         for (int i = 0; i < MAX_MISSILES; i++) {
@@ -351,7 +351,7 @@ void vg_bot_observe_enemy(int index, VgObs* o) {
         o->v[OBS_MSL_RANGE] = clamp1(mr / ENEMY_EVADE_RANGE);
     }
 
-    o->v[OBS_OWN_SAAM] = sp->msl_saam ? 1.0f : 0.0f;
+    o->v[OBS_OWN_SAAM] = vg_msl_semi_active(sp) ? 1.0f : 0.0f;
     {
         int air = 0;
         for (int i = 0; i < MAX_MISSILES; i++) {
