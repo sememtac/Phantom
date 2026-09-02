@@ -85,13 +85,13 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
-        /* warhead    */ 20.0f, 18.0f, 0.60f,
+        /* warhead    */ 33.0f, 18.0f, 0.60f,
         /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_FIGHTER,
         /* weapon     */ WPN_ARAAM,
-        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 3, 0.50f, 1.0f,
+        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 2, 0.50f, 1.2f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------

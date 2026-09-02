@@ -81,12 +81,28 @@ enum WeaponSystem : uint8_t {
     // by DISENGAGING: empty the rack, break off, wait. This one reloads by staying
     // in the fight, and rearms not at all if you turn away.
     //
-    // Three rounds, because the point is the rhythm and not the volume. It carried
+    // TWO ROUNDS, because the point is the rhythm and not the volume. It carried
     // six on a short trigger, which reads as "a lot of missiles" and not as
     // anything in particular -- it was mistaken for LANCE in the cockpit, and the
-    // two had nothing to tell them apart. Now: no burst worth waiting for, no dry
-    // spell to punish you, and a reason to keep the nose pointed that nothing else
-    // in the roster has.
+    // two had nothing to tell them apart.
+    //
+    // Three was the first attempt and it was flown and rejected: "i dont get that
+    // sense of starvation if i fire my missiles rapidly, it just always seems to
+    // be two missiles ready". The bay was outrunning the trigger, so spending a
+    // round cost nothing and the rack never actually emptied. At two it does, and
+    // the seconds afterwards are the price.
+    //
+    // AND THE WARHEAD WENT UP WITH IT, 20 to 33. Starvation and output are the
+    // same dial on a rate-limited weapon -- every setting that made the rack run
+    // dry also took the class from 1382 damage a run to somewhere between 393 and
+    // 790, well under the rest of the roster. Fewer rounds that matter more is the
+    // trade that keeps both, and it is the right one for a bay holding two: at 33
+    // the class lands at 1400, which is where it was.
+    //
+    // It is not LANCE's 32 by accident of arithmetic and it does not read as it.
+    // LANCE's graze floor is 0.20, all or nothing; this one is 0.60 and forgives.
+    // The two are told apart by what a near miss is worth and by the mechanic, not
+    // by the size of the number.
     //
     // The deliberate opposite of WPN_SAAAM below, and the pair is meant to teach
     // itself: one you fly all the way in, one you forget. AEGIS's, and the
