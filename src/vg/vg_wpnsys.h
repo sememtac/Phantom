@@ -1,5 +1,6 @@
 #pragma once
 #include "vg_ship.h"
+#include "cfg_combat.h"   // LOCK_SPEED_PENALTY
 
 // ===========================================================================
 // THE WEAPON RULEBOOK, WRITTEN ONCE
@@ -28,6 +29,44 @@
 // invariants. Adding a SHIP that carries an existing system is a table row and
 // nothing else at all.
 // ===========================================================================
+
+// Where this ship sits between its own two speeds, 0 at idle and 1 flat out.
+//
+// Both seats worked this out by hand, four lines each, and it is the input to the
+// one rule below that decides how much the throttle costs a shot. Two hand copies
+// of a normalisation is how one of them ends up unclamped.
+static inline float vg_wpn_speed_norm(const ShipSpec* sp, float speed) {
+    if (!sp) return 0.0f;
+    const float span = sp->speed_max - sp->speed_min;
+    if (span <= 0.0f) return 0.0f;
+    float sn = (speed - sp->speed_min) / span;
+    if (sn < 0.0f) sn = 0.0f;
+    if (sn > 1.0f) sn = 1.0f;
+    return sn;
+}
+
+// How long a lock takes to earn at that speed.
+//
+// ACQUIRING, NOT HOLDING -- see the latch below. Going fast is what makes a shot
+// hard to set up; it does not revoke one already earned, and the difference is
+// the whole reason the throttle is a combat control rather than a punishment.
+static inline float vg_wpn_lock_need(const ShipSpec* sp, float speed_norm) {
+    return sp ? sp->lock_time * (1.0f + LOCK_SPEED_PENALTY * speed_norm) : 0.0f;
+}
+
+// One frame of holding the cone, and the latch.
+//
+// ONCE EARNED, A LOCK IS HELD. It used to be re-derived every frame against a
+// threshold that rises with speed, so opening the throttle after locking instantly
+// revoked it -- the pilot was forbidden the one control the fight is about, at the
+// exact moment they had committed. The lock still drops the moment the target
+// leaves the cone or the range; that is the caller's test, and it is the caller
+// that differs between the two seats.
+template <typename W>
+inline void vg_wpn_lock_hold(W& w, float dt, float need) {
+    w.lock_t += dt;
+    if (w.lock_t >= need) w.locked = true;
+}
 
 // What one frame of holding a lock is worth.
 //

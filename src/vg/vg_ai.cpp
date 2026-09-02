@@ -287,6 +287,12 @@ static bool net_owns_phase(ShipTactic t) {
 //   what makes the AI's existing habit of slowing down to shoot cost it
 //   something real rather than merely satisfying a threshold.
 //
+// "MIRROR" IS NOW ONLY TRUE OF THE CONE TEST BELOW. The speed normalisation, the
+// lock time it feeds, the latch and the whole of the banking are the SAME CALLS
+// the player's seat makes -- see vg_wpnsys.h -- which is the only form of this
+// claim a reader can check. What is left here is the part that genuinely cannot
+// cross over, and it is one branch.
+//
 // THE VIEWPORT IDIOM CANNOT CROSS OVER. lock_hold_cos below -1 means "as long as
 // it is on screen", and an enemy has no screen; ENEMY_LOCK_HOLD_WIDE is that rule
 // in the only terms it has. See cfg_combat.h.
@@ -314,9 +320,7 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
         return;
     }
 
-    s->lock_t += dt;
-    const float need = sp->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
-    if (s->lock_t >= need) s->locked = true;
+    vg_wpn_lock_hold(*s, dt, vg_wpn_lock_need(sp, sn));
 
     // BANKING. Not "exactly as the player's seat does it" any more -- the SAME
     // CALL the player's seat makes, which is the only version of that claim a
@@ -1040,9 +1044,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     Vec3  to      = vsub(v3(0, 0, 0), s->pos);
     float range   = vlen(to);
-    float fire_sn = (s->speed - smin) / (smax - smin);
-    if (fire_sn < 0.0f) fire_sn = 0.0f;
-    if (fire_sn > 1.0f) fire_sn = 1.0f;
+    const float fire_sn = vg_wpn_speed_norm(sp, s->speed);
 
     // EARNED BEFORE IT IS SPENT. Run every frame, including the frames the ship
     // cannot shoot on -- a lock is built by holding the nose on somebody, and

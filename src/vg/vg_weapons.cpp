@@ -85,11 +85,8 @@ void vg_update_lock(float dt) {
     // Lock time scales with speed: acquiring is harder the faster you are going,
     // which is the trade the throttle is supposed to be. ACQUIRING -- not holding.
     // See the latch below.
-    float sn = (vg.speed - vg.spec->speed_min)
-             / (vg.spec->speed_max - vg.spec->speed_min);
-    if (sn < 0.0f) sn = 0.0f;
-    if (sn > 1.0f) sn = 1.0f;
-    vg_wpn.lock_need = vg.spec->lock_time * (1.0f + LOCK_SPEED_PENALTY * sn);
+    vg_wpn.lock_need = vg_wpn_lock_need(vg.spec,
+                           vg_wpn_speed_norm(vg.spec, vg.speed));
 
     if (best < 0) {
         vg_wpn.target = -1;
@@ -122,7 +119,7 @@ void vg_update_lock(float dt) {
     // it is held by keeping the nose on them -- not by having once been fast
     // enough. Acquiring at speed is still hard; that trade is the point and it
     // stays.
-    if (vg_wpn.lock_t >= vg_wpn.lock_need) vg_wpn.locked = true;
+    vg_wpn_lock_hold(vg_wpn, 0.0f, vg_wpn.lock_need);   // dt already added above
 
     // BANKING THE LOCK, by the shared rule. A stacking class does not shoot when it
     // has one, it saves it; the bank fills only while the lock is actually held,
