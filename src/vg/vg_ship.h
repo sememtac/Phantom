@@ -259,6 +259,28 @@ struct ShipSpec {
 
     // The cone the bearing must stay inside for the lock to hold. Wider is not
     // better: a round that cannot be shaken is a round that is not a decision.
+    //
+    // Three classes sit near 60 degrees. CHARIOT IS AT 127, and that is the
+    // resolution of a contradiction rather than a buff.
+    //
+    // Its warhead is the most forgiving in the game -- the widest splash and a
+    // 0.85 graze floor, so a near miss still does most of its damage -- and it was
+    // bolted to the only seeker that cannot hold a target, 1.70 rad/s against
+    // hulls that turn 2.20. Measured: FORTY-EIGHT PER CENT of its rounds died to
+    // this cone, and another fifteen sailed into a wall. A warhead built to
+    // forgive misses never got the chance, because half the magazine was not in
+    // the neighbourhood to miss FROM.
+    //
+    // So the low turn stops being a defect and becomes the mechanic. The round
+    // cannot follow a hard break and no longer tries: it flies a lazy lead and
+    // turns up NEAR you, which is what the splash is for. The counter is range and
+    // angle -- get properly behind its nose -- rather than one hard turn.
+    //
+    // NOT INFINITE, and that was measured too. A sentinel meaning "never gives up"
+    // was the obvious version and it took the connect rate to 100%: nothing
+    // escaped, no round ever met a wall, and the header line above stopped being
+    // true. At 127 degrees a quarter are still shaken off and the damage lands
+    // second in the roster rather than first.
     float msl_seeker_cos;
     // ...and the cone it may RE-acquire through, after coasting ballistic for
     // msl_reacq_delay. 2.0f means never, which is what a cosine can never

@@ -327,6 +327,11 @@ void vg_update_missiles(float dt) {
                 // for good -- the missile keeps its heading and sails past. This
                 // is the failure mode a hard break is meant to force, and it is
                 // emergent rather than scripted.
+                //
+                // HOW WIDE IS THE CLASS'S, and CHARIOT's is 127 degrees. A cone
+                // that wide is not a different rule, it is the same rule with the
+                // threshold where that class's fantasy needs it -- see
+                // msl_seeker_cos.
                 if (vdot(m->dir, los) < m->spec->msl_seeker_cos) {
                     m->locked  = false;
                     m->lost_at = m->age;
