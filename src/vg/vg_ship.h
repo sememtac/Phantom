@@ -88,16 +88,28 @@ enum WeaponSystem : uint8_t {
     //
     // Three was the first attempt and it was flown and rejected: "i dont get that
     // sense of starvation if i fire my missiles rapidly, it just always seems to
-    // be two missiles ready". The bay was outrunning the trigger, so spending a
-    // round cost nothing and the rack never actually emptied. At two it does, and
-    // the seconds afterwards are the price.
+    // be two missiles ready". Two at 1.2 seconds was the second and was rejected
+    // for the same reason -- the count was never the problem. A bay that hands a
+    // round back faster than a pilot can use one has no dry time in it whatever
+    // its size, and 1.2s is inside the time it takes to reacquire and fire.
     //
-    // AND THE WARHEAD WENT UP WITH IT, 20 to 33. Starvation and output are the
-    // same dial on a rate-limited weapon -- every setting that made the rack run
-    // dry also took the class from 1382 damage a run to somewhere between 393 and
-    // 790, well under the rest of the roster. Fewer rounds that matter more is the
-    // trade that keeps both, and it is the right one for a bay holding two: at 33
-    // the class lands at 1400, which is where it was.
+    // TWO AT 2.5 SECONDS. Empty the bay and there is a real hole afterwards: long
+    // enough to be a phase of the fight rather than a hitch, short enough that it
+    // is still a quarter of what every other class pays for a full reload.
+    //
+    // AND THE WARHEAD WENT UP WITH IT, 20 to 63. Starvation and output are the
+    // SAME DIAL on a rate-limited weapon, and there is no way round it: halving
+    // the rate halves the damage unless each round is worth twice as much. Every
+    // setting that made the rack genuinely run dry, on its own, put the class
+    // between 393 and 910 a run -- well under everything else.
+    //
+    // So the rounds got heavier as they got scarcer, which is the trade that keeps
+    // both and the right one for a bay holding two. WATCH THIS ONE: at 0.18 rounds
+    // a second and 42 damage a connecting round, the class now has BALLISTA's
+    // numeric shape, and the two are kept apart by mechanic alone -- fire and
+    // forget at 1600 against a round flown by hand to 4200. If they start to read
+    // as the same ship in the cockpit, the answer is to let AEGIS be the low
+    // output hull it can afford to be with 330 of armour, at a warhead nearer 45.
     //
     // It is not LANCE's 32 by accident of arithmetic and it does not read as it.
     // LANCE's graze floor is 0.20, all or nothing; this one is 0.60 and forgives.
