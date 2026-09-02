@@ -69,14 +69,14 @@ enum ShipTactic : uint8_t {
 //   AEGIS    AR-AAM   active radar    -- launch and leave
 //   CHARIOT  RF-AAM   rapid fire      -- the rate is the weapon
 //   LANCE    SL-AAM   salvo lock      -- bank the locks, empty the bay
-//   BALLISTA SAAM     semi-active     -- fly it all the way in
+//   BALLISTA SA-AAM   semi-active     -- fly it all the way in
 enum WeaponSystem : uint8_t {
     // AR-AAM, active radar. The round carries its own seeker, so the pilot's work
     // ends at the launch: point the nose, earn the lock, and let it go. No
     // guidance to fly, nothing to bank, no circle -- the reticle and the lock cone
     // are the whole instrument.
     //
-    // The deliberate opposite of WPN_SAAM below, and the pair is meant to teach
+    // The deliberate opposite of WPN_SAAAM below, and the pair is meant to teach
     // itself: one you fly all the way in, one you forget. AEGIS's, and the
     // baseline every other system is a departure from, which is why it is the
     // ship you are handed first.
@@ -97,15 +97,22 @@ enum WeaponSystem : uint8_t {
     // while the rounds are leaving six times a second.
     WPN_RFAAM,
 
-    // Salvo-lock. Hold a loose contact and it BANKS locks, one per
+    // SL-AAM, salvo lock. Hold a loose contact and it BANKS locks, one per
     // msl_stack_time; the trigger spends everything banked and the launch costs
     // the lock. The reticle subdivides into the bay. LANCE's.
     WPN_SLAAM,
 
-    // Semi-active. The round is flown by the SHOOTER for its whole life: keep the
-    // target inside the guide circle or every round in the air goes dumb at once.
-    // The circle narrows with range, so a long shot is the hard one. BALLISTA's.
-    WPN_SAAM,
+    // SA-AAM, semi-active. The round is flown by the SHOOTER for its whole life:
+    // keep the target inside the guide circle or every round in the air goes dumb
+    // at once. The circle narrows with range, so a long shot is the hard one.
+    // BALLISTA's.
+    //
+    // THREE As, and they are all load-bearing: SA for semi-active, then AAM. It
+    // reads awkwardly and the alternative was worse -- SAAM was the odd one out in
+    // a set of four where every other name is two words abbreviated to two
+    // letters, and a convention with one exception is not a convention. A miscount
+    // here does not compile, which is the only reason it is safe to be ugly.
+    WPN_SAAAM,
 };
 
 enum ShipClass : uint8_t {

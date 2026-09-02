@@ -465,7 +465,7 @@ void vg_draw_lock_circle(void) {
     // moment AEGIS and CHARIOT were given honest hold cones they were both handed
     // BALLISTA's guide circle, with no semi-active round anywhere to guide. See
     // WeaponSystem.
-    if (!sp || sp->wpn != WPN_SAAM) return;
+    if (!sp || sp->wpn != WPN_SAAAM) return;
     // ONLY WHEN THERE IS SOMETHING TO LOCK. A ring drawn over an empty sky is
     // furniture; drawn the moment a contact is being worked it is an instrument.
     if (vg_wpn.target < 0) return;
