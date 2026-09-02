@@ -76,6 +76,18 @@ enum WeaponSystem : uint8_t {
     // guidance to fly, nothing to bank, no circle -- the reticle and the lock cone
     // are the whole instrument.
     //
+    // AND THE BAY REARMS WHILE YOU ARE FACING THEM, one round at a time, which is
+    // the inversion the class is built on. Every other weapon in the game reloads
+    // by DISENGAGING: empty the rack, break off, wait. This one reloads by staying
+    // in the fight, and rearms not at all if you turn away.
+    //
+    // Three rounds, because the point is the rhythm and not the volume. It carried
+    // six on a short trigger, which reads as "a lot of missiles" and not as
+    // anything in particular -- it was mistaken for LANCE in the cockpit, and the
+    // two had nothing to tell them apart. Now: no burst worth waiting for, no dry
+    // spell to punish you, and a reason to keep the nose pointed that nothing else
+    // in the roster has.
+    //
     // The deliberate opposite of WPN_SAAAM below, and the pair is meant to teach
     // itself: one you fly all the way in, one you forget. AEGIS's, and the
     // baseline every other system is a departure from, which is why it is the
@@ -342,6 +354,11 @@ struct ShipSpec {
     float lock_time;           // seconds in the nose cone, at low speed
     int   magazine;            // rounds per clip
     float fire_gap;            // seconds between launches -- the rate of fire
+    // Seconds to refill the rack. PER CLIP for three of the four, and PER ROUND for
+    // AR-AAM -- the weapon system says which, the same way it says what a trigger
+    // press costs. One field with one meaning per weapon beats a second field
+    // sitting dead on three rows. See vg_wpn_reload_step.
+    //
     // Seconds to refill the WHOLE clip, and only once it is empty. Not a trickle
     // of one round at a time: emptying the rack is a decision the class is built
     // around, and a magazine that refills while you are still shooting out of it

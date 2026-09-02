@@ -91,7 +91,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_FIGHTER,
         /* weapon     */ WPN_ARAAM,
-        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
+        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 3, 0.50f, 1.0f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------

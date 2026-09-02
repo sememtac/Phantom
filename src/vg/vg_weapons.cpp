@@ -140,12 +140,16 @@ void vg_update_lock(float dt) {
 // two seconds and then has nine seconds of nothing; BALLISTA has three and has to
 // mean all of them.
 void vg_update_reload(float dt) {
-    if (vg_wpn.rounds > 0 || vg_wpn.reload_t <= 0.0f) return;
-    vg_wpn.reload_t -= dt;
-    if (vg_wpn.reload_t <= 0.0f) {
-        vg_wpn.reload_t = 0.0f;
-        vg_wpn.rounds = vg.spec->magazine;
+    // IS ANYBODY ON THE RADAR. Only AR-AAM cares, but asking unconditionally keeps
+    // the call to the shared rule identical in both seats, which is the point of
+    // having a shared rule.
+    bool contact = false;
+    for (int i = 0; i < MAX_ENEMIES && !contact; i++) {
+        const Ship* e = &vg.enemy[i];
+        if (!e->alive) continue;
+        contact = vg_wpn_on_radar(e->pos.x, e->pos.z);
     }
+    vg_wpn_reload_step(vg_wpn, vg.spec, dt, contact);
 }
 
 void vg_player_fire(void) {
@@ -191,7 +195,11 @@ void vg_player_fire(void) {
     // Emptying the rack starts the clock. Doing it here rather than in the tick
     // means the reload is timed from the shot that emptied it, not from the next
     // frame that happened to notice.
-    if (vg_wpn.rounds <= 0) vg_wpn.reload_t = vg.spec->reload;
+    // Emptying the rack starts the clock -- for a class that reloads by the clip.
+    // AR-AAM's bay is already working and owns its own timer; stamping the full
+    // reload here would restart it from scratch on the shot that emptied it.
+    if (vg_wpn.rounds <= 0 && vg.spec->wpn != WPN_ARAAM)
+        vg_wpn.reload_t = vg.spec->reload;
 }
 
 // Nearest live enemy missile tracking the player, for the threat warning.

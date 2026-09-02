@@ -1,6 +1,7 @@
 #pragma once
 #include "vg_ship.h"
 #include "cfg_combat.h"   // LOCK_SPEED_PENALTY
+#include "cfg_hud.h"      // RADAR_RANGE
 
 // ===========================================================================
 // THE WEAPON RULEBOOK, WRITTEN ONCE
@@ -142,4 +143,70 @@ inline void vg_wpn_spend(W& w, const ShipSpec* sp) {
         w.locked = false;
         w.lock_t = 0.0f;
     }
+}
+
+// One frame of the magazine coming back, and the two systems do it oppositely.
+//
+// EVERY OTHER CLASS RELOADS BY DISENGAGING. The rack refills all at once and only
+// from empty, so emptying it is a commitment and the seconds afterwards are the
+// price. CHARIOT dumps twelve rounds in two seconds and then has nine of nothing.
+//
+// AR-AAM REARMS BY STAYING IN THE FIGHT. The bay works a round at a time, and only
+// while a contact is held on the radar -- inside RADAR_RANGE and in the forward
+// half. Fire one, keep them in front of you, and it comes back. Turn away and
+// nothing rearms at all.
+//
+// That inversion is the whole point of the class. AEGIS was six rounds on a short
+// trigger, which reads as "a lot of missiles" and not as anything in particular --
+// it was mistaken for LANCE in the cockpit. Three rounds that never stop coming
+// back is a rhythm nothing else in the roster has: no burst, no dry spell, and a
+// reason to keep the nose pointed that no other class has.
+//
+// `reload` IS PER ROUND for AR-AAM and per clip for everyone else. The system says
+// which, the same way it says what a trigger press costs -- one field with one
+// meaning per weapon, rather than a second field sitting dead on three rows.
+//
+// reload_t stays a COUNTDOWN in both, because four other places read it that way,
+// the observation vector among them.
+template <typename W>
+inline void vg_wpn_reload_step(W& w, const ShipSpec* sp, float dt, bool contact) {
+    if (!sp) return;
+
+    if (sp->wpn == WPN_ARAAM) {
+        if (w.rounds >= sp->magazine) { w.reload_t = 0.0f; return; }
+        // No contact, no rearm. Not a pause -- the clock does not run at all, so
+        // breaking off does not quietly bank progress toward the next round.
+        if (!contact) return;
+        if (w.reload_t <= 0.0f) w.reload_t = sp->reload;
+        w.reload_t -= dt;
+        if (w.reload_t <= 0.0f) {
+            w.rounds++;
+            w.reload_t = (w.rounds < sp->magazine) ? sp->reload : 0.0f;
+        }
+        return;
+    }
+
+    if (w.rounds > 0 || w.reload_t <= 0.0f) return;
+    w.reload_t -= dt;
+    if (w.reload_t <= 0.0f) {
+        w.reload_t = 0.0f;
+        w.rounds   = sp->magazine;
+    }
+}
+
+// Is this contact far enough forward to hold the bay open?
+//
+// `rel` is the contact in the SHOOTER's frame, +z ahead. The forward half is
+// exactly the half-ellipse the radar draws: a contact behind you is parked under
+// the chord as a caret, which is a warning rather than a track.
+//
+// NO RANGE GATE, and that is the instrument's own rule rather than a slack one.
+// draw_radar clamps a contact's normalised range at the rim and keeps drawing it,
+// so something at 2000 units IS on the scope -- just pinned. Gating this at
+// RADAR_RANGE looked right and was measured wrong: AEGIS fights at about 1400
+// mean range, so the bay almost never opened and the class fell from top of the
+// roster to 226 damage a run. What holds the bay open is FACING them.
+static inline bool vg_wpn_on_radar(float rel_x, float rel_z) {
+    (void)rel_x;
+    return rel_z > 0.0f;
 }

@@ -899,10 +899,25 @@ void vg_draw_hud(const VgCam& cam, const VgInput* in, float fps) {
     }
 
     if (rl > 0.0f) {
-        const int top = 148;
-        const int bot = 148 + (mag - 1) * pitch + cell;
-        int h = (int)((float)(bot - top) * rl);
-        if (h > 0) vg_fill_rect(SCR_W - 34, bot - h, 18, h, INK);
+        if (vg.spec->wpn == WPN_ARAAM) {
+            // AR-AAM REARMS ONE ROUND AT A TIME, so the column above would be a
+            // lie here in exactly the way it was written to avoid: it says "the
+            // whole rack is coming back together" and this bay does not work
+            // like that. The progress belongs to the NEXT CELL and nowhere else.
+            //
+            // Filling upward inside the lowest empty slot, so what the pilot sees
+            // is one round arriving and the ones above it still gone -- which is
+            // the truth, and the reason to keep the nose pointed at somebody.
+            const int next = (vg_wpn.rounds < mag) ? vg_wpn.rounds : mag - 1;
+            const int y    = 148 + next * pitch;
+            int h = (int)((float)cell * rl);
+            if (h > 0) vg_fill_rect(SCR_W - 34, y + cell - h, 18, h, INK);
+        } else {
+            const int top = 148;
+            const int bot = 148 + (mag - 1) * pitch + cell;
+            int h = (int)((float)(bot - top) * rl);
+            if (h > 0) vg_fill_rect(SCR_W - 34, bot - h, 18, h, INK);
+        }
     }
 
     // Speed reads top-centre, right where the eye already is for the crosshair,
