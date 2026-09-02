@@ -91,3 +91,4 @@ pilot_report.html
 
 # The behaviour report, rebuilt by tools/inspect_ai.py in one command.
 ai_report.html
+shot.ppm
