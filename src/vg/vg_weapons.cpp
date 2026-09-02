@@ -128,7 +128,7 @@ void vg_update_lock(float dt) {
     // BANKING THE LOCK. A stacking class does not shoot when it has one, it saves
     // it -- see msl_stack_time. The bank fills only while the lock is actually
     // held, so the cost is unbroken contact rather than a precise cone.
-    if (vg.spec->msl_stack_time > 0.0f) {
+    if (vg.spec->wpn == WPN_SLAAM) {
         if (vg_wpn.locked) {
             // AGAINST WHAT IS IN THE BAY, not against what the bay holds. Banking
             // a fifth lock with four rounds loaded is banking something that
@@ -185,7 +185,7 @@ void vg_player_fire(void) {
     // reason the aim it asks for is loose. A partial release is a real choice and
     // not a mistake: two now is often worth more than four in three seconds.
     int salvo = 1;
-    if (vg.spec->msl_stack_time > 0.0f) {
+    if (vg.spec->wpn == WPN_SLAAM) {
         salvo = vg_wpn.stacks;
         if (salvo > vg_wpn.rounds) salvo = vg_wpn.rounds;
         if (salvo <= 0) return;
@@ -225,7 +225,7 @@ void vg_player_fire(void) {
     // release, re-acquire, so spending a small bank throws away the contact that
     // earned it and holding for a fuller one is simply worth more. It is also the
     // honest reading of what a full bay leaving at once does to a seeker.
-    if (vg.spec->msl_stack_time > 0.0f) {
+    if (vg.spec->wpn == WPN_SLAAM) {
         vg_wpn.locked = false;
         vg_wpn.lock_t = 0.0f;
     }

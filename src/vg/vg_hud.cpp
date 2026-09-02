@@ -460,7 +460,12 @@ void vg_draw_steer_indicator(const VgInput* in) {
 // that angle lands on the panel, so what is drawn is exactly what is enforced.
 void vg_draw_lock_circle(void) {
     const ShipSpec* sp = vg.spec;
-    if (!sp || sp->lock_hold_cos < -1.0f) return;
+    // THE SYSTEM, NOT THE CONE. This used to ask whether lock_hold_cos was the
+    // viewport sentinel, which is not a question about guidance at all -- and the
+    // moment AEGIS and CHARIOT were given honest hold cones they were both handed
+    // BALLISTA's guide circle, with no semi-active round anywhere to guide. See
+    // WeaponSystem.
+    if (!sp || sp->wpn != WPN_SAAM) return;
     // ONLY WHEN THERE IS SOMETHING TO LOCK. A ring drawn over an empty sky is
     // furniture; drawn the moment a contact is being worked it is an instrument.
     if (vg_wpn.target < 0) return;
@@ -600,7 +605,9 @@ void vg_draw_lock_box(const VgCam& cam) {
     //
     // Laid out as square a grid as the magazine allows, so a class with a bay of
     // some other size still gets something sensible rather than a special case.
-    if (vg.spec->msl_stack_time > 0.0f && vg.spec->magazine > 0) {
+    // Same rule as the guide circle: the SYSTEM says whether this instrument
+    // belongs to this hull, and msl_stack_time is only the tuning underneath it.
+    if (vg.spec->wpn == WPN_SLAAM && vg.spec->magazine > 0) {
         const int n    = vg.spec->magazine;
         int       cols = 1;
         while (cols * cols < n) cols++;

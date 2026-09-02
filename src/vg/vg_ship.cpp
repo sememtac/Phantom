@@ -90,6 +90,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_FIGHTER,
+        /* weapon     */ WPN_BORESIGHT,
         /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 6, 0.50f, 5.0f,
     },
 
@@ -152,6 +153,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // them in front of you for five seconds while the bank fills, and -2.0f is
         // the idiom for "as long as they are on screen". Acquiring still costs a
         // 26 degree cone, so the contact has to be made deliberately.
+        /* weapon     */ WPN_SLAAM,
         /* fire ctrl  */ 0.90f, -2.0f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
     },
 
@@ -175,6 +177,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ 0.52f, 2.0f, 0.9f, /* saam */ false,
         /* tactic     */ TACTIC_SLASH,
+        /* weapon     */ WPN_RIPPLE,
         /* fire ctrl  */ 0.80f, 0.80f, 1300.0f, 0.25f, 12, 0.16f, 10.0f,
     },
 
@@ -311,6 +314,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // on the panel where 0.981 was 79 -- about eight degrees. The ring is
         // drawn at exactly this, so what narrowed is the circle itself and not the
         // gap between the circle and the rule.
+        /* weapon     */ WPN_SAAM,
         /* fire ctrl  */ 0.990f, 0.988f, 4200.0f, 0.0f, 3, 1.60f, 9.0f,
     },
 };
@@ -362,7 +366,20 @@ float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold) {
 // its own lock range will let the player earn a LOCK, fire, and watch the missile
 // expire on the way -- which reads as a broken weapon, not as a range limit. 1.4x
 // is the pursuit-curve allowance: a seeker flies an arc, not a chord.
-#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range")
+//
+// AND THE TWO WEAPON-SYSTEM TESTS, which are a different kind of check: not that a
+// number is sane, but that the class's DECLARED mechanic and the round it actually
+// carries are the same claim. They are written as equivalences rather than
+// implications on purpose -- a SAAM system without a semi-active round is a circle
+// with nothing to guide, and a semi-active round in a class that does not declare
+// SAAM is a round nobody can steer. Both are faults, so both sides are tested.
+//
+// This is the mechanism that was missing. The guide circle drifted onto AEGIS and
+// CHARIOT because the instrument read a tuning value and there was nothing anywhere
+// that could tell it had happened. Tuning a cone can no longer hand a class
+// somebody else's fantasy: it has to be declared, and declaring it wrongly does not
+// build.
+#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range");                                                                                    static_assert((vg_ship_class[C].wpn == WPN_SAAM) == vg_ship_class[C].msl_saam,                    #C " a SAAM system and a semi-active round are the same claim");     static_assert((vg_ship_class[C].wpn == WPN_SLAAM) == (vg_ship_class[C].msl_stack_time > 0.0f),    #C " an SL-AAM system and a banking lock are the same claim")
 
 #if !defined(_MSC_VER)
 SHIP_INVARIANTS(SHIP_AEGIS);

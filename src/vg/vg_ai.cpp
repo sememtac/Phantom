@@ -319,7 +319,7 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
     if (s->lock_t >= need) s->locked = true;
 
     // BANKING, exactly as the player's seat does it.
-    if (sp->msl_stack_time > 0.0f) {
+    if (sp->wpn == WPN_SLAAM) {
         if (s->locked) {
             // Against the rack, not the bay. See the note in vg_weapons.cpp.
             s->stack_t += dt;
@@ -1105,7 +1105,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     const int judged = vg_bot_enemy_fire(index);
 
     // A stacking class with nothing banked has nothing to fire.
-    const bool banked = (sp->msl_stack_time <= 0.0f) || (s->stacks > 0);
+    const bool banked = (sp->wpn != WPN_SLAAM) || (s->stacks > 0);
 
     if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
@@ -1114,7 +1114,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // HOW MANY LEAVE ON THIS TRIGGER. One, unless the class banks -- and then
         // everything banked, which is the player's rule and therefore this one.
         int salvo = 1;
-        if (sp->msl_stack_time > 0.0f) {
+        if (sp->wpn == WPN_SLAAM) {
             salvo = s->stacks;
             if (salvo > s->rounds) salvo = s->rounds;
         }
@@ -1131,7 +1131,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // The launch costs the lock, exactly as it does in the player's seat --
         // see the note there. An enemy that kept its contact through a salvo would
         // be spamming the thing the player cannot.
-        if (sp->msl_stack_time > 0.0f) { s->locked = false; s->lock_t = 0.0f; }
+        if (sp->wpn == WPN_SLAAM) { s->locked = false; s->lock_t = 0.0f; }
 
         // THE CLASS'S OWN TRIGGER SPEED, and ENEMY_FIRE_GAP_K is gone from it.
         // That constant existed to slow an average down to something survivable;

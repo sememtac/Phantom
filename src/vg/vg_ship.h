@@ -42,6 +42,50 @@ enum ShipTactic : uint8_t {
     TACTIC_GEOMETRY,      // line the shot up, because only a clean one pays
 };
 
+// WHICH WEAPON SYSTEM THIS HULL CARRIES.
+//
+// THE INSTRUMENTS KEY OFF THIS AND NEVER OFF A NUMBER, and that rule is the whole
+// reason the field exists.
+//
+// The guide circle is BALLISTA's, and it was drawn for any class whose
+// lock_hold_cos was not the -2.0f viewport sentinel. That is not a design
+// statement, it is a numeric coincidence -- and the coincidence stopped holding
+// the moment two other classes were given honest hold cones. AEGIS and CHARIOT
+// both inherited a semi-active guidance instrument they have no semi-active
+// round to guide. Reported from the cockpit as CHARIOT's targeting having
+// drifted, which is exactly what it was.
+//
+// A number cannot say WHICH FANTASY it belongs to. lock_hold_cos answers "how far
+// off can they drift", and no value of it means "this class guides its rounds".
+// So the fantasy is named here, once, and anything that draws or behaves
+// differently per class asks this rather than inferring it from the tuning.
+//
+// It is not a duplicate of the numbers beneath it -- the invariants at the foot
+// of vg_ship.cpp bind the two together, so a system and a round that disagree
+// fail the build rather than the playtest.
+enum WeaponSystem : uint8_t {
+    // Point the nose and shoot. No guidance to fly, nothing to bank, no circle:
+    // the reticle and the lock cone are the whole instrument. The baseline every
+    // other system is a departure from, and the reason AEGIS is the ship you are
+    // handed first.
+    WPN_BORESIGHT = 0,
+
+    // Many small rounds, launched faster than they can be aimed one at a time.
+    // The magazine IS the mechanic and the long reload is its price. CHARIOT's,
+    // and the class the separation was opened to fix -- see design/notes.
+    WPN_RIPPLE,
+
+    // Salvo-lock. Hold a loose contact and it BANKS locks, one per
+    // msl_stack_time; the trigger spends everything banked and the launch costs
+    // the lock. The reticle subdivides into the bay. LANCE's.
+    WPN_SLAAM,
+
+    // Semi-active. The round is flown by the SHOOTER for its whole life: keep the
+    // target inside the guide circle or every round in the air goes dumb at once.
+    // The circle narrows with range, so a long shot is the hard one. BALLISTA's.
+    WPN_SAAM,
+};
+
 enum ShipClass : uint8_t {
     SHIP_AEGIS = 0,
     SHIP_LANCE,
@@ -227,6 +271,11 @@ struct ShipSpec {
     ShipTactic tactic;
 
     // --- fire control --------------------------------------------------------
+    // WHAT THIS SHIP SHOOTS WITH, and the authority on it. Every instrument and
+    // every per-class branch in the weapon code asks this; none of them infers a
+    // class's mechanic from the tuning underneath. See WeaponSystem.
+    WeaponSystem wpn;
+
     // The nose cone the target must be inside to acquire, as a cosine. This is
     // the "you must aim" half of every lock in the game, and for a class with no
     // lock time at all it is the ONLY requirement -- which is what makes turning
