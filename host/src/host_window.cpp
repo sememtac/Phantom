@@ -102,7 +102,13 @@ static bool view_rect_screen(HWND h, RECT* out) {
 }
 
 void host_mouse_place(float lx, float ly) {
-    if (!s_hwnd) return;
+    // NOT OURS TO MOVE unless a human is flying. Same rule as the fence above, and
+    // it was missed here because these guard on the window EXISTING -- and a
+    // headless run has a window, just a hidden one. So a measurement run called
+    // this every frame, as fast as the machine would go, snapping the desktop
+    // pointer into a window nobody could see. Reported as the mouse freezing and
+    // jumping back to a centre, which is exactly what it was.
+    if (!s_hwnd || vg_headless || vg_bot_on) return;
     const HostView v = view_of(s_hwnd);
     if (v.w <= 0 || v.h <= 0) return;
     POINT p = { v.x + (int)(lx * (float)v.w / (float)SCR_W + 0.5f),
@@ -112,7 +118,9 @@ void host_mouse_place(float lx, float ly) {
 }
 
 void host_mouse_centre(void) {
-    if (!s_hwnd) return;
+    // See host_mouse_place. An unfocused window takes this path every frame,
+    // and a headless run is never focused.
+    if (!s_hwnd || vg_headless || vg_bot_on) return;
     const HostView v = view_of(s_hwnd);
     if (v.w <= 0 || v.h <= 0) return;
     POINT mid = { v.x + v.w / 2, v.y + v.h / 2 };
