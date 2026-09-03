@@ -536,18 +536,32 @@ void vg_draw_select(void) {
     // black because the sky behind them is nearly black, and the arcs crossing
     // them were the giveaway. INK_WELL is #0d0700, which is the well every
     // instrument in the game sits in and is black on the panel.
-    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_X0, BEZEL_CONSOLE_BAR_TOP_Y0,
-                 BEZEL_CONSOLE_BAR_TOP_X1 - BEZEL_CONSOLE_BAR_TOP_X0 + 1,
-                 BEZEL_CONSOLE_BAR_TOP_Y1 - BEZEL_CONSOLE_BAR_TOP_Y0 + 1,
+    // THE BOX, NOT THE INNER RECTANGLE. The window is an octagon; a fill of the
+    // rectangle that fits inside it leaves the four chamfered corners unpainted,
+    // and the chassis does not cover them either -- they are exempt. The sky was
+    // showing in the corners. The box overshoots onto metal, which the chassis
+    // paints over on the way past.
+    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
+                 BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
+                 BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1,
                  INK_WELL);
 
     // AND IT RUNS. A registration terminal has a ticker across the top, and a
     // banner that travels says the machine is powered and waiting for you in a
     // way a centred word never does.
     //
-    // NOT clipped here. The chassis is submitted after the whole screen and is
-    // opaque, so the letters run out of the window and under the metal, masked by
-    // the drawing's own chamfered outline rather than by a rectangle.
+    // NOT CLIPPED, AND A VIEWPORT WOULD NOT HAVE DONE IT ANYWAY. vg_text checks
+    // a glyph against the screen and against nothing else -- vg_rast_viewport
+    // clips fills and lines and has never clipped text -- so the clip that was
+    // here was doing no work at all.
+    //
+    // The mask is the chassis, and what was wrong was the chassis. The screen
+    // aperture NOTCHED UP either side of the title bar, so at the banner's own
+    // height there were exempt pixels off both ends of the window: text running
+    // out of the window landed in them and the chassis had no pixel there to
+    // cover it. "SHIP" appeared in the top corner of the main screen. The baker
+    // fences a bar window's rows against the aperture now, so those rows are the
+    // bar's alone and the drawing's own outline cuts the letters at both ends.
     //
     // vg.state_t, not an accumulated dt: the renderer has no dt, and an
     // integrated one would run the ticker at the frame rate rather than at the
@@ -561,12 +575,19 @@ void vg_draw_select(void) {
         const int   scale = vg.gym ? 2 : 3;
         const int   tw = vg_text_width(ttl, scale);
 
-        // LEFT TO RIGHT, so it enters at the left edge and leaves at the right.
+        // RIGHT TO LEFT, which is the direction a ticker has to run to be read.
+        //
+        // It ran the other way first, and the fault is not obvious until you
+        // watch it: moving right, the block's TAIL enters the window first, so
+        // the word arrives back to front. You read "SHIP", then "SELECT S", and
+        // the banner says SHIP SELECT. Moving left, the leading S appears at the
+        // right-hand edge and the words arrive in the order they are written.
+        //
         // The travel is the window plus the whole word, so the banner is clear
         // of the glass at both ends of the cycle rather than jumping.
         const int   span = bw + tw;
         const float u = vg.state_t * SEL_CHYRON_RATE;
-        const int   tx = bx - tw + (int)(u - floorf(u / (float)span) * (float)span);
+        const int   tx = bx + bw - (int)(u - floorf(u / (float)span) * (float)span);
 
         (void)bh;
         if (vg.gym) {
@@ -689,7 +710,9 @@ void vg_draw_select(void) {
 
         // INK_WELL, not COL_BLACK -- see the banner above: a zero fill is
         // dropped, so this window was never being cleared either.
-        vg_fill_rect(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
+        vg_fill_rect(BEZEL_CONSOLE_BAR_BOT_BOX_X0, BEZEL_CONSOLE_BAR_BOT_BOX_Y0,
+                     BEZEL_CONSOLE_BAR_BOT_BOX_X1 - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 1,
+                     BEZEL_CONSOLE_BAR_BOT_BOX_Y1 - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 1,
                      down ? INK_TRACE : INK_WELL);
         vg_text(lx, ly, go, INK_MAX, 3);
         vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);

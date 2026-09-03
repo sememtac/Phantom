@@ -86,7 +86,8 @@ def load(src, colors):
 
     err = np.abs(np.asarray(pal_im.convert("RGB")).astype(int)
                  - np.asarray(art).astype(int))[~mask]
-    return pal565, idx, mask, err
+    rgb3 = [(pal[i * 3], pal[i * 3 + 1], pal[i * 3 + 2]) for i in range(colors)]
+    return pal565, rgb3, idx, mask, err
 
 
 def regions(mask):
@@ -114,14 +115,16 @@ def regions(mask):
                     if 0 <= ny < PANEL and 0 <= nx < PANEL                             and mask[ny, nx] and not seen[ny, nx]:
                         seen[ny, nx] = tag
                         stack.append((ny, nx))
-            out.append((n, max_rect(seen == tag)))
+            ys, xs = np.nonzero(seen == tag)
+            box = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
+            out.append((n, max_rect(seen == tag), box))
     # The aperture is the largest by area. The two bar windows are within a few
     # hundred pixels of each other, so area does NOT order them reliably -- it
     # put the bottom bar first on the drawing this was written for. Order them
     # by where they sit instead, which is what the names mean.
     out.sort(reverse=True, key=lambda r: r[0])
-    rest = sorted((r[1] for r in out[1:]), key=lambda w: w[1])
-    return [out[0][1]] + rest
+    rest = sorted(out[1:], key=lambda r: r[1][1])
+    return [(r[1], r[2]) for r in [out[0]] + rest]
 
 
 def max_rect(m):
@@ -146,6 +149,37 @@ def max_rect(m):
                 start = sx
             stack.append((start, cur))
     return best[1:]
+
+
+def fence_bars(mask):
+    """Stop the screen aperture claiming pixels in a bar window's rows.
+
+    The aperture is notched: it reaches up either side of the top bar and down
+    either side of the bottom one. Those notches are exempt, so the chassis
+    stores no pixel there and cannot cover anything drawn over them -- and the
+    banner scrolls at exactly that height. Text leaving its window landed in the
+    notch and stayed on screen, in the middle of the metal.
+
+    The rule is that a bar window's rows belong to the bar. Any other exempt
+    pixel in those rows becomes part of the drawing again, so the chassis paints
+    it and the banner is masked by the art at both ends.
+
+    It costs the four corner notches, which stop showing the scene behind. The
+    caller has to give them a colour: the drawing has none, because the artist
+    painted the whole screen out, so a pixel taken back here is magenta in the
+    art. Left alone it is stored and drawn, which is worse than the fault it
+    fixes.
+    """
+    wins = regions(mask)
+    out = mask.copy()
+    for (_, box) in wins[1:]:                 # the bars; wins[0] is the aperture
+        x0, y0, x1, y1 = box
+        band = np.zeros(mask.shape, bool)
+        band[y0:y1 + 1, :] = True
+        keep = np.zeros(mask.shape, bool)
+        keep[y0:y1 + 1, x0:x1 + 1] = True
+        out &= ~(band & ~keep)
+    return out, mask & ~out
 
 
 def to_panel(a):
@@ -222,11 +256,21 @@ def write(path, name, pal, idx_p, spans, data, wins):
         fh.write("// first: the screen aperture, then the two bar windows.\n")
         fh.write("// Emitted rather than measured by hand, so a redrawn chassis\n")
         fh.write("// moves the layout with it instead of disagreeing with it.\n")
-        for tag, (x0, y0, x1, y1) in zip(("APERTURE", "BAR_TOP", "BAR_BOT"), wins):
+        for tag, ((x0, y0, x1, y1), bx) in zip(("APERTURE", "BAR_TOP", "BAR_BOT"), wins):
             fh.write("#define %s_%s_X0 %3d\n" % (name, tag, x0))
             fh.write("#define %s_%s_Y0 %3d\n" % (name, tag, y0))
             fh.write("#define %s_%s_X1 %3d\n" % (name, tag, x1))
             fh.write("#define %s_%s_Y1 %3d\n" % (name, tag, y1))
+            # THE BOUNDING BOX AS WELL, because the two answer different
+            # questions. The rectangle above fits INSIDE the window and is
+            # what a hit test wants. The box is the window's full extent,
+            # chamfered corners included, and is what a fill and a clip want:
+            # filling only the inner rectangle leaves the corners unpainted,
+            # and clipping to it cuts a moving label short of the glass.
+            fh.write("#define %s_%s_BOX_X0 %3d\n" % (name, tag, bx[0]))
+            fh.write("#define %s_%s_BOX_Y0 %3d\n" % (name, tag, bx[1]))
+            fh.write("#define %s_%s_BOX_X1 %3d\n" % (name, tag, bx[2]))
+            fh.write("#define %s_%s_BOX_Y1 %3d\n" % (name, tag, bx[3]))
         fh.write("\n")
         fh.write("static const VgBezel %s = {\n" % name)
         fh.write("    %s_PAL, %s_DATA, %s_SPAN, %s_ROW,\n" % (name, name, name, name))
@@ -248,7 +292,21 @@ def main(argv):
     if len(args) < 1:
         sys.exit(__doc__)
 
-    pal, idx, mask, err = load(args[0], colors)
+    pal, rgb3, idx, mask, err = load(args[0], colors)
+    mask, fenced = fence_bars(mask)
+
+    # UNLIT GLASS for the corners taken back from the aperture. The drawing has
+    # no colour there -- it is magenta, the paint that means "the game fills
+    # this" -- so storing what the art says would put the marker paint on the
+    # screen. The darkest entry in the palette is the shadow inside the chassis,
+    # which is what an unlit corner of the display looks like and what the bar
+    # windows beside it are filled with.
+    dark = min(range(len(rgb3)), key=lambda i: sum(rgb3[i]))
+    idx = idx.copy()
+    idx[fenced] = dark
+    print("  %d px taken back from the aperture, filled with palette %d %s"
+          % (fenced.sum(), dark, rgb3[dark]))
+
     idx_p, mask_p = to_panel(idx), to_panel(mask)
     spans = spans_of(mask_p)
     data = [int(idx_p[y, x0 + i]) for (y, x0, n) in spans for i in range(n)]
@@ -266,8 +324,9 @@ def main(argv):
     if report:
         return
     wins = regions(mask)
-    for tag, w in zip(("aperture", "top bar", "bottom bar"), wins):
-        print("  %-10s x %3d..%3d  y %3d..%3d" % (tag, w[0], w[2], w[1], w[3]))
+    for tag, (w, bx) in zip(("aperture", "top bar", "bottom bar"), wins):
+        print("  %-10s inner x %3d..%3d y %3d..%3d   box x %3d..%3d y %3d..%3d"
+              % (tag, w[0], w[2], w[1], w[3], bx[0], bx[2], bx[1], bx[3]))
     write(args[1], name, pal, idx_p, spans, data, wins)
     print("  wrote %s" % args[1])
 
