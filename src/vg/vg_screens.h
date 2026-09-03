@@ -37,7 +37,28 @@
 #define SEL_WHEEL_H     168
 #define SEL_WHEEL_Y     (SEL_PANEL_Y + (SEL_PANEL_H - SEL_WHEEL_H) / 2)
 #define SEL_WHEEL_MID   (SEL_WHEEL_Y + SEL_WHEEL_H / 2)   // the detent row
-#define SEL_WHEEL_PITCH 44      // px between neighbours on the wheel
+#define SEL_WHEEL_PITCH 38      // px between neighbours on the wheel
+
+// HOW MANY NAMES THE WHEEL SHOWS AT ONCE, selection included.
+//
+// Every class, while the roster is small enough -- a chooser that hides two of
+// your four options is asking you to remember them. Capped so that a longer
+// roster still shows a WINDOW rather than a list: past five the wheel goes back
+// to being a wheel, with more beyond the edges.
+#define SEL_WHEEL_SHOWN 5
+
+// WHERE THE DETENT ACTUALLY SITS, and it is NOT the middle of the window.
+//
+// The block of names is centred, not the selected row: with an even roster the
+// rows run one above and two below, and pinning the detent to the middle left the
+// block visibly low. An odd roster puts it back in the middle by itself.
+//
+// Shared, because the DRAW and the HIT TEST have to agree about it. They did not
+// for one build, and a tap landing 19px from where the eye says it should is the
+// kind of fault nobody reports as a coordinate bug -- it just feels unreliable.
+#define SEL_WHEEL_N   ((SHIP_CLASSES < SEL_WHEEL_SHOWN) ? SHIP_CLASSES : SEL_WHEEL_SHOWN)
+#define SEL_WHEEL_LO  (-((SEL_WHEEL_N - 1) / 2))
+#define SEL_WHEEL_DETENT (SEL_WHEEL_MID - ((2 * SEL_WHEEL_LO + SEL_WHEEL_N - 1) * SEL_WHEEL_PITCH) / 2)
 #define SEL_SPINE_W     6       // the selected row's inverse-video spine
 
 // The detail panel, and the chart inside it. The chart centre shares the wheel's

@@ -61,10 +61,12 @@ void vg_button(int x, int y, int w, int h, const char* label,
 int vg_select_row_at(float x, float y) {
     if (!vg_in_rect(x, y, SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H))
         return SEL_ROW_NONE;
-    const float dy = y - (float)SEL_WHEEL_MID;
+    const float dy = y - (float)SEL_WHEEL_DETENT;
     int k = (int)lroundf(dy / (float)SEL_WHEEL_PITCH);
-    if (k < -2) k = -2;
-    if (k >  2) k =  2;
+    // Clamped to the rows that are actually DRAWN, so a tap in the margin below
+    // the last name nudges by one rather than by however far the finger was out.
+    if (k < SEL_WHEEL_LO)                     k = SEL_WHEEL_LO;
+    if (k > SEL_WHEEL_LO + SEL_WHEEL_N - 1)   k = SEL_WHEEL_LO + SEL_WHEEL_N - 1;
     return k;
 }
 
@@ -359,31 +361,43 @@ void vg_draw_select(void) {
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
 
-    // Neighbours, dimmer the further out, so you can see what is coming. Only
-    // one either side while the roster is four: at two out, a four-item wheel
-    // shows the SAME class above and below, which reads as a drawing fault.
-    const int kmax = (SHIP_CLASSES >= 5) ? 2 : 1;
-    for (int k = -kmax; k <= kmax; k++) {
-        if (k == 0) continue;
-        const int      idx = (cur + k + SHIP_CLASSES * 2) % SHIP_CLASSES;
-        const char*    nm  = vg_spec((ShipClass)idx)->name;
-        const int      sc  = (k == -1 || k == 1) ? 2 : 1;
-        const uint16_t col = (k == -1 || k == 1) ? INK_TRACE : INK_ONFILL;
+    // EVERY CHOICE, dimming with distance from the detent.
+    //
+    // It used to show one either side, to dodge the fact that a four-item wheel
+    // asked for two either side shows the SAME class above and below. But hiding
+    // an option to avoid drawing it twice is the wrong trade -- a chooser that
+    // conceals two of your four is asking you to remember them.
+    //
+    // So the window is the roster, capped at SEL_WHEEL_SHOWN. Four rows means one
+    // above the detent and two below, which is what an even count in an odd window
+    // gives you; it is stable, and every class appears exactly once.
+    const int shown_n  = SEL_WHEEL_N;
+    const int shown_lo = SEL_WHEEL_LO;
+    const int detent   = SEL_WHEEL_DETENT;
+    for (int k = shown_lo; k < shown_lo + shown_n; k++) {
+        if (k == 0) continue;                 // the detent is drawn over the rails
+        const int   a   = (k < 0) ? -k : k;
+        const int   idx = (cur + k + SHIP_CLASSES * 4) % SHIP_CLASSES;
+        const char* nm  = vg_spec((ShipClass)idx)->name;
+        // Readable at every step, just quieter. Faded to a hint would defeat the
+        // point of showing them at all.
+        const int      sc  = (a <= 1) ? 2 : 1;
+        const uint16_t col = (a == 1) ? INK : INK_FAINT;
         vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, sc)) / 2,
-                SEL_WHEEL_MID + k * SEL_WHEEL_PITCH - (sc * 7) / 2, nm, col, sc);
+                detent + k * SEL_WHEEL_PITCH - (sc * 7) / 2, nm, col, sc);
     }
 
     // The detent: two rules bracketing the selected row, plus the spine down the
     // left edge. That spine is the same 6px inverse-video mark the cards carried
     // -- the shape of the screen changed, the vocabulary did not.
-    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID - 20, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID + 19, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID - 20, SEL_SPINE_W, 40, INK_BRIGHT);
+    vg_fill_rect(SEL_WHEEL_X, detent - 18, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, detent + 17, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, detent - 18, SEL_SPINE_W, 36, INK_BRIGHT);
 
     {
         const char* nm = vg_spec((ShipClass)cur)->name;
         vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, 2)) / 2,
-                SEL_WHEEL_MID - 7, nm, INK_MAX, 2);
+                detent - 7, nm, INK_MAX, 2);
     }
 
     // --- the panel ---------------------------------------------------------
