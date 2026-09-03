@@ -81,7 +81,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // The reference ship, and the one an average player should have a good time
     // with having never picked anything else.
     {
-        "AEGIS", "NO WEAKNESS, NO EDGE",
+        "AEGIS", "ACTIVE COMBAT RELOAD",
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
@@ -102,7 +102,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // can be sent. The cost is four rounds instead of six, a longer lock, and six
     // and a half seconds unarmed if they are spent badly.
     {
-        "LANCE", "CLEAN HITS ONLY",
+        "LANCE", "HOLD THEM, THEN LET GO",
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 285.0f, /* shake */ 1.30f,
@@ -168,7 +168,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // only class that can delete an opponent in a single pass and the only one
     // that is completely toothless if it does not.
     {
-        "CHARIOT", "FAST, LOUD, FRAGILE",
+        "CHARIOT", "HIT AND RUN",
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
@@ -242,7 +242,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // loses almost all its agility at speed -- so anything fast that gets inside is
     // its whole problem, and running the rack dry is how it gets there.
     {
-        "BALLISTA", "KILL THEM FIRST",
+        "BALLISTA", "STEADY AIMING MISSILE GUIDANCE",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 270.0f, /* shake */ 0.55f,
