@@ -172,6 +172,18 @@
 // something the eye then has to keep following.
 #define SEL_SWEEP_RATE  38.0f
 
+// How far past the aperture the sweep is drawn at each end. The warp pulls a
+// point inward in proportion to its distance from the centre, and the ends of a
+// full-width line are the furthest points on it -- drawn edge to edge the sweep
+// stops short of both edges and reads as cut off. The chassis trims the excess.
+#define SEL_SWEEP_OVER  26
+
+// How often the glass is offered a fault, in buckets a second. One in six of
+// them takes it, so a tear lands every few seconds. Rare is the entire setting:
+// a panel that glitches constantly is a style, one that is clean and then is not
+// is broken.
+#define SEL_FAULT_RATE  1.4f
+
 #define SEL_CHYRON_RATE 46.0f
 
 // The clear space between one pass of the banner and the next. Three characters

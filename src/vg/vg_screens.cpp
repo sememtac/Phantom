@@ -558,23 +558,136 @@ void console_open(const char* title, const char* note) {
                     (float)gx, (float)(gy + SEL_TICK_ARM), INK_TRACE);
         }
 
-    // THE SWEEP. One line down the glass, on a loop, and it is the cheapest
+    // THE SWEEP. One line down the glass, on a loop, which is the cheapest
     // possible way to say the hardware is powered: a still picture is a picture,
     // and a still picture with one thing crossing it on a clock is a MACHINE
     // showing you a picture.
     //
-    // Two lines rather than one -- a faint band with a brighter edge leading it
-    // -- because a single hairline reads as a scratch on the glass where a pair
-    // reads as something passing behind it.
+    // IT RUNS WIDE OF THE GLASS ON PURPOSE. The warp is a barrel curve, so it
+    // pulls a point inward in proportion to its distance from the centre -- and
+    // the ends of a line spanning the whole aperture are the furthest points on
+    // it. Drawn edge to edge the sweep came up SHORT of both edges, which read as
+    // the line being cut off rather than as the glass being curved. It is drawn
+    // past both edges now and the chassis trims it, which is the same division of
+    // labour the banner uses.
     //
-    // Off vg.state_t, like the ticker: an integrated dt would sweep at the frame
-    // rate instead of the clock.
+    // AND IT IS NOT A METRONOME. A constant rate reads as a screensaver; this is
+    // meant to be a tube that has been running in a shed in orbit for years.
+    // Every pass gets its own pace from a hash of the pass number:
+    //
+    //   AN EXPONENT ON THE RAMP, which bends the speed without moving the ends.
+    //   f and f^e both run 0 to 1, so a pass still starts at the top and finishes
+    //   at the bottom however hard it is bent -- the seam between passes stays a
+    //   seam and never becomes a jump.
+    //
+    //   A STALL, on one pass in eight. The line stops partway down, sits there,
+    //   and then carries on. It is the single most convincing thing here: broken
+    //   hardware does not run slowly, it HESITATES.
+    //
+    //   AND THE LINE BREAKS UP on one pass in four, into pieces with gaps. A
+    //   sweep that is always whole is a drawn object; one that is sometimes in
+    //   bits is a signal.
+    //
+    // All of it is a pure function of vg.state_t. Nothing is integrated and
+    // nothing is sampled per frame, so it runs at the same pace on the desktop
+    // and on the board and a replay reproduces it.
     {
-        const float h  = (float)(SEL_AP_Y1 - SEL_AP_Y0);
-        const float u  = vg.state_t * SEL_SWEEP_RATE;
-        const float sy = (float)SEL_AP_Y0 + (u - floorf(u / h) * h);
-        vg_line((float)SEL_AP_X0, sy, (float)SEL_AP_X1, sy, INK_FAINT);
-        vg_line((float)SEL_AP_X0, sy + 2.0f, (float)SEL_AP_X1, sy + 2.0f, INK_TRACE);
+        const float    hh   = (float)(SEL_AP_Y1 - SEL_AP_Y0);
+        const float    u    = vg.state_t * SEL_SWEEP_RATE;
+        const float    pass = floorf(u / hh);
+        const uint32_t ph   = vg_glitch_hash((uint32_t)pass * 2654435761u);
+
+        float f = u / hh - pass;
+        f = powf(f, 0.65f + (float)(ph & 255u) * (0.85f / 255.0f));
+
+        if (((ph >> 9) & 7u) == 0u) {
+            const float at = 0.20f + (float)((ph >> 12) & 127u) * (0.55f / 127.0f);
+            if (f > at && f < at + 0.10f) f = at;
+        }
+
+        const float sy = (float)SEL_AP_Y0 + f * hh;
+        const float x0 = (float)(SEL_AP_X0 - SEL_SWEEP_OVER);
+        const float x1 = (float)(SEL_AP_X1 + SEL_SWEEP_OVER);
+
+        // Two lines rather than one -- a faint band with a brighter edge leading
+        // it -- because a single hairline reads as a scratch ON the glass where a
+        // pair reads as something passing behind it.
+        const int n = (((ph >> 17) & 3u) == 0u) ? 3 : 1;
+        for (int i = 0; i < n; i++) {
+            const float a = x0 + (x1 - x0) * ((float)i / (float)n);
+            const float b = x0 + (x1 - x0) * ((float)(i + 1) / (float)n)
+                          - ((n > 1) ? 26.0f : 0.0f);
+            vg_line(a, sy, b, sy, INK_FAINT);
+            vg_line(a, sy + 2.0f, b, sy + 2.0f, INK_TRACE);
+        }
+    }
+
+    // AND THE GLASS FAULTS, now and then.
+    //
+    // Same vocabulary as a hit and the same reason as the plan view's mask: this
+    // game already has one way of saying a readout is in trouble, and a second
+    // one invented here would read as a different kind of trouble. The hash is
+    // vg_glitch_hash and the sampling is BUCKETED, which is what separates damage
+    // from noise -- noise is everywhere and so has nothing wrong with it, while a
+    // fault that holds still for a moment is somewhere specific.
+    //
+    // Rare, and that is the whole setting. A panel that glitches constantly is a
+    // stylistic effect; one that is clean for ten seconds and then tears for half
+    // of one is a panel that is BROKEN, and the difference is entirely in how
+    // often it happens.
+    {
+        const uint32_t slow = (uint32_t)(vg.state_t * SEL_FAULT_RATE);
+        const uint32_t sh   = vg_glitch_hash(slow * 40503u + 17u);
+        if ((sh % 6u) == 0u) {
+            const int x0 = SEL_AP_X0, w = SEL_AP_X1 - SEL_AP_X0;
+            const int y0 = SEL_AP_Y0, h = SEL_AP_Y1 - SEL_AP_Y0;
+
+            // THE FAST CLOCK inside the slow one. The slow bucket decides that
+            // the panel is in trouble and holds that decision for the best part
+            // of a second; this one re-places the damage several times inside it,
+            // so the fault stays put while the picture in it does not.
+            const uint32_t fast = (uint32_t)(vg.state_t * 22.0f);
+
+            const int nb = 2 + (int)((sh >> 3) % 3u);
+            for (int i = 0; i < nb; i++) {
+                const uint32_t g = vg_glitch_hash(fast * 2654435761u
+                                                  + (uint32_t)i * 2246822519u);
+                const int by = y0 + (int)((g >> 3) % (uint32_t)h);
+                const int bh = 3 + (int)((g >> 11) % 7u);
+                if (by + bh > y0 + h) continue;
+
+                // A TEAR IS SHIFTED SIGNAL, not a stripe laid on top: the band is
+                // knocked out and a fragment put back beside where it came from.
+                //
+                // THE FRAGMENT IS BRIGHT, and the first version's was not. It used
+                // the plan view's colours, which work there because that slot is
+                // full of lit ship and the knock-out has something to remove. Out
+                // here the glass is mostly empty and INK_WELL on near-black is
+                // nothing at all -- the fault only showed where it happened to
+                // cross a word, which is a few percent of the rows. Displaced
+                // signal has to be signal.
+                vg_fill_rect(x0, by, w, bh, INK_WELL);
+                const int fw = 30 + (int)((g >> 23) % 110u);
+                int fx = x0 + (int)((g >> 5) % (uint32_t)(w - fw))
+                       + (int)((g >> 17) % 41u) - 20;
+                if (fx < x0)          fx = x0;
+                if (fx + fw > x0 + w) fx = x0 + w - fw;
+                vg_fill_rect(fx, by, fw, (bh > 3) ? 2 : bh, INK_BRIGHT);
+            }
+
+            // ...and grain over the top, so the tears are not the only texture
+            // and the whole pane looks disturbed rather than three rows of it.
+            for (int i = 0; i < 14; i++) {
+                const uint32_t g = vg_glitch_hash(fast * 40503u
+                                                  + (uint32_t)i * 2654435761u);
+                const int px = x0 + (int)((g >> 4)  % (uint32_t)w);
+                const int py = y0 + (int)((g >> 13) % (uint32_t)h);
+                const int ln = 4 + (int)((g >> 22) % 11u);
+                if (px + ln > x0 + w) continue;
+                vg_line((float)px, (float)py, (float)(px + ln), (float)py,
+                        ((g & 3u) == 0u) ? INK : INK_TRACE);
+            }
+        }
     }
 }
 
