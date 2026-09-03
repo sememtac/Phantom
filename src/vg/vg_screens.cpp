@@ -122,11 +122,14 @@ static void chart_ring(float t, uint16_t col, int w) {
 // class to somebody. The shape is [guidance type]. [what makes it different] --
 // the words a manual would use, not the words a recruiter would.
 //
-// THE COUNTS ARE DERIVED AND THE PROSE IS NOT, which is the right split. A
-// magazine moves under tuning and a guidance principle does not: BALLISTA has
-// been semi-active since it was drawn, but its reach went 1600 to 4200 and
-// LANCE's stack time went 1.2 to 0.95 inside one sitting. Anything that can move
-// is read off the spec.
+// ANY COUNT HERE IS DERIVED AND THE PROSE IS NOT, which is the right split: a
+// magazine moves under tuning and a guidance principle does not. BALLISTA has been
+// semi-active since it was drawn, but its reach went 1600 to 4200 and LANCE's
+// stack time went 1.2 to 0.95 inside one sitting.
+//
+// Only LANCE names a number now, because four IS the mechanic there -- the salvo
+// size is what the class is about. CHARIOT's twelve is legible from the twelve
+// cells in its bay, and saying it twice was saying it once too often.
 static void wpn_how(const ShipSpec* sp, char* out, int n) {
     if (!sp) { out[0] = 0; return; }
     switch (sp->wpn) {
@@ -134,7 +137,7 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
         snprintf(out, n, "ACTIVE SEEKER. REARM ON RADAR DETECTION");
         break;
     case WPN_RFAAM:
-        snprintf(out, n, "RIPPLE %d. WIDE PROXIMITY FUSE", sp->magazine);
+        snprintf(out, n, "RAPID FIRE PROXIMITY FUSE");
         break;
     case WPN_SLAAM:
         // NOT "multi target". Every banked round launches at vg_wpn.target -- one
