@@ -113,6 +113,17 @@
 #define SEL_AX_RATE_LO      0.0f
 #define SEL_AX_RATE_HI      1.1f
 
+// HOW LONG THE PANEL TAKES TO CHANGE SHIP.
+//
+// The chart tweens across it, vertex by vertex, because five numbers interpolate
+// perfectly. The HULL cannot: two plans have different point counts and there is
+// no honest correspondence between them, so it is swapped at the half way mark
+// and the swap is hidden under noise instead.
+//
+// Short. A wheel is spun, not stepped, and a transition that outlasts the next
+// flick of the thumb stops being a transition and becomes lag.
+#define SEL_MORPH_TIME       0.22f
+
 // The smallest a plotted vertex may be. A truly zero axis folds the polygon
 // through the centre and reads as a broken drawing rather than as a weakness.
 #define SEL_AX_FLOOR        0.10f

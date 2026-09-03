@@ -113,7 +113,7 @@ static void chart_ring(float t, uint16_t col, int w) {
     }
 }
 
-static void draw_chart(const ShipSpec* sp) {
+static void draw_chart(const float ax[5]) {
     chart_tables();
 
     // Graduations first, hairline, so they read as scale and not as structure.
@@ -129,8 +129,6 @@ static void draw_chart(const ShipSpec* sp) {
     chart_ring(1.0f, INK_FAINT, 2);
 
     // The class itself, over the top and at the top of the ramp.
-    float ax[5];
-    vg_ship_axes(sp, ax);
     {
         float px, py, nx, ny;
         chart_pt(4, ax[4], &px, &py);
@@ -256,9 +254,101 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
     }
 }
 
+// CHANGING SHIP, and the two halves of the panel do it differently.
+//
+// The CHART tweens. Five numbers against five numbers is a clean interpolation and
+// the shape visibly deforms from one class into the next, which is worth more than
+// the numbers themselves: you see that CHARIOT is BALLISTA turned inside out.
+//
+// The HULL cannot tween. Two plan outlines have different point counts and no
+// honest correspondence between them -- pairing them up would be inventing a
+// relationship that is not there, and it would look like it. So the hull is
+// SWAPPED at the half way mark and the swap is hidden under noise, which is also
+// the more truthful gesture: this is an instrument re-acquiring, not a ship
+// bending into another ship.
+//
+// Timed off vg.state_t rather than an integrated dt. The renderer has no dt to
+// give, and a static accumulator would tick at the frame rate instead of the
+// clock -- so a transition would run at one speed on the desktop and another on
+// the board, and a replay would not reproduce.
+static int   s_tr_to = -1;          // the class the panel is settling on
+static int   s_tr_from = -1;        // ...and the one it is leaving
+static float s_tr_t0 = -1.0f;
+static float s_tr_ax[5] = { 0, 0, 0, 0, 0 };   // the chart AS SHOWN when the change came
+
+// Deterministic scatter. NOT vg_frand: that draws on the replay stream, and a
+// menu animation has no business changing what a recorded flight replays as.
+static inline uint32_t plan_hash(uint32_t x) {
+    x ^= x >> 16; x *= 0x7feb352dU;
+    x ^= x >> 15; x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+// The mask. Short horizontal dashes scattered over the slot, densest exactly at
+// the half way mark where the hull is exchanged, and gone at both ends.
+//
+// It is not decoration -- it is what makes the swap possible. Cutting from one
+// outline to another in a single frame reads as a glitch; cutting it under a
+// burst of scatter reads as the display re-drawing.
+static void draw_plan_noise(float p) {
+    const float d = sinf(p * 3.14159265f);      // 0 at the ends, 1 in the middle
+    if (d <= 0.02f) return;
+
+    const int   n  = (int)(26.0f * d);
+    const int   x0 = SEL_PANEL_X + 10, w = SEL_PANEL_W - 20;
+    const int   y0 = SEL_MODEL_Y,      h = SEL_MODEL_H;
+    // Advances once a frame, so the scatter crawls rather than sitting still.
+    const uint32_t f = (uint32_t)(vg.state_t * 60.0f);
+
+    for (int i = 0; i < n; i++) {
+        const uint32_t r = plan_hash(f * 2654435761u + (uint32_t)i * 40503u);
+        const int px = x0 + (int)((r >> 4)  % (uint32_t)w);
+        const int py = y0 + (int)((r >> 13) % (uint32_t)h);
+        const int len = 3 + (int)((r >> 22) % 11u);
+        if (px + len > x0 + w) continue;
+        vg_line((float)px, (float)py, (float)(px + len), (float)py,
+                ((r & 3u) == 0u) ? INK_BRIGHT : INK_TRACE);
+    }
+}
+
 void vg_draw_select(void) {
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
+
+    // A NEW SELECTION. The chart is snapshotted AS SHOWN rather than as the class
+    // it was heading for, so spinning the wheel fast leaves from wherever the
+    // shape had actually reached instead of jumping back to the last full stop.
+    float ax_now[5];
+    vg_ship_axes(vg_spec((ShipClass)cur), ax_now);
+    if (cur != s_tr_to) {
+        if (s_tr_to >= 0) {
+            const float q = (s_tr_t0 < 0.0f) ? 1.0f
+                          : (vg.state_t - s_tr_t0) / SEL_MORPH_TIME;
+            const float e = (q >= 1.0f) ? 1.0f : (q <= 0.0f ? 0.0f : q * q * (3.0f - 2.0f * q));
+            float ax_prev[5];
+            vg_ship_axes(vg_spec((ShipClass)s_tr_to), ax_prev);
+            for (int i = 0; i < 5; i++)
+                s_tr_ax[i] = s_tr_ax[i] + (ax_prev[i] - s_tr_ax[i]) * e;
+        } else {
+            for (int i = 0; i < 5; i++) s_tr_ax[i] = ax_now[i];
+        }
+        s_tr_from = s_tr_to;
+        s_tr_to   = cur;
+        s_tr_t0   = vg.state_t;
+    }
+
+    float p = (s_tr_t0 < 0.0f) ? 1.0f : (vg.state_t - s_tr_t0) / SEL_MORPH_TIME;
+    if (p < 0.0f) p = 0.0f;
+    if (p > 1.0f) p = 1.0f;
+    const float ease = p * p * (3.0f - 2.0f * p);        // smoothstep
+
+    // ONLY THE HULL LAGS. The words follow the wheel immediately, because the wheel
+    // is what the thumb just moved and a panel that disagrees with it reads as the
+    // screen not having noticed. The hull has to lag -- it cannot tween, so it is
+    // swapped at the half way mark -- and that mismatch is invisible because it
+    // happens under the thickest part of the noise.
+    const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
 
     centred(30, vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
                        : "SELECT SHIP", INK_MAX, 3);
@@ -312,10 +402,16 @@ void vg_draw_select(void) {
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
             SEL_PANEL_Y + 48, sp->tagline, INK, 1);
 
-    draw_chart(sp);
+    {
+        float ax[5];
+        for (int i = 0; i < 5; i++)
+            ax[i] = s_tr_ax[i] + (ax_now[i] - s_tr_ax[i]) * ease;
+        draw_chart(ax);
+    }
 
     vg_fill_rect(SEL_PANEL_X + 8, SEL_MODEL_Y - 8, SEL_PANEL_W - 16, 1, INK_TRACE);
-    draw_plan_view(sp, cur);
+    draw_plan_view(vg_spec((ShipClass)shown), shown);
+    draw_plan_noise(p);
 
     vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
               (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true, true);
