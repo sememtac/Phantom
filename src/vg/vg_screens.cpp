@@ -2,6 +2,7 @@
 #include "vg_sfx.h"
 #include "vg_course.h"
 #include "vg_draw.h"
+#include "vg_glitch.h"
 #include "vg_game.h"
 #include <stdio.h>
 #include <math.h>
@@ -278,36 +279,61 @@ static int   s_tr_from = -1;        // ...and the one it is leaving
 static float s_tr_t0 = -1.0f;
 static float s_tr_ax[5] = { 0, 0, 0, 0, 0 };   // the chart AS SHOWN when the change came
 
-// Deterministic scatter. NOT vg_frand: that draws on the replay stream, and a
-// menu animation has no business changing what a recorded flight replays as.
-static inline uint32_t plan_hash(uint32_t x) {
-    x ^= x >> 16; x *= 0x7feb352dU;
-    x ^= x >> 15; x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return x;
-}
-
-// The mask. Short horizontal dashes scattered over the slot, densest exactly at
-// the half way mark where the hull is exchanged, and gone at both ends.
+// The mask, and it is DELIBERATELY THE SAME MOTIF AS A HIT.
 //
-// It is not decoration -- it is what makes the swap possible. Cutting from one
-// outline to another in a single frame reads as a glitch; cutting it under a
-// burst of scatter reads as the display re-drawing.
+// vg_glitch.h keeps one vocabulary for every state where the readout is in
+// trouble, so that trouble always looks like the same kind of trouble -- taking a
+// hit, being destroyed, straining the engine. A panel exchanging one ship for
+// another belongs to that family: the readout is momentarily not showing you
+// anything true, and the game already has a way of saying so.
+//
+// So this borrows the two rules that make the hit read as damage rather than as
+// sparkle:
+//
+//   THE HASH IS SHARED. vg_glitch_hash, not a private one, so the grain is the
+//   same grain. Also not vg_frand -- a menu has no business drawing on the
+//   replay stream.
+//
+//   IT IS BUCKETED, NOT PER FRAME. Sampling every frame strobes at whatever rate
+//   the panel happens to run at and reads as noise, which has no location and so
+//   nothing wrong with it. Held for a bucket, a fault sits somewhere specific
+//   long enough to be seen. That is the whole difference.
+//
+// A TEAR IS SHIFTED SIGNAL, not a stripe laid on top -- the glitch header is
+// explicit about it. The band is knocked out and a fragment redrawn beside
+// itself, so the picture in the band is displaced rather than merely covered.
 static void draw_plan_noise(float p) {
     const float d = sinf(p * 3.14159265f);      // 0 at the ends, 1 in the middle
     if (d <= 0.02f) return;
 
-    const int   n  = (int)(26.0f * d);
-    const int   x0 = SEL_PANEL_X + 10, w = SEL_PANEL_W - 20;
-    const int   y0 = SEL_MODEL_Y,      h = SEL_MODEL_H;
-    // Advances once a frame, so the scatter crawls rather than sitting still.
-    const uint32_t f = (uint32_t)(vg.state_t * 60.0f);
+    const int x0 = SEL_PANEL_X + 8, w = SEL_PANEL_W - 16;
+    const int y0 = SEL_MODEL_Y,     h = SEL_MODEL_H;
+    const uint32_t bucket = (uint32_t)(vg.state_t * SEL_TEAR_RATE);
 
-    for (int i = 0; i < n; i++) {
-        const uint32_t r = plan_hash(f * 2654435761u + (uint32_t)i * 40503u);
+    // Tears first: wide bands, few, and the severity decides how many.
+    const int nt = 1 + (int)(4.0f * d);
+    for (int i = 0; i < nt; i++) {
+        const uint32_t r = vg_glitch_hash(bucket * 2654435761u + (uint32_t)i * 2246822519u);
+        const int by = y0 + (int)((r >> 3)  % (uint32_t)h);
+        const int bh = 2 + (int)((r >> 11) % 5u);
+        const int dx = (int)((r >> 17) % 27u) - 13;
+        if (by + bh > y0 + h) continue;
+        vg_fill_rect(x0, by, w, bh, INK_WELL);
+        // The fragment, put back beside where it came from.
+        const int fw = 18 + (int)((r >> 23) % 60u);
+        int fx = x0 + (int)((r >> 5) % (uint32_t)(w - fw)) + dx;
+        if (fx < x0) fx = x0;
+        if (fx + fw > x0 + w) fx = x0 + w - fw;
+        vg_fill_rect(fx, by, fw, (bh > 2) ? 2 : bh, INK_BRIGHT);
+    }
+
+    // ...then grain over the top, so the tears are not the only texture.
+    const int ng = (int)(18.0f * d);
+    for (int i = 0; i < ng; i++) {
+        const uint32_t r = vg_glitch_hash(bucket * 40503u + (uint32_t)i * 2654435761u);
         const int px = x0 + (int)((r >> 4)  % (uint32_t)w);
         const int py = y0 + (int)((r >> 13) % (uint32_t)h);
-        const int len = 3 + (int)((r >> 22) % 11u);
+        const int len = 3 + (int)((r >> 22) % 9u);
         if (px + len > x0 + w) continue;
         vg_line((float)px, (float)py, (float)(px + len), (float)py,
                 ((r & 3u) == 0u) ? INK_BRIGHT : INK_TRACE);
@@ -413,8 +439,18 @@ void vg_draw_select(void) {
         vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(w, 1)) / 2,
                 SEL_PANEL_Y + 34, w, INK_BRIGHT, 1);
     }
+    // The tagline is FLAVOUR and the line under it is INFORMATION, so the ramp puts
+    // the information higher. It was the other way round for one build, which had
+    // the screen shouting the mood and whispering the mechanic.
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
-            SEL_PANEL_Y + 48, sp->tagline, INK, 1);
+            SEL_PANEL_Y + 48, sp->tagline, INK_FAINT, 1);
+    {
+        // ...and HOW it shoots, under what it is. The tagline answers one question
+        // and the screen was only ever asking that one.
+        const char* how = vg_wpn_how(sp->wpn);
+        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(how, 1)) / 2,
+                SEL_PANEL_Y + 60, how, INK, 1);
+    }
 
     {
         float ax[5];

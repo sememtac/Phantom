@@ -488,6 +488,24 @@ static inline const char* vg_wpn_name(WeaponSystem w) {
     return "";
 }
 
+// WHAT THE SYSTEM DOES, in one line, for the select screen.
+//
+// The tagline says what the class IS and this says how it SHOOTS -- the two
+// are different questions and the screen was only answering the first. A
+// player choosing between four ships needs to know that one of them makes them
+// fly every round personally.
+//
+// Kept under 40 characters: at scale 1 that is 240px against a 264px panel.
+static inline const char* vg_wpn_how(WeaponSystem w) {
+    switch (w) {
+    case WPN_ARAAM: return "THE BAY REARMS WHILE YOU FACE THEM";
+    case WPN_RFAAM: return "TWELVE ROUNDS, SIX A SECOND";
+    case WPN_SLAAM: return "HOLD THE LOCK, THEN SEND THE BAY";
+    case WPN_SAAAM: return "YOU FLY EVERY ROUND ALL THE WAY IN";
+    }
+    return "";
+}
+
 static inline void vg_ship_axes(const ShipSpec* sp, float out[5]) {
     if (!sp) { for (int i = 0; i < 5; i++) out[i] = 0.0f; return; }
 

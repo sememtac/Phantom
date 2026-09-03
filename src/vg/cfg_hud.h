@@ -124,6 +124,11 @@
 // flick of the thumb stops being a transition and becomes lag.
 #define SEL_MORPH_TIME       0.22f
 
+// Bucket rate for the transition tear, in Hz. Slower than the frame rate on
+// purpose -- see vg_glitch.h: a fault that holds still reads as damage, and one
+// resampled every frame reads as noise.
+#define SEL_TEAR_RATE        22.0f
+
 // The smallest a plotted vertex may be. A truly zero axis folds the polygon
 // through the centre and reads as a broken drawing rather than as a weakness.
 #define SEL_AX_FLOOR        0.10f

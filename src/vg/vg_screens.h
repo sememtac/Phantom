@@ -67,16 +67,21 @@
 #define SEL_CHART_CX    (SEL_PANEL_X + SEL_PANEL_W / 2)
 // Sat on the wheel's detent row until the plan view needed the height. The
 // alignment was a nicety; a ship you can actually see is not.
-#define SEL_CHART_CY    228
-#define SEL_CHART_R     54
-#define SEL_CHART_LABEL 13      // px from a vertex out to its label
+// Pushed down twice. The panel header is FOUR lines now -- name, weapon system,
+// tagline, and what the system does -- and SPEED sits directly beneath them. At
+// 228 it was 3px clear of the text and at 236 it was 4; neither is a gap.
+#define SEL_CHART_CY    241
+#define SEL_CHART_R     52
+// px from a vertex out to its label. Tightened from 13: SPEED sits directly
+// under the panel's description lines and was within 3px of them.
+#define SEL_CHART_LABEL 10
 
 // THE PLAN VIEW, laid on its side. A top-down silhouette is what a player
 // recognises a fighter by, it needs no projection and no per-class 3-D geometry,
 // and it suits a slot that is wide and short -- which a spinning object does not.
 // See vg_ship_plan.
-#define SEL_MODEL_Y     312
-#define SEL_MODEL_H     82
+#define SEL_MODEL_Y     322
+#define SEL_MODEL_H     72
 
 #define SEL_GO_X        140
 #define SEL_GO_Y        410
