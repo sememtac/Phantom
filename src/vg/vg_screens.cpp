@@ -119,37 +119,32 @@ static void chart_ring(float t, uint16_t col, int w) {
 // WHAT THE SYSTEM DOES, as a specification rather than a pitch.
 //
 // It read "YOU FLY EVERY ROUND ALL THE WAY IN", which is how you would sell the
-// class to somebody. A player standing in front of four ships wants the numbers:
-// how many, how often, how far.
+// class to somebody. The shape is [guidance type]. [what makes it different] --
+// the words a manual would use, not the words a recruiter would.
 //
-// DERIVED FROM THE SPEC, NOT WRITTEN OUT. Every figure here moved during tuning --
-// the reload went 4.0 to 4.8 and the stack time 1.2 to 0.95 in a single sitting --
-// and a hard-coded "0.95S" would have gone quietly false the next time either
-// did. This is the same rule the chart follows and the same failure the old stat
-// bars died of.
-//
-// Integer maths rather than %f. Float formatting works on this part but it is not
-// cheap, and it runs every frame; these numbers are small and exact enough that
-// hundredths of a second say everything worth saying.
+// THE COUNTS ARE DERIVED AND THE PROSE IS NOT, which is the right split. A
+// magazine moves under tuning and a guidance principle does not: BALLISTA has
+// been semi-active since it was drawn, but its reach went 1600 to 4200 and
+// LANCE's stack time went 1.2 to 0.95 inside one sitting. Anything that can move
+// is read off the spec.
 static void wpn_how(const ShipSpec* sp, char* out, int n) {
     if (!sp) { out[0] = 0; return; }
-    const int rel10 = (int)(sp->reload * 10.0f + 0.5f);          // tenths
-    const int gap100 = (int)(sp->fire_gap * 100.0f + 0.5f);      // hundredths
-    const int stk100 = (int)(sp->msl_stack_time * 100.0f + 0.5f);
     switch (sp->wpn) {
     case WPN_ARAAM:
-        snprintf(out, n, "ACTIVE SEEKER. REARM %d.%dS PER RD", rel10 / 10, rel10 % 10);
+        snprintf(out, n, "ACTIVE SEEKER. REARM ON RADAR DETECTION");
         break;
     case WPN_RFAAM:
-        snprintf(out, n, "%d RD AT %d.%02dS. %dS RELOAD", sp->magazine,
-                 gap100 / 100, gap100 % 100, (int)(sp->reload + 0.5f));
+        snprintf(out, n, "RIPPLE %d. WIDE PROXIMITY FUSE", sp->magazine);
         break;
     case WPN_SLAAM:
-        snprintf(out, n, "SALVO %d. BANKS 1 PER %d.%02dS", sp->magazine,
-                 stk100 / 100, stk100 % 100);
+        // NOT "multi target". Every banked round launches at vg_wpn.target -- one
+        // contact, four rounds. Firing a stacked bay across several contacts is a
+        // real and interesting mechanic and this class does not have it; saying so
+        // here would be the screen promising something the code does not do.
+        snprintf(out, n, "SALVO %d. STACKED LOCK RELEASE", sp->magazine);
         break;
     case WPN_SAAAM:
-        snprintf(out, n, "SEMI-ACTIVE TO IMPACT. REACH %d", (int)(sp->lock_range + 0.5f));
+        snprintf(out, n, "SEMI-ACTIVE, MANUAL MISSILE GUIDANCE");
         break;
     default: out[0] = 0; break;
     }
