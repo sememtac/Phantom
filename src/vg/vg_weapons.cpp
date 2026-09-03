@@ -169,9 +169,21 @@ void vg_player_fire(void) {
     static int rail = 0;
     int sent = 0;
     for (int i = 0; i < salvo; i++) {
-        // Alternate wing hardpoints so successive launches read as a pair.
-        rail ^= 1;
-        Vec3 origin = v3(rail ? 5.0f : -5.0f, -2.5f, 5.0f);
+        // FOUR HARDPOINTS, not two.
+        //
+        // Two alternating wing rails read as a pair and stop saying anything past
+        // the second round: a LANCE emptying a bay of four looked identical to one
+        // spending two, because rounds three and four came off the same two points
+        // the first pair had just used. The salvo is the whole mechanic of that
+        // class and the launch is the only place the player sees its size.
+        //
+        // The order walks the corners rather than going round them, so consecutive
+        // rounds are always diagonally opposite and a salvo fans out instead of
+        // unzipping down one side.
+        rail = (rail + 1) & 3;
+        const float rx = (rail & 1) ?  5.0f : -5.0f;
+        const float ry = (rail & 2) ?  1.0f : -2.5f;
+        Vec3 origin = v3(rx, ry, 5.0f);
         // Only spend the round if a missile actually left the rail. With every
         // slot in the air this silently charged the player for nothing at all,
         // and since no missile existed there was no outcome to report either --

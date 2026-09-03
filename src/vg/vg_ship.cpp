@@ -85,13 +85,13 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 420.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 330.0f, /* shake */ 1.00f,
-        /* warhead    */ 63.0f, 18.0f, 0.60f,
+        /* warhead    */ 50.0f, 18.0f, 0.60f,
         /* speed      */ 340.0f, /* accel */ 0.0f, /* max */ 340.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 2.50f, 10.0f, 0.22f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_FIGHTER,
         /* weapon     */ WPN_ARAAM,
-        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 2, 0.50f, 4.0f,
+        /* fire ctrl  */ 0.86f, 0.86f, 1600.0f, 0.45f, 2, 0.50f, 4.8f,
     },
 
     // ---- LANCE -- the point --------------------------------------------------
@@ -172,7 +172,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         /* speed      */ 100.0f, 460.0f,
         /* turn       */ 2.20f, 0.60f, 0.15f,
         /* hull       */ 210.0f, /* shake */ 1.70f,
-        /* warhead    */ 10.0f, 22.0f, 0.85f,
+        /* warhead    */ 9.0f, 22.0f, 0.85f,
         /* speed      */ 380.0f, /* accel */ 0.0f, /* max */ 380.0f, /* needs */ -2.0f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.00f,
         /* seeker arc */ 1.70f, 7.0f, 0.12f,
         /* seeker     */ -0.60f, 2.0f, 0.9f,
@@ -272,7 +272,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // arriving on HALF the rounds fired. The acceleration stays as the reward
         // for keeping the nose on them, but at 60 it now crosses the fastest ship
         // in the game after 2.3 seconds of held lock rather than 9.
-        /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f, /* needs */ -2.0f, /* reach */ 0.45f, /* coast */ 0.00f, /* trade */ 1.00f, /* stack */ 0.00f,
+        /* speed      */ 320.0f, /* accel */ 60.0f, /* max */ 560.0f, /* needs */ -2.0f, /* reach */ 0.45f, /* coast */ 0.60f, /* trade */ 1.00f, /* stack */ 0.00f,
         // SHORT LIVED AND EXTREMELY AGILE, which is this class stated as two
         // numbers. The round is a LEASH rather than a launch: it goes where the
         // nose goes for as long as the nose is on them, and then it is gone.

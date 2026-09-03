@@ -273,9 +273,20 @@ struct ShipSpec {
     //
     // Per class rather than one number for the game, because it is the class's
     // bargain and not the weapon's physics. Zero means ALL OR NOTHING: the light
-    // goes out and the round is finished on that frame, which is what a
-    // semi-active weapon is supposed to feel like. Hold them in the circle and
-    // the shot arrives; lose them for an instant and you have spent it.
+    // goes out and the round is finished on that frame.
+    //
+    // BALLISTA HAS 0.60 NOW, and it used to be the zero. All or nothing was the
+    // right shape and slightly the wrong size: reported from the cockpit as "it
+    // can make or break", with a session ending early because a lock lost for an
+    // instant took every round in the air with it. Six tenths of a second is long
+    // enough to get the nose back on somebody and not long enough to fly away and
+    // return -- the round still dies if you actually leave.
+    //
+    // WATCH WHO IT HELPS. The grace is worth most to a pilot who loses the lock
+    // OFTEN, and that is the scripted seat: it drops illumination three hundred
+    // times in a measured set where a human dropped it on 15% of rounds. So the
+    // table's +60% for this class overstates what a player will feel, and tuning
+    // the warhead down to pay for it would be paying with the wrong instrument.
     float msl_coast;
     // HOW HARD THIS CLASS PAYS FOR SPEED IN AGILITY, as an exponent on
     // launch_speed/speed. Zero is off and the table's turn rate stands.
