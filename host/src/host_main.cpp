@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
     int frames = 0;   // 0 = run until the window is closed
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
     bool course = false;                  // start on the practice range
+    bool select = false;                  // start on the ship-select screen
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
@@ -78,6 +79,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         else if (!strcmp(argv[i], "--course")) course = true;
+        else if (!strcmp(argv[i], "--select")) select = true;
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_host_shot = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
@@ -122,6 +124,7 @@ int main(int argc, char** argv) {
                    "  --bot        the game flies the player's seat too. With\n"
                    "               --gym that is a fight nobody is holding.\n"
                    "  --course     start on the practice range, past the menus.\n"
+                   "  --select     start on the ship-select screen.\n"
                    "  --shot N     write frame N to shot.ppm and keep running.\n"
                    "  --no-ram     no opponent rolls a suicide run. For testing:\n"
                    "               a rammer ends the engagement being measured.\n"
@@ -162,6 +165,7 @@ int main(int argc, char** argv) {
     // same reason the gym is: the boot sequence lands on the title screen
     // and would replace anything set up before it.
     if (course) vg_state_cut(VG_COURSE);
+    if (select) vg_state_cut(VG_SELECT);
 
     if (dump && !host_dataset_open(dump)) {
         fprintf(stderr, "could not open %s for writing\n", dump);
