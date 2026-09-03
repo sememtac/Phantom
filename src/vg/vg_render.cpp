@@ -383,13 +383,19 @@ void vg_render_frame(const VgInput* in, float fps) {
     // help. If a future scene flips it again, the fix is not another static guess -- it is to
     // choose the rails' owner per frame from g_sub_a and g_sub_b, which the slices already
     // allow because a slice's position in the join does not depend on which core filled it.
-    // NOT ON A MENU. The grid is the arena's boundary and a menu has no arena --
-    // it was only ever backdrop there, and it is the wrong backdrop now: those
-    // long arcs are what you see through the console's glass, and a registration
-    // terminal in a room does not have the tournament floor drifting past behind
-    // it. The motes stay, and so does the camera drift; what goes is the scenery
-    // that says "you are outside, in space".
-    if (!vg_state_is_menu(vg.state)) vg_draw_arena_grid(cam);
+    // NOT ON THE TITLE, AND EVERYWHERE ELSE YES, and the reason is where you are
+    // standing rather than what is cheap to draw.
+    //
+    // The title screen is the approach: you have not arrived at the IFT
+    // registration yet, so there is no structure around you and the grid would be
+    // saying otherwise. Step through it and you are INSIDE the torus -- the
+    // registration desk, the ship bay and the bracket are all in there -- so the
+    // ring is what is out of the window from then on, and it comes back.
+    //
+    // The rocks do not. They are out in the field where a fight happens, not in
+    // the concourse, and one tumbling behind a readout says the panel is a window
+    // onto open space rather than a screen in a room.
+    if (vg.state != VG_ATTRACT) vg_draw_arena_grid(cam);
     g_sub_arena = micros() - t_sub; t_sub = micros();
     // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to
     // land between the grid and the hulls rather than on top of them.
