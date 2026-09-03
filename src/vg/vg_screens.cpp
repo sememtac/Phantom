@@ -173,24 +173,42 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
 // INK_ONFILL, never COL_BLACK: vg_text treats colour 0 as invisible, so black
 // text on a fill is no text at all.
 //
-// The PAIR is centred, not the value, so the panel keeps its axis while still
-// reading as a field rather than as a sentence.
+// TWO COLUMNS, PASSED IN, because the rows have to agree. Centring each row on
+// its own put the two tabs at different x -- and since both labels are the same
+// width, the entire offset was the length of the value beside them, which is not
+// a thing the caption column should know about. Read down, it looked like two
+// unrelated captions instead of one specification block.
+//
+// The fill still hugs its OWN label, so a longer caption later grows its tab
+// rather than shifting the values.
+static void field(int lx, int vx, int y,
+                  const char* label, const char* value, uint16_t vcol) {
+    vg_fill_rect(lx - 2, y - 1, vg_text_width(label, 1) + 4, 9, INK);
+    vg_text(lx, y, label, INK_ONFILL, 1);
+    vg_text(vx, y, value, vcol, 1);
+}
+
+// WHERE THE TWO COLUMNS SIT. Centred on the WIDER row, so the block keeps the
+// panel's axis, and the shorter row is flush with it rather than centred inside
+// it.
 //
 // The GAP GIVES FIRST. A field that will not fit is a writing problem and gets
 // fixed in the string, but the panel must not be the thing that reports it: an
-// overlong value would otherwise draw its fill tab outside the left border and
-// run its last characters past the right one. Closing the gap to 4 buys 5
-// characters, and past that the row is pinned to the margin and simply clips.
-static void field(int y, const char* label, const char* value, uint16_t vcol) {
-    const int lw   = vg_text_width(label, 1);
-    const int vw   = vg_text_width(value, 1);
+// overlong value would otherwise draw its tab outside the left border and run
+// its last characters past the right one. Closing the gap to 4 buys five
+// characters, and past that the block pins to the margin and simply clips.
+static void field_cols(const char* l0, const char* v0,
+                       const char* l1, const char* v1, int* lx, int* vx) {
+    const int w0 = vg_text_width(l0, 1), w1 = vg_text_width(l1, 1);
+    const int lw = (w0 > w1) ? w0 : w1;
+    const int a  = vg_text_width(v0, 1), b = vg_text_width(v1, 1);
+    const int vw = (a > b) ? a : b;
     const int room = SEL_PANEL_W - 2 * SEL_FIELD_PAD;
     const int gap  = (lw + 9 + vw <= room) ? 9 : 4;
     int x = SEL_PANEL_X + (SEL_PANEL_W - (lw + gap + vw)) / 2;
     if (x < SEL_PANEL_X + SEL_FIELD_PAD) x = SEL_PANEL_X + SEL_FIELD_PAD;
-    vg_fill_rect(x - 2, y - 1, lw + 4, 9, INK);
-    vg_text(x, y, label, INK_ONFILL, 1);
-    vg_text(x + lw + gap, y, value, vcol, 1);
+    *lx = x;
+    *vx = x + lw + gap;
 }
 
 static void draw_chart(const float ax[5]) {
@@ -520,11 +538,14 @@ void vg_draw_select(void) {
     // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not a
     // new word either: the rack instrument in flight is labelled MSL, so it
     // already means "the round" to anyone who has flown.
-    field(SEL_PANEL_Y + 46, "MSL", vg_wpn_name(sp->wpn), INK_BRIGHT);
     {
         char how[48];
         wpn_how(sp, how, sizeof(how));
-        field(SEL_PANEL_Y + 58, "WPN", how, INK);
+        const char* msl = vg_wpn_name(sp->wpn);
+        int lx, vx;
+        field_cols("MSL", msl, "WPN", how, &lx, &vx);
+        field(lx, vx, SEL_PANEL_Y + 46, "MSL", msl, INK_BRIGHT);
+        field(lx, vx, SEL_PANEL_Y + 58, "WPN", how, INK);
     }
 
     {
