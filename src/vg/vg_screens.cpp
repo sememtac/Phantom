@@ -197,13 +197,15 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
         px = nx; py = ny;
         qx = nx; qy = my;
     }
-    // CLOSE THE TAIL. These hulls are blunt at the back -- the traced outlines end
-    // at a real width, not at a point -- so without this the two halves simply
-    // stop and the ship reads as an open bracket.
-    {
-        const float tx = cx + pl.pts[(pl.n - 1) * 2] * sx;
-        const float ty = pl.pts[(pl.n - 1) * 2 + 1] * sy;
-        if (ty > 0.5f) vg_line_w(tx, cy - ty, tx, cy + ty, INK_BRIGHT, 2);
+    // CLOSE BOTH ENDS, wherever the outline stops at a real width rather than at a
+    // point. Every hull is blunt at the back, and LANCE's beak is clipped square at
+    // the front -- without this the two mirrored halves simply stop and the ship
+    // reads as an open bracket.
+    for (int e = 0; e < 2; e++) {
+        const int   k  = e ? (pl.n - 1) : 0;
+        const float ex = cx + pl.pts[k * 2] * sx;
+        const float ey =      pl.pts[k * 2 + 1] * sy;
+        if (ey > 0.5f) vg_line_w(ex, cy - ey, ex, cy + ey, INK_BRIGHT, 2);
     }
 
     // NO SPINE, AND NO FUSELAGE EDGE PAIR. Both were long straight lines running
