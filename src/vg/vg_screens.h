@@ -160,6 +160,18 @@
 // a curve, at one primitive per chord.
 #define SEL_GLASS_SEG   24.0f
 
+// THE FIDUCIAL GRID. Spacing and arm length of the alignment crosses tiled
+// across the glass. 74 gives five across and three down inside the aperture,
+// which is enough to read as a pattern and few enough that they stay chrome --
+// at half this they start to look like content.
+#define SEL_TICK_STEP   74
+#define SEL_TICK_ARM    3
+
+// How fast the sweep crosses the glass, in px a second. Slow: it is a sign of
+// life, not an animation, and anything quick enough to follow with the eye is
+// something the eye then has to keep following.
+#define SEL_SWEEP_RATE  38.0f
+
 #define SEL_CHYRON_RATE 46.0f
 
 // The clear space between one pass of the banner and the next. Three characters

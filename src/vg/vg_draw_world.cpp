@@ -680,10 +680,15 @@ void vg_draw_world(const VgCam& cam) {
 
     // Painter order: farthest rock first, so a nearer one's black fills occlude
     // it. Within a single rock, back-face culling already sorts things out.
+    // NO ROCKS ON A MENU, for the same reason the grid is gone from one: a rock
+    // tumbling behind a terminal's glass says the panel is a window. The field
+    // still exists and still moves -- nothing here touches the simulation -- it
+    // is simply not drawn while nobody is flying through it.
     int order[MAX_ASTEROIDS];
     int nast = 0;
-    for (int i = 0; i < MAX_ASTEROIDS; i++)
-        if (vg.ast[i].alive) order[nast++] = i;
+    if (!vg_state_is_menu(vg.state))
+        for (int i = 0; i < MAX_ASTEROIDS; i++)
+            if (vg.ast[i].alive) order[nast++] = i;
 
     for (int i = 1; i < nast; i++) {              // insertion sort, descending z
         int   key = order[i];

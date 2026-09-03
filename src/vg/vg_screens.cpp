@@ -532,6 +532,50 @@ void console_open(const char* title, const char* note) {
     // at the default that is five straight pieces with visible joints.
     vg_hud_warp(true, SEL_GLASS_WARP);
     vg_hud_warp_seg(SEL_GLASS_SEG);
+
+    // --- what makes it a display rather than a window ---------------------
+    //
+    // Both of these go down FIRST, so the screen's own instruments draw over
+    // them. That is the right way round and not just the safe one: they belong
+    // to the DISPLAY, not to what it is showing, and a fiducial that crossed a
+    // word would be reading as content.
+    //
+    // REGISTRATION CROSSES, tiled. Every instrument panel ever built has them --
+    // they are alignment marks, the thing a display is checked against rather
+    // than anything it is telling you -- and a regular grid of them across the
+    // glass is what says "this readout was manufactured". They are in the
+    // concept art for the same reason.
+    //
+    // They also do a second job here, which is why they are inside the warp
+    // bracket: a curve needs something regular laid across it to be seen at all.
+    // Bent text is just badly set and a bent border could be a drawn shape, but a
+    // grid of identical marks that are not on a grid any more can only be glass.
+    for (int gy = SEL_AP_Y0 + SEL_TICK_STEP / 2; gy < SEL_AP_Y1; gy += SEL_TICK_STEP)
+        for (int gx = SEL_AP_X0 + SEL_TICK_STEP / 2; gx < SEL_AP_X1; gx += SEL_TICK_STEP) {
+            vg_line((float)(gx - SEL_TICK_ARM), (float)gy,
+                    (float)(gx + SEL_TICK_ARM), (float)gy, INK_TRACE);
+            vg_line((float)gx, (float)(gy - SEL_TICK_ARM),
+                    (float)gx, (float)(gy + SEL_TICK_ARM), INK_TRACE);
+        }
+
+    // THE SWEEP. One line down the glass, on a loop, and it is the cheapest
+    // possible way to say the hardware is powered: a still picture is a picture,
+    // and a still picture with one thing crossing it on a clock is a MACHINE
+    // showing you a picture.
+    //
+    // Two lines rather than one -- a faint band with a brighter edge leading it
+    // -- because a single hairline reads as a scratch on the glass where a pair
+    // reads as something passing behind it.
+    //
+    // Off vg.state_t, like the ticker: an integrated dt would sweep at the frame
+    // rate instead of the clock.
+    {
+        const float h  = (float)(SEL_AP_Y1 - SEL_AP_Y0);
+        const float u  = vg.state_t * SEL_SWEEP_RATE;
+        const float sy = (float)SEL_AP_Y0 + (u - floorf(u / h) * h);
+        vg_line((float)SEL_AP_X0, sy, (float)SEL_AP_X1, sy, INK_FAINT);
+        vg_line((float)SEL_AP_X0, sy + 2.0f, (float)SEL_AP_X1, sy + 2.0f, INK_TRACE);
+    }
 }
 
 // Back to flat, then the key, then the steel over everything.
