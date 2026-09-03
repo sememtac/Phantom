@@ -246,8 +246,8 @@ void vg_build_starfield(void) {
 //   BALLISTA  back-weighted: a long nose, wings set far aft, big stabilisers
 // ===========================================================================
 
-// AEGIS -- the reference. A clean delta, and the radar dome at the tail is the
-// lifeline: the bay only rearms while that antenna holds the target.
+// AEGIS -- the reference, and deliberately the plainest. Two bays and a pentagon
+// canopy; nothing else. The other three are departures from this.
 static const float PLAN_AEGIS[] = {
      1.000f,  0.000f,  0.281f,  0.158f, -0.276f,  0.488f,
     -0.482f,  0.456f, -0.580f,  0.235f, -0.982f,  0.158f,
@@ -255,14 +255,12 @@ static const float PLAN_AEGIS[] = {
 };
 
 static const float DTL_AEGIS[] = {
-    -0.520f,  0.000f, -0.580f,  0.150f, -0.580f,  0.150f, -0.730f,  0.200f,
-    -0.730f,  0.200f, -0.880f,  0.150f, -0.880f,  0.150f, -0.930f,  0.000f,
      0.520f,  0.000f,  0.450f,  0.080f,  0.450f,  0.080f,  0.280f,  0.074f,
      0.280f,  0.074f,  0.220f,  0.000f,
 };
 
 static const float BAY_AEGIS[] = {
-    -0.020f,  0.235f, -0.280f,  0.300f,
+    -0.060f,  0.150f, -0.260f,  0.225f,
 };
 
 // LANCE -- the widest, and the four bays are the whole read on it -- two a side,
@@ -280,7 +278,7 @@ static const float DTL_LANCE[] = {
 };
 
 static const float BAY_LANCE[] = {
-    -0.330f,  0.175f, -0.520f,  0.265f, -0.330f,  0.340f, -0.520f,  0.430f,
+    -0.300f,  0.110f, -0.500f,  0.185f, -0.300f,  0.225f, -0.500f,  0.300f,
 };
 
 // CHARIOT -- a dart, and mostly frame. Its bay is the panel FILLED, with the lattice
@@ -331,7 +329,7 @@ static const float DTL_BALLISTA[] = {
 };
 
 static const float BAY_BALLISTA[] = {
-    -0.220f,  0.150f, -0.400f,  0.250f, -0.220f,  0.000f, -0.400f,  0.055f,
+    -0.220f,  0.065f, -0.420f,  0.140f, -0.220f,  0.000f, -0.420f,  0.037f,
 };
 
 const VgShipPlan vg_ship_plan[SHIP_CLASSES] = {
