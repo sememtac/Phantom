@@ -4,6 +4,7 @@
 #include "vg_draw.h"
 #include "vg_game.h"
 #include <stdio.h>
+#include <math.h>
 
 // Ship select and pause. The tournament map is big enough to want its own file.
 
@@ -50,80 +51,213 @@ void vg_button(int x, int y, int w, int h, const char* label,
 // Ship select
 // ---------------------------------------------------------------------------
 
-int vg_select_card_at(float x, float y) {
-    for (int i = 0; i < SHIP_CLASSES; i++)
-        if (vg_in_rect(x, y, SEL_CARD_X, SEL_CARD_Y0 + i * SEL_CARD_PITCH,
-                       SEL_CARD_W, SEL_CARD_H))
-            return i;
-    return -1;
+// WHICH WHEEL ROW a contact landed on, as an offset from the detent: -1 is the
+// row above the selection, +1 the row below, 0 the selection itself. Outside the
+// wheel entirely it returns SEL_ROW_NONE.
+//
+// The wheel is what a tap tests against now, not four cards. Tapping a neighbour
+// nudges by one, exactly as the letter wheels do -- the screen has to stay usable
+// without a drag, and the board has a hardware button too.
+int vg_select_row_at(float x, float y) {
+    if (!vg_in_rect(x, y, SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H))
+        return SEL_ROW_NONE;
+    const float dy = y - (float)SEL_WHEEL_MID;
+    int k = (int)lroundf(dy / (float)SEL_WHEEL_PITCH);
+    if (k < -2) k = -2;
+    if (k >  2) k =  2;
+    return k;
 }
 
 bool vg_select_confirm_at(float x, float y) {
     return vg_in_rect(x, y, SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
 }
 
-// Four short bars per card. Absolute numbers would be meaningless before you
-// have flown any of them; what a player needs at this screen is the SHAPE of the
-// ship relative to the other three.
-static void stat_bar(int x, int y, int w, float t, uint16_t col) {
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    vg_rect(x, y, w, 7, INK_FAINT);
-    int fw = (int)((float)(w - 2) * t);
-    if (fw > 0) vg_fill_rect(x + 1, y + 1, fw, 5, col);
+// THE FIVE AXES, AS A SHAPE.
+//
+// Absolute numbers are meaningless before you have flown any of them; what a
+// player needs here is the shape of a class against the others, which is what a
+// radar chart is for and what four independent bars never were.
+//
+// Drawn the way the HUD radar is drawn -- see draw_radar. The trig is baked once
+// because that instrument already learned what per-frame cosf costs; the
+// graticule is a line loop at fixed fractions; and the plotted polygon is an
+// OUTLINE, because this renderer has no polygon fill and a solid slab would be
+// against the house style regardless.
+static float s_ax_cs[5][2];
+static bool  s_ax_ready = false;
+
+static void chart_tables(void) {
+    if (s_ax_ready) return;
+    // Clockwise from the top, so SPEED sits at twelve and the order round the
+    // dial is the order vg_ship_axes writes them in.
+    for (int i = 0; i < 5; i++) {
+        const float a = -1.57079633f + (float)i * (6.28318531f / 5.0f);
+        s_ax_cs[i][0] = cosf(a);
+        s_ax_cs[i][1] = sinf(a);
+    }
+    s_ax_ready = true;
+}
+
+static void chart_pt(int i, float t, float* px, float* py) {
+    *px = (float)SEL_CHART_CX + s_ax_cs[i][0] * (float)SEL_CHART_R * t;
+    *py = (float)SEL_CHART_CY + s_ax_cs[i][1] * (float)SEL_CHART_R * t;
+}
+
+static void chart_ring(float t, uint16_t col, int w) {
+    float px, py, nx, ny;
+    chart_pt(4, t, &px, &py);
+    for (int i = 0; i < 5; i++) {
+        chart_pt(i, t, &nx, &ny);
+        vg_line_w(px, py, nx, ny, col, w);
+        px = nx; py = ny;
+    }
+}
+
+static void draw_chart(const ShipSpec* sp) {
+    chart_tables();
+
+    // Graduations first, hairline, so they read as scale and not as structure.
+    chart_ring(0.33f, INK_TRACE, 1);
+    chart_ring(0.66f, INK_TRACE, 1);
+    for (int i = 0; i < 5; i++) {
+        float ex, ey;
+        chart_pt(i, 1.0f, &ex, &ey);
+        vg_line((float)SEL_CHART_CX, (float)SEL_CHART_CY, ex, ey, INK_TRACE);
+    }
+    // ...then the rim at 2px, which is the instrument border. The same weighting
+    // rule the radar uses: outer edge structural, inner rings graduations.
+    chart_ring(1.0f, INK_FAINT, 2);
+
+    // The class itself, over the top and at the top of the ramp.
+    float ax[5];
+    vg_ship_axes(sp, ax);
+    {
+        float px, py, nx, ny;
+        chart_pt(4, ax[4], &px, &py);
+        for (int i = 0; i < 5; i++) {
+            chart_pt(i, ax[i], &nx, &ny);
+            vg_line_w(px, py, nx, ny, INK_MAX, 2);
+            px = nx; py = ny;
+        }
+    }
+
+    // Labels outside their own vertex, nudged so the text clears the rim instead
+    // of straddling it: pushed fully left of a left-hand vertex, fully right of a
+    // right-hand one, and centred on the two that sit near the vertical.
+    for (int i = 0; i < 5; i++) {
+        const char* nm = vg_ship_axis_name(i);
+        const float ox = s_ax_cs[i][0], oy = s_ax_cs[i][1];
+        float lx = (float)SEL_CHART_CX + ox * (float)(SEL_CHART_R + SEL_CHART_LABEL);
+        float ly = (float)SEL_CHART_CY + oy * (float)(SEL_CHART_R + SEL_CHART_LABEL);
+        const float w = (float)vg_text_width(nm, 1);
+        lx -= w * ((ox < -0.3f) ? 1.0f : ((ox > 0.3f) ? 0.0f : 0.5f));
+        ly -= (oy < -0.3f) ? 7.0f : ((oy > 0.3f) ? 0.0f : 3.5f);
+        vg_text((int)lx, (int)ly, nm, INK, 1);
+    }
+}
+
+// The hull, turning. A PLACEHOLDER, and saying so is the point: all four classes
+// share one model today, so this says "a ship" rather than "which ship". It is
+// here so the layout is real and testable, and so there is a slot to drop four
+// shapes into once they are drawn.
+static void draw_model_slot(void) {
+    // FROM state_t, NOT an integrated dt. The renderer has no dt to give, and a
+    // static accumulator here would tick at the frame rate rather than with the
+    // clock -- so the model would spin faster on the desktop than on the board,
+    // and a replay would not reproduce. Three incommensurate rates near the menu
+    // world's own drift, so it reads as adrift rather than motorised.
+    // A TURNTABLE, not a tumble. Rotating on all three axes at once spends most
+    // of its time edge-on, and a hull seen edge-on is a sliver -- it read as a
+    // glitch rather than as a ship. A fixed pitch that tilts the planform toward
+    // the viewer, plus yaw alone, keeps the shape legible the whole way round,
+    // which is the only reason the slot is worth its pixels.
+    const float t = vg.state_t;
+    const float spin[3] = { 0.55f, 0.45f * t, 0.0f };
+
+    const int cx = SEL_PANEL_X + SEL_PANEL_W / 2;
+    const int cy = SEL_MODEL_Y + SEL_MODEL_H / 2;
+
+    // A synthetic camera and a hand-placed hull. vg_project is pure, so putting
+    // the model on a chosen pixel is only that projection run backwards.
+    VgCam cam = vg_cam_make(0.0f, 0.0f, 0.0f, 1.0f);
+    const float z   = 200.0f;
+    const Vec3  pos = v3(((float)cx - SCR_CX) * z / FOCAL,
+                         (SCR_CY - (float)cy) * z / FOCAL, z);
+    const Mat3  R   = mat3_euler(spin[0], spin[1], spin[2]);
+
+    // AA OFF around it. This slice draws instruments with antialiasing on, and
+    // an AA span bills per pixel -- a hull of long spans here is the millisecond
+    // class of cost the world layer switches AA off to avoid.
+    vg_line_aa_mode(false);
+    // Sized to the SLOT, not to taste. At FOCAL 400 and z 200 a model unit is
+    // two pixels, and the hull reaches 2.4 units from its centre -- so the
+    // scale that fits a 64px slot is about seven. Larger and it walks out of
+    // the panel, which looked like a clipping bug rather than a big ship.
+    vg_draw_hull(cam, R, pos, 7.0f, INK_BRIGHT);
+    vg_line_aa_mode(true);
 }
 
 void vg_draw_select(void) {
-    // THE SAME SCREEN ASKS TWO QUESTIONS IN THE GYM, so the heading is the only
-    // thing that says which. Without it the second pass looks exactly like the
-    // first and the player re-picks their own ship.
     const bool opp = (vg.gym && vg.sel_opp);
-    centred(38, vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
+    const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
+
+    centred(30, vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
                        : "SELECT SHIP", INK_MAX, 3);
     if (vg.gym)
-        centred(68, opp ? "THEY RESPAWN UNTIL YOU LEAVE" : "PRACTICE -- NOTHING IS SCORED",
-                INK, 2);
+        centred(62, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
+                        : "PRACTICE -- NOTHING IS SCORED", INK, 2);
 
-    for (int i = 0; i < SHIP_CLASSES; i++) {
-        const ShipSpec* s   = vg_spec((ShipClass)i);
-        // Which card reads as chosen depends on which question is being asked.
-        const int       y   = SEL_CARD_Y0 + i * SEL_CARD_PITCH;
-        const bool      sel = opp ? ((int)vg.gym_opp == i) : ((int)vg.ship == i);
+    // --- the wheel ---------------------------------------------------------
+    vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
 
-        vg_rect(SEL_CARD_X, y, SEL_CARD_W, SEL_CARD_H,
-                sel ? INK_BRIGHT : INK_TRACE);
-        if (sel) {
-            // Inverse-video spine down the left edge rather than a filled card:
-            // a solid block behind eight characters of amber is unreadable.
-            vg_fill_rect(SEL_CARD_X, y, 6, SEL_CARD_H, INK_BRIGHT);
-        }
-
-        vg_text(SEL_CARD_X + 16, y + 8, s->name, sel ? INK_MAX : INK_BRIGHT, 3);
-        // The description is the reason to pick one of these, so it is set at
-        // reading size and on the bright ramp rather than tucked away faint.
-        vg_text(SEL_CARD_X + 16, y + 40, s->tagline,
-                sel ? INK_BRIGHT : INK, 2);
-
-        // SPD / HUL / DMG / VOL, each normalised against the strongest class so
-        // the bars are comparable down the column.
-        const int bx = SEL_CARD_X + 300, bw = 100;
-        stat_bar(bx, y + 8,  bw, (s->speed_max - 300.0f) / 180.0f,  INK_BRIGHT);
-        stat_bar(bx, y + 22, bw, s->hull / 360.0f,                  INK_BRIGHT);
-        stat_bar(bx, y + 36, bw, s->msl_damage / 44.0f,             INK_BRIGHT);
-        // Guarded: reload is a divisor and a zero here would take the select
-        // screen out, which is the one place every class is drawn at once.
-        stat_bar(bx, y + 50, bw,
-                 s->reload > 0.0f ? ((float)s->magazine / s->reload) / 9.0f : 0.0f,
-                 INK_BRIGHT);
-
-        vg_text(bx - 26, y + 7,  "SPD", INK, 1);
-        vg_text(bx - 26, y + 21, "HUL", INK, 1);
-        vg_text(bx - 26, y + 35, "DMG", INK, 1);
-        vg_text(bx - 26, y + 49, "VOL", INK, 1);
+    // Neighbours, dimmer the further out, so you can see what is coming. Only
+    // one either side while the roster is four: at two out, a four-item wheel
+    // shows the SAME class above and below, which reads as a drawing fault.
+    const int kmax = (SHIP_CLASSES >= 5) ? 2 : 1;
+    for (int k = -kmax; k <= kmax; k++) {
+        if (k == 0) continue;
+        const int      idx = (cur + k + SHIP_CLASSES * 2) % SHIP_CLASSES;
+        const char*    nm  = vg_spec((ShipClass)idx)->name;
+        const int      sc  = (k == -1 || k == 1) ? 2 : 1;
+        const uint16_t col = (k == -1 || k == 1) ? INK_TRACE : INK_ONFILL;
+        vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, sc)) / 2,
+                SEL_WHEEL_MID + k * SEL_WHEEL_PITCH - (sc * 7) / 2, nm, col, sc);
     }
 
-    // The gym's first confirm is not the last one, and a button that said ENTER
-    // both times would promise a fight and deliver another menu.
+    // The detent: two rules bracketing the selected row, plus the spine down the
+    // left edge. That spine is the same 6px inverse-video mark the cards carried
+    // -- the shape of the screen changed, the vocabulary did not.
+    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID - 20, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID + 19, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, SEL_WHEEL_MID - 20, SEL_SPINE_W, 40, INK_BRIGHT);
+
+    {
+        const char* nm = vg_spec((ShipClass)cur)->name;
+        vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, 2)) / 2,
+                SEL_WHEEL_MID - 7, nm, INK_MAX, 2);
+    }
+
+    // --- the panel ---------------------------------------------------------
+    const ShipSpec* sp = vg_spec((ShipClass)cur);
+    vg_rect(SEL_PANEL_X, SEL_PANEL_Y, SEL_PANEL_W, SEL_PANEL_H, INK_TRACE);
+
+    vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->name, 3)) / 2,
+            SEL_PANEL_Y + 8, sp->name, INK_MAX, 3);
+    {
+        // The weapon system, which is what the four classes now ARE and the one
+        // thing this screen never said.
+        const char* w = vg_wpn_name(sp->wpn);
+        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(w, 1)) / 2,
+                SEL_PANEL_Y + 34, w, INK_BRIGHT, 1);
+    }
+    vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
+            SEL_PANEL_Y + 48, sp->tagline, INK, 1);
+
+    draw_chart(sp);
+
+    vg_fill_rect(SEL_PANEL_X + 8, SEL_MODEL_Y - 8, SEL_PANEL_W - 16, 1, INK_TRACE);
+    draw_model_slot();
+
     vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
               (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true, true);
 }

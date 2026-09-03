@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "cfg_hud.h"   // the select screen's axis display ranges
 
 // ===========================================================================
 // SHIP CLASSES
@@ -453,6 +454,72 @@ float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold);
 // know about the ROUND, not about the designation on the box.
 static inline bool vg_msl_semi_active(const ShipSpec* sp) {
     return sp && sp->wpn == WPN_SAAAM;
+}
+
+// ---------------------------------------------------------------------------
+// THE SELECT SCREEN'S FIVE AXES
+//
+// SPEED / HULL / RANGE / DAMAGE / RATE, each 0..1, written into out[5] in that
+// order. Read straight off this table at draw time, and that is the whole point.
+//
+// The bars this replaces were hand-normalised, and they had gone false: damage
+// was divided by 44 when BALLISTA carries 120 and AEGIS 50, so BOTH clamped to a
+// full bar and the screen showed a 2.4x difference as no difference at all.
+// Nothing anywhere could tell. Derived from the spec, a retune moves the chart
+// with it and the screen cannot drift away from the game again.
+//
+// The display ranges are deliberately WIDER than the roster, so a class sits
+// somewhere inside its axis rather than at an end, and so adding a fifth ship
+// does not silently reshape the other four. Min-max across the roster would do
+// exactly that.
+//
+// RATE ASKS THE WEAPON SYSTEM, because `reload` means per clip for three classes
+// and per round for AR-AAM. That is the rule this table already lives by: ask
+// what the ship declares, never infer it from the number.
+// What a weapon system is CALLED, for the one screen that has to say it out
+// loud. Two words abbreviated to two letters, all four of them -- see the enum.
+static inline const char* vg_wpn_name(WeaponSystem w) {
+    switch (w) {
+    case WPN_ARAAM: return "AR-AAM  ACTIVE RADAR";
+    case WPN_RFAAM: return "RF-AAM  RAPID FIRE";
+    case WPN_SLAAM: return "SL-AAM  SALVO LOCK";
+    case WPN_SAAAM: return "SA-AAM  SEMI-ACTIVE";
+    }
+    return "";
+}
+
+static inline void vg_ship_axes(const ShipSpec* sp, float out[5]) {
+    if (!sp) { for (int i = 0; i < 5; i++) out[i] = 0.0f; return; }
+
+    const float rate = (sp->wpn == WPN_ARAAM)
+        ? ((sp->reload > 0.0f) ? 1.0f / sp->reload : 0.0f)
+        : ((float)sp->magazine
+           / ((float)sp->magazine * sp->fire_gap + sp->reload));
+
+    const float v[5] = { sp->speed_max, sp->hull, sp->lock_range,
+                         sp->msl_damage, rate };
+    const float lo[5] = { SEL_AX_SPEED_LO, SEL_AX_HULL_LO, SEL_AX_RANGE_LO,
+                          SEL_AX_DMG_LO,   SEL_AX_RATE_LO };
+    const float hi[5] = { SEL_AX_SPEED_HI, SEL_AX_HULL_HI, SEL_AX_RANGE_HI,
+                          SEL_AX_DMG_HI,   SEL_AX_RATE_HI };
+
+    for (int i = 0; i < 5; i++) {
+        const float span = hi[i] - lo[i];
+        float t = (span > 0.0f) ? (v[i] - lo[i]) / span : 0.0f;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        // A floor, so a collapsed axis is still a visible vertex rather than a
+        // crease at the centre. CHARIOT's RANGE is 0.09 and its DAMAGE 0.07; at
+        // literal zero the polygon would fold through the middle and read as a
+        // drawing fault instead of as a weakness.
+        out[i] = SEL_AX_FLOOR + t * (1.0f - SEL_AX_FLOOR);
+    }
+}
+
+// What each axis is called, in the same order.
+static inline const char* vg_ship_axis_name(int i) {
+    static const char* N[5] = { "SPEED", "HULL", "RANGE", "DAMAGE", "RATE" };
+    return (i >= 0 && i < 5) ? N[i] : "";
 }
 
 static inline const ShipSpec* vg_spec(ShipClass c) {

@@ -96,6 +96,27 @@
 #define ALERT_FLASH_FAST     0.50f    // ...and closest, 2 Hz. Never faster.
 #define ALERT_FLASH_DUTY     0.50f    // fraction of the period the block is lit
 
+// --- the ship-select chart --------------------------------------------------
+//
+// DISPLAY RANGES for the five axes, deliberately wider than the roster occupies.
+// A class should sit somewhere INSIDE its axis rather than pinned at an end, and
+// normalising min-max across the four instead would mean a fifth ship silently
+// reshaped everybody else's chart. See vg_ship_axes.
+#define SEL_AX_SPEED_LO   300.0f
+#define SEL_AX_SPEED_HI   500.0f
+#define SEL_AX_HULL_LO    180.0f
+#define SEL_AX_HULL_HI    360.0f
+#define SEL_AX_RANGE_LO  1000.0f
+#define SEL_AX_RANGE_HI  4500.0f
+#define SEL_AX_DMG_LO       0.0f
+#define SEL_AX_DMG_HI     130.0f
+#define SEL_AX_RATE_LO      0.0f
+#define SEL_AX_RATE_HI      1.1f
+
+// The smallest a plotted vertex may be. A truly zero axis folds the polygon
+// through the centre and reads as a broken drawing rather than as a weakness.
+#define SEL_AX_FLOOR        0.10f
+
 // --- missile bearing ring --------------------------------------------------
 //
 // Between the bogey arrows at 150 and the threat arrow at 196, and clear of both:

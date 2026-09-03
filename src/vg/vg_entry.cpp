@@ -16,8 +16,6 @@
 // cannot see -- and the trail is the thing that says which contact is you.
 // ===========================================================================
 
-#define WHEEL_STEP   26.0f      // px of drag per letter
-
 static int   s_letter[3]  = { 0, 0, 0 };   // 0..25
 static int   s_drag_col   = -1;
 static float s_accum      = 0.0f;

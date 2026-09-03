@@ -600,31 +600,71 @@ void vg_upd_repair(float dt, const VgInput* in, const Tap* tap) {
     if (vg_repair_update(in, tap->up, tap->x, tap->y)) vg_state_go(VG_BRACKET);
 }
 
-void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
-    // The +/- key cycles as well as the cards, since it is already wired and
-    // is the fastest way to feel the difference between classes.
-    if (in->alt_edge) {
-        if (vg.gym && vg.sel_opp) vg.gym_opp = (uint8_t)((vg.gym_opp + 1) % SHIP_CLASSES);
-        else                      vg_game_select_ship((ShipClass)((vg.ship + 1) % SHIP_CLASSES));
+// THE SHIP WHEEL, and it is the CALLSIGN WHEEL -- same gesture, same step, same
+// direction. See vg_entry_update, which this deliberately mirrors.
+//
+// Three ways in, because a wheel that only answers to a drag is a wheel the
+// hardware button cannot reach: drag it, tap a neighbour to nudge it by one, or
+// press the alt key to cycle.
+static int   s_wheel_accum_owner = 0;   // non-zero while a drag owns the wheel
+static float s_wheel_accum       = 0.0f;
+
+// Moving the selection is TWO DIFFERENT WRITES and they must not be confused.
+// vg_game_select_ship also resets the player's hull and rack, so using it to
+// choose an OPPONENT would silently re-arm the player as the class they picked
+// to fight. That bug is why this helper exists rather than being inlined.
+static void select_step(int delta) {
+    if (vg.gym && vg.sel_opp) {
+        vg.gym_opp = (uint8_t)((vg.gym_opp + delta + SHIP_CLASSES * 4) % SHIP_CLASSES);
+    } else {
+        const int n = ((int)vg.ship + delta + SHIP_CLASSES * 4) % SHIP_CLASSES;
+        vg_game_select_ship((ShipClass)n);
     }
+}
+
+void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
+    (void)dt;
+
+    // The +/- key cycles as well, since it is already wired and is the fastest
+    // way to feel the difference between classes.
+    if (in->alt_edge) select_step(+1);
+
+    // --- the wheel ---------------------------------------------------------
+    if (in->menu_edge) {
+        s_wheel_accum       = 0.0f;
+        s_wheel_accum_owner = (vg_select_row_at(in->menu_x, in->menu_y) != SEL_ROW_NONE);
+    }
+    if (in->menu_held) {
+        if (s_wheel_accum_owner) {
+            // DRAGGING DOWN ROLLS THE WHEEL DOWN, which brings earlier ships up
+            // into view -- the way a physical wheel behaves, and the way the
+            // letter wheels already behave. Backwards here would be the one
+            // thing a player notices immediately.
+            s_wheel_accum += in->menu_dy;
+            while (s_wheel_accum >= WHEEL_STEP) { s_wheel_accum -= WHEEL_STEP; select_step(-1); }
+            while (s_wheel_accum <= -WHEEL_STEP) { s_wheel_accum += WHEEL_STEP; select_step(+1); }
+        }
+    } else {
+        s_wheel_accum_owner = 0;
+    }
+
     if (tap->up) {
-        int card = vg_select_card_at(tap->x, tap->y);
-        if (card >= 0) {
-            // Picking the OPPONENT must not touch vg.ship: that call also resets
-            // the player's hull and rack, so choosing who to fight would have
-            // silently re-armed the player as the class they picked to fight.
-            if (vg.gym && vg.sel_opp) vg.gym_opp = (uint8_t)card;
-            else                      vg_game_select_ship((ShipClass)card);
+        const int row = vg_select_row_at(tap->x, tap->y);
+        if (row != SEL_ROW_NONE) {
+            // A tap above or below the detent nudges by one, so the wheel is
+            // usable without a drag at all. A tap ON the detent is a no-op: it
+            // is already the selection.
+            if (row != 0) select_step(row);
         } else if (vg_select_confirm_at(tap->x, tap->y)) {
             if (vg.gym) {
                 // TWO PASSES THROUGH ONE SCREEN. The first confirm keeps the
                 // player's ship and comes straight back for the opponent's,
-                // which is why this does not leave the state: the cards, the
-                // stat bars and the hit tests are the same question asked twice.
+                // which is why this does not leave the state: the wheel, the
+                // chart and the hit tests are the same question asked twice.
                 if (!vg.sel_opp) {
                     vg.sel_opp = true;
                     // The second pick starts on the ship just chosen rather than
-                    // wherever the cursor was left, so confirming twice is a
+                    // wherever the wheel was left, so confirming twice is a
                     // mirror match -- the most common thing to want.
                     vg.gym_opp = (uint8_t)vg.ship;
                 } else {

@@ -340,6 +340,62 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
     }
 }
 
+// THE HULL, AND ONLY THE HULL.
+//
+// Lifted out of draw_enemy so the ship-select screen can turn a model without
+// inheriting a fighter's exhaust, its depth fade, its contrail or its
+// distance-based degradation to a single point -- none of which a menu wants and
+// all of which read off a live Ship the menu does not have.
+//
+// Takes an orientation rather than a Ship, because the two callers get theirs
+// from different places: a fighter's comes from its fwd/up/roll basis, and the
+// menu's from a clock.
+//
+// Hidden-line the same way the fighter is: cull to front faces, fill them black
+// so the far side cannot show through, then stroke the edges over the top.
+void vg_draw_hull(const VgCam& cam, const Mat3& orient, Vec3 pos, float scale,
+                  uint16_t col) {
+    Vec3 wv[SHIP_VERTS];
+    for (int i = 0; i < SHIP_VERTS; i++)
+        wv[i] = vadd(pos, vmul(mat3_apply(orient, vg_ship_verts[i]), scale));
+
+    bool front[SHIP_FACES];
+    for (int f = 0; f < SHIP_FACES; f++) {
+        Vec3 A  = vg_view(cam, wv[vg_ship_faces[f][0]]);
+        Vec3 Bv = vg_view(cam, wv[vg_ship_faces[f][1]]);
+        Vec3 C  = vg_view(cam, wv[vg_ship_faces[f][2]]);
+        front[f] = (vdot(vcross(vsub(Bv, A), vsub(C, A)), A) < 0.0f);
+    }
+
+    for (int f = 0; f < SHIP_FACES; f++) {
+        if (!front[f]) continue;
+        Vec3 A  = wv[vg_ship_faces[f][0]];
+        Vec3 Bv = wv[vg_ship_faces[f][1]];
+        Vec3 C  = wv[vg_ship_faces[f][2]];
+        if (A.z < NEAR_Z || Bv.z < NEAR_Z || C.z < NEAR_Z) continue;
+        float ax, ay, bx, by, cx2, cy2;
+        if (!vg_project(cam, A,  &ax,  &ay))  continue;
+        if (!vg_project(cam, Bv, &bx,  &by))  continue;
+        if (!vg_project(cam, C,  &cx2, &cy2)) continue;
+        vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
+    }
+
+    for (int f = 0; f < SHIP_FACES; f++) {
+        if (!front[f]) continue;
+        Vec3 A  = wv[vg_ship_faces[f][0]];
+        Vec3 Bv = wv[vg_ship_faces[f][1]];
+        Vec3 C  = wv[vg_ship_faces[f][2]];
+        vg_edge(cam, A,  Bv, col);
+        vg_edge(cam, Bv, C,  col);
+        vg_edge(cam, C,  A,  col);
+    }
+
+    // The fin is a flat blade with no volume, so it has no facing to cull --
+    // just stroke it over the hull.
+    for (int e = 0; e < SHIP_FIN_EDGES; e++)
+        vg_edge(cam, wv[vg_ship_fin[e][0]], wv[vg_ship_fin[e][1]], col);
+}
+
 // `hero` marks the cutscene ship: drawn on the amber ramp rather than in threat
 // red, and faded over a far longer range because it is meant to be looked at
 // from a distance the combat curve would have written off as a contact.
@@ -379,46 +435,12 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
         return;
     }
 
-    Mat3 B = vg_ship_basis(s);
-    Vec3 wv[SHIP_VERTS];
-    for (int i = 0; i < SHIP_VERTS; i++)
-        wv[i] = vadd(s->pos, vmul(mat3_apply(B, vg_ship_verts[i]), s->scale));
-
-    bool front[SHIP_FACES];
-    for (int f = 0; f < SHIP_FACES; f++) {
-        Vec3 A  = vg_view(cam, wv[vg_ship_faces[f][0]]);
-        Vec3 Bv = vg_view(cam, wv[vg_ship_faces[f][1]]);
-        Vec3 C  = vg_view(cam, wv[vg_ship_faces[f][2]]);
-        front[f] = (vdot(vcross(vsub(Bv, A), vsub(C, A)), A) < 0.0f);
-    }
-
-    for (int f = 0; f < SHIP_FACES; f++) {
-        if (!front[f]) continue;
-        Vec3 A  = wv[vg_ship_faces[f][0]];
-        Vec3 Bv = wv[vg_ship_faces[f][1]];
-        Vec3 C  = wv[vg_ship_faces[f][2]];
-        if (A.z < NEAR_Z || Bv.z < NEAR_Z || C.z < NEAR_Z) continue;
-        float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, A,  &ax,  &ay))  continue;
-        if (!vg_project(cam, Bv, &bx,  &by))  continue;
-        if (!vg_project(cam, C,  &cx2, &cy2)) continue;
-        vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
-    }
-
-    for (int f = 0; f < SHIP_FACES; f++) {
-        if (!front[f]) continue;
-        Vec3 A  = wv[vg_ship_faces[f][0]];
-        Vec3 Bv = wv[vg_ship_faces[f][1]];
-        Vec3 C  = wv[vg_ship_faces[f][2]];
-        vg_edge(cam, A,  Bv, col);
-        vg_edge(cam, Bv, C,  col);
-        vg_edge(cam, C,  A,  col);
-    }
-
-    // The fin is a flat blade with no volume, so it has no facing to cull --
-    // just stroke it over the hull.
-    for (int e = 0; e < SHIP_FIN_EDGES; e++)
-        vg_edge(cam, wv[vg_ship_fin[e][0]], wv[vg_ship_fin[e][1]], col);
+    // The hull is shared with the select screen -- see vg_draw_hull. What stays
+    // here is everything that belongs to a ship that is FLYING: the exhaust below,
+    // and the fade and colour worked out above. The basis is held rather than
+    // asked for twice, because the exhaust hangs off the same one.
+    const Mat3 B = vg_ship_basis(s);
+    vg_draw_hull(cam, B, s->pos, s->scale, col);
 
     // Exhaust: length tracks throttle, so you can read their energy state.
     float t = (s->speed - s->spec->speed_min)

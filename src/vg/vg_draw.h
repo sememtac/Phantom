@@ -142,6 +142,14 @@ void vg_draw_overlays(void);
 void vg_draw_lock_circle(void);
 void vg_draw_lock_box(const VgCam& cam);
 void vg_draw_steer_indicator(const VgInput* in);
+// One ship hull, hidden-line, at an arbitrary place and orientation.
+//
+// Shared by the world and the ship-select screen. It draws the HULL and nothing
+// else -- no exhaust, no fade, no contrail -- because the menu has no Ship to
+// read those from and does not want them.
+void vg_draw_hull(const VgCam& cam, const Mat3& orient, Vec3 pos, float scale,
+                  uint16_t col);
+
 void vg_draw_target_markers(const VgCam& cam);
 // The bounds and the size clamps are the caller's: this runs twice with very
 // different room, the main window and the rear-view patch at 145x44.

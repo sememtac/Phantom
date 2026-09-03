@@ -13,12 +13,47 @@
 
 #define MENU_TAP_SLOP   16.0f   // px of travel a contact may drift and still tap
 
-// --- ship select: four stacked cards over a confirm bar --------------------
-#define SEL_CARD_X      34
-#define SEL_CARD_W      412
-#define SEL_CARD_Y0     104
-#define SEL_CARD_H      66
-#define SEL_CARD_PITCH  74
+// PX OF DRAG PER DETENT, and it is ONE constant on purpose. The callsign letters
+// and the ship wheel are the same mechanism to a thumb, and they would stop being
+// the same the first time somebody retuned one of two copies.
+#define WHEEL_STEP      26.0f
+
+// --- ship select: a wheel on the left, a detail panel on the right ----------
+//
+// The left column is the SAME WHEEL the callsign screen uses (vg_entry.cpp), and
+// deliberately so: the gesture is learned once, the wheel has no fixed capacity
+// so a fifth ship is a table row rather than a layout, and a vertical drag on the
+// LEFT is the throttle gesture in flight -- the menu teaches the control.
+#define SEL_WHEEL_X     34
+#define SEL_WHEEL_W     136
+#define SEL_PANEL_X     182
+#define SEL_PANEL_W     264
+#define SEL_PANEL_Y     96
+#define SEL_PANEL_H     300
+// A WINDOW, not a column. 168px is the callsign wheel's own height
+// (ENT_WHEEL_H) and it is the same number on purpose: two wheels that behave
+// identically should look identically sized. A full-height frame around three
+// visible rows reads as a list with gaps in it.
+#define SEL_WHEEL_H     168
+#define SEL_WHEEL_Y     (SEL_PANEL_Y + (SEL_PANEL_H - SEL_WHEEL_H) / 2)
+#define SEL_WHEEL_MID   (SEL_WHEEL_Y + SEL_WHEEL_H / 2)   // the detent row
+#define SEL_WHEEL_PITCH 44      // px between neighbours on the wheel
+#define SEL_SPINE_W     6       // the selected row's inverse-video spine
+
+// The detail panel, and the chart inside it. The chart centre shares the wheel's
+// detent row on purpose: the thing you are choosing and the thing it says line up
+// across the screen.
+#define SEL_CHART_CX    (SEL_PANEL_X + SEL_PANEL_W / 2)
+#define SEL_CHART_CY    SEL_WHEEL_MID
+#define SEL_CHART_R     60
+#define SEL_CHART_LABEL 13      // px from a vertex out to its label
+
+// Where the hull turns. A placeholder until there is per-class geometry: all
+// four classes share one model today (vg_models.cpp), so this says "a ship" and
+// not "which ship" until four shapes exist.
+#define SEL_MODEL_Y     330
+#define SEL_MODEL_H     64
+
 #define SEL_GO_X        140
 #define SEL_GO_Y        410
 #define SEL_GO_W        200
@@ -148,7 +183,10 @@ static inline bool vg_in_rect(float x, float y, int rx, int ry, int rw, int rh) 
 }
 
 // --- hit tests, called by the state machine --------------------------------
-int  vg_select_card_at(float x, float y);      // 0..3, or -1
+// Which wheel row a contact hit, as an offset from the detent: 0 the selection,
+// -1 the row above, +1 below. SEL_ROW_NONE when the contact missed the wheel.
+#define SEL_ROW_NONE 99
+int  vg_select_row_at(float x, float y);
 bool vg_select_confirm_at(float x, float y);
 
 bool vg_bracket_ready_at(float x, float y);
