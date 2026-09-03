@@ -175,7 +175,7 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
     // One scale for every class, from the roster's widest half-span. Fitting each
     // ship to the slot individually would make them all the same size, which is
     // the one thing the silhouette must not do.
-    const float MAX_HALF_SPAN = 0.72f;              // LANCE, and the table says so
+    const float MAX_HALF_SPAN = 0.57f;              // LANCE, and the table says so
     const float sy = ((float)SEL_MODEL_H * 0.46f) / MAX_HALF_SPAN;
     const float sx = sy;                            // uniform: no stretching
     const float cx = (float)(SEL_PANEL_X + SEL_PANEL_W / 2);
@@ -194,10 +194,31 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
         px = nx; py = ny;
         qx = nx; qy = my;
     }
+    // CLOSE THE TAIL. These hulls are blunt at the back -- the traced outlines end
+    // at a real width, not at a point -- so without this the two halves simply
+    // stop and the ship reads as an open bracket.
+    {
+        const float tx = cx + pl.pts[(pl.n - 1) * 2] * sx;
+        const float ty = pl.pts[(pl.n - 1) * 2 + 1] * sy;
+        if (ty > 0.5f) vg_line_w(tx, cy - ty, tx, cy + ty, INK_BRIGHT, 2);
+    }
+
     // The spine, so the two halves read as one hull rather than two curves that
     // happen to meet. Faint: it is structure, not outline.
     vg_line(cx + pl.pts[0] * sx, cy,
             cx + pl.pts[(pl.n - 1) * 2] * sx, cy, INK_TRACE);
+
+    // INSIDE. Dimmer than the outline on purpose: the silhouette is what
+    // identifies the ship and the detail is what makes it look built, so the
+    // hierarchy has to say which is which -- size and intensity, as ever.
+    for (int i = 0; i < pl.nd; i++) {
+        const float ax = cx + pl.dtl[i * 4]     * sx;
+        const float ay =      pl.dtl[i * 4 + 1] * sy;
+        const float bx = cx + pl.dtl[i * 4 + 2] * sx;
+        const float by =      pl.dtl[i * 4 + 3] * sy;
+        vg_line(ax, cy - ay, bx, cy - by, INK);
+        if (ay > 0.5f || by > 0.5f) vg_line(ax, cy + ay, bx, cy + by, INK);
+    }
 }
 
 void vg_draw_select(void) {

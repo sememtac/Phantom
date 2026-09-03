@@ -690,8 +690,14 @@ extern const uint8_t vg_ship_fin[SHIP_FIN_EDGES][2];
 // tail, y >= 0, as (x, y) pairs; the other side is mirrored at draw time. See the
 // tables in vg_models.cpp for what each silhouette is meant to say.
 struct VgShipPlan {
-    const float* pts;   // 2 floats per point
+    const float* pts;   // the outline: 2 floats per point, nose to tail
     uint8_t      n;     // points, not floats
+    // INSIDE the outline: structure, not decoration. Fuselage edges, the canopy,
+    // a radar dome, a missile bay. 4 floats per segment (x0,y0,x1,y1), and every
+    // one is mirrored with the outline, so a segment authored on one side becomes
+    // the pair.
+    const float* dtl;
+    uint8_t      nd;    // segments, not floats
 };
 extern const VgShipPlan vg_ship_plan[SHIP_CLASSES];
 

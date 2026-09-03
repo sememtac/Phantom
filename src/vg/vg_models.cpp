@@ -225,12 +225,18 @@ void vg_build_starfield(void) {
 // rather than merely unlikely.
 //
 //   x   +1 at the nose, -1 at the tail
-//   y   half-span, and the biggest across the roster is LANCE at 0.72
+//   y   half-span, and the biggest across the roster is LANCE at 0.566
 //
-// The proportion is deliberate: 2.0 long against 1.44 across at the widest is
-// about 1.4:1, which is what the drawings came back as. Scaling is uniform at
-// draw time, so a class that is genuinely narrow LOOKS narrow next to the others
-// rather than being stretched to fill the same box.
+// TRACED, NOT DRAWN BY HAND. The outlines are the per-column silhouette envelope
+// of the reference art, simplified to the points that carry the shape -- so the
+// proportions are the artist's rather than my recollection of them. The interior
+// segments are authored, because structure is a judgement about what matters at
+// 115 pixels and an envelope cannot make it.
+//
+// Scaling is uniform at draw time, so a class that is genuinely narrow LOOKS
+// narrow beside the others instead of being stretched to fill the same box.
+// BALLISTA is 3.2 times as long as it is wide and AEGIS is 2.0; that difference
+// is most of what tells them apart at a glance.
 //
 // WHAT EACH SILHOUETTE HAS TO SAY, since that is the whole job:
 //   AEGIS     a balanced delta, wing root early, nothing exaggerated
@@ -239,69 +245,92 @@ void vg_build_starfield(void) {
 //   BALLISTA  back-weighted: a long nose, wings set far aft, big stabilisers
 // ===========================================================================
 
-// AEGIS -- the reference. A clean delta: wing root early, wingtips at two thirds
-// aft, a straight trailing edge back to the root and one modest tailplane.
+// AEGIS -- the reference. A clean delta, and the radar dome at the tail is the
+// lifeline: the bay only rearms while that antenna holds the target.
 static const float PLAN_AEGIS[] = {
-     1.00f, 0.000f,
-     0.74f, 0.055f,   0.26f, 0.120f,
-    -0.30f, 0.640f,  -0.52f, 0.600f,     // wingtip, leading then trailing corner
-    -0.60f, 0.170f,                       // trailing edge in to the wing root
-    -0.78f, 0.150f,  -0.96f, 0.105f,     // tailplane
-    -0.88f, 0.048f,  -1.00f, 0.042f,
-    -1.00f, 0.000f,
+     1.000f,  0.000f,  0.281f,  0.158f, -0.276f,  0.488f,
+    -0.482f,  0.456f, -0.580f,  0.235f, -0.982f,  0.158f,
+    -1.000f,  0.080f,
 };
 
-// LANCE -- the widest, and the only leading edge with a KINK in it. The centre
-// section is deliberately blocky: four hardpoints firing at once need span to
-// leave from, which is why this hull is broad rather than the needle the fiction
-// first suggested.
+static const float DTL_AEGIS[] = {
+    -0.520f,  0.000f, -0.580f,  0.150f, -0.580f,  0.150f, -0.730f,  0.200f,
+    -0.730f,  0.200f, -0.880f,  0.150f, -0.880f,  0.150f, -0.930f,  0.000f,
+     0.460f,  0.000f,  0.400f,  0.070f,  0.400f,  0.070f,  0.240f,  0.070f,
+     0.240f,  0.070f,  0.180f,  0.000f,  0.300f,  0.110f, -0.860f,  0.110f,
+    -0.020f,  0.235f, -0.280f,  0.235f, -0.280f,  0.235f, -0.280f,  0.300f,
+    -0.280f,  0.300f, -0.020f,  0.300f, -0.020f,  0.300f, -0.020f,  0.235f,
+};
+
+// LANCE -- the widest, and the four bays are the whole read on it -- two a side,
+// side by side, because the salvo leaves from four places at once.
 static const float PLAN_LANCE[] = {
-     1.00f, 0.000f,
-     0.72f, 0.070f,
-     0.30f, 0.150f,   0.10f, 0.260f,     // the kink -- a double delta
-    -0.26f, 0.720f,  -0.50f, 0.680f,
-    -0.58f, 0.260f,                       // a wide, square-shouldered root
-    -0.76f, 0.235f,  -0.98f, 0.175f,
-    -0.88f, 0.080f,  -1.00f, 0.070f,
-    -1.00f, 0.000f,
+     1.000f,  0.000f,  0.985f,  0.017f,  0.400f,  0.112f,
+     0.235f,  0.178f,  0.168f,  0.179f, -0.219f,  0.566f,
+    -0.400f,  0.552f, -0.431f,  0.413f, -0.690f,  0.432f,
+    -0.718f,  0.306f, -0.756f,  0.269f, -0.924f,  0.270f,
+    -1.000f,  0.203f,
 };
 
-// CHARIOT -- a dart. The narrowest span in the roster and the most acute sweep.
-//
-// It had outrigger rails standing well proud of the tail, for the twelve rounds
-// it carries. They had to go: an outline that swings wide and comes back reads as
-// a CLAW at this size, not as a rail, and the shape stopped looking like an
-// aircraft. Span and sweep carry this class instead.
+static const float DTL_LANCE[] = {
+    -0.300f,  0.200f, -0.560f,  0.200f, -0.560f,  0.200f, -0.560f,  0.300f,
+    -0.560f,  0.300f, -0.300f,  0.300f, -0.300f,  0.300f, -0.300f,  0.200f,
+    -0.300f,  0.320f, -0.560f,  0.320f, -0.560f,  0.320f, -0.560f,  0.420f,
+    -0.560f,  0.420f, -0.300f,  0.420f, -0.300f,  0.420f, -0.300f,  0.320f,
+    -0.740f,  0.090f, -0.960f,  0.090f, -0.960f,  0.090f, -0.960f,  0.240f,
+    -0.960f,  0.240f, -0.740f,  0.240f, -0.740f,  0.240f, -0.740f,  0.090f,
+     0.340f,  0.000f,  0.280f,  0.060f,  0.280f,  0.060f,  0.100f,  0.060f,
+     0.100f,  0.060f,  0.040f,  0.000f,  0.200f,  0.100f, -0.720f,  0.100f,
+};
+
+// CHARIOT -- a dart, and mostly frame. The battery panel is twelve cells; twelve
+// circles would be twelve smudges at the size this is drawn.
 static const float PLAN_CHARIOT[] = {
-     1.00f, 0.000f,
-     0.76f, 0.040f,   0.34f, 0.085f,
-    -0.36f, 0.480f,  -0.56f, 0.440f,     // narrow tip, very swept
-    -0.66f, 0.120f,                       // trailing edge in, hard
-    -0.82f, 0.145f,  -0.98f, 0.100f,     // a small tailplane, barely proud
-    -0.92f, 0.040f,  -1.00f, 0.035f,
-    -1.00f, 0.000f,
+     1.000f,  0.000f,  0.574f,  0.062f,  0.352f,  0.120f,
+     0.343f,  0.151f,  0.130f,  0.184f, -0.362f,  0.379f,
+    -0.437f,  0.464f, -0.623f,  0.460f, -0.810f,  0.482f,
+    -0.819f,  0.144f, -0.881f,  0.131f, -0.898f,  0.038f,
+    -1.000f,  0.004f,
 };
 
-// BALLISTA -- back-weighted. The wing root sits far aft, which leaves a long nose
-// ahead of it: a hull built around its optics and given just enough airframe to
-// carry them. The biggest tailplanes in the roster and the least wing forward.
+static const float DTL_CHARIOT[] = {
+    -0.420f,  0.030f, -0.760f,  0.030f, -0.760f,  0.030f, -0.760f,  0.260f,
+    -0.760f,  0.260f, -0.420f,  0.260f, -0.420f,  0.260f, -0.420f,  0.030f,
+    -0.505f,  0.030f, -0.505f,  0.260f, -0.590f,  0.030f, -0.590f,  0.260f,
+    -0.675f,  0.030f, -0.675f,  0.260f, -0.420f,  0.106f, -0.760f,  0.106f,
+    -0.420f,  0.183f, -0.760f,  0.183f,  0.300f,  0.000f,  0.240f,  0.050f,
+     0.240f,  0.050f,  0.080f,  0.050f,  0.080f,  0.050f,  0.020f,  0.000f,
+    -0.100f,  0.140f, -0.780f,  0.400f, -0.360f,  0.090f, -0.800f,  0.440f,
+};
+
+// BALLISTA -- back-weighted and built around the barrel, which runs most of the
+// length. The narrowest span and by far the longest hull.
 static const float PLAN_BALLISTA[] = {
-     1.00f, 0.000f,
-     0.62f, 0.045f,   0.04f, 0.085f,     // a long, slender nose
-    -0.34f, 0.560f,  -0.54f, 0.520f,
-    -0.62f, 0.170f,
-    -0.76f, 0.250f,  -0.98f, 0.205f,     // the biggest stabiliser in the roster
-    -0.90f, 0.070f,  -1.00f, 0.060f,
-    -1.00f, 0.000f,
+     1.000f,  0.000f,  0.898f,  0.039f,  0.702f,  0.033f,
+     0.637f,  0.057f,  0.355f,  0.075f, -0.132f,  0.215f,
+    -0.198f,  0.242f, -0.234f,  0.303f, -0.333f,  0.218f,
+    -0.673f,  0.148f, -0.752f,  0.123f, -0.858f,  0.309f,
+    -0.922f,  0.296f, -0.935f,  0.077f, -1.000f,  0.053f,
 };
 
-// Indexed by ShipClass, and the order is checked at build time so a row cannot
-// drift away from the class it draws.
+static const float DTL_BALLISTA[] = {
+     0.960f,  0.000f,  0.960f,  0.030f,  0.960f,  0.030f,  0.300f,  0.050f,
+     0.300f,  0.050f,  0.300f,  0.000f,  0.620f,  0.030f,  0.620f,  0.000f,
+    -0.020f,  0.000f, -0.080f,  0.060f, -0.080f,  0.060f, -0.240f,  0.060f,
+    -0.240f,  0.060f, -0.300f,  0.000f,  0.200f,  0.090f, -0.860f,  0.090f,
+    -0.160f,  0.130f, -0.340f,  0.130f, -0.340f,  0.130f, -0.340f,  0.230f,
+    -0.340f,  0.230f, -0.160f,  0.230f, -0.160f,  0.230f, -0.160f,  0.130f,
+};
+
 const VgShipPlan vg_ship_plan[SHIP_CLASSES] = {
-    { PLAN_AEGIS,    (uint8_t)(sizeof(PLAN_AEGIS)    / (2 * sizeof(float))) },
-    { PLAN_LANCE,    (uint8_t)(sizeof(PLAN_LANCE)    / (2 * sizeof(float))) },
-    { PLAN_CHARIOT,  (uint8_t)(sizeof(PLAN_CHARIOT)  / (2 * sizeof(float))) },
-    { PLAN_BALLISTA, (uint8_t)(sizeof(PLAN_BALLISTA) / (2 * sizeof(float))) },
+    { PLAN_AEGIS,   (uint8_t)(sizeof(PLAN_AEGIS) / (2 * sizeof(float))),
+      DTL_AEGIS,    (uint8_t)(sizeof(DTL_AEGIS)  / (4 * sizeof(float))) },
+    { PLAN_LANCE,   (uint8_t)(sizeof(PLAN_LANCE) / (2 * sizeof(float))),
+      DTL_LANCE,    (uint8_t)(sizeof(DTL_LANCE)  / (4 * sizeof(float))) },
+    { PLAN_CHARIOT, (uint8_t)(sizeof(PLAN_CHARIOT) / (2 * sizeof(float))),
+      DTL_CHARIOT,  (uint8_t)(sizeof(DTL_CHARIOT)  / (4 * sizeof(float))) },
+    { PLAN_BALLISTA, (uint8_t)(sizeof(PLAN_BALLISTA) / (2 * sizeof(float))),
+      DTL_BALLISTA, (uint8_t)(sizeof(DTL_BALLISTA)  / (4 * sizeof(float))) },
 };
 
 static_assert(sizeof(vg_ship_plan) / sizeof(vg_ship_plan[0]) == SHIP_CLASSES,
