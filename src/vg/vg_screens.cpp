@@ -462,20 +462,30 @@ static void draw_plan_noise(float p) {
     }
 }
 
-// THE CONSOLE, BEHIND EVERYTHING THIS SCREEN DRAWS.
+// THE CONSOLE, AND IT PAINTS LAST.
 //
-// Submitted first, so the menu lands on the chassis rather than under it. The
-// bezel is opaque and the idle scene is still drawn behind it, which is waste of
-// about 42% of the sky fill -- and it is the cheap kind of waste: the sky is one
-// primitive whether it is seen or not, and clipping it to the aperture would put
-// a menu-shaped exception into the world renderer.
+// It was submitted first, which put the chassis behind the menu and left the
+// menu to keep itself inside the hole. That works only while every rectangle is
+// checked against the aperture by hand, and it cannot work at all for the
+// banner: the ticker runs off both ends of its window, and clipping it to a
+// viewport masks it with a RECTANGLE when the window in the art has chamfered
+// corners and a lip. The text vanished at a straight line a few pixels inside
+// the metal instead of sliding under it.
+//
+// Painted last, the chassis IS the mask. It is opaque and it stores no pixel in
+// the exempt areas, so everything the menu drew inside a window survives and
+// everything it drew outside one is covered -- by the drawing's own outline,
+// exactly, corners and all. Nothing has to know the aperture's shape.
+//
+// The idle scene behind it is still drawn and still mostly hidden. That is the
+// cheap kind of waste: the sky is one primitive whether it is seen or not, and
+// clipping it would put a menu-shaped exception into the world renderer.
 static void console_backdrop(void) {
     vg_bezel_use(&BEZEL_CONSOLE);
     vg_bezel_prim();
 }
 
 void vg_draw_select(void) {
-    console_backdrop();
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
 
@@ -518,17 +528,26 @@ void vg_draw_select(void) {
     // BLACK, not the idle scene. The window is a lit inset in a machine and the
     // nebula was drifting through it, which said "this is a hole in the panel"
     // where the whole point is that it is a screen in a room.
+    //
+    // INK_WELL AND NOT COL_BLACK, and this is a trap rather than a preference:
+    // fill_rect_raw drops any fill whose colour is zero, so a COL_BLACK rectangle
+    // draws NOTHING. It is the same rule that makes black text invisible. Both
+    // windows were filled with it and neither fill ever happened -- they looked
+    // black because the sky behind them is nearly black, and the arcs crossing
+    // them were the giveaway. INK_WELL is #0d0700, which is the well every
+    // instrument in the game sits in and is black on the panel.
     vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_X0, BEZEL_CONSOLE_BAR_TOP_Y0,
                  BEZEL_CONSOLE_BAR_TOP_X1 - BEZEL_CONSOLE_BAR_TOP_X0 + 1,
                  BEZEL_CONSOLE_BAR_TOP_Y1 - BEZEL_CONSOLE_BAR_TOP_Y0 + 1,
-                 COL_BLACK);
+                 INK_WELL);
 
     // AND IT RUNS. A registration terminal has a ticker across the top, and a
     // banner that travels says the machine is powered and waiting for you in a
     // way a centred word never does.
     //
-    // Clipped to the window with the viewport, because the letters leave it at
-    // both ends and metal is what they would otherwise be drawn on.
+    // NOT clipped here. The chassis is submitted after the whole screen and is
+    // opaque, so the letters run out of the window and under the metal, masked by
+    // the drawing's own chamfered outline rather than by a rectangle.
     //
     // vg.state_t, not an accumulated dt: the renderer has no dt, and an
     // integrated one would run the ticker at the frame rate rather than at the
@@ -549,7 +568,7 @@ void vg_draw_select(void) {
         const float u = vg.state_t * SEL_CHYRON_RATE;
         const int   tx = bx - tw + (int)(u - floorf(u / (float)span) * (float)span);
 
-        vg_rast_viewport(bx, BEZEL_CONSOLE_BAR_TOP_Y0, bw, bh);
+        (void)bh;
         if (vg.gym) {
             vg_text(tx, SEL_TITLE_CY - 12, ttl, INK_MAX, 2);
             centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
@@ -557,7 +576,6 @@ void vg_draw_select(void) {
         } else {
             vg_text(tx, SEL_TITLE_CY - 10, ttl, INK_MAX, 3);
         }
-        vg_rast_viewport_full();
     }
 
     // --- the wheel ---------------------------------------------------------
@@ -669,11 +687,17 @@ void vg_draw_select(void) {
         const int   ly = SEL_GO_Y + (SEL_GO_H - 21) / 2;
         const bool  down = vg_press_in(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
 
+        // INK_WELL, not COL_BLACK -- see the banner above: a zero fill is
+        // dropped, so this window was never being cleared either.
         vg_fill_rect(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
-                     down ? INK_TRACE : COL_BLACK);
+                     down ? INK_TRACE : INK_WELL);
         vg_text(lx, ly, go, INK_MAX, 3);
         vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
     }
+
+    // LAST. Everything above may draw over the chassis; none of it does once
+    // this lands.
+    console_backdrop();
 }
 
 // ---------------------------------------------------------------------------
