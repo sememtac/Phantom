@@ -235,8 +235,9 @@ void vg_build_starfield(void) {
 //
 // Scaling is uniform at draw time, so a class that is genuinely narrow LOOKS
 // narrow beside the others instead of being stretched to fill the same box.
-// BALLISTA is 3.2 times as long as it is wide and AEGIS is 2.0; that difference
-// is most of what tells them apart at a glance.
+// BALLISTA is 3.2 times as long as it is wide and AEGIS is 2.0, and BALLISTA's
+// reverse wing is the widest thing in the roster; that spread is most of what
+// tells the four apart at a glance.
 //
 // WHAT EACH SILHOUETTE HAS TO SAY, since that is the whole job:
 //   AEGIS     a balanced delta, wing root early, nothing exaggerated
@@ -310,8 +311,8 @@ static const float PLAN_BALLISTA[] = {
      1.000f,  0.000f,  0.898f,  0.039f,  0.702f,  0.033f,
      0.637f,  0.057f,  0.355f,  0.075f, -0.132f,  0.215f,
     -0.198f,  0.242f, -0.234f,  0.303f, -0.333f,  0.218f,
-    -0.673f,  0.148f, -0.752f,  0.123f, -0.615f,  0.430f,
-    -0.775f,  0.410f, -0.955f,  0.090f, -1.000f,  0.053f,
+    -0.673f,  0.148f, -0.752f,  0.123f, -0.470f,  0.575f,
+    -0.665f,  0.550f, -0.955f,  0.090f, -1.000f,  0.053f,
 };
 
 static const float DTL_BALLISTA[] = {

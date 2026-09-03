@@ -175,7 +175,10 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
     // One scale for every class, from the roster's widest half-span. Fitting each
     // ship to the slot individually would make them all the same size, which is
     // the one thing the silhouette must not do.
-    const float MAX_HALF_SPAN = 0.57f;              // LANCE, and the table says so
+    // BALLISTA's reverse wing, and it is the widest thing in the roster now. This
+    // is the scale EVERY class is drawn against, so it has to track whichever hull
+    // is broadest or that hull walks out of the slot.
+    const float MAX_HALF_SPAN = 0.58f;
     const float sy = ((float)SEL_MODEL_H * 0.46f) / MAX_HALF_SPAN;
     const float sx = sy;                            // uniform: no stretching
     const float cx = (float)(SEL_PANEL_X + SEL_PANEL_W / 2);
