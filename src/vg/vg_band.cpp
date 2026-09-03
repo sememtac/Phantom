@@ -466,6 +466,9 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
     // along panel x with a bounds check and a store. The pixels written are the same pixels
     // in the same colour -- only the order changed, and they are plain stores.
     const int x0 = p->x0, y0 = p->y0;
+    // Already clamped into the screen by vg_text, so this replaces the width
+    // test rather than adding to it.
+    const int xclip0 = p->x2, xclip1 = p->y2;
     const uint16_t colour = p->color;
     for (int col = 0; col < 5; col++) {
         const uint8_t bits = glyph[col];
@@ -473,13 +476,18 @@ static inline void band_glyph(uint16_t* band, int by0, int by1, const Prim* p) {
         for (int jx = 0; jx < scale; jx++) {
             const int yy = y0 - (col * scale + jx);
             if (yy < by0 || yy > by1) continue;
+            // The viewport, carried on the primitive. vg_text clamped these to
+            // the clip rectangle, so the bounds test that was already here is
+            // the clip -- it costs one more compare in a loop that runs once a
+            // column, not once a pixel.
+            if (yy < p->ymin || yy > p->ymax) continue;
             uint16_t* prow = &band[(yy - by0) * SCR_W];
             for (int row = 0; row < 7; row++) {
                 if (!(bits & (1 << row))) continue;
                 const int xb = x0 + row * scale;
                 for (int jy = 0; jy < scale; jy++) {
                     const int xx = xb + jy;
-                    if ((unsigned)xx >= (unsigned)SCR_W) continue;
+                    if (xx < xclip0 || xx > xclip1) continue;
                     prow[xx] = colour;
                 }
             }
@@ -1115,7 +1123,8 @@ static void band_glyph_ref(uint16_t* band, int by0, int by1, const Prim* p) {
                     const int dy = row * scale + jy;
                     const int xx = p->x0 + dy, yy = p->y0 - dx;
                     if (yy < by0 || yy > by1) continue;
-                    if ((unsigned)xx >= (unsigned)SCR_W) continue;
+                    if (yy < p->ymin || yy > p->ymax) continue;
+                    if (xx < p->x2 || xx > p->y2) continue;
                     band[(yy - by0) * SCR_W + xx] = p->color;
                 }
             }

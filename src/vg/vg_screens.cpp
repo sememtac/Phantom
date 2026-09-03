@@ -550,18 +550,22 @@ void vg_draw_select(void) {
     // banner that travels says the machine is powered and waiting for you in a
     // way a centred word never does.
     //
-    // NOT CLIPPED, AND A VIEWPORT WOULD NOT HAVE DONE IT ANYWAY. vg_text checks
-    // a glyph against the screen and against nothing else -- vg_rast_viewport
-    // clips fills and lines and has never clipped text -- so the clip that was
-    // here was doing no work at all.
+    // CLIPPED TO THE WINDOW, AND THE VIEWPORT DOES THAT NOW. It did not before:
+    // vg_text tested a glyph against the SCREEN and against nothing else, so the
+    // clip that used to be here was never doing any work. The fix is in vg_text,
+    // where a glyph's panel extents are now clamped to the viewport.
     //
-    // The mask is the chassis, and what was wrong was the chassis. The screen
-    // aperture NOTCHED UP either side of the title bar, so at the banner's own
-    // height there were exempt pixels off both ends of the window: text running
-    // out of the window landed in them and the chassis had no pixel there to
-    // cover it. "SHIP" appeared in the top corner of the main screen. The baker
-    // fences a bar window's rows against the aperture now, so those rows are the
-    // bar's alone and the drawing's own outline cuts the letters at both ends.
+    // It is needed because the screen aperture NOTCHES UP either side of the
+    // title bar, so at the banner's own height there are exempt pixels off both
+    // ends of the window. Text running out of the window landed in them and the
+    // chassis had no pixel there to cover it with -- "SHIP" appeared in the top
+    // corner of the main screen.
+    //
+    // The BOX and not the inner rectangle, so the letters still reach the glass:
+    // the box is the window's full extent, and the chamfered corners and the lip
+    // over them are cut by the chassis, which paints last. Two masks, each doing
+    // the part it is good at -- the viewport keeps the text out of the next hole,
+    // the drawing shapes the edge.
     //
     // vg.state_t, not an accumulated dt: the renderer has no dt, and an
     // integrated one would run the ticker at the frame rate rather than at the
@@ -589,6 +593,9 @@ void vg_draw_select(void) {
         const float u = vg.state_t * SEL_CHYRON_RATE;
         const int   tx = bx + bw - (int)(u - floorf(u / (float)span) * (float)span);
 
+        vg_rast_viewport(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
+                         BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
+                         BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
         (void)bh;
         if (vg.gym) {
             vg_text(tx, SEL_TITLE_CY - 12, ttl, INK_MAX, 2);
@@ -597,6 +604,7 @@ void vg_draw_select(void) {
         } else {
             vg_text(tx, SEL_TITLE_CY - 10, ttl, INK_MAX, 3);
         }
+        vg_rast_viewport_full();
     }
 
     // --- the wheel ---------------------------------------------------------

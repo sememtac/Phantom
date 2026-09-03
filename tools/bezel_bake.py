@@ -151,37 +151,6 @@ def max_rect(m):
     return best[1:]
 
 
-def fence_bars(mask):
-    """Stop the screen aperture claiming pixels in a bar window's rows.
-
-    The aperture is notched: it reaches up either side of the top bar and down
-    either side of the bottom one. Those notches are exempt, so the chassis
-    stores no pixel there and cannot cover anything drawn over them -- and the
-    banner scrolls at exactly that height. Text leaving its window landed in the
-    notch and stayed on screen, in the middle of the metal.
-
-    The rule is that a bar window's rows belong to the bar. Any other exempt
-    pixel in those rows becomes part of the drawing again, so the chassis paints
-    it and the banner is masked by the art at both ends.
-
-    It costs the four corner notches, which stop showing the scene behind. The
-    caller has to give them a colour: the drawing has none, because the artist
-    painted the whole screen out, so a pixel taken back here is magenta in the
-    art. Left alone it is stored and drawn, which is worse than the fault it
-    fixes.
-    """
-    wins = regions(mask)
-    out = mask.copy()
-    for (_, box) in wins[1:]:                 # the bars; wins[0] is the aperture
-        x0, y0, x1, y1 = box
-        band = np.zeros(mask.shape, bool)
-        band[y0:y1 + 1, :] = True
-        keep = np.zeros(mask.shape, bool)
-        keep[y0:y1 + 1, x0:x1 + 1] = True
-        out &= ~(band & ~keep)
-    return out, mask & ~out
-
-
 def to_panel(a):
     """Rotate the drawing into the order the display is scanned in.
 
@@ -292,20 +261,8 @@ def main(argv):
     if len(args) < 1:
         sys.exit(__doc__)
 
-    pal, rgb3, idx, mask, err = load(args[0], colors)
-    mask, fenced = fence_bars(mask)
+    pal, _rgb, idx, mask, err = load(args[0], colors)
 
-    # UNLIT GLASS for the corners taken back from the aperture. The drawing has
-    # no colour there -- it is magenta, the paint that means "the game fills
-    # this" -- so storing what the art says would put the marker paint on the
-    # screen. The darkest entry in the palette is the shadow inside the chassis,
-    # which is what an unlit corner of the display looks like and what the bar
-    # windows beside it are filled with.
-    dark = min(range(len(rgb3)), key=lambda i: sum(rgb3[i]))
-    idx = idx.copy()
-    idx[fenced] = dark
-    print("  %d px taken back from the aperture, filled with palette %d %s"
-          % (fenced.sum(), dark, rgb3[dark]))
 
     idx_p, mask_p = to_panel(idx), to_panel(mask)
     spans = spans_of(mask_p)

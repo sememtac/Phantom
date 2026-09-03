@@ -845,9 +845,23 @@ int vg_text_width(const char* s, int scale) {
 // NOTE: colour 0 means INVISIBLE here, not black -- passing COL_BLACK draws
 // nothing at all. Inverse video (dark glyphs on a lit fill) must use INK_ONFILL,
 // which is the palette entry that exists for exactly that.
+// TEXT NOW OBEYS THE VIEWPORT, and it did not before.
+//
+// vg_rast_viewport clipped fills and lines and had no effect on a glyph at all --
+// vg_text tested a character against the SCREEN and against nothing else. A caller
+// that set a viewport and drew text got no clip and no complaint, which is the
+// worst of the three outcomes: the ship-select ticker was "clipped" to its window
+// for two builds and was never clipped to anything.
+//
+// The clip costs no memory. A glyph's panel extents are already computed here for
+// ymin/ymax, and x2/y2 are unused by PRIM_GLYPH -- the struct comment says they
+// belong to PRIM_TRI. Clamping the four to the viewport turns the band raster's
+// existing bounds tests into the clip, so the cut lands in the loops that were
+// already testing bounds and adds nothing to the inner one.
 void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
     if (!color || scale <= 0) return;
     const int gh = 7 * scale;
+    const Sub* u = sub();
 
     for (; *s; s++, x += 6 * scale) {
         char ch = *s;
@@ -862,29 +876,45 @@ void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
         if (sub()->warp) warp_pt(&gx, &gy);
         rot_pt(&gx, &gy);
 
+        const int px = (int)lrintf(gx), py = (int)lrintf(gy);
+
+        // The origin is the rotated LOGICAL top-left, so the glyph's panel-space
+        // extent runs a different way per quadrant.
+        int ylo, yhi, xlo, xhi;
+#if VG_ROTATE == 1
+        ylo = py - (5 * scale - 1); yhi = py;
+        xlo = px;                   xhi = px + gh - 1;
+#elif VG_ROTATE == 2
+        ylo = py - (gh - 1);        yhi = py;
+        xlo = px - (5 * scale - 1); xhi = px;
+#elif VG_ROTATE == 3
+        ylo = py;                   yhi = py + (5 * scale - 1);
+        xlo = px - (gh - 1);        xhi = px;
+#else
+        ylo = py;                   yhi = py + gh - 1;
+        xlo = px;                   xhi = px + (5 * scale - 1);
+#endif
+        // The viewport is already in panel space -- see fill_rect_raw, which
+        // rotates first and clips against these same bounds afterwards. Clamped
+        // BEFORE the primitive is taken, so a character outside the viewport
+        // costs nothing and occupies no slot.
+        if (ylo < u->cy0) ylo = u->cy0;
+        if (yhi > u->cy1) yhi = u->cy1;
+        if (xlo < u->cx0) xlo = u->cx0;
+        if (xhi > u->cx1) xhi = u->cx1;
+        if (ylo > yhi || xlo > xhi) continue;
+
         Prim* p = push();
         if (!p) return;
         p->type  = PRIM_GLYPH;
-        p->x0    = (int16_t)lrintf(gx);
-        p->y0    = (int16_t)lrintf(gy);
+        p->x0    = (int16_t)px;
+        p->y0    = (int16_t)py;
         p->x1    = (int16_t)scale;
         p->y1    = (int16_t)ch;
         p->color = color;
-
-        // The stored origin is the rotated LOGICAL top-left, so the glyph's
-        // panel-space extent runs a different way per quadrant.
-#if VG_ROTATE == 1
-        p->ymin = (int16_t)(p->y0 - (5 * scale - 1));
-        p->ymax = p->y0;
-#elif VG_ROTATE == 2
-        p->ymin = (int16_t)(p->y0 - (gh - 1));
-        p->ymax = p->y0;
-#elif VG_ROTATE == 3
-        p->ymin = p->y0;
-        p->ymax = (int16_t)(p->y0 + (5 * scale - 1));
-#else
-        p->ymin = p->y0;
-        p->ymax = (int16_t)(p->y0 + gh - 1);
-#endif
+        p->ymin  = (int16_t)ylo;
+        p->ymax  = (int16_t)yhi;
+        p->x2    = (int16_t)xlo;
+        p->y2    = (int16_t)xhi;
     }
 }
