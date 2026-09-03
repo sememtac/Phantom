@@ -1,4 +1,5 @@
 #pragma once
+#include "generated/bezel_console.h"   // the chassis, and the windows it leaves
 #include "vg_config.h"
 #include "vg_input.h"
 
@@ -24,12 +25,26 @@
 // deliberately so: the gesture is learned once, the wheel has no fixed capacity
 // so a fifth ship is a table row rather than a layout, and a vertical drag on the
 // LEFT is the throttle gesture in flight -- the menu teaches the control.
-#define SEL_WHEEL_X     34
+//
+// THE SCREEN IS INSIDE A MACHINE NOW, and the machine decides where it ends.
+// BEZEL_CONSOLE_APERTURE_* is the largest rectangle that fits inside the chassis
+// art's screen hole, emitted by tools/bezel_bake.py from the drawing itself. The
+// layout is derived from it rather than measured against it, so a redrawn
+// chassis moves the menu instead of quietly cropping it.
+//
+// It cost 34px of height. The panel ran to y 396 and the aperture ends at 365,
+// so the plan view used to be drawn onto the bottom bezel.
+#define SEL_AP_X0       (BEZEL_CONSOLE_APERTURE_X0 + 7)
+#define SEL_AP_Y0       (BEZEL_CONSOLE_APERTURE_Y0 + 1)
+#define SEL_AP_X1       (BEZEL_CONSOLE_APERTURE_X1 - 7)
+#define SEL_AP_Y1       (BEZEL_CONSOLE_APERTURE_Y1 - 1)
+
+#define SEL_WHEEL_X     SEL_AP_X0
 #define SEL_WHEEL_W     136
 #define SEL_PANEL_X     182
-#define SEL_PANEL_W     264
-#define SEL_PANEL_Y     96
-#define SEL_PANEL_H     300
+#define SEL_PANEL_W     (SEL_AP_X1 - SEL_PANEL_X)
+#define SEL_PANEL_Y     SEL_AP_Y0
+#define SEL_PANEL_H     (SEL_AP_Y1 - SEL_AP_Y0)
 // A WINDOW, not a column. 168px is the callsign wheel's own height
 // (ENT_WHEEL_H) and it is the same number on purpose: two wheels that behave
 // identically should look identically sized. A full-height frame around three
@@ -70,8 +85,13 @@
 // Pushed down twice. The panel header is FOUR lines now -- name, weapon system,
 // tagline, and what the system does -- and SPEED sits directly beneath them. At
 // 228 it was 3px clear of the text and at 236 it was 4; neither is a gap.
-#define SEL_CHART_CY    241
-#define SEL_CHART_R     52
+//
+// Both came down when the aperture took the panel's last 34px. The chart gives up
+// 6px of radius and the plan view 12px of height, which is the split that keeps
+// SPEED clear of the description lines -- the constraint that moved this twice
+// already.
+#define SEL_CHART_CY    234
+#define SEL_CHART_R     45
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
@@ -84,13 +104,20 @@
 // recognises a fighter by, it needs no projection and no per-class 3-D geometry,
 // and it suits a slot that is wide and short -- which a spinning object does not.
 // See vg_ship_plan.
-#define SEL_MODEL_Y     322
-#define SEL_MODEL_H     72
+#define SEL_MODEL_Y     300
+#define SEL_MODEL_H     60
 
-#define SEL_GO_X        140
-#define SEL_GO_Y        410
-#define SEL_GO_W        200
-#define SEL_GO_H        52
+// THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
+//
+// The console has a lit window above the aperture and another below it, and they
+// are where a terminal puts its banner and its one key. Neither draws a frame of
+// its own any more: the metal already is the frame, and a second box inside it
+// read as a button sitting on a button.
+#define SEL_TITLE_CY    ((BEZEL_CONSOLE_BAR_TOP_Y0 + BEZEL_CONSOLE_BAR_TOP_Y1) / 2)
+#define SEL_GO_X        BEZEL_CONSOLE_BAR_BOT_X0
+#define SEL_GO_Y        BEZEL_CONSOLE_BAR_BOT_Y0
+#define SEL_GO_W        (BEZEL_CONSOLE_BAR_BOT_X1 - BEZEL_CONSOLE_BAR_BOT_X0)
+#define SEL_GO_H        (BEZEL_CONSOLE_BAR_BOT_Y1 - BEZEL_CONSOLE_BAR_BOT_Y0)
 
 // --- pause -----------------------------------------------------------------
 // A STACK, not fixed slots. The number of entries depends on where the pause

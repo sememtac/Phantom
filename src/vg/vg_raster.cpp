@@ -6,6 +6,7 @@
 #include <esp_memory_utils.h>
 #include <math.h>
 #include "vg_canopy_draw.h"
+#include "vg_bezel.h"
 
 // The submit half. Everything here runs ONCE per frame and costs frame time
 // directly -- unlike the band raster in vg_band.cpp, which hides under DMA. Work
@@ -773,6 +774,21 @@ void vg_canopy_prim(void) {
     Prim* p = push();
     if (!p) return;
     p->type  = PRIM_CANOPY;
+    p->aa    = LINE_OPAQUE;
+    p->color = 0;
+    p->x0 = p->y0 = p->x1 = p->y1 = p->x2 = p->y2 = 0;
+    p->ymin = 0;
+    p->ymax = (int16_t)(SCR_H - 1);
+}
+
+// The console chassis: one primitive covering the whole panel, submitted before
+// the menu so the menu draws on top of it. Beside vg_canopy_prim because push()
+// is private to this file and both want it for the same reason.
+void vg_bezel_prim(void) {
+    if (!vg_bezel_current()) return;
+    Prim* p = push();
+    if (!p) return;
+    p->type  = PRIM_BEZEL;
     p->aa    = LINE_OPAQUE;
     p->color = 0;
     p->x0 = p->y0 = p->x1 = p->y1 = p->x2 = p->y2 = 0;

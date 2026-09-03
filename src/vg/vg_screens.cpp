@@ -1,4 +1,6 @@
 ﻿#include "vg_screens.h"
+#include "vg_bezel.h"
+#include "generated/bezel_console.h"
 #include "vg_sfx.h"
 #include "vg_course.h"
 #include "vg_draw.h"
@@ -435,7 +437,20 @@ static void draw_plan_noise(float p) {
     }
 }
 
+// THE CONSOLE, BEHIND EVERYTHING THIS SCREEN DRAWS.
+//
+// Submitted first, so the menu lands on the chassis rather than under it. The
+// bezel is opaque and the idle scene is still drawn behind it, which is waste of
+// about 42% of the sky fill -- and it is the cheap kind of waste: the sky is one
+// primitive whether it is seen or not, and clipping it to the aperture would put
+// a menu-shaped exception into the world renderer.
+static void console_backdrop(void) {
+    vg_bezel_use(&BEZEL_CONSOLE);
+    vg_bezel_prim();
+}
+
 void vg_draw_select(void) {
+    console_backdrop();
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
 
@@ -473,11 +488,19 @@ void vg_draw_select(void) {
     // happens under the thickest part of the noise.
     const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
 
-    centred(30, vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
-                       : "SELECT SHIP", INK_MAX, 3);
-    if (vg.gym)
-        centred(62, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
-                        : "PRACTICE -- NOTHING IS SCORED", INK, 2);
+    // THE BANNER, IN THE CHASSIS WINDOW. 28px of lit inset, and what goes in it
+    // depends on whether there is one line to say or two: the gym has to name the
+    // screen AND explain it, and a 21px title leaves 7px, which is one line of
+    // nothing. So the gym drops to scale 2 and takes the second line, and the
+    // tournament keeps the big title it always had.
+    if (vg.gym) {
+        centred(SEL_TITLE_CY - 12, opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP",
+                INK_MAX, 2);
+        centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
+                                      : "PRACTICE -- NOTHING IS SCORED", INK, 1);
+    } else {
+        centred(SEL_TITLE_CY - 10, "SELECT SHIP", INK_MAX, 3);
+    }
 
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
@@ -559,8 +582,19 @@ void vg_draw_select(void) {
     draw_plan_view(vg_spec((ShipClass)shown), shown);
     draw_plan_noise(p);
 
-    vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
-              (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true, true);
+    // THE KEY, AND THE CHASSIS ALREADY DREW ITS BOX. vg_button paints a well, a
+    // 2px frame and corner ticks, and every one of those is a second border
+    // inside the lit window the metal provides -- a button sitting on a button.
+    // What is left of a button once the frame belongs to the machine is the
+    // label and the line under it that marks the primary action.
+    {
+        const char* go = (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER";
+        const int   lw = vg_text_width(go, 3);
+        const int   lx = SEL_GO_X + (SEL_GO_W - lw) / 2;
+        const int   ly = SEL_GO_Y + (SEL_GO_H - 21) / 2;
+        vg_text(lx, ly, go, INK_MAX, 3);
+        vg_fill_rect(lx, ly + 24, lw, 2, INK_BRIGHT);
+    }
 }
 
 // ---------------------------------------------------------------------------

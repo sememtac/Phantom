@@ -9,6 +9,7 @@
 #include "vg_sky.h"
 #include "vg_canopy.h"
 #include "vg_canopy_draw.h"
+#include "vg_bezel.h"
 #include "vg_tv.h"
 #include "vg_sfx.h"   // vg_disp: the player can switch the scanlines off
 #include <Arduino.h>
@@ -1310,6 +1311,13 @@ static void band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1) {
             // vg_canopy_split_at.
             if (!vg_canopy_current()) break;
             vg_canopy_rows(band, by0, 0, by1 - by0 + 1);
+            break;
+
+        case PRIM_BEZEL:
+            // Opaque, so it needs no split point of its own: the rows handed
+            // over are already this core's share and the spans are clipped to
+            // them.
+            vg_bezel_rows(band, by0, 0, by1 - by0 + 1);
             break;
 
         case PRIM_POINT:

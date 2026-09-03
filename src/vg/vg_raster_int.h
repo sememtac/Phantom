@@ -22,8 +22,12 @@
 // reason PRIM_SKY is: WHERE it happens in the order matters. The frame goes over the
 // world and under the instruments, and a table applied outside the primitive list
 // could only be before everything or after it.
+// PRIM_BEZEL is the console chassis behind a menu, and it is here for the third
+// time for the same reason: ORDER. It goes over the idle scene and under the
+// menu. Unlike the canopy it is opaque -- it replaces the pixel rather than
+// lighting it, because a machine in a room does not let the stars through.
 enum : uint8_t { PRIM_LINE = 0, PRIM_POINT, PRIM_FILL, PRIM_GLYPH, PRIM_TRI,
-                 PRIM_SKY, PRIM_CANOPY };
+                 PRIM_SKY, PRIM_CANOPY, PRIM_BEZEL };
 
 // ymin/ymax are precomputed at submit time so the per-band overlap test is two
 // compares with no type dispatch. x2/y2 are only used by PRIM_TRI; carrying them
