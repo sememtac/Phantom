@@ -124,7 +124,10 @@
 // recognises a fighter by, it needs no projection and no per-class 3-D geometry,
 // and it suits a slot that is wide and short -- which a spinning object does not.
 // See vg_ship_plan.
-#define SEL_MODEL_Y     300
+// Down 4, because the chart's lower labels had come to rest ON the rule above
+// the plan view. Moving the chart is what caused it -- DAMAGE and RANGE sit
+// 0.809 of the way out, so they fall faster than the centre does.
+#define SEL_MODEL_Y     304
 #define SEL_MODEL_H     60
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
@@ -217,18 +220,29 @@ bool  vg_pause_scanline_at(float x, float y);
 float vg_pause_slider_value(float x);
 
 // --- callsign and trail colour ---------------------------------------------
+// REGISTRATION IS IN THE SAME MACHINE AS SELECT, so it lives inside the same
+// aperture and every one of these came in to meet it. The screen used to have the
+// whole panel: title at 30, wheels to 272, the ramp to 396 and NEXT to 458. The
+// glass ends at 365 and the banner and the key belong in the plating's own
+// windows, so the working height went from 292px to 266.
+//
+// What gave way was slack, not content. The letter wheels only ever painted
+// about 136px of their 168 -- the window is sized to match the ship wheel, not to
+// the letters -- so the column kept its size and the space beneath it paid.
 #define ENT_COL_W       90
 #define ENT_COL_X0      ((SCR_W - 3 * ENT_COL_W) / 2)
-#define ENT_WHEEL_Y     104
+#define ENT_WHEEL_Y     (SEL_AP_Y0 + 1)
 #define ENT_WHEEL_H     168
 #define ENT_TRAIL_X     100
-#define ENT_TRAIL_Y     290
+#define ENT_TRAIL_Y     264
 #define ENT_TRAIL_W     280
-#define ENT_TRAIL_H     46
+#define ENT_TRAIL_H     44
 #define ENT_HUE_X       40
-#define ENT_HUE_Y       342
+// The handle stands 9px proud of the ramp at both ends, so the ramp has to stop
+// 9px short of the glass or the grip is cut off by the steel.
+#define ENT_HUE_Y       320
 #define ENT_HUE_W       400
-#define ENT_HUE_H       54
+#define ENT_HUE_H       30
 // Acquiring the ramp should not demand precision -- the slider is a coarse
 // choice and the finger covers most of it.
 #define ENT_HUE_PAD     26
@@ -248,10 +262,12 @@ float vg_pause_slider_value(float x);
 // restricted, so a profile saved with a magenta hue still draws magenta; its handle just
 // pins to the end of the bar.
 #define ENT_HUE_SPAN    0.6667f
-#define ENT_GO_X        150
-#define ENT_GO_Y        408
-#define ENT_GO_W        180
-#define ENT_GO_H        50
+// The key is the chassis window, exactly as it is on the select screen: one
+// machine, one place the key lives.
+#define ENT_GO_X        SEL_GO_X
+#define ENT_GO_Y        SEL_GO_Y
+#define ENT_GO_W        SEL_GO_W
+#define ENT_GO_H        SEL_GO_H
 
 // --- tournament map --------------------------------------------------------
 // Three buttons now, so they are narrower. The row still starts at 60 and ends
@@ -346,6 +362,15 @@ void vg_bracket_focus_player(void);            // centre on the next match
 // built.
 void vg_button(int x, int y, int w, int h, const char* label,
                bool primary, bool live);
+
+// THE CONSOLE BRACKETS. Every screen bolted into the registration terminal draws
+// between these two: open puts up the chassis banner and opens the curve, close
+// puts down the key and paints the steel over everything. See vg_screens.cpp.
+//
+// `note` is the second line in the banner window, or null for a one-line banner
+// at the larger size.
+void console_open(const char* title, const char* note);
+void console_close(const char* key);
 
 void vg_draw_select(void);
 void vg_draw_pause(void);

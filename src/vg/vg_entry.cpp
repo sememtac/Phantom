@@ -139,7 +139,10 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
 }
 
 void vg_draw_entry(void) {
-    centred(30, "CALLSIGN", INK_MAX, 3);
+    // The same terminal the ship select is bolted into. REGISTRATION rather than
+    // CALLSIGN: the banner is the tournament's own wording for what this desk is
+    // for, and the word on the glass below is what you are entering.
+    console_open("CALLSIGN REGISTRATION", nullptr);
 
     const int midy = ENT_WHEEL_Y + ENT_WHEEL_H / 2;
 
@@ -196,5 +199,5 @@ void vg_draw_entry(void) {
         vg_fill_rect(mx - 2, ENT_HUE_Y - 4,  5, ENT_HUE_H + 8,  hue);
     }
 
-    vg_button(ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H, "NEXT", true, true);
+    console_close("NEXT");
 }

@@ -462,25 +462,101 @@ static void draw_plan_noise(float p) {
     }
 }
 
-// THE CONSOLE, AND IT PAINTS LAST.
+// ===========================================================================
+// THE CONSOLE, AS A PAIR OF BRACKETS
 //
-// It was submitted first, which put the chassis behind the menu and left the
-// menu to keep itself inside the hole. That works only while every rectangle is
-// checked against the aperture by hand, and it cannot work at all for the
-// banner: the ticker runs off both ends of its window, and clipping it to a
-// viewport masks it with a RECTANGLE when the window in the art has chamfered
-// corners and a lip. The text vanished at a straight line a few pixels inside
-// the metal instead of sliding under it.
+// Two screens are bolted into this machine now -- callsign registration and ship
+// select -- and they are the same machine, so the chassis, the running banner,
+// the key and the curve of the glass belong in one place rather than in each of
+// them. What a screen supplies is its banner, its note and the word on its key.
 //
-// Painted last, the chassis IS the mask. It is opaque and it stores no pixel in
-// the exempt areas, so everything the menu drew inside a window survives and
-// everything it drew outside one is covered -- by the drawing's own outline,
-// exactly, corners and all. Nothing has to know the aperture's shape.
-//
-// The idle scene behind it is still drawn and still mostly hidden. That is the
-// cheap kind of waste: the sky is one primitive whether it is seen or not, and
-// clipping it would put a menu-shaped exception into the world renderer.
-static void console_backdrop(void) {
+// console_open leaves the WARP BRACKET OPEN. Everything a screen draws between
+// the two calls is on the glass and bends; the banner and the key are drawn
+// outside it, because they sit in windows cut into the plating and a lit inset
+// that bows with the tube reads as a decal stuck on it.
+// ===========================================================================
+
+// The banner window, the ticker across it, and then the glass.
+void console_open(const char* title, const char* note) {
+    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
+                 BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
+                 BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1,
+                 INK_WELL);
+
+    const int   bx    = BEZEL_CONSOLE_BAR_TOP_X0;
+    const int   bw    = BEZEL_CONSOLE_BAR_TOP_X1 - bx + 1;
+    const int   scale = note ? 2 : 3;
+    const int   tw    = vg_text_width(title, scale);
+
+    // RIGHT TO LEFT, and it WRAPS. Moving right the block's tail enters first and
+    // the word arrives back to front -- SHIP SELECT. And a single pass leaves the
+    // glass empty between readings, which looks like a machine that has stopped;
+    // repeating every word-plus-gap makes the tail of one pass the head of the
+    // next.
+    //
+    // vg.state_t, not an integrated dt: the renderer has no dt to give, and an
+    // accumulated one runs the ticker at the frame rate rather than the clock.
+    //
+    // Clipped to the window BOX. It is needed because the screen aperture notches
+    // up either side of this bar, so there are exempt pixels off both ends that
+    // the chassis cannot paint over -- text ran out of the window and stayed on
+    // screen. The box lets the letters reach the glass; the chassis cuts the
+    // chamfer.
+    const int   period = tw + SEL_CHYRON_GAP;
+    const float u   = vg.state_t * SEL_CHYRON_RATE;
+    const int   off = (int)(u - floorf(u / (float)period) * (float)period);
+    const int   ty  = SEL_TITLE_CY - (note ? 12 : 10);
+
+    vg_rast_viewport(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
+                     BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
+                     BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
+
+    // WHITE, because the machine is not the one asking. A banner is the
+    // tournament talking to you through the terminal -- the same voice that
+    // speaks over a match -- so it takes COL_IFT. The key stays amber: that is
+    // furniture, and the difference between the two is the point.
+    for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
+        vg_text(tx, ty, title, COL_IFT, scale);
+
+    // A note does NOT run. It is a sentence to be read once, not a banner, and a
+    // moving one would be the only thing on the screen asking to be chased.
+    if (note) centred(SEL_TITLE_CY + 4, note, INK, 1);
+    vg_rast_viewport_full();
+
+    // GLASS FROM HERE. The plating is cold steel and dead flat; the display under
+    // it is a tube, and a tube bends its picture. The curve pulls the corners of
+    // the picture inward and the chassis paints last over what is left, so the
+    // display does not end at a drawn border -- it disappears beneath the steel.
+    //
+    // Finer chords than the cockpit uses: a panel border is 266px on a side and
+    // at the default that is five straight pieces with visible joints.
+    vg_hud_warp(true, SEL_GLASS_WARP);
+    vg_hud_warp_seg(SEL_GLASS_SEG);
+}
+
+// Back to flat, then the key, then the steel over everything.
+void console_close(const char* key) {
+    vg_hud_warp(false, 1.0f);
+
+    // THE CHASSIS ALREADY DREW THE KEY'S BOX. vg_button paints a well, a 2px
+    // frame and corner ticks, and every one of those is a second border inside
+    // the lit window the metal provides -- a button on a button. What is left of
+    // a key when the machine owns its box is the label, the line under it that
+    // marks the primary action, and the one thing a key must do: change while it
+    // is held.
+    const int  lw   = vg_text_width(key, 3);
+    const int  lx   = SEL_GO_X + (SEL_GO_W - lw) / 2;
+    const int  ly   = SEL_GO_Y + (SEL_GO_H - 21) / 2;
+    const bool down = vg_press_in(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
+
+    vg_fill_rect(BEZEL_CONSOLE_BAR_BOT_BOX_X0, BEZEL_CONSOLE_BAR_BOT_BOX_Y0,
+                 BEZEL_CONSOLE_BAR_BOT_BOX_X1 - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 1,
+                 BEZEL_CONSOLE_BAR_BOT_BOX_Y1 - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 1,
+                 down ? INK_TRACE : INK_WELL);
+    vg_text(lx, ly, key, INK_MAX, 3);
+    vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
+
+    // LAST, so the steel masks whatever ran past the glass.
     vg_bezel_use(&BEZEL_CONSOLE);
     vg_bezel_prim();
 }
@@ -523,131 +599,11 @@ void vg_draw_select(void) {
     // happens under the thickest part of the noise.
     const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
 
-    // THE BANNER, IN THE CHASSIS WINDOW.
-    //
-    // BLACK, not the idle scene. The window is a lit inset in a machine and the
-    // nebula was drifting through it, which said "this is a hole in the panel"
-    // where the whole point is that it is a screen in a room.
-    //
-    // INK_WELL AND NOT COL_BLACK, and this is a trap rather than a preference:
-    // fill_rect_raw drops any fill whose colour is zero, so a COL_BLACK rectangle
-    // draws NOTHING. It is the same rule that makes black text invisible. Both
-    // windows were filled with it and neither fill ever happened -- they looked
-    // black because the sky behind them is nearly black, and the arcs crossing
-    // them were the giveaway. INK_WELL is #0d0700, which is the well every
-    // instrument in the game sits in and is black on the panel.
-    // THE BOX, NOT THE INNER RECTANGLE. The window is an octagon; a fill of the
-    // rectangle that fits inside it leaves the four chamfered corners unpainted,
-    // and the chassis does not cover them either -- they are exempt. The sky was
-    // showing in the corners. The box overshoots onto metal, which the chassis
-    // paints over on the way past.
-    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
-                 BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
-                 BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1,
-                 INK_WELL);
-
-    // AND IT RUNS. A registration terminal has a ticker across the top, and a
-    // banner that travels says the machine is powered and waiting for you in a
-    // way a centred word never does.
-    //
-    // CLIPPED TO THE WINDOW, AND THE VIEWPORT DOES THAT NOW. It did not before:
-    // vg_text tested a glyph against the SCREEN and against nothing else, so the
-    // clip that used to be here was never doing any work. The fix is in vg_text,
-    // where a glyph's panel extents are now clamped to the viewport.
-    //
-    // It is needed because the screen aperture NOTCHES UP either side of the
-    // title bar, so at the banner's own height there are exempt pixels off both
-    // ends of the window. Text running out of the window landed in them and the
-    // chassis had no pixel there to cover it with -- "SHIP" appeared in the top
-    // corner of the main screen.
-    //
-    // The BOX and not the inner rectangle, so the letters still reach the glass:
-    // the box is the window's full extent, and the chamfered corners and the lip
-    // over them are cut by the chassis, which paints last. Two masks, each doing
-    // the part it is good at -- the viewport keeps the text out of the next hole,
-    // the drawing shapes the edge.
-    //
-    // vg.state_t, not an accumulated dt: the renderer has no dt, and an
-    // integrated one would run the ticker at the frame rate rather than at the
-    // clock -- one speed on the desktop and another on the board.
-    {
-        const int   bx = BEZEL_CONSOLE_BAR_TOP_X0;
-        const int   bw = BEZEL_CONSOLE_BAR_TOP_X1 - bx + 1;
-        const int   bh = BEZEL_CONSOLE_BAR_TOP_Y1 - BEZEL_CONSOLE_BAR_TOP_Y0 + 1;
-        const char* ttl = vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
-                                 : "SELECT SHIP";
-        const int   scale = vg.gym ? 2 : 3;
-        const int   tw = vg_text_width(ttl, scale);
-
-        // RIGHT TO LEFT, which is the direction a ticker has to run to be read.
-        //
-        // It ran the other way first, and the fault is not obvious until you
-        // watch it: moving right, the block's TAIL enters the window first, so
-        // the word arrives back to front. You read "SHIP", then "SELECT S", and
-        // the banner says SHIP SELECT. Moving left, the leading S appears at the
-        // right-hand edge and the words arrive in the order they are written.
-        //
-        // AND IT WRAPS. The cycle used to be the window plus the whole word, so
-        // the banner left at one edge and the glass sat empty until it came back
-        // in at the other -- a ticker with a hole in it, which reads as the
-        // machine having stopped rather than as a machine running.
-        //
-        // Repeated instead: the period is the word plus a gap, and copies are
-        // laid every period until the window is covered. The tail of one is the
-        // head of the next, so the band is endless and SELECT re-enters on the
-        // right exactly as it leaves on the left.
-        //
-        // Two or three copies at this size, and the viewport drops every glyph
-        // that lands outside the window before it takes a primitive slot.
-        const int   period = tw + SEL_CHYRON_GAP;
-        const float u = vg.state_t * SEL_CHYRON_RATE;
-        const int   off = (int)(u - floorf(u / (float)period) * (float)period);
-
-        vg_rast_viewport(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
-                         BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
-                         BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
-        (void)bh;
-        // WHITE, BECAUSE THE MACHINE IS NOT THE ONE ASKING. The banner is the
-        // tournament talking to you through the terminal -- the same voice that
-        // speaks over a match -- so it takes COL_IFT and not the console's amber.
-        // ENTER stays amber: the key is part of the furniture, and the difference
-        // between the two is the point.
-        const int ty = SEL_TITLE_CY - (vg.gym ? 12 : 10);
-        for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
-            vg_text(tx, ty, ttl, COL_IFT, scale);
-
-        // The explanation does NOT run. It is a sentence to be read once, not a
-        // banner, and a moving one would be the only thing on the screen asking
-        // to be chased.
-        if (vg.gym)
-            centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
-                                          : "PRACTICE -- NOTHING IS SCORED", INK, 1);
-        vg_rast_viewport_full();
-    }
-
-    // GLASS FROM HERE. The plating is cold steel and dead flat; the display
-    // under it is a tube, and a tube bends its picture.
-    //
-    // The bracket is the HUD's own warp -- the same barrel curve the cockpit
-    // instruments ride, at the same HUD_WARP_K -- so lines subdivide through it,
-    // fills leave as warped quads and glyph origins follow the bend. Two things
-    // make it read as glass rather than as a wobble:
-    //
-    //   IT STOPS AT THE APERTURE. The banner and the key are drawn before this
-    //   opens, so the two lit windows in the plating stay square. A bezel that
-    //   bends with its own screen is a decal; one that does not is a frame with
-    //   something behind it.
-    //
-    //   THE EDGES GO UNDER THE FRAME. The curve pulls the corners of the picture
-    //   inward and the chassis paints last over what is left, so the display
-    //   does not end at a drawn border -- it disappears beneath the steel, which
-    //   is what a tube bedded under a panel actually does.
-    vg_hud_warp(true, SEL_GLASS_WARP);
-    // Finer chords than the cockpit uses. The panel border is 266px on a side and
-    // at the default it was five straight pieces with visible joints -- a
-    // segmented box rather than a curved one. The wheel never showed it as badly
-    // because its sides are shorter.
-    vg_hud_warp_seg(SEL_GLASS_SEG);
+    console_open(vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
+                       : "SELECT SHIP",
+                 vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
+                               : "PRACTICE -- NOTHING IS SCORED")
+                        : nullptr);
 
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
@@ -752,41 +708,7 @@ void vg_draw_select(void) {
     draw_plan_view(vg_spec((ShipClass)shown), shown);
     draw_plan_noise(p);
 
-    // FLAT AGAIN. The key is set into the plating, not into the glass, and it was
-    // inside the bracket for one build: it bowed with the display and read as a
-    // sticker on the tube rather than as a switch on the machine. The banner is
-    // drawn before the bracket opens for the same reason.
-    //
-    // Closing it here also means the bracket never outlives the screen. Left
-    // open, the next state would draw its whole panel bent.
-    vg_hud_warp(false, 1.0f);
-
-    // THE KEY, AND THE CHASSIS ALREADY DREW ITS BOX. vg_button paints a well, a
-    // 2px frame and corner ticks, and every one of those is a second border
-    // inside the lit window the metal provides -- a button sitting on a button.
-    // What is left of a button once the frame belongs to the machine is the
-    // label, the line under it that marks the primary action, and the one thing
-    // a key must do: change while it is held.
-    {
-        const char* go = (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER";
-        const int   lw = vg_text_width(go, 3);
-        const int   lx = SEL_GO_X + (SEL_GO_W - lw) / 2;
-        const int   ly = SEL_GO_Y + (SEL_GO_H - 21) / 2;
-        const bool  down = vg_press_in(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
-
-        // INK_WELL, not COL_BLACK -- see the banner above: a zero fill is
-        // dropped, so this window was never being cleared either.
-        vg_fill_rect(BEZEL_CONSOLE_BAR_BOT_BOX_X0, BEZEL_CONSOLE_BAR_BOT_BOX_Y0,
-                     BEZEL_CONSOLE_BAR_BOT_BOX_X1 - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 1,
-                     BEZEL_CONSOLE_BAR_BOT_BOX_Y1 - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 1,
-                     down ? INK_TRACE : INK_WELL);
-        vg_text(lx, ly, go, INK_MAX, 3);
-        vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
-    }
-
-    // LAST. Everything above may draw over the chassis; none of it does once
-    // this lands.
-    console_backdrop();
+    console_close((vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
 }
 
 // ---------------------------------------------------------------------------

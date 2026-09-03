@@ -570,14 +570,19 @@ void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
     if (tap->up && in->roll_btn) {
         vg.gym     = true;
         vg.sel_opp = false;
-        vg_state_go(VG_SELECT);
+        vg_state_cut(VG_SELECT);        // the workshop door is a door too
         return;
     }
 
     if (tap->up) {
         vg.gym = false;      // the tournament door clears the workshop
         vg_entry_reset();
-        vg_state_go(VG_ENTRY);
+        // A CUT, NOT A GO, and the transition is doing real work here rather
+        // than decorating the change. The title is a starfield and what comes
+        // next is a terminal in a room: the set goes off, holds a second of dead
+        // air, and opens back up on the console. Without it the machine appears
+        // over the stars in one frame and the two places are the same place.
+        vg_state_cut(VG_ENTRY);
         return;
     }
 

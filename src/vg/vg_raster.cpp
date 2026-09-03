@@ -767,8 +767,29 @@ void vg_fill_rect(int x, int y, int w, int h, uint16_t color) {
     }
 }
 
+// AN OUTLINE IS FOUR LINES, and it only got away with being four one-pixel FILLS
+// because nothing bent it.
+//
+// A warped fill leaves as a strip of quads -- two triangles each. That is fine
+// for a rectangle with area and wrong for one that is a pixel thick: bent, the
+// sliver's two triangles round to nothing wherever the curve turns, so the border
+// came out with gaps in it and a jog partway down each side. It read as the warp
+// breaking the box up, and it was the primitive, not the curve.
+//
+// Bent, the edges go out as LINES, which is what they are. Straight, they stay
+// fills: a horizontal fill is cheaper than a line and lands on exactly the same
+// pixels, and every other caller of this is unwarped.
 void vg_rect(int x, int y, int w, int h, uint16_t color) {
     if (w <= 0 || h <= 0) return;
+    if (sub()->warp) {
+        const float x0 = (float)x,         y0 = (float)y;
+        const float x1 = (float)(x + w - 1), y1 = (float)(y + h - 1);
+        vg_line(x0, y0, x1, y0, color);
+        vg_line(x1, y0, x1, y1, color);
+        vg_line(x1, y1, x0, y1, color);
+        vg_line(x0, y1, x0, y0, color);
+        return;
+    }
     vg_fill_rect(x,         y,         w, 1, color);
     vg_fill_rect(x,         y + h - 1, w, 1, color);
     vg_fill_rect(x,         y,         1, h, color);
