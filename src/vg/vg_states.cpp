@@ -403,6 +403,10 @@ void vg_state_cut(VgState to) {
 // The dispatch. Here rather than in vg_game.cpp because the table is here, and
 // because "what does this state do this frame" is a table lookup now.
 void vg_state_update(float dt, const VgInput* in, const Tap* tap) {
+    // Before the state runs, so a control drawn this frame reports the contact
+    // that is happening now rather than the one from the frame before.
+    vg_press_set(in && in->menu_held, in ? in->menu_x : 0.0f,
+                 in ? in->menu_y : 0.0f);
     if ((int)vg.state >= VG_STATE_COUNT) return;
     const VgStateDef* d = &STATES[vg.state];
     if (d->update) d->update(dt, in, tap);

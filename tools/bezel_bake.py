@@ -41,7 +41,26 @@ def load(src, colors):
     # The mask comes from the FULL SIZE drawing and is reduced with NEAREST.
     # A smooth reduction blends magenta with the metal beside it and makes a
     # fringe of pixels that are neither exempt nor the colour of the drawing.
-    exempt = (a[:, :, 0] > 150) & (a[:, :, 2] > 150) & (a[:, :, 1] < 100)
+    # MAGENTA BY HUE, NOT BY LEVEL. The first test asked for a lot of red, a lot
+    # of blue and little green, and the green limit is what let pixels through:
+    # (255, 130, 255) is plainly magenta and failed it. Ask instead whether red
+    # and blue both stand clear of green, which is what magenta means, and no
+    # level of brightness changes the answer.
+    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    exempt = (np.minimum(r, b) - g) > 40
+
+    # GROWN BY TWO PIXELS. The edge of a painted area is smoothed against the
+    # metal beside it, so a ring of part-magenta pixels sits just outside any
+    # test. Widening the test only moves the ring. Growing the area swallows it,
+    # at the cost of two pixels of metal that the game draws over anyway.
+    for _ in range(2):
+        e = exempt.copy()
+        e[1:, :] |= exempt[:-1, :]
+        e[:-1, :] |= exempt[1:, :]
+        e[:, 1:] |= exempt[:, :-1]
+        e[:, :-1] |= exempt[:, 1:]
+        exempt = e
+
     mask = np.asarray(Image.fromarray((exempt * 255).astype(np.uint8))
                       .resize((PANEL, PANEL), Image.NEAREST)) > 127
 

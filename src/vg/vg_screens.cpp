@@ -15,20 +15,45 @@ static void centred(int y, const char* s, uint16_t col, int scale) {
     vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
 }
 
+// The live contact, set once a frame by vg_state_update. See vg_draw.h.
+static bool  s_press_held = false;
+static float s_press_x = 0.0f, s_press_y = 0.0f;
+
+void vg_press_set(bool held, float x, float y) {
+    s_press_held = held;
+    s_press_x = x;
+    s_press_y = y;
+}
+
+bool vg_press_in(int x, int y, int w, int h) {
+    return s_press_held && vg_in_rect(s_press_x, s_press_y, x, y, w, h);
+}
+
 void vg_button(int x, int y, int w, int h, const char* label,
                bool primary, bool live) {
-    const uint16_t frame = !live    ? INK_TRACE
+    const uint16_t frame0 = !live   ? INK_TRACE
                          : primary  ? INK_BRIGHT
                                     : INK;
     const uint16_t ink   = !live    ? INK_TRACE
                          : primary  ? INK_MAX
                                     : INK_BRIGHT;
 
+    // LIT WHILE HELD. A key that does not change under the thumb is a key you
+    // cannot tell you hit, and on a touch panel that reads as the machine having
+    // missed the press rather than as your finger having missed the key.
+    //
+    // The well brightens and the frame goes to full ink. Deliberately the WELL
+    // and not the label: a brighter label on an unchanged ground reads as a
+    // value that changed, and this is a control reporting contact, not a
+    // readout reporting news.
+    const bool down = live && vg_press_in(x, y, w, h);
+
     // Same dark well the instrument panels sit in, so thin strokes keep their
     // contrast against a lit nebula.
-    vg_fill_rect(x, y, w, h, INK_WELL);
+    vg_fill_rect(x, y, w, h, down ? INK_TRACE : INK_WELL);
 
     const int s = 2;
+    const uint16_t frame = down ? INK_MAX : frame0;
     vg_fill_rect(x,         y,         w, s, frame);
     vg_fill_rect(x,         y + h - s, w, s, frame);
     vg_fill_rect(x,         y,         s, h, frame);
@@ -488,18 +513,51 @@ void vg_draw_select(void) {
     // happens under the thickest part of the noise.
     const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
 
-    // THE BANNER, IN THE CHASSIS WINDOW. 28px of lit inset, and what goes in it
-    // depends on whether there is one line to say or two: the gym has to name the
-    // screen AND explain it, and a 21px title leaves 7px, which is one line of
-    // nothing. So the gym drops to scale 2 and takes the second line, and the
-    // tournament keeps the big title it always had.
-    if (vg.gym) {
-        centred(SEL_TITLE_CY - 12, opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP",
-                INK_MAX, 2);
-        centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
-                                      : "PRACTICE -- NOTHING IS SCORED", INK, 1);
-    } else {
-        centred(SEL_TITLE_CY - 10, "SELECT SHIP", INK_MAX, 3);
+    // THE BANNER, IN THE CHASSIS WINDOW.
+    //
+    // BLACK, not the idle scene. The window is a lit inset in a machine and the
+    // nebula was drifting through it, which said "this is a hole in the panel"
+    // where the whole point is that it is a screen in a room.
+    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_X0, BEZEL_CONSOLE_BAR_TOP_Y0,
+                 BEZEL_CONSOLE_BAR_TOP_X1 - BEZEL_CONSOLE_BAR_TOP_X0 + 1,
+                 BEZEL_CONSOLE_BAR_TOP_Y1 - BEZEL_CONSOLE_BAR_TOP_Y0 + 1,
+                 COL_BLACK);
+
+    // AND IT RUNS. A registration terminal has a ticker across the top, and a
+    // banner that travels says the machine is powered and waiting for you in a
+    // way a centred word never does.
+    //
+    // Clipped to the window with the viewport, because the letters leave it at
+    // both ends and metal is what they would otherwise be drawn on.
+    //
+    // vg.state_t, not an accumulated dt: the renderer has no dt, and an
+    // integrated one would run the ticker at the frame rate rather than at the
+    // clock -- one speed on the desktop and another on the board.
+    {
+        const int   bx = BEZEL_CONSOLE_BAR_TOP_X0;
+        const int   bw = BEZEL_CONSOLE_BAR_TOP_X1 - bx + 1;
+        const int   bh = BEZEL_CONSOLE_BAR_TOP_Y1 - BEZEL_CONSOLE_BAR_TOP_Y0 + 1;
+        const char* ttl = vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
+                                 : "SELECT SHIP";
+        const int   scale = vg.gym ? 2 : 3;
+        const int   tw = vg_text_width(ttl, scale);
+
+        // LEFT TO RIGHT, so it enters at the left edge and leaves at the right.
+        // The travel is the window plus the whole word, so the banner is clear
+        // of the glass at both ends of the cycle rather than jumping.
+        const int   span = bw + tw;
+        const float u = vg.state_t * SEL_CHYRON_RATE;
+        const int   tx = bx - tw + (int)(u - floorf(u / (float)span) * (float)span);
+
+        vg_rast_viewport(bx, BEZEL_CONSOLE_BAR_TOP_Y0, bw, bh);
+        if (vg.gym) {
+            vg_text(tx, SEL_TITLE_CY - 12, ttl, INK_MAX, 2);
+            centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
+                                          : "PRACTICE -- NOTHING IS SCORED", INK, 1);
+        } else {
+            vg_text(tx, SEL_TITLE_CY - 10, ttl, INK_MAX, 3);
+        }
+        vg_rast_viewport_full();
     }
 
     // --- the wheel ---------------------------------------------------------
@@ -518,6 +576,22 @@ void vg_draw_select(void) {
     const int shown_n  = SEL_WHEEL_N;
     const int shown_lo = SEL_WHEEL_LO;
     const int detent   = SEL_WHEEL_DETENT;
+
+    // THE ROW UNDER THE THUMB, LIT. The wheel is a control like any other and it
+    // had the same fault the keys had: a tap that nudges the wheel by one gave no
+    // sign that the tap landed, so a press near a row border felt like the screen
+    // ignoring you rather than like a miss.
+    //
+    // It uses vg_select_row_at rather than a rectangle of its own, because that
+    // function IS where a tap resolves to a row. A second copy of the arithmetic
+    // here would light one row while the tap moved to another, and the two would
+    // disagree only near the borders -- which is exactly where it matters.
+    const int lit = s_press_held ? vg_select_row_at(s_press_x, s_press_y)
+                                 : SEL_ROW_NONE;
+    if (lit != SEL_ROW_NONE)
+        vg_fill_rect(SEL_WHEEL_X, detent + lit * SEL_WHEEL_PITCH - 18,
+                     SEL_WHEEL_W, 36, INK_TRACE);
+
     for (int k = shown_lo; k < shown_lo + shown_n; k++) {
         if (k == 0) continue;                 // the detent is drawn over the rails
         const int   a   = (k < 0) ? -k : k;
@@ -586,14 +660,19 @@ void vg_draw_select(void) {
     // 2px frame and corner ticks, and every one of those is a second border
     // inside the lit window the metal provides -- a button sitting on a button.
     // What is left of a button once the frame belongs to the machine is the
-    // label and the line under it that marks the primary action.
+    // label, the line under it that marks the primary action, and the one thing
+    // a key must do: change while it is held.
     {
         const char* go = (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER";
         const int   lw = vg_text_width(go, 3);
         const int   lx = SEL_GO_X + (SEL_GO_W - lw) / 2;
         const int   ly = SEL_GO_Y + (SEL_GO_H - 21) / 2;
+        const bool  down = vg_press_in(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
+
+        vg_fill_rect(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
+                     down ? INK_TRACE : COL_BLACK);
         vg_text(lx, ly, go, INK_MAX, 3);
-        vg_fill_rect(lx, ly + 24, lw, 2, INK_BRIGHT);
+        vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
     }
 }
 

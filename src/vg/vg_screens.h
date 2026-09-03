@@ -113,6 +113,10 @@
 // are where a terminal puts its banner and its one key. Neither draws a frame of
 // its own any more: the metal already is the frame, and a second box inside it
 // read as a button sitting on a button.
+// How fast the banner crosses its window, in px a second. Slow enough to read a
+// word at a time and not so slow that it looks stuck.
+#define SEL_CHYRON_RATE 46.0f
+
 #define SEL_TITLE_CY    ((BEZEL_CONSOLE_BAR_TOP_Y0 + BEZEL_CONSOLE_BAR_TOP_Y1) / 2)
 #define SEL_GO_X        BEZEL_CONSOLE_BAR_BOT_X0
 #define SEL_GO_Y        BEZEL_CONSOLE_BAR_BOT_Y0
@@ -236,6 +240,26 @@ float vg_pause_slider_value(float x);
 #define REP_BACK_Y      346
 #define REP_BACK_W      170
 #define REP_BACK_H      54
+
+// ===========================================================================
+// WHERE THE FINGER IS, FOR THE WHOLE INTERFACE
+//
+// A control that does not acknowledge a press feels broken before it feels
+// slow: you cannot tell whether the machine took the input or whether you
+// missed. Every button in the game had that fault, so the fix belongs in one
+// place rather than in each screen.
+//
+// Recorded once a frame in vg_state_update, which is the single entry every
+// state passes through, and read by whatever is drawing. That is why no draw
+// function had to grow a VgInput parameter: a button already knows its own
+// rectangle, so it can ask this whether the press is inside it.
+//
+// It is the LIVE contact, not a tap. A tap is an event that has already
+// finished; this is the finger still being down, which is the thing a lit key
+// is reporting.
+// ===========================================================================
+void vg_press_set(bool held, float x, float y);
+bool vg_press_in(int x, int y, int w, int h);
 
 static inline bool vg_in_rect(float x, float y, int rx, int ry, int rw, int rh) {
     return x >= (float)rx && x < (float)(rx + rw) &&
