@@ -203,10 +203,11 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
         if (ty > 0.5f) vg_line_w(tx, cy - ty, tx, cy + ty, INK_BRIGHT, 2);
     }
 
-    // The spine, so the two halves read as one hull rather than two curves that
-    // happen to meet. Faint: it is structure, not outline.
-    vg_line(cx + pl.pts[0] * sx, cy,
-            cx + pl.pts[(pl.n - 1) * 2] * sx, cy, INK_TRACE);
+    // NO SPINE, AND NO FUSELAGE EDGE PAIR. Both were long straight lines running
+    // most of the length, and at this size they read as ruled lines drawn over the
+    // ship rather than as part of it -- and worse, they ran straight through the
+    // missile bays, which are the one piece of detail that says what a class DOES.
+    // The closed tail already ties the halves together.
 
     // INSIDE. Dimmer than the outline on purpose: the silhouette is what
     // identifies the ship and the detail is what makes it look built, so the
