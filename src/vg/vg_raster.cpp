@@ -837,9 +837,25 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
 }
 
 int vg_text_width(const char* s, int scale) {
+    return vg_text_track_width(s, scale, 0);
+}
+
+// TRACKING: extra space between letters, in pixels, on top of the font's own.
+//
+// The 5x7 font carries one pixel of side bearing, which is enough on a flat
+// panel and is not enough on a curved one. The warp moves each glyph's ORIGIN
+// and leaves the bitmap upright, so along a bent baseline the gaps between
+// letters are no longer equal -- the curve compresses them on one side of the
+// arc and opens them on the other. A word does not look bent so much as badly
+// spaced, which is the thing that actually costs legibility.
+//
+// Tracking buys back the margin the curve eats. It is a per-caller choice
+// because it is not free: it makes a word wider, and most of this interface is
+// laid out against widths that are already tight.
+int vg_text_track_width(const char* s, int scale, int extra) {
     int n = 0;
     while (s[n]) n++;
-    return n > 0 ? (n * 6 - 1) * scale : 0;
+    return n > 0 ? (n * 6 - 1) * scale + (n - 1) * extra : 0;
 }
 
 // NOTE: colour 0 means INVISIBLE here, not black -- passing COL_BLACK draws
@@ -859,11 +875,16 @@ int vg_text_width(const char* s, int scale) {
 // existing bounds tests into the clip, so the cut lands in the loops that were
 // already testing bounds and adds nothing to the inner one.
 void vg_text(int x, int y, const char* s, uint16_t color, int scale) {
+    vg_text_track(x, y, s, color, scale, 0);
+}
+
+void vg_text_track(int x, int y, const char* s, uint16_t color, int scale,
+                   int extra) {
     if (!color || scale <= 0) return;
     const int gh = 7 * scale;
     const Sub* u = sub();
 
-    for (; *s; s++, x += 6 * scale) {
+    for (; *s; s++, x += 6 * scale + extra) {
         char ch = *s;
         if (ch >= 'a' && ch <= 'z') ch -= 32;
         if (ch < VG_FONT_FIRST || ch > VG_FONT_LAST || ch == ' ') continue;

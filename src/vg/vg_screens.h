@@ -40,8 +40,15 @@
 #define SEL_AP_Y1       (BEZEL_CONSOLE_APERTURE_Y1 - 1)
 
 #define SEL_WHEEL_X     SEL_AP_X0
-#define SEL_WHEEL_W     136
-#define SEL_PANEL_X     182
+// WIDER, AND THE PANEL PAID FOR IT. The names are tracked now and a tracked
+// BALLISTA is 117px against the 96 it used to be, so the window had to grow with
+// them or the gain would have been spent on the margins.
+//
+// 148 and a panel starting at 188 is the most the roster allows, and the limit is
+// not the wheel: BALLISTA's WPN row measures 243px and the panel's inside is 244.
+// One more pixel of wheel and that line closes its gap; six more and it clips.
+#define SEL_WHEEL_W     148
+#define SEL_PANEL_X     188
 #define SEL_PANEL_W     (SEL_AP_X1 - SEL_PANEL_X)
 #define SEL_PANEL_Y     SEL_AP_Y0
 #define SEL_PANEL_H     (SEL_AP_Y1 - SEL_AP_Y0)
@@ -49,10 +56,20 @@
 // (ENT_WHEEL_H) and it is the same number on purpose: two wheels that behave
 // identically should look identically sized. A full-height frame around three
 // visible rows reads as a list with gaps in it.
-#define SEL_WHEEL_H     168
+#define SEL_WHEEL_H     196
 #define SEL_WHEEL_Y     (SEL_PANEL_Y + (SEL_PANEL_H - SEL_WHEEL_H) / 2)
 #define SEL_WHEEL_MID   (SEL_WHEEL_Y + SEL_WHEEL_H / 2)   // the detent row
-#define SEL_WHEEL_PITCH 38      // px between neighbours on the wheel
+#define SEL_WHEEL_PITCH 44      // px between neighbours on the wheel
+
+// EXTRA SPACE BETWEEN THE LETTERS OF A SHIP NAME.
+//
+// A name is the one string on this screen that is read as a SHAPE rather than as
+// a sentence -- you are picking it out of a list of four, not reading it -- and
+// the curve was closing the gaps on one side of the arc enough to weld letters
+// together. 3px at the wheel's scale 2, 2 at the panel's scale 3, which is less
+// because a bigger glyph already carries a bigger bearing.
+#define SEL_NAME_TRACK  3
+#define SEL_TITLE_TRACK 2
 
 // HOW MANY NAMES THE WHEEL SHOWS AT ONCE, selection included.
 //
@@ -123,10 +140,14 @@
 // the wheel names and the bow on the panel border are the first things the eye
 // goes to, which is the wrong thing to notice on a screen you are reading.
 //
-// 1.0 is the cockpit's own bend, and that is the argument for it rather than a
-// coincidence -- it is the one curvature in the game already tuned for a panel
-// somebody stares at for a whole match.
-#define SEL_GLASS_WARP  1.0f
+// 1.0 is the cockpit's own bend, and borrowing it turned out to be the wrong
+// argument: a HUD is glanced at over a moving world, and this is a page of text
+// somebody reads. The same curve that is invisible in flight is legible here as
+// wobble, and the words pay for it.
+//
+// 0.5 leaves the borders visibly bowed -- a straight line is long enough to show
+// a gentle curve -- while the arc across one word is under a pixel.
+#define SEL_GLASS_WARP  0.5f
 
 #define SEL_CHYRON_RATE 46.0f
 

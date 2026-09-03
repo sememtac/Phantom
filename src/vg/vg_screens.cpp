@@ -679,9 +679,12 @@ void vg_draw_select(void) {
         // Readable at every step, just quieter. Faded to a hint would defeat the
         // point of showing them at all.
         const int      sc  = (a <= 1) ? 2 : 1;
+        const int      tr  = (sc == 2) ? SEL_NAME_TRACK : 1;
         const uint16_t col = (a == 1) ? INK : INK_FAINT;
-        vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, sc)) / 2,
-                detent + k * SEL_WHEEL_PITCH - (sc * 7) / 2, nm, col, sc);
+        vg_text_track(SEL_WHEEL_X
+                          + (SEL_WHEEL_W - vg_text_track_width(nm, sc, tr)) / 2,
+                      detent + k * SEL_WHEEL_PITCH - (sc * 7) / 2,
+                      nm, col, sc, tr);
     }
 
     // The detent: two rules bracketing the selected row, plus the spine down the
@@ -693,8 +696,10 @@ void vg_draw_select(void) {
 
     {
         const char* nm = vg_spec((ShipClass)cur)->name;
-        vg_text(SEL_WHEEL_X + (SEL_WHEEL_W - vg_text_width(nm, 2)) / 2,
-                detent - 7, nm, INK_MAX, 2);
+        vg_text_track(SEL_WHEEL_X
+                          + (SEL_WHEEL_W
+                             - vg_text_track_width(nm, 2, SEL_NAME_TRACK)) / 2,
+                      detent - 7, nm, INK_MAX, 2, SEL_NAME_TRACK);
     }
 
     // --- the panel ---------------------------------------------------------
@@ -706,8 +711,10 @@ void vg_draw_select(void) {
     // two labelled rows beneath are specification. Interleaved, the unlabelled
     // tagline sat between two labelled rows and read as a field whose caption had
     // gone missing.
-    vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->name, 3)) / 2,
-            SEL_PANEL_Y + 8, sp->name, INK_MAX, 3);
+    vg_text_track(SEL_PANEL_X
+                      + (SEL_PANEL_W
+                         - vg_text_track_width(sp->name, 3, SEL_TITLE_TRACK)) / 2,
+                  SEL_PANEL_Y + 8, sp->name, INK_MAX, 3, SEL_TITLE_TRACK);
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
             SEL_PANEL_Y + 32, sp->tagline, INK_FAINT, 1);
 

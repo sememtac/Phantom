@@ -184,6 +184,12 @@ void vg_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint16_t
 // ASCII 32..90 (space through 'Z'); lowercase folds to uppercase.
 void vg_text(int x, int y, const char* s, uint16_t color, int scale);
 int  vg_text_width(const char* s, int scale);
+
+// The same, with extra pixels between letters. See the note in vg_raster.cpp:
+// a warped baseline makes the font's own one-pixel bearing read as uneven.
+void vg_text_track(int x, int y, const char* s, uint16_t color, int scale,
+                   int extra);
+int  vg_text_track_width(const char* s, int scale, int extra);
 // Rasterise every band and push to the panel.
 void vg_rast_flush(void);
 // Submit splits in two halves that can be built concurrently -- see the note on
