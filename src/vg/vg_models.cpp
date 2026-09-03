@@ -257,10 +257,12 @@ static const float PLAN_AEGIS[] = {
 static const float DTL_AEGIS[] = {
     -0.520f,  0.000f, -0.580f,  0.150f, -0.580f,  0.150f, -0.730f,  0.200f,
     -0.730f,  0.200f, -0.880f,  0.150f, -0.880f,  0.150f, -0.930f,  0.000f,
-     0.520f,  0.000f,  0.450f,  0.078f,  0.450f,  0.078f,  0.280f,  0.072f,
-     0.280f,  0.072f,  0.220f,  0.000f, -0.020f,  0.235f, -0.280f,  0.235f,
-    -0.280f,  0.235f, -0.280f,  0.300f, -0.280f,  0.300f, -0.020f,  0.300f,
-    -0.020f,  0.300f, -0.020f,  0.235f,
+     0.520f,  0.000f,  0.450f,  0.080f,  0.450f,  0.080f,  0.280f,  0.074f,
+     0.280f,  0.074f,  0.220f,  0.000f,
+};
+
+static const float BAY_AEGIS[] = {
+    -0.020f,  0.235f, -0.280f,  0.300f,
 };
 
 // LANCE -- the widest, and the four bays are the whole read on it -- two a side,
@@ -273,16 +275,16 @@ static const float PLAN_LANCE[] = {
 };
 
 static const float DTL_LANCE[] = {
-    -0.300f,  0.170f, -0.560f,  0.170f, -0.560f,  0.170f, -0.560f,  0.270f,
-    -0.560f,  0.270f, -0.300f,  0.270f, -0.300f,  0.270f, -0.300f,  0.170f,
-    -0.300f,  0.340f, -0.560f,  0.340f, -0.560f,  0.340f, -0.560f,  0.440f,
-    -0.560f,  0.440f, -0.300f,  0.440f, -0.300f,  0.440f, -0.300f,  0.340f,
-     0.480f,  0.000f,  0.420f,  0.040f,  0.420f,  0.040f,  0.080f,  0.040f,
-     0.080f,  0.040f,  0.020f,  0.000f,
+     0.460f,  0.000f,  0.390f,  0.068f,  0.390f,  0.068f,  0.170f,  0.064f,
+     0.170f,  0.064f,  0.110f,  0.000f,
 };
 
-// CHARIOT -- a dart, and mostly frame. The battery panel is twelve cells; twelve
-// circles would be twelve smudges at the size this is drawn.
+static const float BAY_LANCE[] = {
+    -0.330f,  0.175f, -0.520f,  0.265f, -0.330f,  0.340f, -0.520f,  0.430f,
+};
+
+// CHARIOT -- a dart, and mostly frame. Its bay is the panel FILLED, with the lattice
+// cut back out of it -- twelve lit cells rather than a scratched-on grid.
 static const float PLAN_CHARIOT[] = {
      1.000f,  0.000f,  0.574f,  0.062f,  0.352f,  0.120f,
      0.343f,  0.151f,  0.130f,  0.184f, -0.362f,  0.379f,
@@ -294,42 +296,61 @@ static const float PLAN_CHARIOT[] = {
 static const float DTL_CHARIOT[] = {
     -0.420f,  0.030f, -0.760f,  0.030f, -0.760f,  0.030f, -0.760f,  0.260f,
     -0.760f,  0.260f, -0.420f,  0.260f, -0.420f,  0.260f, -0.420f,  0.030f,
+     0.330f,  0.000f,  0.260f,  0.100f,  0.260f,  0.100f,  0.110f,  0.094f,
+     0.110f,  0.094f,  0.050f,  0.000f,
+};
+
+static const float BAY_CHARIOT[] = {
+    -0.420f,  0.030f, -0.760f,  0.260f,
+};
+
+static const float CUT_CHARIOT[] = {
     -0.760f,  0.160f, -0.630f,  0.030f, -0.750f,  0.260f, -0.520f,  0.030f,
     -0.640f,  0.260f, -0.420f,  0.040f, -0.530f,  0.260f, -0.420f,  0.150f,
     -0.760f,  0.160f, -0.660f,  0.260f, -0.760f,  0.050f, -0.550f,  0.260f,
     -0.670f,  0.030f, -0.440f,  0.260f, -0.560f,  0.030f, -0.420f,  0.170f,
-     0.340f,  0.000f,  0.260f,  0.108f,  0.260f,  0.108f,  0.100f,  0.098f,
-     0.100f,  0.098f,  0.040f,  0.000f,
 };
 
-// BALLISTA -- back-weighted and built around the barrel, which runs most of the
-// length. The narrowest span and by far the longest hull.
+// BALLISTA -- back-weighted, built around the barrel, and forward-swept at BOTH ends:
+// one reverse wing reads as an oddity, two say the airframe is that way.
 static const float PLAN_BALLISTA[] = {
-     1.000f,  0.000f,  0.898f,  0.039f,  0.702f,  0.033f,
-     0.637f,  0.057f,  0.355f,  0.075f, -0.132f,  0.215f,
-    -0.198f,  0.242f, -0.234f,  0.303f, -0.333f,  0.218f,
-    -0.673f,  0.148f, -0.752f,  0.123f, -0.470f,  0.575f,
-    -0.665f,  0.550f, -0.955f,  0.090f, -1.000f,  0.053f,
+     0.955f,  0.030f,  0.898f,  0.039f,  0.702f,  0.033f,
+     0.637f,  0.057f,  0.560f,  0.062f,  0.645f,  0.245f,
+     0.470f,  0.238f,  0.395f,  0.076f,  0.355f,  0.075f,
+    -0.132f,  0.215f, -0.198f,  0.242f, -0.234f,  0.303f,
+    -0.333f,  0.218f, -0.673f,  0.148f, -0.752f,  0.123f,
+    -0.470f,  0.575f, -0.665f,  0.550f, -0.955f,  0.090f,
+    -1.000f,  0.053f,
 };
 
 static const float DTL_BALLISTA[] = {
      0.960f,  0.000f,  0.960f,  0.030f,  0.960f,  0.030f,  0.300f,  0.050f,
      0.300f,  0.050f,  0.300f,  0.000f,  0.620f,  0.030f,  0.620f,  0.000f,
-     0.120f,  0.000f,  0.020f,  0.092f,  0.020f,  0.092f, -0.140f,  0.086f,
-    -0.140f,  0.086f, -0.200f,  0.000f,  0.280f,  0.000f,  0.160f,  0.094f,
-    -0.160f,  0.150f, -0.340f,  0.150f, -0.340f,  0.150f, -0.340f,  0.250f,
-    -0.340f,  0.250f, -0.160f,  0.250f, -0.160f,  0.250f, -0.160f,  0.150f,
+     0.100f,  0.000f,  0.020f,  0.106f,  0.020f,  0.106f, -0.120f,  0.100f,
+    -0.120f,  0.100f, -0.180f,  0.000f,  0.260f,  0.000f,  0.150f,  0.100f,
+};
+
+static const float BAY_BALLISTA[] = {
+    -0.220f,  0.150f, -0.400f,  0.250f, -0.220f,  0.000f, -0.400f,  0.055f,
 };
 
 const VgShipPlan vg_ship_plan[SHIP_CLASSES] = {
-    { PLAN_AEGIS,   (uint8_t)(sizeof(PLAN_AEGIS) / (2 * sizeof(float))),
-      DTL_AEGIS,    (uint8_t)(sizeof(DTL_AEGIS)  / (4 * sizeof(float))) },
-    { PLAN_LANCE,   (uint8_t)(sizeof(PLAN_LANCE) / (2 * sizeof(float))),
-      DTL_LANCE,    (uint8_t)(sizeof(DTL_LANCE)  / (4 * sizeof(float))) },
-    { PLAN_CHARIOT, (uint8_t)(sizeof(PLAN_CHARIOT) / (2 * sizeof(float))),
-      DTL_CHARIOT,  (uint8_t)(sizeof(DTL_CHARIOT)  / (4 * sizeof(float))) },
+    { PLAN_AEGIS,    (uint8_t)(sizeof(PLAN_AEGIS) / (2 * sizeof(float))),
+      DTL_AEGIS,     (uint8_t)(sizeof(DTL_AEGIS)  / (4 * sizeof(float))),
+      BAY_AEGIS,     (uint8_t)(sizeof(BAY_AEGIS)  / (4 * sizeof(float))),
+      nullptr,        0 },
+    { PLAN_LANCE,    (uint8_t)(sizeof(PLAN_LANCE) / (2 * sizeof(float))),
+      DTL_LANCE,     (uint8_t)(sizeof(DTL_LANCE)  / (4 * sizeof(float))),
+      BAY_LANCE,     (uint8_t)(sizeof(BAY_LANCE)  / (4 * sizeof(float))),
+      nullptr,        0 },
+    { PLAN_CHARIOT,  (uint8_t)(sizeof(PLAN_CHARIOT) / (2 * sizeof(float))),
+      DTL_CHARIOT,   (uint8_t)(sizeof(DTL_CHARIOT)  / (4 * sizeof(float))),
+      BAY_CHARIOT,   (uint8_t)(sizeof(BAY_CHARIOT)  / (4 * sizeof(float))),
+      CUT_CHARIOT,    (uint8_t)(sizeof(CUT_CHARIOT) / (4 * sizeof(float))) },
     { PLAN_BALLISTA, (uint8_t)(sizeof(PLAN_BALLISTA) / (2 * sizeof(float))),
-      DTL_BALLISTA, (uint8_t)(sizeof(DTL_BALLISTA)  / (4 * sizeof(float))) },
+      DTL_BALLISTA,  (uint8_t)(sizeof(DTL_BALLISTA)  / (4 * sizeof(float))),
+      BAY_BALLISTA,  (uint8_t)(sizeof(BAY_BALLISTA)  / (4 * sizeof(float))),
+      nullptr,        0 },
 };
 
 static_assert(sizeof(vg_ship_plan) / sizeof(vg_ship_plan[0]) == SHIP_CLASSES,

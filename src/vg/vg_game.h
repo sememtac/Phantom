@@ -698,6 +698,18 @@ struct VgShipPlan {
     // the pair.
     const float* dtl;
     uint8_t      nd;    // segments, not floats
+    // THE WEAPON BAYS, FILLED, as rects (x0,y0,x1,y1). Solid because the COUNT is
+    // the mechanic: two rounds against twelve is the whole difference between
+    // AEGIS and CHARIOT, and an outline says "a bay" where a fill says "a round
+    // that is loaded". A rect starting at y = 0 mirrors into ONE bay straddling
+    // the centreline, which is how BALLISTA carries an odd three.
+    const float* bay;
+    uint8_t      nb;
+    // ...and segments knocked back OUT of that fill, in the well colour. CHARIOT
+    // only: its panel goes solid and the lattice is cut out of it, so twelve cells
+    // read as twelve lit diamonds rather than as a grid scratched on top.
+    const float* cut;
+    uint8_t      nc;
 };
 extern const VgShipPlan vg_ship_plan[SHIP_CLASSES];
 

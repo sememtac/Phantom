@@ -214,6 +214,35 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
     // missile bays, which are the one piece of detail that says what a class DOES.
     // The closed tail already ties the halves together.
 
+    // THE BAYS, SOLID, and they are the one piece of detail carrying a NUMBER --
+    // count them and you know the magazine. Drawn before the lines so the canopy
+    // and the rest sit over the top.
+    for (int i = 0; i < pl.nb; i++) {
+        const float bx0 = pl.bay[i * 4],     by0 = pl.bay[i * 4 + 1];
+        const float bx1 = pl.bay[i * 4 + 2], by1 = pl.bay[i * 4 + 3];
+        const int   xa  = (int)(cx + ((bx0 < bx1) ? bx0 : bx1) * sx);
+        const int   w   = (int)(((bx0 < bx1) ? (bx1 - bx0) : (bx0 - bx1)) * sx);
+        const float lo  = ((by0 < by1) ? by0 : by1) * sy;
+        const float hi  = ((by0 < by1) ? by1 : by0) * sy;
+        const int   h   = (int)(hi - lo);
+        if (w < 1 || h < 1) continue;
+        vg_fill_rect(xa, (int)(cy - hi), w, h, INK_BRIGHT);
+        // A bay authored from the centreline mirrors onto itself; drawing it twice
+        // would be harmless but pointless, and the test is the same one the
+        // detail lines use.
+        if (lo > 0.5f) vg_fill_rect(xa, (int)(cy + lo), w, h, INK_BRIGHT);
+    }
+
+    // ...and what is knocked back out of them.
+    for (int i = 0; i < pl.nc; i++) {
+        const float ax = cx + pl.cut[i * 4]     * sx;
+        const float ay =      pl.cut[i * 4 + 1] * sy;
+        const float bx = cx + pl.cut[i * 4 + 2] * sx;
+        const float by =      pl.cut[i * 4 + 3] * sy;
+        vg_line(ax, cy - ay, bx, cy - by, INK_WELL);
+        if (ay > 0.5f || by > 0.5f) vg_line(ax, cy + ay, bx, cy + by, INK_WELL);
+    }
+
     // INSIDE. Dimmer than the outline on purpose: the silhouette is what
     // identifies the ship and the detail is what makes it look built, so the
     // hierarchy has to say which is which -- size and intensity, as ever.
