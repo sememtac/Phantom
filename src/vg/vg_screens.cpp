@@ -116,6 +116,45 @@ static void chart_ring(float t, uint16_t col, int w) {
     }
 }
 
+// WHAT THE SYSTEM DOES, as a specification rather than a pitch.
+//
+// It read "YOU FLY EVERY ROUND ALL THE WAY IN", which is how you would sell the
+// class to somebody. A player standing in front of four ships wants the numbers:
+// how many, how often, how far.
+//
+// DERIVED FROM THE SPEC, NOT WRITTEN OUT. Every figure here moved during tuning --
+// the reload went 4.0 to 4.8 and the stack time 1.2 to 0.95 in a single sitting --
+// and a hard-coded "0.95S" would have gone quietly false the next time either
+// did. This is the same rule the chart follows and the same failure the old stat
+// bars died of.
+//
+// Integer maths rather than %f. Float formatting works on this part but it is not
+// cheap, and it runs every frame; these numbers are small and exact enough that
+// hundredths of a second say everything worth saying.
+static void wpn_how(const ShipSpec* sp, char* out, int n) {
+    if (!sp) { out[0] = 0; return; }
+    const int rel10 = (int)(sp->reload * 10.0f + 0.5f);          // tenths
+    const int gap100 = (int)(sp->fire_gap * 100.0f + 0.5f);      // hundredths
+    const int stk100 = (int)(sp->msl_stack_time * 100.0f + 0.5f);
+    switch (sp->wpn) {
+    case WPN_ARAAM:
+        snprintf(out, n, "ACTIVE SEEKER. REARM %d.%dS PER RD", rel10 / 10, rel10 % 10);
+        break;
+    case WPN_RFAAM:
+        snprintf(out, n, "%d RD AT %d.%02dS. %dS RELOAD", sp->magazine,
+                 gap100 / 100, gap100 % 100, (int)(sp->reload + 0.5f));
+        break;
+    case WPN_SLAAM:
+        snprintf(out, n, "SALVO %d. BANKS 1 PER %d.%02dS", sp->magazine,
+                 stk100 / 100, stk100 % 100);
+        break;
+    case WPN_SAAAM:
+        snprintf(out, n, "SEMI-ACTIVE TO IMPACT. REACH %d", (int)(sp->lock_range + 0.5f));
+        break;
+    default: out[0] = 0; break;
+    }
+}
+
 static void draw_chart(const float ax[5]) {
     chart_tables();
 
@@ -447,7 +486,8 @@ void vg_draw_select(void) {
     {
         // ...and HOW it shoots, under what it is. The tagline answers one question
         // and the screen was only ever asking that one.
-        const char* how = vg_wpn_how(sp->wpn);
+        char how[48];
+        wpn_how(sp, how, sizeof(how));
         vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(how, 1)) / 2,
                 SEL_PANEL_Y + 60, how, INK, 1);
     }
