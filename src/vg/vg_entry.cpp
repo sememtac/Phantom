@@ -181,11 +181,34 @@ void vg_draw_entry(void) {
     vg_fill_rect(ENT_TRAIL_X + 110, ENT_TRAIL_Y + 18, 150, 10, hue);
 
     if (s_hue_open) {
-        // The ramp itself, one column per pixel. 400 fills at ~1px wide is
-        // nothing next to a frame of world geometry, and it beats any number of
+        // TWO HUNDRED THIN FILLS IS A RAMP; EIGHT HUNDRED WARPED QUADS IS A BUG.
+        //
+        // A warped fill leaves as a strip of quads, two triangles each, and a
+        // 2px column thirty tall is still long enough to be subdivided -- so the
+        // ramp alone asked for roughly 800 primitives against an instrument slice
+        // with about 250 left in it. It overflowed, and an overflow drops
+        // whatever was submitted LAST: the chassis went, the key went with it,
+        // and the handle -- drawn after the ramp -- never appeared at all. The
+        // panel did not disappear. It ran out of room.
+        //
+        // A RAMP IS ONE OBJECT, so it bends as one, exactly as a word does. The
+        // curve is sampled once at the strip's centre and the whole control is
+        // translated there rigidly. That is also the more honest reading of what
+        // this is: a flat part set into the console, not something painted on the
+        // tube. vg_hud_warp_at answers "where did the panel put this spot" without
+        // opening the bracket, which is what the rear-view patch uses it for.
+        float wx, wy;
+        const float cx = (float)ENT_HUE_X + (float)ENT_HUE_W * 0.5f;
+        const float cy = (float)ENT_HUE_Y + (float)ENT_HUE_H * 0.5f;
+        vg_hud_warp_at(SEL_GLASS_WARP, cx, cy, &wx, &wy);
+        const int dx = (int)lrintf(wx - cx), dy = (int)lrintf(wy - cy);
+
+        vg_hud_warp(false, 1.0f);
+
+        // The ramp itself, one column per two pixels. It beats any number of
         // discrete swatches for showing that hue is continuous.
         for (int i = 0; i < ENT_HUE_W; i += 2)
-            vg_fill_rect(ENT_HUE_X + i, ENT_HUE_Y, 2, ENT_HUE_H,
+            vg_fill_rect(ENT_HUE_X + i + dx, ENT_HUE_Y + dy, 2, ENT_HUE_H,
                          vg_hue_col((float)i / (float)ENT_HUE_W * ENT_HUE_SPAN));
 
         // A wide handle, not a hairline: it has to be findable under a thumb.
@@ -194,9 +217,15 @@ void vg_draw_entry(void) {
         int mx = ENT_HUE_X + (int)(vg.trail_hue / ENT_HUE_SPAN * (float)ENT_HUE_W);
         if (mx < ENT_HUE_X + 7)               mx = ENT_HUE_X + 7;
         if (mx > ENT_HUE_X + ENT_HUE_W - 7)   mx = ENT_HUE_X + ENT_HUE_W - 7;
-        vg_fill_rect(mx - 7, ENT_HUE_Y - 9, 15, ENT_HUE_H + 18, COL_BLACK);
-        vg_fill_rect(mx - 5, ENT_HUE_Y - 7, 11, ENT_HUE_H + 14, INK_MAX);
-        vg_fill_rect(mx - 2, ENT_HUE_Y - 4,  5, ENT_HUE_H + 8,  hue);
+        mx += dx;
+        // INK_ONFILL and not COL_BLACK: a fill whose colour is zero is dropped,
+        // so the dark surround the handle needs was never being drawn.
+        vg_fill_rect(mx - 7, ENT_HUE_Y - 9 + dy, 15, ENT_HUE_H + 18, INK_ONFILL);
+        vg_fill_rect(mx - 5, ENT_HUE_Y - 7 + dy, 11, ENT_HUE_H + 14, INK_MAX);
+        vg_fill_rect(mx - 2, ENT_HUE_Y - 4 + dy,  5, ENT_HUE_H + 8,  hue);
+
+        vg_hud_warp(true, SEL_GLASS_WARP);
+        vg_hud_warp_seg(SEL_GLASS_SEG);
     }
 
     console_close("NEXT");
