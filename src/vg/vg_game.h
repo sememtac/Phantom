@@ -686,6 +686,15 @@ extern const Vec3 vg_ship_verts[SHIP_VERTS];
 extern uint8_t    vg_ship_faces[SHIP_FACES][3];      // wound outward at init
 extern const uint8_t vg_ship_fin[SHIP_FIN_EDGES][2];
 
+// A CLASS'S PLAN OUTLINE, for the ship-select screen. Half the shape, nose to
+// tail, y >= 0, as (x, y) pairs; the other side is mirrored at draw time. See the
+// tables in vg_models.cpp for what each silhouette is meant to say.
+struct VgShipPlan {
+    const float* pts;   // 2 floats per point
+    uint8_t      n;     // points, not floats
+};
+extern const VgShipPlan vg_ship_plan[SHIP_CLASSES];
+
 // Build the render basis for a ship: columns are right/up/forward, with the
 // visual roll folded in.
 Mat3 vg_ship_basis(const Ship* s);

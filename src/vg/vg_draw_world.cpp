@@ -342,10 +342,13 @@ static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
 
 // THE HULL, AND ONLY THE HULL.
 //
-// Lifted out of draw_enemy so the ship-select screen can turn a model without
-// inheriting a fighter's exhaust, its depth fade, its contrail or its
-// distance-based degradation to a single point -- none of which a menu wants and
-// all of which read off a live Ship the menu does not have.
+// Lifted out of draw_enemy so a hull can be drawn without inheriting a fighter's
+// exhaust, its depth fade, its contrail or its distance-based degradation to a
+// single point -- all of which read off a live Ship.
+//
+// The menu that prompted the split no longer uses it: a flat plan view reads far
+// better at the size a menu has, and it is per class where this is not. See
+// vg_ship_plan.
 //
 // Takes an orientation rather than a Ship, because the two callers get theirs
 // from different places: a fighter's comes from its fwd/up/roll basis, and the
@@ -435,10 +438,9 @@ static void draw_enemy(const VgCam& cam, const Ship* s, bool hero = false) {
         return;
     }
 
-    // The hull is shared with the select screen -- see vg_draw_hull. What stays
-    // here is everything that belongs to a ship that is FLYING: the exhaust below,
-    // and the fade and colour worked out above. The basis is held rather than
-    // asked for twice, because the exhaust hangs off the same one.
+    // What stays here is everything that belongs to a ship that is FLYING: the
+    // exhaust below, and the fade and colour worked out above. The basis is held
+    // rather than asked for twice, because the exhaust hangs off the same one.
     const Mat3 B = vg_ship_basis(s);
     vg_draw_hull(cam, B, s->pos, s->scale, col);
 

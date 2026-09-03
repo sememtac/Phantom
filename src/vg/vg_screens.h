@@ -44,15 +44,18 @@
 // detent row on purpose: the thing you are choosing and the thing it says line up
 // across the screen.
 #define SEL_CHART_CX    (SEL_PANEL_X + SEL_PANEL_W / 2)
-#define SEL_CHART_CY    SEL_WHEEL_MID
-#define SEL_CHART_R     60
+// Sat on the wheel's detent row until the plan view needed the height. The
+// alignment was a nicety; a ship you can actually see is not.
+#define SEL_CHART_CY    228
+#define SEL_CHART_R     54
 #define SEL_CHART_LABEL 13      // px from a vertex out to its label
 
-// Where the hull turns. A placeholder until there is per-class geometry: all
-// four classes share one model today (vg_models.cpp), so this says "a ship" and
-// not "which ship" until four shapes exist.
-#define SEL_MODEL_Y     330
-#define SEL_MODEL_H     64
+// THE PLAN VIEW, laid on its side. A top-down silhouette is what a player
+// recognises a fighter by, it needs no projection and no per-class 3-D geometry,
+// and it suits a slot that is wide and short -- which a spinning object does not.
+// See vg_ship_plan.
+#define SEL_MODEL_Y     312
+#define SEL_MODEL_H     82
 
 #define SEL_GO_X        140
 #define SEL_GO_Y        410

@@ -144,9 +144,13 @@ void vg_draw_lock_box(const VgCam& cam);
 void vg_draw_steer_indicator(const VgInput* in);
 // One ship hull, hidden-line, at an arbitrary place and orientation.
 //
-// Shared by the world and the ship-select screen. It draws the HULL and nothing
-// else -- no exhaust, no fade, no contrail -- because the menu has no Ship to
-// read those from and does not want them.
+// Draws the HULL and nothing else: no exhaust, no fade, no contrail. It was split
+// out of draw_enemy for a menu that has since gone a different way -- the ship
+// select shows a flat plan view now, which reads better small and is per class.
+//
+// It stays split because the separation is right on its own terms, and because
+// per-class 3-D geometry is still coming: when it lands, this is the function
+// that takes the vertex table as an argument. One caller today.
 void vg_draw_hull(const VgCam& cam, const Mat3& orient, Vec3 pos, float scale,
                   uint16_t col);
 

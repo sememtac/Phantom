@@ -206,3 +206,103 @@ void vg_build_starfield(void) {
         vg.star_b[i] = (uint8_t)((uint32_t)(vg_frand01() * 3.0f) % 3u);
     }
 }
+
+// ===========================================================================
+// PLAN OUTLINES, for the ship-select screen
+//
+// The four classes share one 3-D hull and will for a while yet. These are the
+// other half of that problem: a flat TOP-DOWN silhouette per class, which is
+// what a player actually recognises a fighter by, and which costs no projection,
+// no culling and no per-class 3-D geometry to author.
+//
+// A turning 3-D model was tried first and was the wrong instrument. It spent most
+// of its time edge-on, it was the same shape for all four, and a menu slot is
+// wide and short -- which suits a plan view laid on its side and suits a
+// spinning object badly.
+//
+// HALF THE SHAPE, MIRRORED. Each table is one side only, nose to tail, y >= 0.
+// That halves the data, and it makes an accidentally asymmetric ship impossible
+// rather than merely unlikely.
+//
+//   x   +1 at the nose, -1 at the tail
+//   y   half-span, and the biggest across the roster is LANCE at 0.72
+//
+// The proportion is deliberate: 2.0 long against 1.44 across at the widest is
+// about 1.4:1, which is what the drawings came back as. Scaling is uniform at
+// draw time, so a class that is genuinely narrow LOOKS narrow next to the others
+// rather than being stretched to fill the same box.
+//
+// WHAT EACH SILHOUETTE HAS TO SAY, since that is the whole job:
+//   AEGIS     a balanced delta, wing root early, nothing exaggerated
+//   LANCE     the widest, a double-delta kink, blocky square centre section
+//   CHARIOT   a narrow dart, acute sweep, outrigger rails at the tail
+//   BALLISTA  back-weighted: a long nose, wings set far aft, big stabilisers
+// ===========================================================================
+
+// AEGIS -- the reference. A clean delta: wing root early, wingtips at two thirds
+// aft, a straight trailing edge back to the root and one modest tailplane.
+static const float PLAN_AEGIS[] = {
+     1.00f, 0.000f,
+     0.74f, 0.055f,   0.26f, 0.120f,
+    -0.30f, 0.640f,  -0.52f, 0.600f,     // wingtip, leading then trailing corner
+    -0.60f, 0.170f,                       // trailing edge in to the wing root
+    -0.78f, 0.150f,  -0.96f, 0.105f,     // tailplane
+    -0.88f, 0.048f,  -1.00f, 0.042f,
+    -1.00f, 0.000f,
+};
+
+// LANCE -- the widest, and the only leading edge with a KINK in it. The centre
+// section is deliberately blocky: four hardpoints firing at once need span to
+// leave from, which is why this hull is broad rather than the needle the fiction
+// first suggested.
+static const float PLAN_LANCE[] = {
+     1.00f, 0.000f,
+     0.72f, 0.070f,
+     0.30f, 0.150f,   0.10f, 0.260f,     // the kink -- a double delta
+    -0.26f, 0.720f,  -0.50f, 0.680f,
+    -0.58f, 0.260f,                       // a wide, square-shouldered root
+    -0.76f, 0.235f,  -0.98f, 0.175f,
+    -0.88f, 0.080f,  -1.00f, 0.070f,
+    -1.00f, 0.000f,
+};
+
+// CHARIOT -- a dart. The narrowest span in the roster and the most acute sweep.
+//
+// It had outrigger rails standing well proud of the tail, for the twelve rounds
+// it carries. They had to go: an outline that swings wide and comes back reads as
+// a CLAW at this size, not as a rail, and the shape stopped looking like an
+// aircraft. Span and sweep carry this class instead.
+static const float PLAN_CHARIOT[] = {
+     1.00f, 0.000f,
+     0.76f, 0.040f,   0.34f, 0.085f,
+    -0.36f, 0.480f,  -0.56f, 0.440f,     // narrow tip, very swept
+    -0.66f, 0.120f,                       // trailing edge in, hard
+    -0.82f, 0.145f,  -0.98f, 0.100f,     // a small tailplane, barely proud
+    -0.92f, 0.040f,  -1.00f, 0.035f,
+    -1.00f, 0.000f,
+};
+
+// BALLISTA -- back-weighted. The wing root sits far aft, which leaves a long nose
+// ahead of it: a hull built around its optics and given just enough airframe to
+// carry them. The biggest tailplanes in the roster and the least wing forward.
+static const float PLAN_BALLISTA[] = {
+     1.00f, 0.000f,
+     0.62f, 0.045f,   0.04f, 0.085f,     // a long, slender nose
+    -0.34f, 0.560f,  -0.54f, 0.520f,
+    -0.62f, 0.170f,
+    -0.76f, 0.250f,  -0.98f, 0.205f,     // the biggest stabiliser in the roster
+    -0.90f, 0.070f,  -1.00f, 0.060f,
+    -1.00f, 0.000f,
+};
+
+// Indexed by ShipClass, and the order is checked at build time so a row cannot
+// drift away from the class it draws.
+const VgShipPlan vg_ship_plan[SHIP_CLASSES] = {
+    { PLAN_AEGIS,    (uint8_t)(sizeof(PLAN_AEGIS)    / (2 * sizeof(float))) },
+    { PLAN_LANCE,    (uint8_t)(sizeof(PLAN_LANCE)    / (2 * sizeof(float))) },
+    { PLAN_CHARIOT,  (uint8_t)(sizeof(PLAN_CHARIOT)  / (2 * sizeof(float))) },
+    { PLAN_BALLISTA, (uint8_t)(sizeof(PLAN_BALLISTA) / (2 * sizeof(float))) },
+};
+
+static_assert(sizeof(vg_ship_plan) / sizeof(vg_ship_plan[0]) == SHIP_CLASSES,
+              "one plan outline per class, in ShipClass order");

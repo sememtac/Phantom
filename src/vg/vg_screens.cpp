@@ -156,45 +156,48 @@ static void draw_chart(const ShipSpec* sp) {
     }
 }
 
-// The hull, turning. A PLACEHOLDER, and saying so is the point: all four classes
-// share one model today, so this says "a ship" rather than "which ship". It is
-// here so the layout is real and testable, and so there is a slot to drop four
-// shapes into once they are drawn.
-static void draw_model_slot(void) {
-    // FROM state_t, NOT an integrated dt. The renderer has no dt to give, and a
-    // static accumulator here would tick at the frame rate rather than with the
-    // clock -- so the model would spin faster on the desktop than on the board,
-    // and a replay would not reproduce. Three incommensurate rates near the menu
-    // world's own drift, so it reads as adrift rather than motorised.
-    // A TURNTABLE, not a tumble. Rotating on all three axes at once spends most
-    // of its time edge-on, and a hull seen edge-on is a sliver -- it read as a
-    // glitch rather than as a ship. A fixed pitch that tilts the planform toward
-    // the viewer, plus yaw alone, keeps the shape legible the whole way round,
-    // which is the only reason the slot is worth its pixels.
-    const float t = vg.state_t;
-    const float spin[3] = { 0.55f, 0.45f * t, 0.0f };
+// THE CLASS, FROM ABOVE, laid on its side.
+//
+// A top-down silhouette is how a pilot actually tells one airframe from another,
+// and it is the one view that survives being small: no projection, no culling, no
+// depth. It replaced a turning 3-D model, which was the wrong instrument twice
+// over -- it spent most of its time edge-on, and it was the SAME shape for all
+// four classes, so it said "a ship" where this says which one.
+//
+// Nose to the RIGHT, because the slot is wide and short and a plan view is long
+// and narrow. Scaled UNIFORMLY off the widest span in the roster, so a class that
+// is genuinely narrow reads as narrow instead of being stretched to fill the box.
+static void draw_plan_view(const ShipSpec* sp, int cls) {
+    const VgShipPlan& pl = vg_ship_plan[(cls < SHIP_CLASSES) ? cls : 0];
+    if (!pl.pts || pl.n < 2) return;
+    (void)sp;
 
-    const int cx = SEL_PANEL_X + SEL_PANEL_W / 2;
-    const int cy = SEL_MODEL_Y + SEL_MODEL_H / 2;
+    // One scale for every class, from the roster's widest half-span. Fitting each
+    // ship to the slot individually would make them all the same size, which is
+    // the one thing the silhouette must not do.
+    const float MAX_HALF_SPAN = 0.72f;              // LANCE, and the table says so
+    const float sy = ((float)SEL_MODEL_H * 0.46f) / MAX_HALF_SPAN;
+    const float sx = sy;                            // uniform: no stretching
+    const float cx = (float)(SEL_PANEL_X + SEL_PANEL_W / 2);
+    const float cy = (float)(SEL_MODEL_Y + SEL_MODEL_H / 2);
 
-    // A synthetic camera and a hand-placed hull. vg_project is pure, so putting
-    // the model on a chosen pixel is only that projection run backwards.
-    VgCam cam = vg_cam_make(0.0f, 0.0f, 0.0f, 1.0f);
-    const float z   = 200.0f;
-    const Vec3  pos = v3(((float)cx - SCR_CX) * z / FOCAL,
-                         (SCR_CY - (float)cy) * z / FOCAL, z);
-    const Mat3  R   = mat3_euler(spin[0], spin[1], spin[2]);
-
-    // AA OFF around it. This slice draws instruments with antialiasing on, and
-    // an AA span bills per pixel -- a hull of long spans here is the millisecond
-    // class of cost the world layer switches AA off to avoid.
-    vg_line_aa_mode(false);
-    // Sized to the SLOT, not to taste. At FOCAL 400 and z 200 a model unit is
-    // two pixels, and the hull reaches 2.4 units from its centre -- so the
-    // scale that fits a 64px slot is about seven. Larger and it walks out of
-    // the panel, which looked like a clipping bug rather than a big ship.
-    vg_draw_hull(cam, R, pos, 7.0f, INK_BRIGHT);
-    vg_line_aa_mode(true);
+    // Both sides at once, walking the half-outline and mirroring as we go, so the
+    // two strokes cannot drift apart.
+    float px = cx + pl.pts[0] * sx, py = cy - pl.pts[1] * sy;
+    float qx = px,                  qy = cy + pl.pts[1] * sy;
+    for (int i = 1; i < pl.n; i++) {
+        const float nx = cx + pl.pts[i * 2] * sx;
+        const float ny = cy - pl.pts[i * 2 + 1] * sy;
+        const float my = cy + pl.pts[i * 2 + 1] * sy;
+        vg_line_w(px, py, nx, ny, INK_BRIGHT, 2);
+        vg_line_w(qx, qy, nx, my, INK_BRIGHT, 2);
+        px = nx; py = ny;
+        qx = nx; qy = my;
+    }
+    // The spine, so the two halves read as one hull rather than two curves that
+    // happen to meet. Faint: it is structure, not outline.
+    vg_line(cx + pl.pts[0] * sx, cy,
+            cx + pl.pts[(pl.n - 1) * 2] * sx, cy, INK_TRACE);
 }
 
 void vg_draw_select(void) {
@@ -256,7 +259,7 @@ void vg_draw_select(void) {
     draw_chart(sp);
 
     vg_fill_rect(SEL_PANEL_X + 8, SEL_MODEL_Y - 8, SEL_PANEL_W - 16, 1, INK_TRACE);
-    draw_model_slot();
+    draw_plan_view(sp, cur);
 
     vg_button(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H,
               (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true, true);
