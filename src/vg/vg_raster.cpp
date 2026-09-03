@@ -67,6 +67,10 @@ struct Sub {
     // bracket, and a shared flag would have core 0 bending core 1's WORLD geometry.
     bool    warp;
     float   warp_k;
+    // How long a chord the warp is allowed to draw. A curve is approximated by
+    // straight pieces and this is how long each piece may be, so it decides
+    // whether a bent border reads as a curve or as a set of facets.
+    float   warp_seg;
     float   jx, jy;
     bool    overflow;
     int     tri;
@@ -117,8 +121,10 @@ static constexpr int SUB_AT[NSUB + 1] = {
     0,        // 0: starfield + hoops   -- 450: at most 294 grid segments, plus the stars
     450,      // 1: rails               -- 200: at most 160 segments
     650,      // 2: world objects, gate -- 800: the shard burst's 160 lives here
-    1450,     // 3: instruments         -- 550: HUD, overlays, and the mirror's ~234
-    2000,     // == MAX_PRIMS
+    1450,     // 3: instruments         -- 950: HUD, overlays, the mirror's ~234,
+              //                            and a warped menu, which is the worst
+              //                            of them at ~630 -- see MAX_PRIMS
+    2400,     // == MAX_PRIMS
 };
 static_assert(SUB_AT[NSUB] == MAX_PRIMS, "slice bounds must cover the list exactly");
 
@@ -370,8 +376,9 @@ void vg_rast_begin_frame(void) {
         u->aa    = 1;
         u->fills = true;
         u->cx0 = 0; u->cy0 = 0; u->cx1 = SCR_W - 1; u->cy1 = SCR_H - 1;
-        u->warp   = false;
-        u->warp_k = HUD_WARP_K;
+        u->warp     = false;
+        u->warp_k   = HUD_WARP_K;
+        u->warp_seg = HUD_WARP_SEG;
         u->jx = 0.0f; u->jy = 0.0f;
         u->overflow = false;
         u->tri      = 0;
@@ -443,6 +450,20 @@ void vg_hud_warp(bool on, float scale) {
     Sub* u = sub();
     u->warp   = on;
     u->warp_k = HUD_WARP_K * scale;
+}
+
+// HOW FINELY A BENT LINE IS CUT, in pixels of chord.
+//
+// The default is tuned for the cockpit, where the longest warped run is an
+// instrument a few tens of pixels across and four or five chords are more than
+// the eye can resolve. A menu panel is 266px on a side: at the same setting that
+// border is FIVE straight pieces, and the joints between them are plainly
+// visible -- it reads as a segmented box rather than a curved one.
+//
+// Left alone for flight. Cutting finer costs a primitive per chord, and the
+// cockpit does not need it.
+void vg_hud_warp_seg(float px) {
+    sub()->warp_seg = (px > 1.0f) ? px : 1.0f;
 }
 
 void vg_hud_jitter(float dx, float dy) { Sub* u = sub(); u->jx = dx; u->jy = dy; }
@@ -635,8 +656,8 @@ void vg_line(float x0, float y0, float x1, float y1, uint16_t color) {
     // line straight between them.
     float dx = x1 - x0, dy = y1 - y0;
     float len = sqrtf(dx * dx + dy * dy);
-    int   n   = (int)(len / HUD_WARP_SEG) + 1;
-    if (n > 10) n = 10;
+    int   n   = (int)(len / sub()->warp_seg) + 1;
+    if (n > 32) n = 32;
 
     float px = x0, py = y0;
     warp_pt(&px, &py);
@@ -719,8 +740,8 @@ void vg_fill_rect(int x, int y, int w, int h, uint16_t color) {
     // visible rather than just a displaced box.
     const bool horiz = (w >= h);
     const int  span  = horiz ? w : h;
-    int n = (int)((float)span / HUD_WARP_SEG) + 1;
-    if (n > 8) n = 8;
+    int n = (int)((float)span / sub()->warp_seg) + 1;
+    if (n > 16) n = 16;
 
     for (int i = 0; i < n; i++) {
         float a0 = (float)(horiz ? x : y) + (float)span * (float)i       / (float)n;
@@ -884,17 +905,39 @@ void vg_text_track(int x, int y, const char* s, uint16_t color, int scale,
     const int gh = 7 * scale;
     const Sub* u = sub();
 
+    // A STRING BENDS AS ONE PIECE, NOT LETTER BY LETTER.
+    //
+    // Warping each glyph's origin was distorting words rather than curving them.
+    // The bitmap stays upright while its origin moves, so along a bent baseline
+    // the gaps between letters stop being equal -- the arc closes them on one
+    // side and opens them on the other, and at a 5px glyph a pixel of that is a
+    // quarter of the letter. Tracking hid it; it did not fix it.
+    //
+    // So the curve is sampled ONCE, at the middle of the string, and the whole
+    // run is translated rigidly. The text still rides the bulge -- it sits where
+    // the tube would put it -- and the letters keep the spacing they were
+    // authored with. Same trade the rear-view patch makes: vg_hud_warp_at asks
+    // where the panel put a spot and moves the window there without bending what
+    // is inside it.
+    float wox = 0.0f, woy = 0.0f;
+    if (u->warp) {
+        const float w  = (float)vg_text_track_width(s, scale, extra);
+        const float cx = (float)x + w * 0.5f;
+        const float cy = (float)y + (float)gh * 0.5f;
+        float bx = cx, by = cy;
+        warp_pt(&bx, &by);
+        wox = bx - cx;
+        woy = by - cy;
+    }
+
     for (; *s; s++, x += 6 * scale + extra) {
         char ch = *s;
         if (ch >= 'a' && ch <= 'z') ch -= 32;
         if (ch < VG_FONT_FIRST || ch > VG_FONT_LAST || ch == ' ') continue;
         if (x + 5 * scale < 0 || x >= SCR_W) continue;
 
-        // Glyphs stay upright and unbent; only their origin follows the curve.
-        // Warping the bitmaps themselves would cost far more and read worse at
-        // this size than letting the baseline arc.
-        float gx = (float)x, gy = (float)y;
-        if (sub()->warp) warp_pt(&gx, &gy);
+        // Glyphs stay upright and unbent; the whole STRING follows the curve.
+        float gx = (float)x + wox, gy = (float)y + woy;
         rot_pt(&gx, &gy);
 
         const int px = (int)lrintf(gx), py = (int)lrintf(gy);

@@ -607,9 +607,14 @@ void vg_draw_select(void) {
                          BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
                          BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
         (void)bh;
+        // WHITE, BECAUSE THE MACHINE IS NOT THE ONE ASKING. The banner is the
+        // tournament talking to you through the terminal -- the same voice that
+        // speaks over a match -- so it takes COL_IFT and not the console's amber.
+        // ENTER stays amber: the key is part of the furniture, and the difference
+        // between the two is the point.
         const int ty = SEL_TITLE_CY - (vg.gym ? 12 : 10);
         for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
-            vg_text(tx, ty, ttl, INK_MAX, scale);
+            vg_text(tx, ty, ttl, COL_IFT, scale);
 
         // The explanation does NOT run. It is a sentence to be read once, not a
         // banner, and a moving one would be the only thing on the screen asking
@@ -638,6 +643,11 @@ void vg_draw_select(void) {
     //   does not end at a drawn border -- it disappears beneath the steel, which
     //   is what a tube bedded under a panel actually does.
     vg_hud_warp(true, SEL_GLASS_WARP);
+    // Finer chords than the cockpit uses. The panel border is 266px on a side and
+    // at the default it was five straight pieces with visible joints -- a
+    // segmented box rather than a curved one. The wheel never showed it as badly
+    // because its sides are shorter.
+    vg_hud_warp_seg(SEL_GLASS_SEG);
 
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
@@ -716,7 +726,7 @@ void vg_draw_select(void) {
                          - vg_text_track_width(sp->name, 3, SEL_TITLE_TRACK)) / 2,
                   SEL_PANEL_Y + 8, sp->name, INK_MAX, 3, SEL_TITLE_TRACK);
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
-            SEL_PANEL_Y + 32, sp->tagline, INK_FAINT, 1);
+            SEL_PANEL_Y + 34, sp->tagline, INK_FAINT, 1);
 
     // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not a
     // new word either: the rack instrument in flight is labelled MSL, so it
@@ -727,8 +737,8 @@ void vg_draw_select(void) {
         const char* msl = vg_wpn_name(sp->wpn);
         int lx, vx;
         field_cols("MSL", msl, "WPN", how, &lx, &vx);
-        field(lx, vx, SEL_PANEL_Y + 46, "MSL", msl, INK_BRIGHT);
-        field(lx, vx, SEL_PANEL_Y + 58, "WPN", how, INK);
+        field(lx, vx, SEL_PANEL_Y + 50, "MSL", msl, INK_BRIGHT);
+        field(lx, vx, SEL_PANEL_Y + 64, "WPN", how, INK);
     }
 
     {

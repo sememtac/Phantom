@@ -107,7 +107,10 @@
 // 6px of radius and the plan view 12px of height, which is the split that keeps
 // SPEED clear of the description lines -- the constraint that moved this twice
 // already.
-#define SEL_CHART_CY    234
+// Down 4 to pay for the header, which is spread out: the four lines were 8 / 32 /
+// 46 / 58 from the panel top and are 8 / 34 / 50 / 64 now. SPEED has been the
+// binding constraint on this number three times, and it still is.
+#define SEL_CHART_CY    238
 #define SEL_CHART_R     45
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
@@ -148,6 +151,11 @@
 // 0.5 leaves the borders visibly bowed -- a straight line is long enough to show
 // a gentle curve -- while the arc across one word is under a pixel.
 #define SEL_GLASS_WARP  0.5f
+
+// The chord length the curve is cut into on this screen. The cockpit's 64 leaves
+// the 266px panel border as five straight pieces with visible joints; 18 reads as
+// a curve, at one primitive per chord.
+#define SEL_GLASS_SEG   24.0f
 
 #define SEL_CHYRON_RATE 46.0f
 

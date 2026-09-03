@@ -70,7 +70,18 @@
 // An overflow is visible rather than silent -- the telemetry line prints OVERFLOW and the
 // primitive count drops -- so if a busy fight finds a slice's ceiling it says so. The shard
 // burst is the case 3400 was sized for and it lands in slice 2, which keeps the most room.
-#define MAX_PRIMS            2000
+// 2400, and the extra 400 all went to the instrument slice. See SUB_AT.
+//
+// A WARPED MENU IS THE HEAVIEST INSTRUMENT LOAD IN THE GAME, which was not true
+// when these were sized. Measured on the ship-select screen: 323 primitives
+// flat, and the curve costs a primitive per chord of every line it bends -- 115
+// more at the cockpit's chord length, and the panel border is 266px on a side,
+// so at that length it is five straight pieces with visible joints. Cut fine
+// enough to read as a curve it is about 630, against a slice of 550.
+//
+// The cost is 400 x 20 bytes of primitives plus the two index arrays, about
+// 11 KB, against 200 KB of internal RAM that was free.
+#define MAX_PRIMS            2400
 
 // --- projection ------------------------------------------------------------
 // FOCAL is the projection-plane distance in pixels: on a 480 px wide screen, 400
