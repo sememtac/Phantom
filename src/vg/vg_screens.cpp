@@ -134,7 +134,12 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
     if (!sp) { out[0] = 0; return; }
     switch (sp->wpn) {
     case WPN_ARAAM:
-        snprintf(out, n, "ACTIVE SEEKER. REARM ON RADAR DETECTION");
+        // "ON CONTACT", not "ON RADAR DETECTION": the MSL row directly above
+        // already reads AR-AAM ACTIVE RADAR, so the word is on the panel once and
+        // a contact here can only be a radar contact. It also has to be shorter --
+        // the long form measured 265px against a 264px panel and touched both
+        // borders.
+        snprintf(out, n, "ACTIVE SEEKER. REARM ON CONTACT");
         break;
     case WPN_RFAAM:
         snprintf(out, n, "RAPID FIRE PROXIMITY FUSE");
@@ -151,6 +156,37 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
         break;
     default: out[0] = 0; break;
     }
+}
+
+// A LABELLED FIELD: an INVERSE-VIDEO tab, then the value beside it.
+//
+// The label is knocked out of a filled block rather than drawn in dim ink,
+// because a caption and its contents are different KINDS of thing and the panel
+// should say so without being read. Inversion is how the rest of the interface
+// already says "this is chrome" -- the HUD panel tabs, the bracket's marker for
+// you, the missile rack. One vocabulary.
+//
+// INK_ONFILL, never COL_BLACK: vg_text treats colour 0 as invisible, so black
+// text on a fill is no text at all.
+//
+// The PAIR is centred, not the value, so the panel keeps its axis while still
+// reading as a field rather than as a sentence.
+//
+// The GAP GIVES FIRST. A field that will not fit is a writing problem and gets
+// fixed in the string, but the panel must not be the thing that reports it: an
+// overlong value would otherwise draw its fill tab outside the left border and
+// run its last characters past the right one. Closing the gap to 4 buys 5
+// characters, and past that the row is pinned to the margin and simply clips.
+static void field(int y, const char* label, const char* value, uint16_t vcol) {
+    const int lw   = vg_text_width(label, 1);
+    const int vw   = vg_text_width(value, 1);
+    const int room = SEL_PANEL_W - 2 * SEL_FIELD_PAD;
+    const int gap  = (lw + 9 + vw <= room) ? 9 : 4;
+    int x = SEL_PANEL_X + (SEL_PANEL_W - (lw + gap + vw)) / 2;
+    if (x < SEL_PANEL_X + SEL_FIELD_PAD) x = SEL_PANEL_X + SEL_FIELD_PAD;
+    vg_fill_rect(x - 2, y - 1, lw + 4, 9, INK);
+    vg_text(x, y, label, INK_ONFILL, 1);
+    vg_text(x + lw + gap, y, value, vcol, 1);
 }
 
 static void draw_chart(const float ax[5]) {
@@ -467,27 +503,24 @@ void vg_draw_select(void) {
     const ShipSpec* sp = vg_spec((ShipClass)cur);
     vg_rect(SEL_PANEL_X, SEL_PANEL_Y, SEL_PANEL_W, SEL_PANEL_H, INK_TRACE);
 
+    // IDENTITY FIRST, THEN FIELDS. The name and its tagline are one thing -- a
+    // tagline is a subtitle and belongs against the name it subtitles -- and the
+    // two labelled rows beneath are specification. Interleaved, the unlabelled
+    // tagline sat between two labelled rows and read as a field whose caption had
+    // gone missing.
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->name, 3)) / 2,
             SEL_PANEL_Y + 8, sp->name, INK_MAX, 3);
-    {
-        // The weapon system, which is what the four classes now ARE and the one
-        // thing this screen never said.
-        const char* w = vg_wpn_name(sp->wpn);
-        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(w, 1)) / 2,
-                SEL_PANEL_Y + 34, w, INK_BRIGHT, 1);
-    }
-    // The tagline is FLAVOUR and the line under it is INFORMATION, so the ramp puts
-    // the information higher. It was the other way round for one build, which had
-    // the screen shouting the mood and whispering the mechanic.
     vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
-            SEL_PANEL_Y + 48, sp->tagline, INK_FAINT, 1);
+            SEL_PANEL_Y + 32, sp->tagline, INK_FAINT, 1);
+
+    // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not a
+    // new word either: the rack instrument in flight is labelled MSL, so it
+    // already means "the round" to anyone who has flown.
+    field(SEL_PANEL_Y + 46, "MSL", vg_wpn_name(sp->wpn), INK_BRIGHT);
     {
-        // ...and HOW it shoots, under what it is. The tagline answers one question
-        // and the screen was only ever asking that one.
         char how[48];
         wpn_how(sp, how, sizeof(how));
-        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(how, 1)) / 2,
-                SEL_PANEL_Y + 60, how, INK, 1);
+        field(SEL_PANEL_Y + 58, "WPN", how, INK);
     }
 
     {

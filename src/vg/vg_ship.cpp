@@ -242,7 +242,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // loses almost all its agility at speed -- so anything fast that gets inside is
     // its whole problem, and running the rack dry is how it gets there.
     {
-        "BALLISTA", "STEADY AIMING MISSILE GUIDANCE",
+        "BALLISTA", "ACTIVE MISSILE GUIDANCE",
         /* speed      */ 100.0f, 340.0f,
         /* turn       */ 1.60f, 0.85f, 0.45f,
         /* hull       */ 270.0f, /* shake */ 0.55f,

@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
     bool course = false;                  // start on the practice range
     bool select = false;                  // start on the ship-select screen
+    int  select_class = -1;               // ...and, optionally, on a named class
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
@@ -79,7 +80,14 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         else if (!strcmp(argv[i], "--course")) course = true;
-        else if (!strcmp(argv[i], "--select")) select = true;
+        // The class index is OPTIONAL, so "--select" alone still works and any
+        // script that used it keeps working. Sniffed for a digit rather than
+        // consumed blindly, or "--select --headless" would eat the next flag.
+        else if (!strcmp(argv[i], "--select")) {
+            select = true;
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
+                select_class = atoi(argv[++i]);
+        }
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_host_shot = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
@@ -124,7 +132,7 @@ int main(int argc, char** argv) {
                    "  --bot        the game flies the player's seat too. With\n"
                    "               --gym that is a fight nobody is holding.\n"
                    "  --course     start on the practice range, past the menus.\n"
-                   "  --select     start on the ship-select screen.\n"
+                   "  --select [N] start on the ship-select screen, on class N.\n"
                    "  --shot N     write frame N to shot.ppm and keep running.\n"
                    "  --no-ram     no opponent rolls a suicide run. For testing:\n"
                    "               a rammer ends the engagement being measured.\n"
@@ -166,6 +174,10 @@ int main(int argc, char** argv) {
     // and would replace anything set up before it.
     if (course) vg_state_cut(VG_COURSE);
     if (select) vg_state_cut(VG_SELECT);
+    // AFTER the cut: entering the state is what would otherwise leave the wheel
+    // wherever it last sat.
+    if (select && select_class >= 0 && select_class < SHIP_CLASSES)
+        vg_game_select_ship((ShipClass)select_class);
 
     if (dump && !host_dataset_open(dump)) {
         fprintf(stderr, "could not open %s for writing\n", dump);

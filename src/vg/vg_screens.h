@@ -76,6 +76,10 @@
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
 
+// The inner margin a labelled field keeps off the panel border. 8 matches the
+// rule above the plan view, so the two agree on where the panel's inside is.
+#define SEL_FIELD_PAD   8
+
 // THE PLAN VIEW, laid on its side. A top-down silhouette is what a player
 // recognises a fighter by, it needs no projection and no per-class 3-D geometry,
 // and it suits a slot that is wide and short -- which a spinning object does not.
