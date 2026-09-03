@@ -295,6 +295,19 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt);
 // be measured. Test harness only; nothing in the game sets it.
 extern bool vg_bot_park;
 
+// TESTING ONLY: nobody rolls a suicide run. --no-ram.
+//
+// The disposition is rolled per PILOT, and the gym hands out a fresh one on every
+// respawn -- so a workshop session samples a 9% chance dozens of times an hour
+// where a tournament run samples it four times. See ENEMY_KAMIKAZE_CHANCE, which
+// says the same thing and is tuned for the tournament.
+//
+// That makes the gym the wrong place to judge the frequency AND a difficult place
+// to test anything else, because a rammer ends the engagement you were measuring.
+// This switch takes it out of the workshop without touching the number the real
+// game is balanced on -- which is the mistake it exists to prevent.
+extern bool vg_no_ram;
+
 extern bool vg_bot_on;
 
 // WHICH PILOT FLIES IT: the trained network, or the hand-written policy.

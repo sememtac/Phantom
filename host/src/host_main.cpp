@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--no-net-survival")) vg_net_owns_survival = false;
         else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
+        else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         else if (!strcmp(argv[i], "--course")) course = true;
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_host_shot = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
@@ -122,6 +123,8 @@ int main(int argc, char** argv) {
                    "               --gym that is a fight nobody is holding.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --shot N     write frame N to shot.ppm and keep running.\n"
+                   "  --no-ram     no opponent rolls a suicide run. For testing:\n"
+                   "               a rammer ends the engagement being measured.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }

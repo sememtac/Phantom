@@ -138,7 +138,9 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->roll_vis     = 0;
     s->hit_flash    = 0;
     s->engaged      = false;
-    s->kamikaze_will = (vg_frand01() < ENEMY_KAMIKAZE_CHANCE);
+    // The roll happens either way, so the random sequence -- and therefore every
+    // seeded comparison -- is identical with the switch on or off.
+    s->kamikaze_will = (vg_frand01() < ENEMY_KAMIKAZE_CHANCE) && !vg_no_ram;
     s->kamikaze_on   = false;
 }
 

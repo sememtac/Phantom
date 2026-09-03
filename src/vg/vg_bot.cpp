@@ -20,6 +20,7 @@
 #endif
 
 bool vg_bot_park = false;
+bool vg_no_ram   = false;
 bool vg_bot_on = false;
 bool vg_bot_net = true;
 uint32_t vg_bot_net_us = 0;
