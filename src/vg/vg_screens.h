@@ -117,13 +117,16 @@
 // word at a time and not so slow that it looks stuck.
 // How hard the display bends, as a multiple of the cockpit's own HUD_WARP_K.
 // The curve has to be readable as curvature and stop well short of reading as a
-// fault. Compared at three settings: 1.0 is the cockpit's own bend and is too
-// polite here -- a menu is flatter and squarer than a HUD, so the same curve
-// barely shows on it. 2.6 stops reading as glass and starts reading as broken:
-// the wheel box skews, the panel's edge cuts in, and the wheel's names visibly
-// drift off their column. 1.8 bows the borders and pulls the corners under the
-// steel while every word stays where it was put.
-#define SEL_GLASS_WARP  1.8f
+// fault, and the ceiling on that is lower than a ladder of screenshots suggests.
+// 2.6 is plainly broken -- the wheel box skews and its names leave their column.
+// 1.8 survives a still frame and does not survive being looked at: the tilt on
+// the wheel names and the bow on the panel border are the first things the eye
+// goes to, which is the wrong thing to notice on a screen you are reading.
+//
+// 1.0 is the cockpit's own bend, and that is the argument for it rather than a
+// coincidence -- it is the one curvature in the game already tuned for a panel
+// somebody stares at for a whole match.
+#define SEL_GLASS_WARP  1.0f
 
 #define SEL_CHYRON_RATE 46.0f
 
