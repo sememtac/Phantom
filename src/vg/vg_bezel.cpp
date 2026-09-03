@@ -46,3 +46,38 @@ void IRAM_ATTR vg_bezel_rows(uint16_t* band, int by0, int r0, int r1) {
         }
     }
 }
+
+// WHERE THE GLASS IS, in one panel row.
+//
+// The chassis stores a span for every stretch it paints, so the stretches it
+// does not paint are the gaps between them -- the screen aperture and the two
+// bar windows, exactly. Returned as [x0, x1] pairs.
+//
+// This exists for the scanlines. A scanline is a property of the display behind
+// the plating; running it across the plating too was darkening every third row
+// of a lump of steel, which is not a thing steel does.
+int vg_bezel_gaps(int y, int16_t* out) {
+    const VgBezel* b = s_cur;
+    if (!b || y < 0 || y >= SCR_H) {
+        out[0] = 0; out[1] = SCR_W - 1;
+        return 1;
+    }
+
+    int n = 0, x = 0;
+    for (uint16_t si = b->row[y]; si < b->row[y + 1]; si++) {
+        const VgBezelSpan* sp = &b->span[si];
+        if (sp->x0 > x && n < VG_BEZEL_MAX_GAPS) {
+            out[n * 2]     = (int16_t)x;
+            out[n * 2 + 1] = (int16_t)(sp->x0 - 1);
+            n++;
+        }
+        const int end = sp->x0 + sp->len;
+        if (end > x) x = end;
+    }
+    if (x < SCR_W && n < VG_BEZEL_MAX_GAPS) {
+        out[n * 2]     = (int16_t)x;
+        out[n * 2 + 1] = (int16_t)(SCR_W - 1);
+        n++;
+    }
+    return n;
+}

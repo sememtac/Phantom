@@ -62,5 +62,11 @@ const VgBezel* vg_bezel_current(void);
 // the menu lands on top of the chassis rather than under it.
 void vg_bezel_prim(void);
 
+// The GAPS in a panel row: the stretches the chassis does NOT paint, which are
+// the screen and the two windows. Writes up to VG_BEZEL_MAX_GAPS pairs and
+// returns how many. The scanline pass uses it to stay on the glass.
+#define VG_BEZEL_MAX_GAPS 5
+int vg_bezel_gaps(int y, int16_t* out);
+
 // Paint this core's rows of one band. Called from the band raster.
 void vg_bezel_rows(uint16_t* band, int by0, int r0, int r1);

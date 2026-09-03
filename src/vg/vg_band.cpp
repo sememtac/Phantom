@@ -623,6 +623,28 @@ static inline void band_scanlines(uint16_t* band, int by0, int r0, int r1) {
         // unconditional store is safe, and four straight-line RMWs pipeline
         // where four tests stalled.
         uint32_t* p = (uint32_t*)&band[y * SCR_W];
+
+        // A SCANLINE BELONGS TO THE DISPLAY, NOT TO THE PLATING IN FRONT OF IT.
+        //
+        // On a menu with a chassis this pass was darkening every third row of a
+        // lump of steel, which is not a thing steel does -- it read as the bezel
+        // being printed on the screen rather than bolted over it. So where a
+        // chassis is drawn the pass runs only over the gaps it leaves, which are
+        // the glass: the screen aperture and the two bar windows.
+        //
+        // The full-width path is untouched and takes no test. Flight has no
+        // chassis, and that is where the 3.3ms is spent.
+        if (vg_bezel_current()) {
+            int16_t g[VG_BEZEL_MAX_GAPS * 2];
+            const int n = vg_bezel_gaps(by0 + y, g);
+            for (int k = 0; k < n; k++) {
+                uint16_t* q = &band[y * SCR_W];
+                for (int x = g[k * 2]; x <= g[k * 2 + 1]; x++)
+                    q[x] = (uint16_t)scanline_pair(q[x]);
+            }
+            continue;
+        }
+
         for (int i = 0; i < SCR_W / 2; i += 4) {
             const uint32_t a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
             p[i]     = scanline_pair(a);

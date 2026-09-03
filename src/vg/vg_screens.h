@@ -115,7 +115,22 @@
 // read as a button sitting on a button.
 // How fast the banner crosses its window, in px a second. Slow enough to read a
 // word at a time and not so slow that it looks stuck.
+// How hard the display bends, as a multiple of the cockpit's own HUD_WARP_K.
+// The curve has to be readable as curvature and stop well short of reading as a
+// fault. Compared at three settings: 1.0 is the cockpit's own bend and is too
+// polite here -- a menu is flatter and squarer than a HUD, so the same curve
+// barely shows on it. 2.6 stops reading as glass and starts reading as broken:
+// the wheel box skews, the panel's edge cuts in, and the wheel's names visibly
+// drift off their column. 1.8 bows the borders and pulls the corners under the
+// steel while every word stays where it was put.
+#define SEL_GLASS_WARP  1.8f
+
 #define SEL_CHYRON_RATE 46.0f
+
+// The clear space between one pass of the banner and the next. Three characters
+// at the title's own scale: enough that the two readings do not run together,
+// short enough that the glass is never empty.
+#define SEL_CHYRON_GAP  54
 
 #define SEL_TITLE_CY    ((BEZEL_CONSOLE_BAR_TOP_Y0 + BEZEL_CONSOLE_BAR_TOP_Y1) / 2)
 #define SEL_GO_X        BEZEL_CONSOLE_BAR_BOT_X0

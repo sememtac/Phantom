@@ -587,25 +587,57 @@ void vg_draw_select(void) {
         // the banner says SHIP SELECT. Moving left, the leading S appears at the
         // right-hand edge and the words arrive in the order they are written.
         //
-        // The travel is the window plus the whole word, so the banner is clear
-        // of the glass at both ends of the cycle rather than jumping.
-        const int   span = bw + tw;
+        // AND IT WRAPS. The cycle used to be the window plus the whole word, so
+        // the banner left at one edge and the glass sat empty until it came back
+        // in at the other -- a ticker with a hole in it, which reads as the
+        // machine having stopped rather than as a machine running.
+        //
+        // Repeated instead: the period is the word plus a gap, and copies are
+        // laid every period until the window is covered. The tail of one is the
+        // head of the next, so the band is endless and SELECT re-enters on the
+        // right exactly as it leaves on the left.
+        //
+        // Two or three copies at this size, and the viewport drops every glyph
+        // that lands outside the window before it takes a primitive slot.
+        const int   period = tw + SEL_CHYRON_GAP;
         const float u = vg.state_t * SEL_CHYRON_RATE;
-        const int   tx = bx + bw - (int)(u - floorf(u / (float)span) * (float)span);
+        const int   off = (int)(u - floorf(u / (float)period) * (float)period);
 
         vg_rast_viewport(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
                          BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
                          BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
         (void)bh;
-        if (vg.gym) {
-            vg_text(tx, SEL_TITLE_CY - 12, ttl, INK_MAX, 2);
+        const int ty = SEL_TITLE_CY - (vg.gym ? 12 : 10);
+        for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
+            vg_text(tx, ty, ttl, INK_MAX, scale);
+
+        // The explanation does NOT run. It is a sentence to be read once, not a
+        // banner, and a moving one would be the only thing on the screen asking
+        // to be chased.
+        if (vg.gym)
             centred(SEL_TITLE_CY + 4, opp ? "THEY RESPAWN UNTIL YOU LEAVE"
                                           : "PRACTICE -- NOTHING IS SCORED", INK, 1);
-        } else {
-            vg_text(tx, SEL_TITLE_CY - 10, ttl, INK_MAX, 3);
-        }
         vg_rast_viewport_full();
     }
+
+    // GLASS FROM HERE. The plating is cold steel and dead flat; the display
+    // under it is a tube, and a tube bends its picture.
+    //
+    // The bracket is the HUD's own warp -- the same barrel curve the cockpit
+    // instruments ride, at the same HUD_WARP_K -- so lines subdivide through it,
+    // fills leave as warped quads and glyph origins follow the bend. Two things
+    // make it read as glass rather than as a wobble:
+    //
+    //   IT STOPS AT THE APERTURE. The banner and the key are drawn before this
+    //   opens, so the two lit windows in the plating stay square. A bezel that
+    //   bends with its own screen is a decal; one that does not is a frame with
+    //   something behind it.
+    //
+    //   THE EDGES GO UNDER THE FRAME. The curve pulls the corners of the picture
+    //   inward and the chassis paints last over what is left, so the display
+    //   does not end at a drawn border -- it disappears beneath the steel, which
+    //   is what a tube bedded under a panel actually does.
+    vg_hud_warp(true, SEL_GLASS_WARP);
 
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
@@ -702,6 +734,15 @@ void vg_draw_select(void) {
     vg_fill_rect(SEL_PANEL_X + 8, SEL_MODEL_Y - 8, SEL_PANEL_W - 16, 1, INK_TRACE);
     draw_plan_view(vg_spec((ShipClass)shown), shown);
     draw_plan_noise(p);
+
+    // FLAT AGAIN. The key is set into the plating, not into the glass, and it was
+    // inside the bracket for one build: it bowed with the display and read as a
+    // sticker on the tube rather than as a switch on the machine. The banner is
+    // drawn before the bracket opens for the same reason.
+    //
+    // Closing it here also means the bracket never outlives the screen. Left
+    // open, the next state would draw its whole panel bent.
+    vg_hud_warp(false, 1.0f);
 
     // THE KEY, AND THE CHASSIS ALREADY DREW ITS BOX. vg_button paints a well, a
     // 2px frame and corner ticks, and every one of those is a second border
