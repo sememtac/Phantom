@@ -102,7 +102,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
     // can be sent. The cost is four rounds instead of six, a longer lock, and six
     // and a half seconds unarmed if they are spent badly.
     {
-        "LANCE", "HOLD THEM, THEN LET GO",
+        "LANCE", "MULTI-ROUND BURST DAMAGE",
         /* speed      */ 100.0f, 390.0f,
         /* turn       */ 1.90f, 0.75f, 0.30f,
         /* hull       */ 285.0f, /* shake */ 1.30f,

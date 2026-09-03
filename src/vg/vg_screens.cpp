@@ -149,6 +149,10 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
         // contact, four rounds. Firing a stacked bay across several contacts is a
         // real and interesting mechanic and this class does not have it; saying so
         // here would be the screen promising something the code does not do.
+        //
+        // The tagline says MULTI-ROUND for the same reason, and it is worth
+        // knowing it was MULTI-LOCK first: ROUND is true where LOCK is not. One
+        // lock on one contact is the premise of the class and not a gap in it.
         snprintf(out, n, "SALVO %d. STACKED LOCK RELEASE", sp->magazine);
         break;
     case WPN_SAAAM:
