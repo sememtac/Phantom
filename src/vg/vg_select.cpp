@@ -32,25 +32,28 @@ int vg_select_row_at(float x, float y) {
 
 // HOW BRIGHT A ROW'S MARKER IS, by its distance from the detent.
 //
-// It follows the row's own ink, so the marker and the name agree about how far
-// from the selection they are and the column reads as one gradient rather than as
-// two ladders. The selection is the exception and keeps the top of the ladder for
-// its NAME: the mark is chrome, and chrome that ties with the thing it marks
-// competes with it.
+// THE WHOLE LADDER, 100 down to 30, and the width of it is the point. The first
+// version ran 90 / 70 / 50 -- the same rungs the NAMES use, so that a row's mark
+// and its name would agree about how far out they were -- and read as three bars
+// of much the same weight. What a gradient has to do here is answer "which row am
+// I on" before anything is read, and 20 points a rung is not enough of an answer.
+//
+// So the marks are not tied to the names any more. The names still run MAX / INK /
+// FAINT because they have to stay READABLE at every distance: a name dimmed to
+// TRACE is a class you cannot see, and the argument for showing the whole roster
+// was that a chooser should not hide your options. A mark has no such duty. It
+// carries no information of its own, so it is free to go almost out.
 //
 // Three rungs is the whole range this wheel can ask for. The window is capped at
 // SEL_WHEEL_SHOWN = 5 and it is centred, so the furthest row is two from the
-// detent however long the roster gets. The fallback is for a wider window, not for
-// this one -- and it stops short of INK_TRACE on purpose, because the lit row is
-// drawn in INK_TRACE across the full width and a marker in it would vanish under
-// the thumb that was pressing it.
+// detent however long the roster gets; the fallback is for a wider window.
 static uint16_t spine_ink(int a) {
     switch (a) {
-    case 0:  return INK_BRIGHT;
-    case 1:  return INK;
-    case 2:  return INK_FAINT;
+    case 0:  return INK_MAX;
+    case 1:  return INK_FAINT;
+    case 2:  return INK_TRACE;
     }
-    return INK_FAINT;
+    return INK_TRACE;
 }
 
 bool vg_select_confirm_at(float x, float y) {
@@ -102,9 +105,16 @@ void vg_draw_select(void) {
     float pxr, pyr;
     const int lit = vg_press_get(&pxr, &pyr) ? vg_select_row_at(pxr, pyr)
                                              : VG_WHEEL_NONE;
+    //
+    // IT STOPS AT THE MARKER COLUMN and does not run under it. The highlight is
+    // INK_TRACE, and so is the furthest marker -- a full-width lift would erase
+    // the mark on exactly the row a thumb was pressing, which is the one moment
+    // the mark is being looked at. The marker keeps the dark screen behind it and
+    // stays legible at every rung.
     if (lit != VG_WHEEL_NONE)
-        vg_fill_rect(SEL_WHEEL_X, vg_wheel_row_y(&s_wheel, lit) - 18,
-                     SEL_WHEEL_W, 36, INK_TRACE);
+        vg_fill_rect(SEL_WHEEL_X + SEL_SPINE_W,
+                     vg_wheel_row_y(&s_wheel, lit) - 18,
+                     SEL_WHEEL_W - SEL_SPINE_W, 36, INK_TRACE);
 
     for (int k = shown_lo; k < shown_lo + shown_n; k++) {
         if (k == 0) continue;                 // the detent is drawn over the rails
