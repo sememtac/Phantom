@@ -50,6 +50,21 @@ bool vg_press_in(int x, int y, int w, int h);
 // point rather than a yes or no. Returns false when nothing is held.
 bool vg_press_get(float* x, float* y);
 
+// THIS CONTACT IS SPOKEN FOR. A control that has latched onto a drag owns the
+// finger until it lifts, and nothing else on the screen should be lighting up
+// under it.
+//
+// The hue slider is the case that needed it. Its grab pad reaches most of the way
+// down the glass -- deliberately, because the ramp is a coarse choice and a
+// fingertip covers it -- and the key below sits in the plating a few pixels
+// further on. Driving the slider across on the board lit NEXT, which reads as
+// being about to leave a screen you are still setting up.
+//
+// Cleared for the rest of the frame, which is all it takes: the claimant tracks
+// the drag off the INPUT rather than off this, and everything that lights reads
+// this. Set every frame the drag continues.
+void vg_press_claim(void);
+
 // ===========================================================================
 // A WHEEL
 //

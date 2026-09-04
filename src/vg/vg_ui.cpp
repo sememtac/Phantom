@@ -13,6 +13,10 @@ void vg_press_set(bool held, float x, float y) {
     s_press_y = y;
 }
 
+void vg_press_claim(void) {
+    s_press_held = false;
+}
+
 bool vg_press_get(float* x, float* y) {
     if (x) *x = s_press_x;
     if (y) *y = s_press_y;

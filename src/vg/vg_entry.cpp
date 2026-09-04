@@ -84,7 +84,7 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
                                 ENT_HUE_X - ENT_HUE_PAD,
                                 ENT_HUE_Y - ENT_HUE_PAD,
                                 ENT_HUE_W + 2 * ENT_HUE_PAD,
-                                ENT_HUE_H + 2 * ENT_HUE_PAD);
+                                ENT_HUE_H + ENT_HUE_PAD + ENT_HUE_PAD_LO);
         if (s_hue_drag) {
             s_drag_col = -1;          // the ramp wins over any wheel underneath
             set_hue_from(in->menu_x);
@@ -93,6 +93,10 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
 
     if (in->menu_held) {
         if (s_hue_drag) {
+            // THE FINGER IS THE SLIDER'S while this lasts. Without it the key
+            // below lights as the thumb crosses the bottom of the ramp -- see
+            // vg_press_claim.
+            vg_press_claim();
             set_hue_from(in->menu_x);
         } else if (s_drag_col >= 0) {
             // The direction and the detent size are the wheel's -- see VgWheel.
@@ -129,7 +133,7 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
                    vg_in_rect(tx, ty, ENT_HUE_X - ENT_HUE_PAD,
                               ENT_HUE_Y,
                               ENT_HUE_W + 2 * ENT_HUE_PAD,
-                              ENT_HUE_H + ENT_HUE_PAD)) {
+                              ENT_HUE_H + ENT_HUE_PAD_LO)) {
             set_hue_from(tx);
         } else if (vg_console_key_at(VG_CON_KEY, tx, ty)) {
             commit();

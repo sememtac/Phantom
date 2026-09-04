@@ -32,6 +32,18 @@
 // choice and the finger covers most of it.
 #define ENT_HUE_PAD     26
 
+// ...EXCEPT DOWNWARD, WHERE THE KEY IS.
+//
+// The pad is symmetric everywhere it can afford to be, and below the ramp it
+// cannot: 26 puts its edge at y 376 and the chassis key hole starts at 378. Two
+// pixels, and the key's own hit area is deliberately larger than its hole, so on
+// the board a thumb driving the ramp across lit NEXT.
+//
+// 12 stops the pad at 362, inside the glass and sixteen clear of the plating. The
+// contact claim below is the other half of the fix and the more general one; this
+// is the half that keeps the two areas from overlapping in the first place.
+#define ENT_HUE_PAD_LO  12
+
 // HOW MUCH OF THE COLOUR WHEEL THE SLIDER SPENDS ITS WIDTH ON.
 //
 // vg_hue_col takes a full turn, so a slider mapped straight onto it ran red - yellow -

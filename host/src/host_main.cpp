@@ -48,6 +48,7 @@ static int   g_rounds  = 0;      // rounds already settled
 static int   g_credits = -1;     // the bank, or leave the profile's alone
 static float g_hull    = -1.0f;  // fraction of full, or leave it whole
 static int   g_ship    = -1;     // class index, or leave the profile's alone
+static float g_hue     = -1.0f;  // trail colour 0..1, or leave the profile's alone
 
 // A TOURNAMENT TO LOOK AT: the draw, and however many rounds are behind it. The
 // player wins every one, because a loss ends the run and there is no sheet to
@@ -195,6 +196,8 @@ int main(int argc, char** argv) {
             g_hull = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--ship") && i + 1 < argc)
             g_ship = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hue") && i + 1 < argc)
+            g_hue = (float)atof(argv[++i]);
         // THE OLD NAMES STILL WORK, and they are aliases rather than a second
         // mechanism. Scripts, baselines and half the notes name them.
         //
@@ -269,6 +272,7 @@ int main(int argc, char** argv) {
                    "  --credits N  set the bank. REPAIR lights or dims on it.\n"
                    "  --hull F     set the hull to F of full, 0..1.\n"
                    "  --ship N     fly class N.\n"
+                   "  --hue F      the player's trail colour, 0..1.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"
@@ -325,6 +329,10 @@ int main(int argc, char** argv) {
     if (screen) {
         if (g_ship >= 0 && g_ship < SHIP_CLASSES)
             vg_game_select_ship((ShipClass)g_ship);
+        // BEFORE the set-up, with the ship: the roster's trail colours are dealt
+        // around the player's, so a hue set afterwards would be one the rest of
+        // the field had already been kept clear of a different value for.
+        if (g_hue >= 0.0f) vg.trail_hue = (g_hue > 1.0f) ? 1.0f : g_hue;
 
         if (screen->setup) screen->setup();
 
