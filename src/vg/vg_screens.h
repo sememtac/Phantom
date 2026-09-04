@@ -124,19 +124,20 @@
 // Down 4 to pay for the header, which is spread out: the four lines were 8 / 32 /
 // 46 / 58 from the panel top and are 8 / 34 / 50 / 64 now. SPEED has been the
 // binding constraint on this number three times, and it still is.
-// THE HEADER PUSHED THESE DOWN AND THE CHART PAID FOR IT.
+// AND THE CHART GOT ITS RADIUS BACK. Splitting the weapon row in two took both
+// fields to one line -- six characters and twelve, against a column that holds
+// twenty at scale 2 -- so the header stops at 182 where the wrapped version
+// reached 217. R is 42 against the 32 the wrapped version forced, and the plan
+// view has 50px against 40.
 //
-// Four rows, and BOTH labelled ones wrap to two lines at scale 2 in a 243px
-// column, so the header now reaches y 217 where it used to stop at 181. What is
-// left for the chart and the plan view is 147px against the 183 they had.
-//
-// The chart's radius went 45 -> 38 -> 32 across this and the plan view 60 -> 48
-// -> 40. That is the real price of readable body text in a divided layout, and
-// it is worth knowing exactly where it went: the MSL row wraps only because
-// "AR-AAM  ACTIVE RADAR" is 20 characters against the 17 that fit beside its tab.
-// Three characters of caption are costing the chart six pixels of radius.
-#define SEL_CHART_CY    272
-#define SEL_CHART_R     32
+// SPEED sets the ceiling here and has done every time this block has moved. It
+// sits at CY - R - 10, so it is the first thing the header runs into: at the
+// first attempt at these numbers it was drawn straight through the WPN row, and
+// at the second it cleared it by seven pixels and still read as touching it. The
+// gap is ten now, which is the fourth time this constant has been moved for that
+// one label.
+#define SEL_CHART_CY    253
+#define SEL_CHART_R     40
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
@@ -152,8 +153,8 @@
 // Down 4, because the chart's lower labels had come to rest ON the rule above
 // the plan view. Moving the chart is what caused it -- DAMAGE and RANGE sit
 // 0.809 of the way out, so they fall faster than the centre does.
-#define SEL_MODEL_Y     324
-#define SEL_MODEL_H     40
+#define SEL_MODEL_Y     314
+#define SEL_MODEL_H     50
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
 //

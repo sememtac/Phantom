@@ -149,46 +149,6 @@ static void chart_ring(float t, uint16_t col, int w) {
 // class to somebody. The shape is [guidance type]. [what makes it different] --
 // the words a manual would use, not the words a recruiter would.
 //
-// ANY COUNT HERE IS DERIVED AND THE PROSE IS NOT, which is the right split: a
-// magazine moves under tuning and a guidance principle does not. BALLISTA has been
-// semi-active since it was drawn, but its reach went 1600 to 4200 and LANCE's
-// stack time went 1.2 to 0.95 inside one sitting.
-//
-// Only LANCE names a number now, because four IS the mechanic there -- the salvo
-// size is what the class is about. CHARIOT's twelve is legible from the twelve
-// cells in its bay, and saying it twice was saying it once too often.
-static void wpn_how(const ShipSpec* sp, char* out, int n) {
-    if (!sp) { out[0] = 0; return; }
-    switch (sp->wpn) {
-    case WPN_ARAAM:
-        // "ON CONTACT", not "ON RADAR DETECTION": the MSL row directly above
-        // already reads AR-AAM ACTIVE RADAR, so the word is on the panel once and
-        // a contact here can only be a radar contact. It also has to be shorter --
-        // the long form measured 265px against a 264px panel and touched both
-        // borders.
-        snprintf(out, n, "ACTIVE SEEKER. REARM ON CONTACT");
-        break;
-    case WPN_RFAAM:
-        snprintf(out, n, "RAPID FIRE PROXIMITY FUSE");
-        break;
-    case WPN_SLAAM:
-        // NOT "multi target". Every banked round launches at vg_wpn.target -- one
-        // contact, four rounds. Firing a stacked bay across several contacts is a
-        // real and interesting mechanic and this class does not have it; saying so
-        // here would be the screen promising something the code does not do.
-        //
-        // The tagline says MULTI-ROUND for the same reason, and it is worth
-        // knowing it was MULTI-LOCK first: ROUND is true where LOCK is not. One
-        // lock on one contact is the premise of the class and not a gap in it.
-        snprintf(out, n, "SALVO %d. STACKED LOCK RELEASE", sp->magazine);
-        break;
-    case WPN_SAAAM:
-        snprintf(out, n, "SEMI-ACTIVE MISSILE GUIDANCE");
-        break;
-    default: out[0] = 0; break;
-    }
-}
-
 // A LABELLED FIELD: an INVERSE-VIDEO tab, then the value beside it, WRAPPED.
 //
 // The label is knocked out of a filled block rather than drawn in dim ink,
@@ -846,11 +806,9 @@ void vg_draw_select(void) {
         // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not
         // a new word either: the rack instrument in flight is labelled MSL, so it
         // already means "the round" to anyone who has flown.
-        char how[48];
-        wpn_how(hs, how, sizeof(how));
-        const int b = field_wrap(bx, SEL_PANEL_Y + 46, bw, "MSL",
+        const int b = field_wrap(bx, SEL_PANEL_Y + 42, bw, "MSL",
                                  vg_wpn_name(hs->wpn), INK_BRIGHT);
-        field_wrap(bx, b + 22, bw, "WPN", how, INK);
+        field_wrap(bx, b + 20, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
     }
 
     {

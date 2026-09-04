@@ -478,12 +478,32 @@ static inline bool vg_msl_semi_active(const ShipSpec* sp) {
 // what the ship declares, never infer it from the number.
 // What a weapon system is CALLED, for the one screen that has to say it out
 // loud. Two words abbreviated to two letters, all four of them -- see the enum.
+// TWO FIELDS, NOT ONE STRING. The designation and what the system does used to
+// be joined with a double space and printed as a single value, which was fine
+// while the panel had one row for it. It has two -- MSL for the round it carries
+// and WPN for what the system does with it -- and the split is what makes both
+// legible on the device: at scale 2 the joined string is twenty characters
+// against a column that holds seventeen beside its tab, so it wrapped, and the
+// wrap cost the chart six pixels of radius. Apart they are six and twelve.
 static inline const char* vg_wpn_name(WeaponSystem w) {
     switch (w) {
-    case WPN_ARAAM: return "AR-AAM  ACTIVE RADAR";
-    case WPN_RFAAM: return "RF-AAM  RAPID FIRE";
-    case WPN_SLAAM: return "SL-AAM  SALVO LOCK";
-    case WPN_SAAAM: return "SA-AAM  SEMI-ACTIVE";
+    case WPN_ARAAM: return "AR-AAM";
+    case WPN_RFAAM: return "RF-AAM";
+    case WPN_SLAAM: return "SL-AAM";
+    case WPN_SAAAM: return "SA-AAM";
+    }
+    return "";
+}
+
+// What the system DOES. Short by design: this is the line the panel reads out at
+// size, and the long prose it replaces was written for a row that could afford
+// thirty-one characters and cannot any more.
+static inline const char* vg_wpn_desc(WeaponSystem w) {
+    switch (w) {
+    case WPN_ARAAM: return "ACTIVE RADAR";
+    case WPN_RFAAM: return "RAPID FIRE";
+    case WPN_SLAAM: return "SALVO LOCK";
+    case WPN_SAAAM: return "SEMI-ACTIVE";
     }
     return "";
 }
