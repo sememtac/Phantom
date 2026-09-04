@@ -91,22 +91,28 @@ struct HostScreen {
     const char* name;
     VgState     state;
     void      (*setup)(void);   // what has to exist before the page means anything
+    // HOW TO ARRIVE. A CUT is the broadcast going off and coming back -- the set
+    // collapses to a scan band and the state changes at the join, which is right
+    // for moving between PLACES. A pause is not a place: it suspends one, and
+    // cutting into it tore down the match it was meant to be suspending, so the
+    // menu came up over a black screen.
+    bool        cut;
     const char* what;
 };
 
 static const HostScreen SCREENS[] = {
-    { "title",    VG_ATTRACT,   screen_none,    "the attract screen" },
-    { "entry",    VG_ENTRY,     screen_none,    "callsign registration" },
-    { "select",   VG_SELECT,    screen_none,    "ship select" },
-    { "bracket",  VG_BRACKET,   screen_tourney, "the tournament sheet" },
-    { "repair",   VG_REPAIR,    screen_tourney, "the repair page" },
-    { "course",   VG_COURSE,    screen_none,    "the ring course" },
-    { "pause",    VG_PAUSE,     screen_pause,   "the pause menu, over a match" },
-    { "intro",    VG_INTRO,     screen_tourney, "the launch cutscene" },
-    { "match",    VG_PLAYING,   screen_match,   "flying, against the bracket" },
-    { "roundwon", VG_ROUND_WON, screen_tourney, "the round-won card" },
-    { "over",     VG_OVER,      screen_tourney, "knocked out" },
-    { "won",      VG_WON,       screen_tourney, "took the whole thing" },
+    { "title",    VG_ATTRACT,   screen_none,    true,  "the attract screen" },
+    { "entry",    VG_ENTRY,     screen_none,    true,  "callsign registration" },
+    { "select",   VG_SELECT,    screen_none,    true,  "ship select" },
+    { "bracket",  VG_BRACKET,   screen_tourney, true,  "the tournament sheet" },
+    { "repair",   VG_REPAIR,    screen_tourney, true,  "the repair page" },
+    { "course",   VG_COURSE,    screen_none,    true,  "the ring course" },
+    { "pause",    VG_PAUSE,     screen_pause,   false, "the pause menu, over a match" },
+    { "intro",    VG_INTRO,     screen_tourney, true,  "the launch cutscene" },
+    { "match",    VG_PLAYING,   screen_match,   true,  "flying, against the bracket" },
+    { "roundwon", VG_ROUND_WON, screen_tourney, true,  "the round-won card" },
+    { "over",     VG_OVER,      screen_tourney, true,  "knocked out" },
+    { "won",      VG_WON,       screen_tourney, true,  "took the whole thing" },
 };
 
 #define SCREEN_N ((int)(sizeof(SCREENS) / sizeof(SCREENS[0])))
@@ -332,7 +338,9 @@ int main(int argc, char** argv) {
             vg.health = vg.health_max * f;
         }
 
-        vg_state_cut(screen->state);
+        // A cut for a place, a plain change for a pause. See HostScreen::cut.
+        if (screen->cut) vg_state_cut(screen->state);
+        else             vg_state_go(screen->state);
     }
 
     if (dump && !host_dataset_open(dump)) {
