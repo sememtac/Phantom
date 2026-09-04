@@ -1,4 +1,4 @@
-#include "vg_shipview.h"
+﻿#include "vg_shipview.h"
 #include "vg_ui.h"
 #include "vg_draw.h"
 #include "vg_glitch.h"
@@ -484,16 +484,14 @@ static const VgSpecField SPEC_FIELDS[] = {
 
 #define SPEC_FIELD_N ((int)(sizeof(SPEC_FIELDS) / sizeof(SPEC_FIELDS[0])))
 
-// The heading, and then the rows under it. Each row is stacked on the BOTTOM of
-// the one above -- field_wrap returns it -- because a value may take two lines
-// and the caller cannot know which ones will.
+// The rows. Each is stacked on the BOTTOM of the one above -- field_wrap returns
+// it -- because a value may take two lines and the caller cannot know which ones
+// will.
+//
+// THE NAME USED TO SIT OVER THEM and does not any more: the wheel beside this
+// panel carries it at the same size, and see SHIPVIEW_HEAD_DY for what the room
+// went to.
 static void draw_head(const Lay* L, const ShipSpec* sp) {
-    vg_text_track(L->x
-                      + (L->w - vg_text_track_width(sp->name, 3,
-                                                    SHIPVIEW_TITLE_TRACK)) / 2,
-                  L->y + SHIPVIEW_NAME_DY, sp->name, INK_MAX, 3,
-                  SHIPVIEW_TITLE_TRACK);
-
     int fy = L->y + SHIPVIEW_HEAD_DY;
     for (int i = 0; i < SPEC_FIELD_N; i++) {
         char buf[40];
@@ -509,9 +507,11 @@ void vg_ship_glyph(ShipClass c, int cx, int cy, int hw, int hh, uint16_t col) {
     const float x0 = (float)(cx - hw), x1 = (float)(cx + hw);
     const float y0 = (float)(cy - hh), y1 = (float)(cy + hh);
     const float xm = (float)cx,        ym = (float)cy;
+    const float xa = (float)(cx - hw / 2), xb = (float)(cx + hw / 2);
+    (void)xa; (void)xb;
 
     switch (c) {
-    case SHIP_AEGIS:        // the shield: a dome standing on its base
+    case SHIP_AEGIS:        // the shield
         vg_line_w(x0, y1, xm, y0, col, 2);
         vg_line_w(xm, y0, x1, y1, col, 2);
         vg_line_w(x0, y1, x1, y1, col, 2);

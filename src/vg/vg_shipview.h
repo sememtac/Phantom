@@ -102,21 +102,26 @@ const char* vg_ship_axis_name(int i);
 // rule above the plan view, so the two agree on where the panel's inside is.
 #define SHIPVIEW_FIELD_PAD    8
 
-// The name across the top, and the first field under it.
-#define SHIPVIEW_NAME_DY      6
-#define SHIPVIEW_HEAD_DY     34
+// THE NAME IS NOT ON THIS PANEL ANY MORE.
+//
+// The wheel two inches to the left carries it at scale 3 in an inverse-video
+// detent, which is the largest word on the screen and the thing being chosen. The
+// panel repeated it at the same size directly beside it, and a fact stated twice
+// on one screen is not emphasis, it is a fact taking up room that something else
+// needed.
+//
+// It cost the header 26 pixels of the 265 this panel has, and the chart and the
+// hull have taken them: the radius is 52 where it was 42, and the plan slot is 66
+// where it was 58. That is the first time either has been given anything back
+// since the aperture took 34px off the bottom.
+//
+// The first field, from the top of the panel.
+#define SHIPVIEW_HEAD_DY      8
 
 // The clear space between one field and the next. The fields are a BLOCK under
 // a caption -- at a wider gap they read as separate lines that happen to be
 // stacked.
 #define SHIPVIEW_FIELD_GAP    8
-
-// EXTRA SPACE BETWEEN THE LETTERS OF THE NAME. The name is the one string here
-// read as a SHAPE rather than as a sentence, and the console's curve closes the
-// gaps on one side of the arc enough to weld letters together. 2 at scale 3,
-// which is less than the wheel needs at scale 2 because a bigger glyph carries a
-// bigger bearing of its own.
-#define SHIPVIEW_TITLE_TRACK  2
 
 // THE CHART'S CENTRE, and this offset has moved five times for one label.
 //
@@ -129,8 +134,22 @@ const char* vg_ship_axis_name(int i);
 //
 // The radius came back when the weapon row was split in two: both fields went to
 // one line, so the header stops at 182 where the wrapped version reached 217.
-#define SHIPVIEW_CHART_DY   142
-#define SHIPVIEW_CHART_R     42
+// SIX MORE OF RADIUS, paid for by the name leaving -- and the first attempt took
+// ten, which was too many.
+//
+// SPEED sets the ceiling and DAMAGE and RANGE set the floor, and this block has
+// now been moved SIX times for one or the other of them. At R 52 the lower pair
+// finished three pixels off the rule above the plan view, which is the same
+// distance the panel has quietly lived with for months and the same thing the
+// note below records being fixed once already: measured as clear, read as
+// touching.
+//
+// So the radius takes six of the reclaimed pixels and the GAP takes the rest.
+// The lower labels clear the rule by ten now and SPEED clears the WPN row by
+// thirteen. That is the first time either end of this chart has had room rather
+// than a tolerance.
+#define SHIPVIEW_CHART_DY   123
+#define SHIPVIEW_CHART_R     48
 
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
@@ -144,8 +163,11 @@ const char* vg_ship_axis_name(int i);
 // in the roster and the plan view is scaled so that wing fills the slot, so the
 // tip was landing two pixels from the panel's bottom border and crossing it. The
 // chart gave up three of radius to pay for it.
-#define SHIPVIEW_MODEL_DY   205
-#define SHIPVIEW_MODEL_H     58
+// EIGHT MORE OF HEIGHT, and the hull is scaled off it, so the silhouette and the
+// mark beside it both grow with the slot. The bottom stays two pixels clear of
+// the panel border, which is what BALLISTA's reverse wing needs.
+#define SHIPVIEW_MODEL_DY   197
+#define SHIPVIEW_MODEL_H     66
 
 // The class mark's half extents, beside the hull. Bigger than the bracket's,
 // because here it is being TAUGHT rather than read at a glance and there is room
@@ -153,7 +175,11 @@ const char* vg_ship_axis_name(int i);
 #define SHIPVIEW_GLYPH_HW    11
 #define SHIPVIEW_GLYPH_HH     9
 
-// The clear space between the tail of the hull and the mark. They have to read as
-// a PAIR -- that is the whole point of drawing them together -- and two objects
-// with a lot of air between them read as two objects.
-#define SHIPVIEW_GLYPH_GAP    9
+// The clear space between the tail of the hull and the mark.
+//
+// They have to read as a pair, which is the whole point of drawing them together
+// -- but they are two DIFFERENT KINDS of thing, a picture of a ship and a sign
+// standing for one, and at nine pixels the mark read as part of the hull's own
+// geometry rather than as a label on it. Far enough apart to be two objects,
+// close enough to be one pairing.
+#define SHIPVIEW_GLYPH_GAP   18
