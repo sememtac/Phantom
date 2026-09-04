@@ -7,6 +7,7 @@
 #include "vg_replay.h"   // DIAGNOSTIC: vg_replay_timed for the cam hash
 #include "vg_game.h"
 #include "vg_screens.h"
+#include "vg_pause.h"
 #include "vg_glitch.h"
 #include "vg_course.h"
 #include "vg_shake.h"

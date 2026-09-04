@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
     int frames = 0;   // 0 = run until the window is closed
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
     bool course = false;                  // start on the practice range
+    bool pause_ = false;                  // start on the pause screen
     bool entry  = false;                  // start on callsign registration
     bool select = false;                  // start on the ship-select screen
     int  select_class = -1;               // ...and, optionally, on a named class
@@ -85,6 +86,7 @@ int main(int argc, char** argv) {
         // script that used it keeps working. Sniffed for a digit rather than
         // consumed blindly, or "--select --headless" would eat the next flag.
         else if (!strcmp(argv[i], "--entry")) entry = true;
+        else if (!strcmp(argv[i], "--pause")) pause_ = true;
         else if (!strcmp(argv[i], "--select")) {
             select = true;
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
@@ -135,6 +137,7 @@ int main(int argc, char** argv) {
                    "               --gym that is a fight nobody is holding.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --entry      start on callsign registration.\n"
+                   "  --pause      start on the pause screen.\n"
                    "  --select [N] start on the ship-select screen, on class N.\n"
                    "  --shot N     write frame N to shot.ppm and keep running.\n"
                    "  --no-ram     no opponent rolls a suicide run. For testing:\n"
@@ -177,6 +180,7 @@ int main(int argc, char** argv) {
     // and would replace anything set up before it.
     if (course) vg_state_cut(VG_COURSE);
     if (entry)  vg_state_cut(VG_ENTRY);
+    if (pause_) vg_state_cut(VG_PAUSE);
     if (select) vg_state_cut(VG_SELECT);
     // AFTER the cut: entering the state is what would otherwise leave the wheel
     // wherever it last sat.
