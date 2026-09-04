@@ -186,14 +186,6 @@ enum ShipClass : uint8_t {
 
 struct ShipSpec {
     const char* name;
-    // NOTHING READS THIS ANY MORE. The select screen dropped it: it was the last
-    // line still drawn at scale 1, which on the device is 0.57mm, and a tagline
-    // tells you how to feel about a hull where the two rows under it tell you
-    // what the hull does. The writing is kept because it is the author's and
-    // costs a pointer.
-    const char* tagline;       // one line for the select screen -- the quality
-                               // the class is named for, in the player's terms
-
     // --- airframe ------------------------------------------------------------
     float speed_min;           // world units/sec at zero throttle
     float speed_max;           // ...and at full throttle
