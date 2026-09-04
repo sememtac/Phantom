@@ -19,6 +19,7 @@
 #include <math.h>
 #include "vg_flight.h"
 #include "vg_canopy_draw.h"
+#include "vg_bezel.h"
 
 // THE SUBMIT COUNTERS, defined here because this file writes every one of them.
 // Declared in vg_prof.h, which says what each measures and what it may not be read
@@ -326,6 +327,21 @@ void vg_render_frame(const VgInput* in, float fps) {
     vg_tv_apply();
 
     vg_rast_begin_frame();
+
+    // NO CHASSIS UNTIL A SCREEN ASKS FOR ONE, and this is per FRAME, not per state.
+    //
+    // vg_console_open sets the current bezel and nothing cleared it, so after a
+    // menu the pointer stayed live for the rest of the session. The primitive was
+    // not the problem -- flight never submits one -- but the SCANLINE pass asks
+    // the bezel where the glass is, so that it darkens the display and not the
+    // plating. With a stale pointer it went on skipping the metal during a match,
+    // and the shape it skipped was the menu's aperture: a ghost of the console
+    // mask, in scanlines, over the game.
+    //
+    // Here rather than in vg_console_close, because the scanline pass runs AFTER
+    // the primitives and still needs this frame's answer. Clearing it at the end
+    // of a menu draw would take it away from the pass that is about to ask.
+    vg_bezel_use(nullptr);
 
     // World, back to front. The boundary goes down before anything solid so the
     // hidden-line fills occlude it.
