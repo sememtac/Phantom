@@ -150,8 +150,8 @@
 // that one label. Ten looked clear in a measurement and still read as touching on
 // the panel, which is the whole lesson: the number that matters is not the gap,
 // it is whether the eye reads two lines or one block.
-#define SEL_CHART_CY    253
-#define SEL_CHART_R     38
+#define SEL_CHART_CY    250
+#define SEL_CHART_R     35
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
@@ -167,8 +167,12 @@
 // Down 4, because the chart's lower labels had come to rest ON the rule above
 // the plan view. Moving the chart is what caused it -- DAMAGE and RANGE sit
 // 0.809 of the way out, so they fall faster than the centre does.
-#define SEL_MODEL_Y     312
-#define SEL_MODEL_H     52
+// UP SIX, AND THE HULL NEEDED IT. BALLISTA's reverse wing is the widest thing in
+// the roster and the plan view is scaled so that wing fills the slot -- so the
+// wing tip was landing two pixels from the panel's bottom border and crossing it.
+// The chart gave up three of radius to pay for the move.
+#define SEL_MODEL_Y     306
+#define SEL_MODEL_H     54
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
 //

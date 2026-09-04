@@ -328,8 +328,21 @@ static const float DTL_BALLISTA[] = {
     -0.120f,  0.100f, -0.180f,  0.000f,  0.260f,  0.000f,  0.150f,  0.100f,
 };
 
+// THREE BAYS THAT READ AS THREE. The side pair sat at 0.065 and the centre bay
+// reaches 0.0375, so the gap between them was 0.0275 of a hull -- about ONE PIXEL
+// at the size this is drawn, and the two fused into a single block. BALLISTA
+// looked like it carried two.
+//
+// No slot height fixes that: even at 60px the gap is under a pixel and a half.
+// The separation had to come out of the DRAWING, so the side pair moved outboard
+// to 0.090 and forward to where the hull is wide enough to take it. The gap is
+// 0.0525 now, which is a bit over two pixels, and the outer edge keeps about the
+// same clearance from the outline.
+//
+// All three keep the roster's one bay size. A bay is a round, and a round has to
+// be the same object on every hull or the count competes with the size.
 static const float BAY_BALLISTA[] = {
-    -0.220f,  0.065f, -0.420f,  0.140f, -0.220f,  0.000f, -0.420f,  0.037f,
+    -0.180f,  0.090f, -0.380f,  0.165f, -0.180f,  0.000f, -0.380f,  0.037f,
 };
 
 const VgShipPlan vg_ship_plan[SHIP_CLASSES] = {
