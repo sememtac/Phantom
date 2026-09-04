@@ -119,6 +119,60 @@ int vg_wheel_drag(VgWheel* wh, float dy);
 // detent rather than from wherever the last one stopped.
 void vg_wheel_release(VgWheel* wh);
 
+// ===========================================================================
+// A TICKER
+//
+// A line running across a window, tiled so that the window is never empty.
+//
+// It was the console's headline and nothing else could ask for it: forty lines
+// inside vg_console_open, reading its rectangle straight off the chassis art. The
+// tournament page is a broadcast rather than a terminal and wants a chyron across
+// the top of it, which is the same object in a different hole.
+//
+// TWO RECTANGLES, because they answer different questions -- the same split
+// VgBezelSlot draws between its box and its inner rect:
+//
+//   FILL  the window's full extent, chamfers included. What is cleared, and what
+//         the text is clipped to. Filling only the inner rectangle leaves the
+//         corners of an octagonal window unpainted and the sky shows through
+//         them; clipping to it cuts the letters short of the glass.
+//   RUN   the rectangle the text actually runs across, and whose middle it is
+//         centred on.
+//
+// For a plain rectangular window the two are the same rectangle.
+//
+// THE CLOCK IS A PARAMETER, and it has to be a wall clock rather than an
+// accumulated dt. The renderer has no dt to give, and an accumulated one runs the
+// ticker at the frame rate instead of at the clock -- one speed on the desktop,
+// another on the board, and a replay that does not reproduce. Every caller in the
+// game passes vg.state_t. It is passed rather than read so that this file does
+// not have to know what a game is.
+// ===========================================================================
+
+// How fast the banner crosses its window, in px a second. Slow enough to read a
+// word at a time and not so slow that it looks stuck.
+#define VG_TICKER_RATE  46.0f
+
+// The clear space between one pass of the banner and the next. Three characters
+// at the banner's own scale: enough that the two readings do not run together,
+// short enough that the window is never empty.
+#define VG_TICKER_GAP   54
+
+// A rectangle, for a widget that has to be told one rather than given a slot.
+struct VgRect { int16_t x, y, w, h; };
+
+// `note` is a second line under the banner, drawn STILL, or null for no second
+// line.
+//
+// THE SCALE IS THE CALLER'S. It used to be `note ? 2 : 3` in here, which is a
+// sound rule for a HEADLINE -- two lines in one window means both get smaller --
+// and no rule at all for a banner with a lot to say. A chyron reading out fifteen
+// results has a different problem from a title reading out two words: at scale 3
+// the panel holds twenty-six characters, so a round of sixteen takes the better
+// part of a minute to pass, and the reader is waiting on the machine.
+void vg_ticker(VgRect fill, VgRect run, const char* text, const char* note,
+               float t, int scale);
+
 // A framed key with a dark well, corner ticks, and a lit state under the thumb.
 //
 // For screens the chassis does NOT frame. Inside the console the metal already

@@ -8,6 +8,7 @@
 #include "vg_bot.h"
 #include "vg_game.h"
 #include "vg_ship.h"
+#include "vg_tourney.h"
 #include "vg_sim.h"
 
 bool host_dataset_open(const char* path);
@@ -37,6 +38,8 @@ int main(int argc, char** argv) {
     bool pause_ = false;                  // start on the pause screen
     bool entry  = false;                  // start on callsign registration
     bool select = false;                  // start on the ship-select screen
+    bool bracket = false;                 // start on the tournament sheet
+    int  bracket_rounds = 0;              // ...with this many rounds settled
     int  select_class = -1;               // ...and, optionally, on a named class
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
@@ -87,6 +90,14 @@ int main(int argc, char** argv) {
         // consumed blindly, or "--select --headless" would eat the next flag.
         else if (!strcmp(argv[i], "--entry")) entry = true;
         else if (!strcmp(argv[i], "--pause")) pause_ = true;
+        // The optional count is how many rounds to settle first, so the sheet
+        // can be captured with results on it. Sniffed for a digit rather than
+        // consumed blindly, the same way --select does it.
+        else if (!strcmp(argv[i], "--bracket")) {
+            bracket = true;
+            if (i + 1 < argc && argv[i + 1][0] >= (int)('0') && argv[i + 1][0] <= (int)('9'))
+                bracket_rounds = atoi(argv[++i]);
+        }
         else if (!strcmp(argv[i], "--select")) {
             select = true;
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
@@ -144,6 +155,8 @@ int main(int argc, char** argv) {
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"
                    "  --select [N] start on the ship-select screen, on class N.\n"
+                   "  --bracket [N] start on the tournament sheet, with N rounds\n"
+                   "               already settled.\n"
                    "  --shot N     write frame N to shot.ppm and keep running. The\n"
                    "               frame clock is pinned to 1/60 so that frame N is\n"
                    "               the same frame in every run.\n"
@@ -189,6 +202,19 @@ int main(int argc, char** argv) {
     if (entry)  vg_state_cut(VG_ENTRY);
     if (pause_) vg_state_cut(VG_PAUSE);
     if (select) vg_state_cut(VG_SELECT);
+    // THE SHEET NEEDS A DRAW TO SHOW. Everything else here is a state that can
+    // stand on its own; the bracket is a VIEW of a tournament, and one is only
+    // generated when the player confirms a ship. Without this the page comes up
+    // on a zeroed table -- sixteen undecided boxes and no player in any of them.
+    if (bracket) {
+        vg_tournament_begin(vg.ship);
+        // Settle rounds so the sheet has a record on it. The player wins every
+        // one, which is the only outcome that keeps them in the draw -- a loss
+        // ends the run and there is no sheet to look at afterwards.
+        for (int r = 0; r < bracket_rounds && r < TOURNEY_ROUNDS; r++)
+            vg_tourney_resolve(true);
+        vg_state_cut(VG_BRACKET);
+    }
     // AFTER the cut: entering the state is what would otherwise leave the wheel
     // wherever it last sat.
     if (select && select_class >= 0 && select_class < SHIP_CLASSES)

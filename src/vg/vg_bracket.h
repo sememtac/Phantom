@@ -26,6 +26,14 @@ bool vg_bracket_ready_at(float x, float y);
 bool vg_bracket_course_at(float x, float y);
 bool vg_bracket_repair_at(float x, float y);
 
+// THE CHYRON, built once when the page is arrived at rather than every frame.
+//
+// Results do not change while you are looking at them, and the string is the
+// whole tournament so far -- up to fifteen matches, which is not something to
+// compose sixty times a second for a banner that takes twenty seconds to read
+// itself out once.
+void vg_bracket_chyron(void);
+
 // --- view state ------------------------------------------------------------
 void vg_bracket_pan(float dx, float dy);
 void vg_bracket_focus_player(void);            // centre on the next match

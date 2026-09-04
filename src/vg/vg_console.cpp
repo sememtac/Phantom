@@ -1,4 +1,4 @@
-#include "vg_console.h"
+﻿#include "vg_console.h"
 #include "vg_ui.h"
 #include "vg_raster.h"
 #include "vg_draw.h"
@@ -28,61 +28,21 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     vg_bezel_use(b);
     if (!b) return;
 
+    // THE HEADLINE IS A TICKER IN A HOLE, and the hole is the only thing this
+    // layer has that vg_ui does not: the slot's two rectangles. Everything else
+    // about a running banner was general, and forty lines of it lived here
+    // because the console was the only screen that had one. See vg_ticker.
     const VgBezelSlot* hl = vg_bezel_headline();
     if (hl) {
-        // THE BOX, NOT THE INNER RECTANGLE. The window is an octagon; a fill of
-        // the rectangle that fits inside it leaves the four chamfered corners
-        // unpainted, and the chassis does not cover them either -- they are
-        // exempt. The sky showed in the corners. The box overshoots onto metal,
-        // which the chassis paints over on the way past.
-        //
-        // INK_WELL and not COL_BLACK: a fill whose colour is zero is DROPPED, the
-        // same rule that makes black text invisible, so a COL_BLACK window was
-        // never being cleared at all.
-        fill_box(hl, INK_WELL);
-
-        const int   bx    = hl->x0;
-        const int   bw    = hl->x1 - hl->x0 + 1;
-        const int   scale = note ? 2 : 3;
-        const int   tw    = vg_text_width(headline, scale);
-        const int   cy    = (hl->y0 + hl->y1) / 2;
-
-        // RIGHT TO LEFT, AND IT WRAPS. Moving right, the block's TAIL enters the
-        // window first and the word arrives back to front -- the banner said SHIP
-        // SELECT. And a single pass leaves the glass empty between readings,
-        // which looks like a machine that has stopped; repeating every
-        // word-plus-gap makes the tail of one pass the head of the next.
-        //
-        // vg.state_t, not an integrated dt: the renderer has no dt to give, and an
-        // accumulated one runs the ticker at the frame rate rather than the clock
-        // -- one speed on the desktop, another on the board, and a replay that
-        // does not reproduce.
-        const int   period = tw + VG_CON_TICKER_GAP;
-        const float u   = vg.state_t * VG_CON_TICKER_RATE;
-        const int   off = (int)(u - floorf(u / (float)period) * (float)period);
-        const int   ty  = cy - (note ? 12 : 10);
-
-        // Clipped to the window BOX. It is needed because the screen aperture
-        // notches up either side of this bar, so there are exempt pixels off both
-        // ends that the chassis cannot paint over -- text ran out of the window
-        // and stayed on screen. The box lets the letters reach the glass; the
-        // chassis cuts the chamfer.
-        vg_rast_viewport(hl->bx0, hl->by0,
-                         hl->bx1 - hl->bx0 + 1, hl->by1 - hl->by0 + 1);
-
-        // WHITE, because the machine is not the one asking. A headline is the
-        // tournament talking to you through the terminal -- the same voice that
-        // speaks over a match -- so it takes COL_IFT. The keys stay amber: those
-        // are furniture, and the difference between the two is the point.
-        for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
-            vg_text(tx, ty, headline, COL_IFT, scale);
-
-        // A note does NOT run. It is a sentence to be read once, not a banner,
-        // and a moving one would be the only thing on the screen asking to be
-        // chased.
-        if (note)
-            vg_text((SCR_W - vg_text_width(note, 1)) / 2, cy + 4, note, INK, 1);
-        vg_rast_viewport_full();
+        const VgRect fill = { hl->bx0, hl->by0,
+                              (int16_t)(hl->bx1 - hl->bx0 + 1),
+                              (int16_t)(hl->by1 - hl->by0 + 1) };
+        const VgRect run  = { hl->x0, hl->y0,
+                              (int16_t)(hl->x1 - hl->x0 + 1),
+                              (int16_t)(hl->y1 - hl->y0 + 1) };
+        // A note means BOTH lines are smaller: two of them in one window is the
+        // rule, and it is the headline's rather than the ticker's.
+        vg_ticker(fill, run, headline, note, vg.state_t, note ? 2 : 3);
     }
 
     // GLASS FROM HERE. The plating is cold steel and dead flat; the display under

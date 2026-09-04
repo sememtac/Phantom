@@ -196,6 +196,8 @@ static void enter_course(void) {
 // from the transition, from the repair screen and from the end of a round, and
 // each of those used to prepare it differently.
 static void enter_bracket(void) {
+    // The results the page reads out, composed once here. See vg_bracket_chyron.
+    vg_bracket_chyron();
     // The table is a menu, so it gets the menu's backdrop -- it used to keep
     // whatever the last venue built.
     vg_use_menu_sky();

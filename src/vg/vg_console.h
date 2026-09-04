@@ -100,12 +100,10 @@
 // is broken.
 #define VG_CON_FAULT_RATE  1.4f
 
-#define VG_CON_TICKER_RATE 46.0f
-
-// The clear space between one pass of the banner and the next. Three characters
-// at the title's own scale: enough that the two readings do not run together,
-// short enough that the glass is never empty.
-#define VG_CON_TICKER_GAP  54
+// VG_CON_TICKER_RATE and VG_CON_TICKER_GAP went to vg_ui.h with the ticker that
+// spends them. They were never the console's: they are how fast a banner moves
+// and how far apart two readings of it sit, and a chyron on a page with no
+// chassis at all wants the same two numbers.
 
 // Put up the chassis's headline and open the glass. `note` is a second line in
 // the headline window, or null for a one-line headline at the larger size.

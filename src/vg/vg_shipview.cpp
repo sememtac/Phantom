@@ -497,6 +497,43 @@ static void draw_head(const Lay* L, const ShipSpec* sp) {
 
 // ---------------------------------------------------------------------------
 
+void vg_ship_glyph(ShipClass c, int cx, int cy, int hw, int hh, uint16_t col) {
+    const float x0 = (float)(cx - hw), x1 = (float)(cx + hw);
+    const float y0 = (float)(cy - hh), y1 = (float)(cy + hh);
+    const float xm = (float)cx,        ym = (float)cy;
+
+    switch (c) {
+    case SHIP_AEGIS:        // the shield: a dome standing on its base
+        vg_line_w(x0, y1, xm, y0, col, 2);
+        vg_line_w(xm, y0, x1, y1, col, 2);
+        vg_line_w(x0, y1, x1, y1, col, 2);
+        break;
+
+    case SHIP_LANCE:        // the point: a dart, and all of it is the tip
+        vg_line_w(x0, y0, x1, ym, col, 2);
+        vg_line_w(x0, y1, x1, ym, col, 2);
+        vg_line_w(x0, y0, x0, y1, col, 2);
+        break;
+
+    case SHIP_CHARIOT:      // the speed: two chevrons, swept and running
+        vg_line_w(x0, y0, xm, ym, col, 2);
+        vg_line_w(x0, y1, xm, ym, col, 2);
+        vg_line_w(xm, y0, x1, ym, col, 2);
+        vg_line_w(xm, y1, x1, ym, col, 2);
+        break;
+
+    case SHIP_BALLISTA:     // the range: a bolt on a rail, already loosed
+        vg_line_w(x0, ym, x1, ym, col, 2);
+        vg_line_w(x0, y0, x0, y1, col, 2);
+        vg_line_w(xm, y0, x1, ym, col, 2);
+        vg_line_w(xm, y1, x1, ym, col, 2);
+        break;
+
+    default:
+        break;
+    }
+}
+
 void vg_shipview_reset(VgShipView* v) {
     if (!v) return;
     v->to = v->from = -1;

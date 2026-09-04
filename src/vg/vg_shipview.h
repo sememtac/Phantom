@@ -41,6 +41,29 @@ struct VgShipView {
 // without a transition rather than sweeping in from nowhere.
 void vg_shipview_reset(VgShipView* v);
 
+// ---------------------------------------------------------------------------
+// A CLASS AS A MARK, for somewhere far too small to draw the hull.
+//
+// The bracket sheet has about sixteen pixels a side to say what somebody flies,
+// which is a tenth of what the plan view needs to be recognisable. It carried one
+// letter of the class name instead -- A, L, C, B -- and at that size a letter is
+// something you READ, one box at a time, when what the sheet is for is taking in
+// a column of opponents at a glance.
+//
+// So: symbology. Four marks, each drawn from the single quality the class is
+// named for in vg_ship.h, in the register a military display would use --
+// outlines rather than solids, because this renderer has no polygon fill and a
+// filled slab is against the house style in any case.
+//
+//   AEGIS     the shield   a dome on its base
+//   LANCE     the point    a dart, apex forward
+//   CHARIOT   the speed    two chevrons, swept back
+//   BALLISTA  the range    a bolt on a rail
+//
+// `hw` and `hh` are HALF extents from the centre, so the caller sizes the mark to
+// the cell it has rather than to a scale nobody can check.
+void vg_ship_glyph(ShipClass c, int cx, int cy, int hw, int hh, uint16_t col);
+
 // Draw class `cls` in the rectangle. `v` carries the change from frame to frame.
 void vg_shipview_draw(VgShipView* v, int cls, int x, int y, int w, int h);
 

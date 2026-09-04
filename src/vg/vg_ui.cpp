@@ -70,6 +70,64 @@ void vg_button(int x, int y, int w, int h, const char* label,
 }
 
 // ---------------------------------------------------------------------------
+// The ticker
+// ---------------------------------------------------------------------------
+
+void vg_ticker(VgRect fill, VgRect run, const char* text, const char* note,
+               float t, int scale) {
+    if (!text || fill.w <= 0 || fill.h <= 0 || run.w <= 0) return;
+
+    // THE FILL RECT, NOT THE RUN. A window in chassis art is an octagon; a fill of
+    // the rectangle that fits inside it leaves the four chamfered corners
+    // unpainted, and the chassis does not cover them either -- they are exempt.
+    // The sky showed in the corners. The fill overshoots onto metal, which the
+    // chassis paints over on the way past.
+    //
+    // INK_WELL and not COL_BLACK: a fill whose colour is zero is DROPPED, the same
+    // rule that makes black text invisible, so a COL_BLACK window was never being
+    // cleared at all.
+    vg_fill_rect(fill.x, fill.y, fill.w, fill.h, INK_WELL);
+
+    const int tw    = vg_text_width(text, scale);
+    const int cy    = run.y + (run.h - 1) / 2;
+
+    // RIGHT TO LEFT, AND IT WRAPS. Moving right, the block's TAIL enters the
+    // window first and the word arrives back to front -- the banner said SHIP
+    // SELECT. And a single pass leaves the window empty between readings, which
+    // looks like a machine that has stopped; repeating every word-plus-gap makes
+    // the tail of one pass the head of the next.
+    const int   period = tw + VG_TICKER_GAP;
+    const float u      = t * VG_TICKER_RATE;
+    const int   off    = (int)(u - floorf(u / (float)period) * (float)period);
+    const int   ty     = cy - (note ? 12 : 10);
+
+    // Clipped to the FILL rect. In the console it is needed because the screen
+    // aperture notches up either side of the headline bar, so there are exempt
+    // pixels off both ends that the chassis cannot paint over -- text ran out of
+    // the window and stayed on screen. Text obeys the viewport per pixel, so a
+    // letter is cut mid-stroke rather than dropped whole.
+    vg_rast_viewport(fill.x, fill.y, fill.w, fill.h);
+
+    // WHITE, because the machine is not the one asking. A banner is the
+    // tournament talking to you -- the same voice that speaks over a match -- so
+    // it takes COL_IFT. Keys and furniture stay amber, and the difference between
+    // the two is the point.
+    for (int tx = run.x + run.w - off; tx + tw > run.x; tx -= period)
+        vg_text(tx, ty, text, COL_IFT, scale);
+
+    // A note does NOT run. It is a sentence to be read once, not a banner, and a
+    // moving one would be the only thing on the screen asking to be chased.
+    //
+    // Centred on the RUN rect. It was centred on the screen, which happened to be
+    // right for the one chassis that had a note and would have been wrong for any
+    // window not in the middle of the panel.
+    if (note)
+        vg_text(run.x + (run.w - vg_text_width(note, 1)) / 2, cy + 4, note, INK, 1);
+
+    vg_rast_viewport_full();
+}
+
+// ---------------------------------------------------------------------------
 // The wheel
 // ---------------------------------------------------------------------------
 //

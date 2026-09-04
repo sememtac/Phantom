@@ -1,9 +1,9 @@
 ﻿#include "vg_bracket.h"
 #include "vg_ui.h"
+#include "vg_shipview.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_tourney.h"
-#include "vg_voice.h"
 #include <stdio.h>
 
 // ===========================================================================
@@ -18,10 +18,33 @@
 // Columns, left to right:  R16  QF  SF  F | CHAMPION | F  SF  QF  R16
 // ===========================================================================
 
-#define BRK_CW      86      // column pitch, canvas px
-#define BRK_RY      40      // row pitch (eight first-round rows)
-#define BOX_W       56
-#define BOX_H       22
+// A THIRD BIGGER THAN IT WAS, and the reason is the device rather than the
+// drawing. The sheet was laid out so that one whole side of it was on screen at
+// once, which is more than a glance can use and smaller than a 314 ppi panel can
+// carry: the callsign was scale 2 in a 56px box and the ship class was a single
+// letter at scale 1, which is 0.57mm and is not small type, it is type nobody can
+// read. It is the same fault the ship-select pass fixed once already.
+//
+// At this pitch six boxes and about three and a half columns fit the window. That
+// reverses the rule in design/notes/design.md that the whole sheet is always
+// visible and panning is only for detail -- the author's call, made after a UX
+// pass on the device and recorded there.
+#define BRK_CW      129     // column pitch, canvas px
+#define BRK_RY      48      // row pitch (eight first-round rows)
+#define BOX_W       76
+#define BOX_H       30
+
+// Inside a box: the trail stripe down the left edge, the callsign clear of it,
+// and the class mark's cell at the right. Named because the draw and the eye have
+// to agree about where a box's furniture sits, and three hand-picked offsets in
+// the middle of a draw function is how that stops being true.
+#define BOX_HUE_W   4
+#define BOX_TAG_X   9
+#define BOX_PAD     5
+// The class mark's half extents. A shade wider than tall, because three of the
+// four marks point forward and want the room in that direction.
+#define BOX_GLYPH_HW 8
+#define BOX_GLYPH_HH 6
 
 #define CANVAS_W    (9 * BRK_CW)
 #define CANVAS_H    (8 * BRK_RY)
@@ -31,8 +54,98 @@
 #define VIEW_Y0     84
 #define VIEW_H      286
 
+// The chyron's strip, inside the header band and under the round and the bank.
+// Scale 3 is 21px tall and the ticker centres it, so 38 leaves eight either side.
+#define CHY_Y       40
+#define CHY_H       38
+// SCALE 2, NOT THE HEADLINE'S 3. At scale 3 the panel holds twenty-six
+// characters, so a round of sixteen takes the better part of a minute to pass,
+// and the shape of it -- a round name, then pairs -- never fits on screen at
+// once. At 2 it holds forty, which is a round name and two results together,
+// and 1.13mm is the size the ship wheel is already read at on this panel.
+#define CHY_SCALE   2
+
 static float s_pan_x = 0.0f;
 static float s_pan_y = 0.0f;
+
+// ===========================================================================
+// THE CHYRON
+//
+// A broadcast runs its results across the bottom of the picture and this page IS
+// the broadcast -- the console is behind us by the time the draw is made. So the
+// tournament reads itself out: every match already flown, newest round first.
+//
+// IT IS NOT AN IFT LINE, and that is not a style choice. Broadcast::ift_fired is
+// a uint8_t with one bit per slot and there are already nine of them, so a tenth
+// would silently do nothing -- vg_ift.h says so in as many words. This composes
+// its own text and borrows only the voice: white, bare uppercase, no punctuation,
+// and the same triple space the IFT separates fields with.
+//
+// THE RESULT OF EVERY MATCH IS ALREADY IN THE TABLE and no field had to be added
+// for this. vt.slot[r] is the field at the START of round r, so match m is
+// slot[r][2m] against slot[r][2m+1] and the winner is slot[r+1][m] -- which makes
+// the loser the other one. Fifteen matches, reconstructable at any point.
+//
+// A VERB, AND IT IS IN THE PRESENT TENSE. The first pass ran winner and loser
+// with three spaces between them and no verb, on the grounds that IFT_MATCH_END
+// already does that and the reading would be learned once. It is not learned
+// once: a crawl of bare pairs reads as a list of names, and the one thing a
+// result has to say is which of the two is still flying.
+//
+// ELIMINATES rather than ELIMINATED because a headline does not use the past --
+// "UNITED WIN LEAGUE", never WON -- and a crawl in the past tense reads as an
+// archive rather than as a feed. The word is doing a second job as well. The
+// tournament is lethal and the broadcast runs it for viewing figures and tax
+// revenue; a network that says ELIMINATES when it means killed is exactly the
+// voice design.md describes.
+//
+// With the verb binding the two names, one width of gap is enough.
+// ===========================================================================
+
+#define CHY_VERB  " ELIMINATES "
+#define CHY_OUT   "      "      // one match to the next
+
+// A FRESH SHEET HAS NOTHING TO REPORT, and it does not pretend otherwise. The
+// author's line. Administrative, incurious, and not on anybody's side -- and it
+// says the ticker has a job it cannot do yet rather than filling the space.
+#define CHY_COLD  "AWAITING MATCH RESULTS"
+
+// Fifteen matches at about twenty-four characters each, plus four round names.
+// Roughly 420 in the worst case, which is a whole tournament read out.
+static char s_chyron[640];
+
+void vg_bracket_chyron(void) {
+    s_chyron[0] = 0;
+    int at = 0;
+
+    // Resolved rounds only. vt.round is the one being flown, so everything below
+    // it is history; a finished tournament has all four.
+    const int done = vt.complete ? TOURNEY_ROUNDS : (int)vt.round;
+
+    for (int r = done - 1; r >= 0; r--) {
+        const int n = TOURNEY_ENTRANTS >> r;
+
+        at += snprintf(s_chyron + at, sizeof(s_chyron) - at, "%s%s",
+                       at ? CHY_OUT : "", vg_tourney_round_name((uint8_t)r));
+        if (at >= (int)sizeof(s_chyron) - 1) break;
+
+        for (int m = 0; m < n / 2; m++) {
+            const int a = vt.slot[r][m * 2];
+            const int b = vt.slot[r][m * 2 + 1];
+            const int w = vt.slot[r + 1][m];
+            if (a < 0 || b < 0 || w < 0) continue;
+            const int l = (w == a) ? b : a;
+
+            at += snprintf(s_chyron + at, sizeof(s_chyron) - at,
+                           CHY_OUT "%s" CHY_VERB "%s",
+                           vt.entrant[w].tag, vt.entrant[l].tag);
+            if (at >= (int)sizeof(s_chyron) - 1) break;
+        }
+    }
+
+    if (!s_chyron[0])
+        snprintf(s_chyron, sizeof(s_chyron), "%s", CHY_COLD);
+}
 
 static void clamp_pan(void) {
     const float maxx = (float)(CANVAS_W - SCR_W);
@@ -104,6 +217,27 @@ static void rule(int x, int y, int w, int h, uint16_t col) {
     vg_fill_rect(x, y, w, h, col);
 }
 
+// THE CALLSIGN AND WHAT THEY FLY, laid out once for both kinds of box.
+//
+// The class was one character at SCALE 1 and could not be read on the device at
+// all, which made it decoration rather than the tactical fact it is meant to be --
+// seeing a BALLISTA two rounds out is something you can plan for, and only if you
+// can see it. At scale 2 the four initials are 12px and unmistakably distinct.
+//
+// Both lines are centred vertically in the box rather than offset from its top, so
+// the box can change height without either of them being re-picked.
+static void box_label(int sx, int sy, const char* tag, ShipClass cls,
+                      uint16_t ink) {
+    const int ty = sy + (BOX_H - 14) / 2;      // a scale 2 glyph is 14 tall
+    vg_text(sx + BOX_TAG_X, ty, tag, ink, 2);
+
+    // The class as a MARK rather than as a letter. See vg_ship_glyph: a letter at
+    // this size is something you read one box at a time, and the sheet is for
+    // taking in a column of opponents at once.
+    vg_ship_glyph(cls, sx + BOX_W - BOX_PAD - BOX_GLYPH_HW,
+                  sy + BOX_H / 2, BOX_GLYPH_HW, BOX_GLYPH_HH, ink);
+}
+
 static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) {
     int sx, sy;
     canvas_to_screen(bx, by, &sx, &sy);
@@ -127,12 +261,10 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
     if (e->is_player) {
         // Inverse video for you -- hierarchy is still brightness and inversion.
         vg_fill_rect(sx, sy, BOX_W, BOX_H, INK_BRIGHT);
-        vg_fill_rect(sx, sy, 4, BOX_H, hue);
+        vg_fill_rect(sx, sy, BOX_HUE_W, BOX_H, hue);
         // INK_ONFILL, not COL_BLACK: vg_text treats colour 0 as invisible, so a
         // black label renders as nothing and the slot reads as a solid block.
-        vg_text(sx + 7, sy + 4, e->tag, INK_ONFILL, 2);
-        char pc[2] = { vg_spec(e->cls)->name[0], 0 };
-        vg_text(sx + 45, sy + 7, pc, INK_ONFILL, 1);
+        box_label(sx, sy, e->tag, e->cls, INK_ONFILL);
         return;
     }
 
@@ -140,12 +272,8 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
     uint16_t ink   = alive ? (is_next_opp ? INK_MAX : INK_BRIGHT) : INK_FAINT;
 
     vg_rect(sx, sy, BOX_W, BOX_H, frame);
-    vg_fill_rect(sx + 1, sy + 1, 3, BOX_H - 2, hue);
-    vg_text(sx + 7, sy + 4, e->tag, ink, 2);
-    // One character of ship class: A / L / C / B. That is what makes the sheet
-    // tactical -- seeing a BALLISTA two rounds out is something you can plan for.
-    char cls[2] = { vg_spec(e->cls)->name[0], 0 };
-    vg_text(sx + 45, sy + 7, cls, ink, 1);
+    vg_fill_rect(sx + 1, sy + 1, BOX_HUE_W - 1, BOX_H - 2, hue);
+    box_label(sx, sy, e->tag, e->cls, ink);
 
     if (!alive) {
         // Struck through and dropped to the dim ink level: out, but still part
@@ -176,11 +304,29 @@ void vg_draw_bracket(void) {
             int ca, la, cb, lb;
             slot_place(r, m * 2,     &ca, &la);
             slot_place(r, m * 2 + 1, &cb, &lb);
-            if (ca != cb) continue;          // the pair straddling the middle
 
             int ax, ay, bx2, by2;
             slot_box(ca, r, la, &ax, &ay);
             slot_box(cb, r, lb, &bx2, &by2);
+
+            if (ca != cb) {
+                // THE FINAL, and it is the only pair that straddles the middle.
+                // Its two boxes sit either SIDE of the champion's rather than
+                // above and below each other, so there is no spine to drop
+                // between them and the general case cannot draw it.
+                //
+                // It used to be skipped outright, which left the champion box
+                // floating with nothing joining it to the two fighters who get
+                // there -- the one box on the sheet the whole tree points at.
+                // One rule straight through, and the champion is drawn over the
+                // middle of it afterwards.
+                const int x0 = ((ax < bx2) ? ax : bx2) + BOX_W;
+                const int x1 = (ax < bx2) ? bx2 : ax;
+                int hsx, hsy;
+                canvas_to_screen(x0, ay + BOX_H / 2, &hsx, &hsy);
+                rule(hsx, hsy, x1 - x0, 1, INK_FAINT);
+                continue;
+            }
 
             const bool left = (ca <= 4);
             // Spine sits in the gutter between this column and the next.
@@ -222,7 +368,16 @@ void vg_draw_bracket(void) {
     }
 
     // --- header ---
-    vg_fill_rect(0, 0, SCR_W, VIEW_Y0 - 2, COL_BLACK);
+    //
+    // INK_WELL, NOT COL_BLACK, and this band has never painted. A fill whose
+    // colour is zero is DROPPED -- the same rule that makes black text invisible
+    // -- so the sky has been showing through behind the round label and the bank
+    // for as long as they have been there. Third time this trap has been found in
+    // this codebase, and the first two were fills exactly like it.
+    //
+    // Full height as well: it was VIEW_Y0 - 2, which left two rows of raw sky
+    // between the band and the top of the map for a box to bleed into.
+    vg_fill_rect(0, 0, SCR_W, VIEW_Y0, INK_WELL);
 
     // Round on the left, bank on the right, the match you are about to fly
     // across the middle at full size. Credits are a number the player is
@@ -235,51 +390,44 @@ void vg_draw_bracket(void) {
     snprintf(buf, sizeof(buf), "%d CR", vg.credits);
     vg_text(SCR_W - SCR_SAFE - vg_text_width(buf, 3), 8, buf, INK_MAX, 3);
 
-    if (opp) {
-        // Colour column butted against the callsign rather than parked at the
-        // screen edge: the point of the swatch is to bind a hue to a NAME, and
-        // it only does that if the two are touching.
-        // BY CALLSIGN, LIKE EVERY OTHER PILOT. This used to expand the legend's tag to
-        // "PHANTOM" here and in the cutscene's name card, on the reasoning that three
-        // characters is a bracket slot and not what you should read walking into a
-        // final. That reading changed when the title started changing hands: the pilot
-        // in the final is a specific person now, and after the first cycle they are
-        // whoever killed the last champion. Their callsign is the interesting fact, and
-        // a label saying PHANTOM would hide exactly the thing worth knowing.
-        //
-        // First playthrough it reads PHM, which is the legend's own callsign. The
-        // bracket tree beside it has always shown tags, so this also stops one pilot
-        // having two names on the same screen.
-        snprintf(buf, sizeof(buf), "VS %s  %s",
-                 opp->tag, vg_spec(opp->cls)->name);
-        const int tw = vg_text_width(buf, 3);
-        const int tx = (SCR_W - tw) / 2 + 6;
-        vg_fill_rect(tx - 14, 40, 6, 24, vg_hue_col(opp->hue));
-        vg_text(tx, 42, buf, INK_MAX, 3);
-
-        // Who they are, under what they fly. The ship tells you how the fight
-        // will go; this tells you what you are going to have to listen to.
-        const char* a = vg_voice_archetype(opp->voice);
-        vg_text((SCR_W - vg_text_width(a, 1)) / 2, 68, a, INK_FAINT, 1);
+    // THE CHYRON, across the full width under the round and the bank.
+    //
+    // A strip of its own rather than a window in a chassis, because there is no
+    // chassis on this page yet. When the broadcast art is baked this becomes the
+    // cyan slot and the two rectangles come from the drawing instead of from
+    // here -- vg_ticker takes them either way, which is the whole reason it was
+    // lifted out of the console.
+    {
+        const VgRect band = { 0, CHY_Y, SCR_W, CHY_H };
+        vg_ticker(band, band, s_chyron, nullptr, vg.state_t, CHY_SCALE);
     }
 
+    // THE VS LINE AND THE ARCHETYPE ARE GONE.
+    //
+    // The archetype was drawn at scale 1, which on this panel is 0.57mm, and it
+    // was answering a question nobody asked at the sheet: who you are about to
+    // fly against is the sheet's whole subject, and what they will SAY while
+    // doing it is not something you can act on. design.md makes the stronger
+    // argument -- personality is rolled independently of ship, seeding and hue
+    // precisely so the bracket is not readable at a glance, and printing it here
+    // undoes that on purpose.
+    //
+    // The VS line went with it because it was saying twice what the sheet says
+    // once: the next opponent's box is promoted to INK_MAX and the page opens
+    // centred on it. If that turns out to be too quiet in the hand, this is four
+    // lines to put back.
+
     // --- footer ---
-    vg_fill_rect(0, VIEW_Y0 + VIEW_H, SCR_W, SCR_H - VIEW_Y0 - VIEW_H, COL_BLACK);
+    //
+    // INK_WELL for the same reason as the header: this fill has never painted
+    // either.
+    vg_fill_rect(0, VIEW_Y0 + VIEW_H, SCR_W, SCR_H - VIEW_Y0 - VIEW_H, INK_WELL);
 
+    // THE HULL READOUT WENT TO THE REPAIR PAGE, where the decision it informs is
+    // actually taken. It was the biggest thing on the bottom of this screen and
+    // all it could tell you was whether to press a button that leads somewhere
+    // that says it again.
     const int hurt = (int)(vg.health_max - vg.health + 0.5f);
-    const int hp   = (int)(vg.health + 0.5f);
-    const int hmax = (int)(vg.health_max + 0.5f);
-
-    // Your ship and what is left of it, centred and at full size. This is the
-    // number every decision on this screen is really about, and it was
-    // previously set faint at the smallest scale, where it was unreadable.
-    snprintf(buf, sizeof(buf), "%s  %d/%d", vg.spec->name, hp, hmax);
-    const int fy = VIEW_Y0 + VIEW_H + 6;
-    const int fw = vg_text_width(buf, 3);
-    const int fx = (SCR_W - fw) / 2 + 6;
-    // Your own colour, butted against your ship the same way.
-    vg_fill_rect(fx - 14, fy - 2, 6, 24, vg_hue_col(vg.trail_hue));
-    vg_text(fx, fy, buf, hurt > 0 ? INK_MAX : INK_BRIGHT, 3);
 
     // REPAIR only lights when there is both damage to undo and money to do it
     // with, so the button itself answers "can I afford this".
