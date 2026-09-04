@@ -507,14 +507,27 @@ void vg_ship_glyph(ShipClass c, int cx, int cy, int hw, int hh, uint16_t col) {
     const float x0 = (float)(cx - hw), x1 = (float)(cx + hw);
     const float y0 = (float)(cy - hh), y1 = (float)(cy + hh);
     const float xm = (float)cx,        ym = (float)cy;
-    const float xa = (float)(cx - hw / 2), xb = (float)(cx + hw / 2);
-    (void)xa; (void)xb;
 
     switch (c) {
-    case SHIP_AEGIS:        // the shield
-        vg_line_w(x0, y1, xm, y0, col, 2);
-        vg_line_w(xm, y0, x1, y1, col, 2);
-        vg_line_w(x0, y1, x1, y1, col, 2);
+    // THE SHIELD, AND IT IS THE ONLY MARK WITH A LID ON IT.
+    //
+    // It was an outlined triangle standing on its base, which is LANCE's dart
+    // rotated a quarter turn -- reported from the board as the two being mistaken
+    // for each other, and they were the same shape in the same weight.
+    //
+    // A heater shield instead: flat across the top, straight down the sides, and
+    // then in to a point at the bottom. Five lines against the dart's three, and
+    // the difference the eye actually catches is the FLAT TOP -- a dart is a
+    // wedge all the way round and this is a wedge hanging off a bar. It also
+    // points down where every other mark on the roster points along, which is
+    // the second reading: the other three all aim somewhere and the shield is the
+    // hull that does not aim, it stands.
+    case SHIP_AEGIS:
+        vg_line_w(x0, y0, x1, y0, col, 2);
+        vg_line_w(x0, y0, x0, ym, col, 2);
+        vg_line_w(x1, y0, x1, ym, col, 2);
+        vg_line_w(x0, ym, xm, y1, col, 2);
+        vg_line_w(x1, ym, xm, y1, col, 2);
         break;
 
     case SHIP_LANCE:        // the point: a dart, and all of it is the tip
