@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "cfg_display.h"
 
 // ===========================================================================
@@ -67,7 +67,7 @@
 // Firing moved to the BOOT button, and the tap path went with it -- vg_player_fire is
 // reached from in->fire_edge and from nowhere else. The section had no constants left
 // either: the one tap threshold that survives is MENU_TAP_SLOP, and that belongs to the
-// menus and lives in vg_screens.h.
+// menus and lives in vg_menu.h.
 //
 // Left as a note rather than deleted, because the claim outlived the code by long enough
 // to reach the README, and somebody reading only the headers would have believed it.
@@ -102,16 +102,16 @@
 // A class should sit somewhere INSIDE its axis rather than pinned at an end, and
 // normalising min-max across the four instead would mean a fifth ship silently
 // reshaped everybody else's chart. See vg_ship_axes.
-#define SEL_AX_SPEED_LO   300.0f
-#define SEL_AX_SPEED_HI   500.0f
-#define SEL_AX_HULL_LO    180.0f
-#define SEL_AX_HULL_HI    360.0f
-#define SEL_AX_RANGE_LO  1000.0f
-#define SEL_AX_RANGE_HI  4500.0f
-#define SEL_AX_DMG_LO       0.0f
-#define SEL_AX_DMG_HI     130.0f
-#define SEL_AX_RATE_LO      0.0f
-#define SEL_AX_RATE_HI      1.1f
+#define SHIP_AX_SPEED_LO   300.0f
+#define SHIP_AX_SPEED_HI   500.0f
+#define SHIP_AX_HULL_LO    180.0f
+#define SHIP_AX_HULL_HI    360.0f
+#define SHIP_AX_RANGE_LO  1000.0f
+#define SHIP_AX_RANGE_HI  4500.0f
+#define SHIP_AX_DMG_LO       0.0f
+#define SHIP_AX_DMG_HI     130.0f
+#define SHIP_AX_RATE_LO      0.0f
+#define SHIP_AX_RATE_HI      1.1f
 
 // HOW LONG THE PANEL TAKES TO CHANGE SHIP.
 //
@@ -122,16 +122,16 @@
 //
 // Short. A wheel is spun, not stepped, and a transition that outlasts the next
 // flick of the thumb stops being a transition and becomes lag.
-#define SEL_MORPH_TIME       0.22f
+#define SHIP_MORPH_TIME       0.22f
 
 // Bucket rate for the transition tear, in Hz. Slower than the frame rate on
 // purpose -- see vg_glitch.h: a fault that holds still reads as damage, and one
 // resampled every frame reads as noise.
-#define SEL_TEAR_RATE        22.0f
+#define SHIP_TEAR_RATE        22.0f
 
 // The smallest a plotted vertex may be. A truly zero axis folds the polygon
 // through the centre and reads as a broken drawing rather than as a weakness.
-#define SEL_AX_FLOOR        0.10f
+#define SHIP_AX_FLOOR        0.10f
 
 // --- missile bearing ring --------------------------------------------------
 //

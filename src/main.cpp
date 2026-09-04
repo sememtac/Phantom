@@ -334,7 +334,9 @@ void loop(void) {
     // frames arrive in microseconds and the world would advance in microseconds
     // with them -- and two runs of the same fight would differ because the host
     // was differently busy. Pinned to the rate the game is designed around.
-    if (vg_headless) frame_dt = 1.0f / 60.0f;
+    // ...and the same pinning for a run that still draws, so a captured frame is
+    // comparable with the same frame from another build. See vg_fixed_dt.
+    if (vg_headless || vg_fixed_dt) frame_dt = 1.0f / 60.0f;
 
     float sim_dt = frame_dt;
 

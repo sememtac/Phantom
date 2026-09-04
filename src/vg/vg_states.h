@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <stdint.h>
 // Tap and VgInput, which the state handlers below take. vg_states.h needed neither
 // while it held only TvState; the handlers arrived from vg_sim.h, which had them via
@@ -62,3 +62,7 @@ void vg_upd_won(float dt, const VgInput* in, const Tap* tap);
 
 // The lookup: run whatever the current state's row says to run.
 void vg_state_update(float dt, const VgInput* in, const Tap* tap);
+
+// ...and draw whatever it says to draw. Null for a state that flies, so this is
+// a no-op there rather than a case nobody wrote.
+void vg_state_draw(void);

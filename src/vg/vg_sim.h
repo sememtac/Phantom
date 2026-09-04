@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "vg_game.h"
 #include "vg_voice.h"
 
@@ -144,6 +144,24 @@ void vg_update_enemy(Ship* s, int index, float dt);
 // fight every time from the same seed, which is what makes a measured matchup
 // mean anything.
 extern bool vg_headless;
+
+// PIN THE FRAME TO 1/60 WITHOUT GIVING UP THE PICTURE.
+//
+// A headless run already does this, and it is the reason a measured fight
+// reproduces -- but it returns before it draws, so it cannot answer a question
+// about what the screen looks like. A shot taken from a live window carries the
+// host's clock in it: vg.state_t is what the ticker, the sweep and the panel
+// faults are drawn from, so two runs of the SAME binary put them in different
+// places and a frame differs from itself by thousands of pixels.
+//
+// That is what made a rendering change unverifiable. The difference between two
+// builds was buried under the difference between two runs, and the only thing
+// that could be compared was the chassis, which is exactly the part a change to
+// the drawing does not touch.
+//
+// Set by --shot, which is a testing flag and has no other business running at
+// wall-clock speed. Frame N is then the same frame every time.
+extern bool vg_fixed_dt;
 
 // Debris with the speed and the lifetime turned up: a hull letting go rather
 // than a scrape. `speed_k` and `life_k` multiply the defaults. `radius` scales

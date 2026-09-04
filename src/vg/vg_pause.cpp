@@ -1,4 +1,4 @@
-#include "vg_pause.h"
+﻿#include "vg_pause.h"
 #include "vg_ui.h"
 #include "vg_draw.h"
 #include "vg_game.h"
@@ -6,9 +6,10 @@
 #include "vg_sfx.h"
 #include <stdio.h>
 
-// The pause screen and the config page behind it. Lifted out of
-// vg_screens.cpp, which was ship select and this sharing nothing but a file
-// name -- and the tournament table was about to make it three.
+// The pause screen and the config page behind it. Lifted out of what was then
+// vg_screens.cpp -- ship select and this sharing nothing but a file name, and
+// the tournament table was about to make it three. That file is vg_select.cpp
+// now, and every screen has its own pair; see vg_menu.h.
 
 // ---------------------------------------------------------------------------
 // Pause

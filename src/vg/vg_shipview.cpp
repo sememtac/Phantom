@@ -1,32 +1,92 @@
-﻿#include "vg_screens.h"
+#include "vg_shipview.h"
 #include "vg_ui.h"
-#include "vg_bezel.h"
-#include "vg_console.h"
-#include "generated/bezel_console.h"
-#include "vg_sfx.h"
-#include "vg_course.h"
 #include "vg_draw.h"
 #include "vg_glitch.h"
 #include "vg_game.h"
-#include <stdio.h>
 #include <math.h>
+#include <stdio.h>
 
-// Ship select and pause. The tournament map is big enough to want its own file.
+// The ship, drawn: the name, what it carries, the shape its five numbers make,
+// and the hull from above. Lifted out of vg_select.cpp, which was the only
+// screen that could ask for any of it. See vg_shipview.h for what the split is
+// for and what a caller now has to hold.
 
-int vg_select_row_at(float x, float y) {
-    if (!vg_in_rect(x, y, SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H))
-        return SEL_ROW_NONE;
-    const float dy = y - (float)SEL_WHEEL_DETENT;
-    int k = (int)lroundf(dy / (float)SEL_WHEEL_PITCH);
-    // Clamped to the rows that are actually DRAWN, so a tap in the margin below
-    // the last name nudges by one rather than by however far the finger was out.
-    if (k < SEL_WHEEL_LO)                     k = SEL_WHEEL_LO;
-    if (k > SEL_WHEEL_LO + SEL_WHEEL_N - 1)   k = SEL_WHEEL_LO + SEL_WHEEL_N - 1;
-    return k;
+// WHERE EVERYTHING SITS, worked out once from the rectangle the panel was given
+// and passed down. That is the whole of what "it takes a rectangle" costs: the
+// helpers used to read the select screen's constants directly, which is what
+// made them the select screen's.
+struct Lay {
+    int x, y, w, h;     // the panel itself
+    int cx, cy, r;      // the chart
+    int my, mh;         // the plan view's slot
+    int bx, bw;         // the inside of the panel, where a labelled field goes
+};
+
+static Lay lay_of(int x, int y, int w, int h) {
+    Lay L;
+    L.x  = x; L.y = y; L.w = w; L.h = h;
+    L.cx = x + w / 2;
+    L.cy = y + SHIPVIEW_CHART_DY;
+    L.r  = SHIPVIEW_CHART_R;
+    L.my = y + SHIPVIEW_MODEL_DY;
+    L.mh = SHIPVIEW_MODEL_H;
+    L.bx = x + SHIPVIEW_FIELD_PAD;
+    L.bw = w - 2 * SHIPVIEW_FIELD_PAD;
+    return L;
 }
 
-bool vg_select_confirm_at(float x, float y) {
-    return vg_console_key_at(VG_CON_KEY, x, y);
+// THE WIDEST HALF-SPAN IN THE ROSTER, found by looking rather than by being
+// told. See the note where it is spent.
+//
+// Once, on the first draw, over four short outlines -- the chart's trig tables
+// are built the same way and for the same reason.
+static float plan_max_half_span(void) {
+    static float s_span = 0.0f;
+    if (s_span > 0.0f) return s_span;
+    for (int c = 0; c < SHIP_CLASSES; c++) {
+        const VgShipPlan& pl = vg_ship_plan[c];
+        if (!pl.pts) continue;
+        for (int i = 0; i < pl.n; i++) {
+            const float y = fabsf(pl.pts[i * 2 + 1]);
+            if (y > s_span) s_span = y;
+        }
+    }
+    return s_span;
+}
+
+void vg_ship_axes(const ShipSpec* sp, float out[5]) {
+    if (!sp) { for (int i = 0; i < 5; i++) out[i] = 0.0f; return; }
+
+    // RATE is vg_ship_rate, defined with the roster rather than here because the
+    // invariants check that same figure against the range it is plotted on.
+    const float v[5] = { sp->speed_max, sp->hull, sp->lock_range,
+                         sp->msl_damage, vg_ship_rate(*sp) };
+    // The display ranges are deliberately WIDER than the roster, so a class sits
+    // somewhere inside its axis rather than at an end, and so adding a fifth ship
+    // does not silently reshape the other four. Min-max across the roster would
+    // do exactly that. The invariants at the foot of vg_ship.cpp are what stop a
+    // class leaving them without saying so.
+    const float lo[5] = { SHIP_AX_SPEED_LO, SHIP_AX_HULL_LO, SHIP_AX_RANGE_LO,
+                          SHIP_AX_DMG_LO,   SHIP_AX_RATE_LO };
+    const float hi[5] = { SHIP_AX_SPEED_HI, SHIP_AX_HULL_HI, SHIP_AX_RANGE_HI,
+                          SHIP_AX_DMG_HI,   SHIP_AX_RATE_HI };
+
+    for (int i = 0; i < 5; i++) {
+        const float span = hi[i] - lo[i];
+        float t = (span > 0.0f) ? (v[i] - lo[i]) / span : 0.0f;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        // A floor, so a collapsed axis is still a visible vertex rather than a
+        // crease at the centre. CHARIOT's RANGE is 0.09 and its DAMAGE 0.07; at
+        // literal zero the polygon would fold through the middle and read as a
+        // drawing fault instead of as a weakness.
+        out[i] = SHIP_AX_FLOOR + t * (1.0f - SHIP_AX_FLOOR);
+    }
+}
+
+const char* vg_ship_axis_name(int i) {
+    static const char* N[5] = { "SPEED", "HULL", "RANGE", "DAMAGE", "RATE" };
+    return (i >= 0 && i < 5) ? N[i] : "";
 }
 
 // THE FIVE AXES, AS A SHAPE.
@@ -55,16 +115,16 @@ static void chart_tables(void) {
     s_ax_ready = true;
 }
 
-static void chart_pt(int i, float t, float* px, float* py) {
-    *px = (float)SEL_CHART_CX + s_ax_cs[i][0] * (float)SEL_CHART_R * t;
-    *py = (float)SEL_CHART_CY + s_ax_cs[i][1] * (float)SEL_CHART_R * t;
+static void chart_pt(const Lay* L, int i, float t, float* px, float* py) {
+    *px = (float)L->cx + s_ax_cs[i][0] * (float)L->r * t;
+    *py = (float)L->cy + s_ax_cs[i][1] * (float)L->r * t;
 }
 
-static void chart_ring(float t, uint16_t col, int w) {
+static void chart_ring(const Lay* L, float t, uint16_t col, int w) {
     float px, py, nx, ny;
-    chart_pt(4, t, &px, &py);
+    chart_pt(L, 4, t, &px, &py);
     for (int i = 0; i < 5; i++) {
-        chart_pt(i, t, &nx, &ny);
+        chart_pt(L, i, t, &nx, &ny);
         vg_line_w(px, py, nx, ny, col, w);
         px = nx; py = ny;
     }
@@ -138,27 +198,27 @@ static int field_wrap(int x, int y, int w, const char* label,
     return y + line * 18;
 }
 
-static void draw_chart(const float ax[5]) {
+static void draw_chart(const Lay* L, const float ax[5]) {
     chart_tables();
 
     // Graduations first, hairline, so they read as scale and not as structure.
-    chart_ring(0.33f, INK_TRACE, 1);
-    chart_ring(0.66f, INK_TRACE, 1);
+    chart_ring(L, 0.33f, INK_TRACE, 1);
+    chart_ring(L, 0.66f, INK_TRACE, 1);
     for (int i = 0; i < 5; i++) {
         float ex, ey;
-        chart_pt(i, 1.0f, &ex, &ey);
-        vg_line((float)SEL_CHART_CX, (float)SEL_CHART_CY, ex, ey, INK_TRACE);
+        chart_pt(L, i, 1.0f, &ex, &ey);
+        vg_line((float)L->cx, (float)L->cy, ex, ey, INK_TRACE);
     }
     // ...then the rim at 2px, which is the instrument border. The same weighting
     // rule the radar uses: outer edge structural, inner rings graduations.
-    chart_ring(1.0f, INK_FAINT, 2);
+    chart_ring(L, 1.0f, INK_FAINT, 2);
 
     // The class itself, over the top and at the top of the ramp.
     {
         float px, py, nx, ny;
-        chart_pt(4, ax[4], &px, &py);
+        chart_pt(L, 4, ax[4], &px, &py);
         for (int i = 0; i < 5; i++) {
-            chart_pt(i, ax[i], &nx, &ny);
+            chart_pt(L, i, ax[i], &nx, &ny);
             vg_line_w(px, py, nx, ny, INK_MAX, 2);
             px = nx; py = ny;
         }
@@ -170,8 +230,8 @@ static void draw_chart(const float ax[5]) {
     for (int i = 0; i < 5; i++) {
         const char* nm = vg_ship_axis_name(i);
         const float ox = s_ax_cs[i][0], oy = s_ax_cs[i][1];
-        float lx = (float)SEL_CHART_CX + ox * (float)(SEL_CHART_R + SEL_CHART_LABEL);
-        float ly = (float)SEL_CHART_CY + oy * (float)(SEL_CHART_R + SEL_CHART_LABEL);
+        float lx = (float)L->cx + ox * (float)(L->r + SHIPVIEW_CHART_LABEL);
+        float ly = (float)L->cy + oy * (float)(L->r + SHIPVIEW_CHART_LABEL);
         const float w = (float)vg_text_width(nm, 1);
         lx -= w * ((ox < -0.3f) ? 1.0f : ((ox > 0.3f) ? 0.0f : 0.5f));
         ly -= (oy < -0.3f) ? 7.0f : ((oy > 0.3f) ? 0.0f : 3.5f);
@@ -190,7 +250,7 @@ static void draw_chart(const float ax[5]) {
 // Nose to the RIGHT, because the slot is wide and short and a plan view is long
 // and narrow. Scaled UNIFORMLY off the widest span in the roster, so a class that
 // is genuinely narrow reads as narrow instead of being stretched to fill the box.
-static void draw_plan_view(const ShipSpec* sp, int cls) {
+static void draw_plan_view(const Lay* L, const ShipSpec* sp, int cls) {
     const VgShipPlan& pl = vg_ship_plan[(cls < SHIP_CLASSES) ? cls : 0];
     if (!pl.pts || pl.n < 2) return;
     (void)sp;
@@ -201,11 +261,19 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
     // BALLISTA's reverse wing, and it is the widest thing in the roster now. This
     // is the scale EVERY class is drawn against, so it has to track whichever hull
     // is broadest or that hull walks out of the slot.
-    const float MAX_HALF_SPAN = 0.58f;
-    const float sy = ((float)SEL_MODEL_H * 0.46f) / MAX_HALF_SPAN;
+    //
+    // MEASURED NOW, NOT REMEMBERED. It was 0.58f written in by hand against a
+    // roster whose widest hull is 0.575 -- near enough to be right, with nothing
+    // anywhere that could tell when it stopped being. A fifth ship broader than
+    // BALLISTA would have been drawn past the edge of its slot and over the panel
+    // border, and the only report would have been that the new ship looked wrong.
+    //
+    // The drawing is 0.9% larger than it was, which is the rounding coming out.
+    const float MAX_HALF_SPAN = plan_max_half_span();
+    const float sy = ((float)L->mh * 0.46f) / MAX_HALF_SPAN;
     const float sx = sy;                            // uniform: no stretching
-    const float cx = (float)(SEL_PANEL_X + SEL_PANEL_W / 2);
-    const float cy = (float)(SEL_MODEL_Y + SEL_MODEL_H / 2);
+    const float cx = (float)(L->x + L->w / 2);
+    const float cy = (float)(L->my + L->mh / 2);
 
     // Both sides at once, walking the half-outline and mirroring as we go, so the
     // two strokes cannot drift apart.
@@ -296,10 +364,8 @@ static void draw_plan_view(const ShipSpec* sp, int cls) {
 // give, and a static accumulator would tick at the frame rate instead of the
 // clock -- so a transition would run at one speed on the desktop and another on
 // the board, and a replay would not reproduce.
-static int   s_tr_to = -1;          // the class the panel is settling on
-static int   s_tr_from = -1;        // ...and the one it is leaving
-static float s_tr_t0 = -1.0f;
-static float s_tr_ax[5] = { 0, 0, 0, 0, 0 };   // the chart AS SHOWN when the change came
+// ...and that memory is VgShipView, which the CALLER owns -- it was four file
+// statics here. See the note on the struct.
 
 // The mask, and it is DELIBERATELY THE SAME MOTIF AS A HIT.
 //
@@ -324,13 +390,13 @@ static float s_tr_ax[5] = { 0, 0, 0, 0, 0 };   // the chart AS SHOWN when the ch
 // A TEAR IS SHIFTED SIGNAL, not a stripe laid on top -- the glitch header is
 // explicit about it. The band is knocked out and a fragment redrawn beside
 // itself, so the picture in the band is displaced rather than merely covered.
-static void draw_plan_noise(float p) {
+static void draw_plan_noise(const Lay* L, float p) {
     const float d = sinf(p * 3.14159265f);      // 0 at the ends, 1 in the middle
     if (d <= 0.02f) return;
 
-    const int x0 = SEL_PANEL_X + 8, w = SEL_PANEL_W - 16;
-    const int y0 = SEL_MODEL_Y,     h = SEL_MODEL_H;
-    const uint32_t bucket = (uint32_t)(vg.state_t * SEL_TEAR_RATE);
+    const int x0 = L->x + 8, w = L->w - 16;
+    const int y0 = L->my,     h = L->mh;
+    const uint32_t bucket = (uint32_t)(vg.state_t * SHIP_TEAR_RATE);
 
     // Tears first: wide bands, few, and the severity decides how many.
     const int nt = 1 + (int)(4.0f * d);
@@ -362,184 +428,135 @@ static void draw_plan_noise(float p) {
     }
 }
 
-void vg_draw_select(void) {
-    const bool opp = (vg.gym && vg.sel_opp);
-    const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
+// ---------------------------------------------------------------------------
+// WHAT THE PANEL SAYS ABOUT A CLASS, as a list.
+//
+// It was two calls written out inside the draw function. That is fine for two
+// and it is the wrong shape for the question: "what do we show about a ship" is
+// a list, so it should be one. A third row is a line here, where before it was a
+// paragraph of arithmetic -- the rows stack against each other's heights, which
+// nothing said out loud.
+//
+// THE VALUE IS WRITTEN INTO A BUFFER rather than returned, so that a row can be
+// a NUMBER. Both rows today are strings off the weapon system and would have
+// been happy returning a const char*; the first row that wants to say HULL 330
+// would not, and changing the table's shape to admit one later is exactly the
+// change a table is supposed to save.
+//
+// THE NAME IS NOT A ROW. It is the heading -- bigger, centred, tracked -- and a
+// list of captioned fields is not what it is.
+struct VgSpecField {
+    const char* label;                                   // the inverse-video tab
+    void      (*value)(const ShipSpec* s, char* out, int n);
+    uint16_t    col;
+};
+
+static void fld_msl(const ShipSpec* s, char* out, int n) {
+    snprintf(out, (size_t)n, "%s", vg_wpn_name(s->wpn));
+}
+
+static void fld_wpn(const ShipSpec* s, char* out, int n) {
+    snprintf(out, (size_t)n, "%s", vg_wpn_desc(s->wpn));
+}
+
+// MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not a new
+// word either: the rack instrument in flight is labelled MSL, so it already
+// means "the round" to anyone who has flown.
+//
+// THERE USED TO BE A TAGLINE ABOVE THESE and there is not any more. It was the
+// one line on the panel still drawn at scale 1, which on this display is 0.57mm
+// -- and rather than find it room at a readable size, it went. A tagline tells
+// you how to feel about a hull before you have flown it; these two rows tell you
+// what the hull actually does. Let the player decide which they want; the
+// specification is the part that is any use in deciding.
+static const VgSpecField SPEC_FIELDS[] = {
+    { "MSL", fld_msl, INK_BRIGHT },
+    { "WPN", fld_wpn, INK },
+};
+
+#define SPEC_FIELD_N ((int)(sizeof(SPEC_FIELDS) / sizeof(SPEC_FIELDS[0])))
+
+// The heading, and then the rows under it. Each row is stacked on the BOTTOM of
+// the one above -- field_wrap returns it -- because a value may take two lines
+// and the caller cannot know which ones will.
+static void draw_head(const Lay* L, const ShipSpec* sp) {
+    vg_text_track(L->x
+                      + (L->w - vg_text_track_width(sp->name, 3,
+                                                    SHIPVIEW_TITLE_TRACK)) / 2,
+                  L->y + SHIPVIEW_NAME_DY, sp->name, INK_MAX, 3,
+                  SHIPVIEW_TITLE_TRACK);
+
+    int fy = L->y + SHIPVIEW_HEAD_DY;
+    for (int i = 0; i < SPEC_FIELD_N; i++) {
+        char buf[40];
+        SPEC_FIELDS[i].value(sp, buf, (int)sizeof(buf));
+        fy = field_wrap(L->bx, fy, L->bw, SPEC_FIELDS[i].label, buf,
+                        SPEC_FIELDS[i].col) + SHIPVIEW_FIELD_GAP;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+void vg_shipview_reset(VgShipView* v) {
+    if (!v) return;
+    v->to = v->from = -1;
+    v->t0 = -1.0f;
+    for (int i = 0; i < 5; i++) v->ax[i] = 0.0f;
+}
+
+void vg_shipview_draw(VgShipView* v, int cls, int x, int y, int w, int h) {
+    if (!v) return;
+
+    const Lay  box = lay_of(x, y, w, h);
+    const Lay* L   = &box;
+    const ShipSpec* sp = vg_spec((ShipClass)cls);
 
     // A NEW SELECTION. The chart is snapshotted AS SHOWN rather than as the class
     // it was heading for, so spinning the wheel fast leaves from wherever the
     // shape had actually reached instead of jumping back to the last full stop.
     float ax_now[5];
-    vg_ship_axes(vg_spec((ShipClass)cur), ax_now);
-    if (cur != s_tr_to) {
-        if (s_tr_to >= 0) {
-            const float q = (s_tr_t0 < 0.0f) ? 1.0f
-                          : (vg.state_t - s_tr_t0) / SEL_MORPH_TIME;
+    vg_ship_axes(sp, ax_now);
+    if (cls != v->to) {
+        if (v->to >= 0) {
+            const float q = (v->t0 < 0.0f) ? 1.0f
+                          : (vg.state_t - v->t0) / SHIP_MORPH_TIME;
             const float e = (q >= 1.0f) ? 1.0f : (q <= 0.0f ? 0.0f : q * q * (3.0f - 2.0f * q));
             float ax_prev[5];
-            vg_ship_axes(vg_spec((ShipClass)s_tr_to), ax_prev);
+            vg_ship_axes(vg_spec((ShipClass)v->to), ax_prev);
             for (int i = 0; i < 5; i++)
-                s_tr_ax[i] = s_tr_ax[i] + (ax_prev[i] - s_tr_ax[i]) * e;
+                v->ax[i] = v->ax[i] + (ax_prev[i] - v->ax[i]) * e;
         } else {
-            for (int i = 0; i < 5; i++) s_tr_ax[i] = ax_now[i];
+            for (int i = 0; i < 5; i++) v->ax[i] = ax_now[i];
         }
-        s_tr_from = s_tr_to;
-        s_tr_to   = cur;
-        s_tr_t0   = vg.state_t;
+        v->from = v->to;
+        v->to   = (int8_t)cls;
+        v->t0   = vg.state_t;
     }
 
-    float p = (s_tr_t0 < 0.0f) ? 1.0f : (vg.state_t - s_tr_t0) / SEL_MORPH_TIME;
+    float p = (v->t0 < 0.0f) ? 1.0f : (vg.state_t - v->t0) / SHIP_MORPH_TIME;
     if (p < 0.0f) p = 0.0f;
     if (p > 1.0f) p = 1.0f;
     const float ease = p * p * (3.0f - 2.0f * p);        // smoothstep
 
-    // ONLY THE HULL LAGS. The words follow the wheel immediately, because the wheel
-    // is what the thumb just moved and a panel that disagrees with it reads as the
-    // screen not having noticed. The hull has to lag -- it cannot tween, so it is
-    // swapped at the half way mark -- and that mismatch is invisible because it
-    // happens under the thickest part of the noise.
-    const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
+    // ONLY THE HULL LAGS. The words follow the choice immediately, because the
+    // wheel is what the thumb just moved and a panel that disagrees with it reads
+    // as the screen not having noticed. The hull has to lag -- it cannot tween,
+    // so it is swapped at the half way mark -- and that mismatch is invisible
+    // because it happens under the thickest part of the noise.
+    const int shown = (ease < 0.5f && v->from >= 0) ? v->from : cls;
 
-    vg_console_open(&BEZEL_CONSOLE,
-                    vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
-                           : "SELECT SHIP",
-                    vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
-                                  : "PRACTICE -- NOTHING IS SCORED")
-                           : nullptr);
+    vg_rect(L->x, L->y, L->w, L->h, INK_TRACE);
 
-    // --- the wheel ---------------------------------------------------------
-    vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
-
-    // EVERY CHOICE, dimming with distance from the detent.
-    //
-    // It used to show one either side, to dodge the fact that a four-item wheel
-    // asked for two either side shows the SAME class above and below. But hiding
-    // an option to avoid drawing it twice is the wrong trade -- a chooser that
-    // conceals two of your four is asking you to remember them.
-    //
-    // So the window is the roster, capped at SEL_WHEEL_SHOWN. Four rows means one
-    // above the detent and two below, which is what an even count in an odd window
-    // gives you; it is stable, and every class appears exactly once.
-    const int shown_n  = SEL_WHEEL_N;
-    const int shown_lo = SEL_WHEEL_LO;
-    const int detent   = SEL_WHEEL_DETENT;
-
-    // THE ROW UNDER THE THUMB, LIT. The wheel is a control like any other and it
-    // had the same fault the keys had: a tap that nudges the wheel by one gave no
-    // sign that the tap landed, so a press near a row border felt like the screen
-    // ignoring you rather than like a miss.
-    //
-    // It uses vg_select_row_at rather than a rectangle of its own, because that
-    // function IS where a tap resolves to a row. A second copy of the arithmetic
-    // here would light one row while the tap moved to another, and the two would
-    // disagree only near the borders -- which is exactly where it matters.
-    float pxr, pyr;
-    const int lit = vg_press_get(&pxr, &pyr) ? vg_select_row_at(pxr, pyr)
-                                             : SEL_ROW_NONE;
-    if (lit != SEL_ROW_NONE)
-        vg_fill_rect(SEL_WHEEL_X, detent + lit * SEL_WHEEL_PITCH - 18,
-                     SEL_WHEEL_W, 36, INK_TRACE);
-
-    for (int k = shown_lo; k < shown_lo + shown_n; k++) {
-        if (k == 0) continue;                 // the detent is drawn over the rails
-        const int   a   = (k < 0) ? -k : k;
-        const int   idx = (cur + k + SHIP_CLASSES * 4) % SHIP_CLASSES;
-        const char* nm  = vg_spec((ShipClass)idx)->name;
-        // Readable at every step, just quieter. Faded to a hint would defeat the
-        // point of showing them at all.
-        // EVERY NEIGHBOUR AT SCALE 2, where the far ones used to drop to 1. On
-        // the device scale 1 is 0.57mm and simply cannot be read, so a row drawn
-        // at it is a row that is not there -- and the whole argument for showing
-        // the entire roster was that a chooser should not hide your options.
-        // Distance is carried by ink alone now, which is what it should have been
-        // carrying all along.
-        const int      sc  = 2;
-        const int      tr  = SEL_NAME_TRACK;
-        const uint16_t col = (a == 1) ? INK : INK_FAINT;
-        vg_text_track(SEL_WHEEL_X
-                          + (SEL_WHEEL_W - vg_text_track_width(nm, sc, tr)) / 2,
-                      detent + k * SEL_WHEEL_PITCH - (sc * 7) / 2,
-                      nm, col, sc, tr);
-    }
-
-    // The detent: two rules bracketing the selected row, plus the spine down the
-    // left edge. That spine is the same 6px inverse-video mark the cards carried
-    // -- the shape of the screen changed, the vocabulary did not.
-    // The detent grew with the name it brackets: a 21px glyph inside a 36px well
-    // leaves three pixels top and bottom, which reads as the row being too small
-    // for its own word rather than as a selection.
-    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent + 20, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_SPINE_W, 42, INK_BRIGHT);
-
-    // THE SELECTED NAME AT SCALE 3. It is the one word on this screen you are
-    // actually choosing between, and at scale 2 it was 1.13mm on the device --
-    // legible, and no larger than the specification beside it, which had the
-    // hierarchy the wrong way round.
-    // CENTRED IN WHAT IS LEFT, not in the box. The spine is 6px of solid ink hard
-    // against the left edge, so a name centred on the whole width sits nine pixels
-    // from it -- which measures as clear and reads as joined, because the first
-    // upright of a B nine pixels from a bar looks like part of the bar.
-    //
-    // And no tracking on this one. At scale 3 the font's own bearing is three
-    // pixels, which is enough; the tracking was there for scale 2, where it was
-    // not. Dropping it is what makes the margins possible at all -- BALLISTA is
-    // 155px tracked against 141 plain, in a box with 152 to give once the spine
-    // and the margins are taken out.
-    {
-        const char* nm = vg_spec((ShipClass)cur)->name;
-        const int   x0 = SEL_WHEEL_X + SEL_SPINE_W + 10;
-        const int   room = SEL_WHEEL_W - SEL_SPINE_W - 18;
-        vg_text(x0 + (room - vg_text_width(nm, 3)) / 2, detent - 10, nm, INK_MAX, 3);
-    }
-
-    // --- the panel ---------------------------------------------------------
-    vg_rect(SEL_PANEL_X, SEL_PANEL_Y, SEL_PANEL_W, SEL_PANEL_H, INK_TRACE);
-
-    // THE NAME, AND THEN WHAT IT CARRIES. There used to be a tagline between them
-    // and there is not any more.
-    //
-    // It was the one line on the panel still drawn at scale 1, which on this
-    // display is 0.57mm -- and rather than find it room at a readable size, it
-    // went. A tagline tells you how to feel about a hull before you have flown
-    // it, and the two rows under it tell you what the hull actually does. Let the
-    // player decide which one they want; the specification is the part that is
-    // any use in deciding.
-    //
-    // ShipSpec::tagline is still there and nothing reads it now.
-    {
-        const ShipSpec* hs = vg_spec((ShipClass)cur);
-        const int bx = SEL_PANEL_X + SEL_FIELD_PAD;
-        const int bw = SEL_PANEL_W - 2 * SEL_FIELD_PAD;
-
-        vg_text_track(SEL_PANEL_X
-                          + (SEL_PANEL_W
-                             - vg_text_track_width(hs->name, 3, SEL_TITLE_TRACK)) / 2,
-                      SEL_PANEL_Y + 6, hs->name, INK_MAX, 3, SEL_TITLE_TRACK);
-
-        // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not
-        // a new word either: the rack instrument in flight is labelled MSL, so it
-        // already means "the round" to anyone who has flown.
-        // The tagline gets air under it and the two fields close up. They are a
-        // PAIR -- the round and what the system does with it -- and they were
-        // sitting further apart than either sat from the subtitle above, which
-        // read as three separate lines rather than a caption and a block.
-        const int b = field_wrap(bx, SEL_PANEL_Y + 34, bw, "MSL",
-                                 vg_wpn_name(hs->wpn), INK_BRIGHT);
-        field_wrap(bx, b + 8, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
-    }
+    draw_head(L, sp);
 
     {
         float ax[5];
         for (int i = 0; i < 5; i++)
-            ax[i] = s_tr_ax[i] + (ax_now[i] - s_tr_ax[i]) * ease;
-        draw_chart(ax);
+            ax[i] = v->ax[i] + (ax_now[i] - v->ax[i]) * ease;
+        draw_chart(L, ax);
     }
 
-    vg_fill_rect(SEL_PANEL_X + 8, SEL_MODEL_Y - 8, SEL_PANEL_W - 16, 1, INK_TRACE);
-    draw_plan_view(vg_spec((ShipClass)shown), shown);
-    draw_plan_noise(p);
-
-    vg_console_key(VG_CON_KEY, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
-    vg_console_close();
+    vg_fill_rect(L->x + 8, L->my - 8, L->w - 16, 1, INK_TRACE);
+    draw_plan_view(L, vg_spec((ShipClass)shown), shown);
+    draw_plan_noise(L, p);
 }

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <stdint.h>
 #include "vg_raster.h"
 
@@ -49,6 +49,75 @@ bool vg_press_in(int x, int y, int w, int h);
 // wheel resolves a press to a ROW through its own hit function, so it needs the
 // point rather than a yes or no. Returns false when nothing is held.
 bool vg_press_get(float* x, float* y);
+
+// ===========================================================================
+// A WHEEL
+//
+// There are two in the game and they are the same mechanism to a thumb: the
+// three callsign letters, and the ship chooser. What they share is not the
+// drawing -- see below -- it is the ARITHMETIC, and the arithmetic is where both
+// of them have gone wrong.
+//
+// WHERE A ROW IS, WORKED OUT ONCE. The draw and the hit test have to agree about
+// it, and for one build they did not: the block of names is centred rather than
+// the selected row, so the detent is NOT the middle of the window, and a second
+// copy of that sum in the drawing put a tap 19px from where the eye said it
+// should be. Nobody reports that as a coordinate bug. It is reported as the
+// screen feeling unreliable.
+//
+// A DRAG IS COUNTED IN DETENTS, and that loop was written out twice against one
+// shared WHEEL_STEP -- which is the half of "one constant on purpose" that a
+// constant cannot enforce by itself. The sign is in here too: dragging DOWN
+// rolls the wheel down, which brings earlier items up into view, the way a
+// physical wheel behaves. Backwards on one of the two would be the first thing a
+// player noticed.
+//
+// WHAT IS NOT HERE IS THE DRAWING, and that is deliberate. The letter wheel puts
+// its selection at scale 6 with two neighbours either side at 3 and 2; the ship
+// wheel puts every class at 2 with the selection at 3, a spine down the edge and
+// the row under the thumb lit. A widget that drew both would want a scale per
+// distance, a colour per distance, a tracking, a spine and a highlight -- which
+// is not a widget, it is a configuration language with two users. Each screen
+// walks the rows from here and draws its own.
+// ===========================================================================
+
+// PX OF DRAG PER DETENT, and it is ONE constant on purpose. The callsign letters
+// and the ship wheel are the same mechanism to a thumb, and they would stop being
+// the same the first time somebody retuned one of two copies.
+#define WHEEL_STEP      26.0f
+
+// A contact that is not on the wheel at all.
+#define VG_WHEEL_NONE   99
+
+struct VgWheel {
+    int   x, w;      // the strip a contact has to be inside...
+    int   y, h;      // ...and its extent. y is the TOP of it, not the detent.
+    int   detent;    // where the selection sits, which need not be the middle
+    int   pitch;     // px from one row to the next
+    int   lo, n;     // the first row offset drawn, and how many are drawn
+    float accum;     // px of a drag in progress, since the last detent
+};
+
+// The y of row k, k being an offset from the selection: 0 is the selection, -1
+// the row above it, +1 the row below.
+static inline int vg_wheel_row_y(const VgWheel* wh, int k) {
+    return wh->detent + k * wh->pitch;
+}
+
+// Which row a contact landed on, or VG_WHEEL_NONE if it missed the wheel.
+//
+// Clamped to the rows that are actually DRAWN, so a tap in the margin below the
+// last one nudges by one rather than by however far the finger was out.
+int vg_wheel_row_at(const VgWheel* wh, float x, float y);
+
+// How many detents this frame's drag moved, keeping the remainder. Feed it the
+// frame's dy while a contact owns the wheel; positive is forward through the
+// list. See the note above about the sign.
+int vg_wheel_drag(VgWheel* wh, float dy);
+
+// The contact let go. The remainder is dropped, so the next drag starts from the
+// detent rather than from wherever the last one stopped.
+void vg_wheel_release(VgWheel* wh);
 
 // A framed key with a dark well, corner ticks, and a lit state under the thumb.
 //

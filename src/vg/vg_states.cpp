@@ -9,7 +9,15 @@
 #include "vg_anomaly.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
-#include "vg_screens.h"
+#include "vg_menu.h"
+// EVERY SCREEN, because the state machine is the one thing that talks to
+// all of them -- it runs their hit tests and hands them a tap. A list this
+// long in one file is the right place for it; the same list in a header
+// four screens included was not.
+#include "vg_select.h"
+#include "vg_entry.h"
+#include "vg_bracket.h"
+#include "vg_repair.h"
 #include "vg_pause.h"
 #include "vg_ui.h"
 #include "vg_draw.h"   // vg_press_set: the live contact, recorded once a frame
@@ -312,33 +320,82 @@ struct VgStateDef {
     // One frame of being in this state. Thirteen functions in vg_game.cpp, one
     // per row, replacing a 390-line switch on exactly this value.
     void      (*update)(float dt, const VgInput* in, const Tap* tap);
+    // ...and what this state PUTS ON THE SCREEN instead of the world.
+    //
+    // This was the fifth hand-kept list the note above is about, and it outlived
+    // the other four: a switch in vg_render.cpp with a default arm that drew the
+    // overlays. A menu state left out of it did not fail to build and did not
+    // draw nothing -- it drew the overlays, which is a picture, so the fault read
+    // as the new screen being blank rather than as the screen never having been
+    // asked for.
+    //
+    // So the four states that genuinely want the overlays SAY so, and the default
+    // is gone. The static_assert under the table is then what a switch could
+    // never have been given: a menu row with nothing in this column does not
+    // build.
+    //
+    // NULL FOR A STATE THAT FLIES, and that is not an omission -- the world is
+    // its picture, and the instruments over it belong to the flight path in
+    // vg_render.cpp rather than to any one state.
+    //
+    // PAUSE IS THE EXCEPTION AND STAYS ONE. It is the only screen drawn OVER the
+    // frame rather than instead of it -- last of all, over the instruments, after
+    // the broadcast has been suppressed -- so it is called by name at the end of
+    // the frame. Putting it in this column would mean the column meant two
+    // different things depending on the flags beside it.
+    void      (*draw)(void);
 };
 
 // In enum order. Positional, like the crumb table, so the two read the same way
 // side by side.
-static const VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               enter_attract,    nullptr, vg_upd_attract },
-    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_entry },
-    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_select },
-    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_repair },
-    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket,    nullptr, vg_upd_bracket },
-    { "INTRO",     VGS_MENU,                           enter_intro,      leave_intro, vg_upd_intro },
-    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, enter_playing,    nullptr, vg_upd_playing },
-    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,          nullptr, vg_upd_playing },
+// CONSTEXPR, so that the check under it can read it. A const array of a
+// non-literal type cannot be looked at in a constant expression; this one is an
+// aggregate of pointers with constant initialisers, so it can be, and it costs
+// nothing it was not already costing -- the table was in flash either way.
+static constexpr VgStateDef STATES[VG_STATE_COUNT] = {
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               enter_attract, nullptr,     vg_upd_attract,   vg_draw_overlays },
+    { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_entry,     vg_draw_entry },
+    { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_select,    vg_draw_select },
+    { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_repair,    vg_draw_repair },
+    { "BRACKET",   VGS_MENU | VGS_DRIFT,               enter_bracket, nullptr,     vg_upd_bracket,   vg_draw_bracket },
+    // THE OVERLAYS ARE A SCREEN HERE, not a fallback. The launch cutscene's
+    // fighter cards, the title, the scorecard and the winner all come out of
+    // vg_draw_overlays, and four states naming it is the difference between four
+    // screens that share a drawing and four screens nobody ever listed.
+    { "INTRO",     VGS_MENU,                           enter_intro,   leave_intro, vg_upd_intro,     vg_draw_overlays },
+    { "PLAYING",   VGS_LIVE | VGS_ENGINE | VGS_COMBAT, enter_playing, nullptr,     vg_upd_playing,   nullptr },
+    { "HIT",       VGS_LIVE | VGS_ENGINE | VGS_COMBAT, nullptr,       nullptr,     vg_upd_playing,   nullptr },
     // Still flying, and that is the whole of it: the opponent is down and
     // talking, the player cannot be hurt, and cutting the hum at that moment
     // would be the loudest thing about it.
-    { "KILL",      VGS_ENGINE,                         nullptr,          nullptr, vg_upd_kill },
-    // Nothing. A pause is not a place -- it suspends one.
-    { "PAUSE",     0,                                  nullptr,          nullptr, vg_upd_pause },
-    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course,     nullptr, vg_upd_course },
-    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_round_won },
-    { "OVER",      VGS_MENU,                           nullptr,          nullptr, vg_upd_over },
-    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr,          nullptr, vg_upd_won },
+    { "KILL",      VGS_ENGINE,                         nullptr,       nullptr,     vg_upd_kill,      nullptr },
+    // Nothing. A pause is not a place -- it suspends one. Its screen goes over
+    // the suspended frame at the end of vg_render; see the note on draw.
+    { "PAUSE",     0,                                  nullptr,       nullptr,     vg_upd_pause,     nullptr },
+    { "COURSE",    VGS_LIVE | VGS_ENGINE,              enter_course,  nullptr,     vg_upd_course,    nullptr },
+    { "ROUND_WON", VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_round_won, vg_draw_overlays },
+    { "OVER",      VGS_MENU,                           nullptr,       nullptr,     vg_upd_over,      vg_draw_overlays },
+    { "WON",       VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_won,       vg_draw_overlays },
 };
 
 static_assert(sizeof(STATES) / sizeof(STATES[0]) == VG_STATE_COUNT,
               "a state was added without a row, or a row without a state");
+
+// EVERY MENU STATE HAS A PICTURE.
+//
+// This is the check the switch could not be given. A menu is a state that
+// replaces the world, so a menu with nothing in the draw column is a state that
+// shows the player whatever the renderer happened to leave behind.
+//
+// Recursive rather than a loop, because it has to hold on the firmware toolchain
+// too and a constexpr function there is one return statement.
+static constexpr bool vg_states_all_drawn(int i) {
+    return i >= VG_STATE_COUNT
+        || (((STATES[i].flags & VGS_MENU) == 0 || STATES[i].draw != nullptr)
+            && vg_states_all_drawn(i + 1));
+}
+static_assert(vg_states_all_drawn(0),
+              "a menu state has nothing in its draw column");
 static_assert((int)VG_WON + 1 == VG_STATE_COUNT,
               "VG_STATE_COUNT does not match the enum -- vg_crumb.cpp's copy "
               "of the names is the same length and would now be misaligned");
@@ -405,6 +462,14 @@ void vg_state_cut(VgState to) {
 // cut is a state, and entering a state is one thing.
 // The dispatch. Here rather than in vg_game.cpp because the table is here, and
 // because "what does this state do this frame" is a table lookup now.
+// The screen this state puts up, or nothing at all if it flies. Called from the
+// menu branch of vg_render, which is the one place that asks.
+void vg_state_draw(void) {
+    if ((int)vg.state >= VG_STATE_COUNT) return;
+    const VgStateDef* d = &STATES[vg.state];
+    if (d->draw) d->draw();
+}
+
 void vg_state_update(float dt, const VgInput* in, const Tap* tap) {
     // Before the state runs, so a control drawn this frame reports the contact
     // that is happening now rather than the one from the frame before.
@@ -619,7 +684,6 @@ void vg_upd_repair(float dt, const VgInput* in, const Tap* tap) {
 // hardware button cannot reach: drag it, tap a neighbour to nudge it by one, or
 // press the alt key to cycle.
 static int   s_wheel_accum_owner = 0;   // non-zero while a drag owns the wheel
-static float s_wheel_accum       = 0.0f;
 
 // Moving the selection is TWO DIFFERENT WRITES and they must not be confused.
 // vg_game_select_ship also resets the player's hull and rack, so using it to
@@ -643,18 +707,16 @@ void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
 
     // --- the wheel ---------------------------------------------------------
     if (in->menu_edge) {
-        s_wheel_accum       = 0.0f;
-        s_wheel_accum_owner = (vg_select_row_at(in->menu_x, in->menu_y) != SEL_ROW_NONE);
+        vg_wheel_release(vg_select_wheel());
+        s_wheel_accum_owner =
+            (vg_select_row_at(in->menu_x, in->menu_y) != VG_WHEEL_NONE);
     }
     if (in->menu_held) {
         if (s_wheel_accum_owner) {
-            // DRAGGING DOWN ROLLS THE WHEEL DOWN, which brings earlier ships up
-            // into view -- the way a physical wheel behaves, and the way the
-            // letter wheels already behave. Backwards here would be the one
-            // thing a player notices immediately.
-            s_wheel_accum += in->menu_dy;
-            while (s_wheel_accum >= WHEEL_STEP) { s_wheel_accum -= WHEEL_STEP; select_step(-1); }
-            while (s_wheel_accum <= -WHEEL_STEP) { s_wheel_accum += WHEEL_STEP; select_step(+1); }
+            // The direction and the detent size are the wheel's -- see VgWheel.
+            // This end of it is only the part that is a change to the GAME.
+            const int d = vg_wheel_drag(vg_select_wheel(), in->menu_dy);
+            for (int i = 0; i < (d < 0 ? -d : d); i++) select_step(d > 0 ? +1 : -1);
         }
     } else {
         s_wheel_accum_owner = 0;
@@ -662,7 +724,7 @@ void vg_upd_select(float dt, const VgInput* in, const Tap* tap) {
 
     if (tap->up) {
         const int row = vg_select_row_at(tap->x, tap->y);
-        if (row != SEL_ROW_NONE) {
+        if (row != VG_WHEEL_NONE) {
             // A tap above or below the detent nudges by one, so the wheel is
             // usable without a drag at all. A tap ON the detent is a no-op: it
             // is already the selection.

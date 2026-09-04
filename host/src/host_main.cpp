@@ -92,7 +92,12 @@ int main(int argc, char** argv) {
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
                 select_class = atoi(argv[++i]);
         }
-        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) g_host_shot = atoi(argv[++i]);
+        // A SHOT PINS THE CLOCK. Frame N has to be the same frame in two runs or
+        // the file cannot be compared with anything -- see vg_fixed_dt.
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) {
+            g_host_shot = atoi(argv[++i]);
+            vg_fixed_dt = true;
+        }
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc)
             host_random_seed((uint32_t)strtoul(argv[++i], nullptr, 10));
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
@@ -139,7 +144,9 @@ int main(int argc, char** argv) {
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"
                    "  --select [N] start on the ship-select screen, on class N.\n"
-                   "  --shot N     write frame N to shot.ppm and keep running.\n"
+                   "  --shot N     write frame N to shot.ppm and keep running. The\n"
+                   "               frame clock is pinned to 1/60 so that frame N is\n"
+                   "               the same frame in every run.\n"
                    "  --no-ram     no opponent rolls a suicide run. For testing:\n"
                    "               a rammer ends the engagement being measured.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");

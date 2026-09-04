@@ -1,4 +1,4 @@
-#include "vg_screens.h"
+﻿#include "vg_entry.h"
 #include "vg_ui.h"
 #include "vg_console.h"
 #include "generated/bezel_console.h"
@@ -21,7 +21,12 @@
 
 static int   s_letter[3]  = { 0, 0, 0 };   // 0..25
 static int   s_drag_col   = -1;
-static float s_accum      = 0.0f;
+
+// ONE WHEEL FOR WHICHEVER COLUMN IS UNDER THE THUMB. The three are identical to
+// a finger and only one can be dragged at a time, so this carries the drag and
+// not the geometry -- the letters' own hit test is below, and it keeps a wider
+// dead zone than a wheel's own row test would give it. See the tap.
+static VgWheel s_drag = { 0, 0, 0, 0, 0, 0, 0, 0, 0.0f };
 static bool  s_hue_open   = false;
 static bool  s_hue_drag   = false;
 
@@ -33,7 +38,7 @@ void vg_entry_reset(void) {
         s_letter[i] = (c >= 'A' && c <= 'Z') ? (c - 'A') : 0;
     }
     s_drag_col = -1;
-    s_accum    = 0.0f;
+    vg_wheel_release(&s_drag);
     s_hue_open = false;
     s_hue_drag = false;
 }
@@ -60,7 +65,7 @@ static void set_hue_from(float x) {
 bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
     // --- press: decide what this contact is going to be ---
     if (in->menu_edge) {
-        s_accum    = 0.0f;
+        vg_wheel_release(&s_drag);
         s_drag_col = column_at(in->menu_x, in->menu_y);
         // Generous grab pad. The ramp is a coarse choice and the fingertip
         // covers most of its height, so demanding a hit inside a 54px strip made
@@ -90,17 +95,10 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
         if (s_hue_drag) {
             set_hue_from(in->menu_x);
         } else if (s_drag_col >= 0) {
-            // Dragging DOWN rolls the wheel down, which brings earlier letters
-            // up into view -- the way a physical wheel behaves.
-            s_accum += in->menu_dy;
-            while (s_accum >= WHEEL_STEP) {
-                s_accum -= WHEEL_STEP;
-                s_letter[s_drag_col] = (s_letter[s_drag_col] + 25) % 26;
-            }
-            while (s_accum <= -WHEEL_STEP) {
-                s_accum += WHEEL_STEP;
-                s_letter[s_drag_col] = (s_letter[s_drag_col] + 1) % 26;
-            }
+            // The direction and the detent size are the wheel's -- see VgWheel.
+            const int d = vg_wheel_drag(&s_drag, in->menu_dy);
+            s_letter[s_drag_col] =
+                ((s_letter[s_drag_col] + d) % 26 + 26) % 26;
             commit();
         }
     } else {
@@ -114,6 +112,12 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
         if (c >= 0) {
             // A tap above or below the centre letter nudges by one, so the
             // wheels are usable without a drag at all.
+            //
+            // NOT vg_wheel_row_at, and the difference is the dead zone. That
+            // function splits at half a pitch, which here would be 17px; this
+            // wants 24, because three columns stand side by side and a thumb
+            // that lands near the middle of one should do nothing rather than
+            // nudge whichever half of the row it was closest to.
             const float mid = (float)ENT_WHEEL_Y + (float)ENT_WHEEL_H * 0.5f;
             if (ty < mid - 24.0f)      s_letter[c] = (s_letter[c] + 25) % 26;
             else if (ty > mid + 24.0f) s_letter[c] = (s_letter[c] + 1)  % 26;

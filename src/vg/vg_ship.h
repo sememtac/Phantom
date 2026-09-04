@@ -1,6 +1,9 @@
-#pragma once
+﻿#pragma once
 #include <stdint.h>
-#include "cfg_hud.h"   // the select screen's axis display ranges
+// NOTHING FROM THE HUD, and it took the axes leaving to get there. This header
+// included cfg_hud.h for the display ranges vg_ship_axes normalised against --
+// the roster reaching up into a screen's tuning to answer a question only the
+// drawing asks. Both moved to vg_shipview.
 
 // ===========================================================================
 // SHIP CLASSES
@@ -176,11 +179,25 @@ enum WeaponSystem : uint8_t {
     WPN_SAAAM,
 };
 
+// THE ROSTER, WRITTEN ONCE.
+//
+// Adding a class is a row in the spec table, an outline in vg_models.cpp, a
+// canopy drawing, and a name here. Everything per class that cannot be derived
+// from the row is generated from this list, so those lists cannot come to differ
+// by one.
+//
+// THE INVARIANTS ARE THE REASON IT EXISTS. They are the checks that catch a
+// miscounted row -- a zero magazine, a round that cannot fly as far as its own
+// lock range -- and they were four lines naming four classes by hand. A fifth
+// ship added without a fifth line would have been the one row in the table with
+// nothing looking at it, and the report would have come from a fight rather than
+// from the build. A list that generates its own checks cannot be short by one.
+#define VG_SHIP_ROSTER(X)  X(AEGIS) X(LANCE) X(CHARIOT) X(BALLISTA)
+
 enum ShipClass : uint8_t {
-    SHIP_AEGIS = 0,
-    SHIP_LANCE,
-    SHIP_CHARIOT,
-    SHIP_BALLISTA,
+#define VG_SHIP_ENUM(N) SHIP_##N,
+    VG_SHIP_ROSTER(VG_SHIP_ENUM)
+#undef VG_SHIP_ENUM
     SHIP_CLASSES
 };
 
@@ -453,26 +470,6 @@ static inline bool vg_msl_semi_active(const ShipSpec* sp) {
     return sp && sp->wpn == WPN_SAAAM;
 }
 
-// ---------------------------------------------------------------------------
-// THE SELECT SCREEN'S FIVE AXES
-//
-// SPEED / HULL / RANGE / DAMAGE / RATE, each 0..1, written into out[5] in that
-// order. Read straight off this table at draw time, and that is the whole point.
-//
-// The bars this replaces were hand-normalised, and they had gone false: damage
-// was divided by 44 when BALLISTA carries 120 and AEGIS 50, so BOTH clamped to a
-// full bar and the screen showed a 2.4x difference as no difference at all.
-// Nothing anywhere could tell. Derived from the spec, a retune moves the chart
-// with it and the screen cannot drift away from the game again.
-//
-// The display ranges are deliberately WIDER than the roster, so a class sits
-// somewhere inside its axis rather than at an end, and so adding a fifth ship
-// does not silently reshape the other four. Min-max across the roster would do
-// exactly that.
-//
-// RATE ASKS THE WEAPON SYSTEM, because `reload` means per clip for three classes
-// and per round for AR-AAM. That is the rule this table already lives by: ask
-// what the ship declares, never infer it from the number.
 // What a weapon system is CALLED, for the one screen that has to say it out
 // loud. Two words abbreviated to two letters, all four of them -- see the enum.
 // TWO FIELDS, NOT ONE STRING. The designation and what the system does used to
@@ -505,38 +502,22 @@ static inline const char* vg_wpn_desc(WeaponSystem w) {
     return "";
 }
 
-static inline void vg_ship_axes(const ShipSpec* sp, float out[5]) {
-    if (!sp) { for (int i = 0; i < 5; i++) out[i] = 0.0f; return; }
-
-    const float rate = (sp->wpn == WPN_ARAAM)
-        ? ((sp->reload > 0.0f) ? 1.0f / sp->reload : 0.0f)
-        : ((float)sp->magazine
-           / ((float)sp->magazine * sp->fire_gap + sp->reload));
-
-    const float v[5] = { sp->speed_max, sp->hull, sp->lock_range,
-                         sp->msl_damage, rate };
-    const float lo[5] = { SEL_AX_SPEED_LO, SEL_AX_HULL_LO, SEL_AX_RANGE_LO,
-                          SEL_AX_DMG_LO,   SEL_AX_RATE_LO };
-    const float hi[5] = { SEL_AX_SPEED_HI, SEL_AX_HULL_HI, SEL_AX_RANGE_HI,
-                          SEL_AX_DMG_HI,   SEL_AX_RATE_HI };
-
-    for (int i = 0; i < 5; i++) {
-        const float span = hi[i] - lo[i];
-        float t = (span > 0.0f) ? (v[i] - lo[i]) / span : 0.0f;
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-        // A floor, so a collapsed axis is still a visible vertex rather than a
-        // crease at the centre. CHARIOT's RANGE is 0.09 and its DAMAGE 0.07; at
-        // literal zero the polygon would fold through the middle and read as a
-        // drawing fault instead of as a weakness.
-        out[i] = SEL_AX_FLOOR + t * (1.0f - SEL_AX_FLOOR);
-    }
-}
-
-// What each axis is called, in the same order.
-static inline const char* vg_ship_axis_name(int i) {
-    static const char* N[5] = { "SPEED", "HULL", "RANGE", "DAMAGE", "RATE" };
-    return (i >= 0 && i < 5) ? N[i] : "";
+// HOW OFTEN THIS CLASS CAN PUT A ROUND IN THE AIR, sustained, in rounds a
+// second. The RATE axis on the ship panel, and the figure the invariants check.
+//
+// IT ASKS THE WEAPON SYSTEM, because `reload` means per clip for three classes
+// and per round for AR-AAM. That is the rule this table lives by: ask what the
+// ship declares, never infer it from the number.
+//
+// constexpr, and here rather than beside the chart that draws it, because the
+// checks at the foot of vg_ship.cpp test this figure against the range the chart
+// will plot it on. Two copies of the sum would let a class pass the check and
+// then be drawn from a different one.
+static constexpr float vg_ship_rate(const ShipSpec& s) {
+    return (s.wpn == WPN_ARAAM)
+         ? ((s.reload > 0.0f) ? 1.0f / s.reload : 0.0f)
+         : ((float)s.magazine
+            / ((float)s.magazine * s.fire_gap + s.reload));
 }
 
 static inline const ShipSpec* vg_spec(ShipClass c) {

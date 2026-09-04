@@ -1,4 +1,4 @@
-#include "vg_ship.h"
+﻿#include "vg_ship.h"
 #include "cfg_hud.h"   // LOCK_TIGHTEN_REF
 #include <math.h>
 
@@ -374,18 +374,67 @@ float vg_lock_cos_at(const ShipSpec* sp, float range, bool hold) {
 // with nothing to guide, and a semi-active round in a class that does not declare
 // SA-AAM is a round nobody can steer. Both are faults, so both sides are tested.
 //
+// AND THE FIVE CHART TESTS, which are a third kind again: not that a number is
+// sane, and not that two claims agree, but that a class FITS ON THE INSTRUMENT
+// that has to draw it. The ship panel's axes are deliberately wider than the
+// roster, so that a class sits somewhere inside its axis rather than at an end --
+// and a class that leaves them does not fail, it CLAMPS. It is drawn at the rim,
+// which is what the best in the game looks like, and on the screen there is no
+// difference between a class at the top of the scale and a class off it.
+//
+// That is the fault the hand-normalised bars had: damage divided by 44 while
+// BALLISTA carried 120, so a 2.4x difference showed as none at all and nothing
+// anywhere could tell. Deriving the chart from the table fixed the drift. This
+// fixes the range, which is the other half of the same lie.
+//
+// A class that genuinely belongs off the end of an axis is a decision about the
+// DISPLAY RANGE in cfg_hud.h, and it should be made there rather than discovered.
+
 // This is the mechanism that was missing. The guide circle drifted onto AEGIS and
 // CHARIOT because the instrument read a tuning value and there was nothing anywhere
 // that could tell it had happened. Tuning a cone can no longer hand a class
 // somebody else's fantasy: it has to be declared, and declaring it wrongly does not
 // build.
-#define SHIP_INVARIANTS(C)                                                            static_assert(vg_ship_class[C].msl_splash > 0.0f,  #C " splash is a divisor");     static_assert(vg_ship_class[C].msl_speed  > 0.0f,  #C " speed is a divisor");      static_assert(vg_ship_class[C].magazine   > 0,     #C " magazine is a divisor");     static_assert(vg_ship_class[C].reload     > 0.0f,  #C " reload is a divisor");     static_assert(vg_ship_class[C].speed_max  > vg_ship_class[C].speed_min,                          #C " speed span is a divisor");                                      static_assert(vg_msl_reach(vg_ship_class[C]) > vg_ship_class[C].lock_range * 1.4f,                #C " cannot reach its own lock range");     static_assert((vg_ship_class[C].wpn == WPN_SLAAM) == (vg_ship_class[C].msl_stack_time > 0.0f),    #C " an SL-AAM system and a banking lock are the same claim")
+#define SHIP_INVARIANTS(C)                                                   \
+    static_assert(vg_ship_class[C].msl_splash > 0.0f,                        \
+                  #C " splash is a divisor");                                \
+    static_assert(vg_ship_class[C].msl_speed > 0.0f,                         \
+                  #C " speed is a divisor");                                 \
+    static_assert(vg_ship_class[C].magazine > 0,                             \
+                  #C " magazine is a divisor");                              \
+    static_assert(vg_ship_class[C].reload > 0.0f,                            \
+                  #C " reload is a divisor");                                \
+    static_assert(vg_ship_class[C].speed_max > vg_ship_class[C].speed_min,   \
+                  #C " speed span is a divisor");                            \
+    static_assert(vg_msl_reach(vg_ship_class[C])                             \
+                      > vg_ship_class[C].lock_range * 1.4f,                  \
+                  #C " cannot reach its own lock range");                    \
+    static_assert((vg_ship_class[C].wpn == WPN_SLAAM)                        \
+                      == (vg_ship_class[C].msl_stack_time > 0.0f),           \
+                  #C " an SL-AAM system and a banking lock are one claim");  \
+    static_assert(vg_ship_class[C].speed_max >= SHIP_AX_SPEED_LO             \
+                      && vg_ship_class[C].speed_max <= SHIP_AX_SPEED_HI,     \
+                  #C " speed is off the chart");                             \
+    static_assert(vg_ship_class[C].hull >= SHIP_AX_HULL_LO                   \
+                      && vg_ship_class[C].hull <= SHIP_AX_HULL_HI,           \
+                  #C " hull is off the chart");                              \
+    static_assert(vg_ship_class[C].lock_range >= SHIP_AX_RANGE_LO            \
+                      && vg_ship_class[C].lock_range <= SHIP_AX_RANGE_HI,    \
+                  #C " range is off the chart");                             \
+    static_assert(vg_ship_class[C].msl_damage >= SHIP_AX_DMG_LO              \
+                      && vg_ship_class[C].msl_damage <= SHIP_AX_DMG_HI,      \
+                  #C " damage is off the chart");                            \
+    static_assert(vg_ship_rate(vg_ship_class[C]) >= SHIP_AX_RATE_LO          \
+                      && vg_ship_rate(vg_ship_class[C]) <= SHIP_AX_RATE_HI,  \
+                  #C " rate is off the chart")
 
+// ONE LINE PER CLASS, AND THE ROSTER WRITES IT. These were four lines naming
+// four classes; see VG_SHIP_ROSTER for why that is not a list anybody should be
+// keeping by hand.
 #if !defined(_MSC_VER)
-SHIP_INVARIANTS(SHIP_AEGIS);
-SHIP_INVARIANTS(SHIP_LANCE);
-SHIP_INVARIANTS(SHIP_CHARIOT);
-SHIP_INVARIANTS(SHIP_BALLISTA);
+#define VG_SHIP_CHECK(N) SHIP_INVARIANTS(SHIP_##N);
+VG_SHIP_ROSTER(VG_SHIP_CHECK)
+#undef VG_SHIP_CHECK
 #endif
 
 #undef SHIP_INVARIANTS

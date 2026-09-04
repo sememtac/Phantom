@@ -1,6 +1,7 @@
 #include "vg_ui.h"
 #include "vg_draw.h"
 #include "vg_config.h"
+#include <math.h>
 
 // The live contact, set once a frame by vg_state_update. See vg_ui.h.
 static bool  s_press_held = false;
@@ -69,13 +70,34 @@ void vg_button(int x, int y, int w, int h, const char* label,
 }
 
 // ---------------------------------------------------------------------------
-// Ship select
+// The wheel
 // ---------------------------------------------------------------------------
-
-// WHICH WHEEL ROW a contact landed on, as an offset from the detent: -1 is the
-// row above the selection, +1 the row below, 0 the selection itself. Outside the
-// wheel entirely it returns SEL_ROW_NONE.
 //
-// The wheel is what a tap tests against now, not four cards. Tapping a neighbour
-// nudges by one, exactly as the letter wheels do -- the screen has to stay usable
-// without a drag, and the board has a hardware button too.
+// A tap tests against the wheel, not against four cards. Tapping a neighbour
+// nudges by one -- the screen has to stay usable without a drag, and the board
+// has a hardware button too.
+
+int vg_wheel_row_at(const VgWheel* wh, float x, float y) {
+    if (!wh) return VG_WHEEL_NONE;
+    if (!vg_in_rect(x, y, wh->x, wh->y, wh->w, wh->h)) return VG_WHEEL_NONE;
+
+    const float dy = y - (float)wh->detent;
+    int k = (int)lroundf(dy / (float)wh->pitch);
+    if (k < wh->lo)                 k = wh->lo;
+    if (k > wh->lo + wh->n - 1)     k = wh->lo + wh->n - 1;
+    return k;
+}
+
+int vg_wheel_drag(VgWheel* wh, float dy) {
+    if (!wh) return 0;
+    wh->accum += dy;
+
+    int steps = 0;
+    while (wh->accum >=  WHEEL_STEP) { wh->accum -= WHEEL_STEP; steps--; }
+    while (wh->accum <= -WHEEL_STEP) { wh->accum += WHEEL_STEP; steps++; }
+    return steps;
+}
+
+void vg_wheel_release(VgWheel* wh) {
+    if (wh) wh->accum = 0.0f;
+}

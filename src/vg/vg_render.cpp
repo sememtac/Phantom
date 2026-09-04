@@ -6,7 +6,6 @@
 #include "vg_prof.h"
 #include "vg_replay.h"   // DIAGNOSTIC: vg_replay_timed for the cam hash
 #include "vg_game.h"
-#include "vg_screens.h"
 #include "vg_pause.h"
 #include "vg_glitch.h"
 #include "vg_course.h"
@@ -517,13 +516,11 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on
     // the ship-select screen would be reporting on a fight that is not happening.
     if (vg_state_is_menu(vg.state)) {
-        switch (vg.state) {
-        case VG_ENTRY:   vg_draw_entry();    break;
-        case VG_SELECT:  vg_draw_select();   break;
-        case VG_BRACKET: vg_draw_bracket();  break;
-        case VG_REPAIR:  vg_draw_repair();   break;
-        default:         vg_draw_overlays(); break;
-        }
+        // WHICH SCREEN IS THE STATE'S OWN BUSINESS, and it says so in its row.
+        // This was a switch with a default arm that drew the overlays, which
+        // meant a menu added without a case here drew a picture belonging to
+        // another screen and reported nothing. See VgStateDef::draw.
+        vg_state_draw();
         vg_draw_ift();
         return;
     }

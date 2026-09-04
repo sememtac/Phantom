@@ -6,7 +6,7 @@
 #include "vg_arena.h"
 #include "vg_sky.h"
 #include "vg_tourney.h"
-#include "vg_screens.h"
+#include "vg_menu.h"
 #include "vg_save.h"
 #include "vg_cine.h"
 #include "vg_ift.h"
@@ -320,8 +320,9 @@ void vg_gym_spawn_opponent(void) {
 // The attract demo
 // ---------------------------------------------------------------------------
 
-// Set by the desktop only; see the note in vg_sim.h.
+// Set by the desktop only; see the notes in vg_sim.h.
 bool vg_headless = false;
+bool vg_fixed_dt = false;
 
 bool vg_demo_wanted = false;
 bool vg_show_ai     = false;
