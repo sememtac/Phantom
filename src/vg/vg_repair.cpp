@@ -1,4 +1,5 @@
 #include "vg_screens.h"
+#include "vg_ui.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_save.h"
@@ -69,14 +70,10 @@ bool vg_repair_update(const VgInput* in, bool tap, float tx, float ty) {
 
 // ---------------------------------------------------------------------------
 
-static void centred(int y, const char* s, uint16_t col, int scale) {
-    vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
-}
-
 void vg_draw_repair(void) {
     char buf[48];
 
-    centred(28, "REPAIR", INK_MAX, 3);
+    vg_centred(28, "REPAIR", INK_MAX, 3);
 
     // --- hull bar: what you have, plus what you are about to buy ---
     vg_rect(REP_BAR_X, REP_BAR_Y, REP_BAR_W, REP_BAR_H, INK_TRACE);
@@ -98,7 +95,7 @@ void vg_draw_repair(void) {
 
     snprintf(buf, sizeof(buf), "%s   %d / %d", vg.spec->name,
              (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
-    centred(REP_BAR_Y + REP_BAR_H + 12, buf, INK_BRIGHT, 2);
+    vg_centred(REP_BAR_Y + REP_BAR_H + 12, buf, INK_BRIGHT, 2);
 
     // --- slider ---
     const int cap = affordable();
@@ -121,10 +118,10 @@ void vg_draw_repair(void) {
             REP_SLIDE_Y - 24, buf, INK_MAX, 2);
 
     snprintf(buf, sizeof(buf), "CREDITS %d", vg.credits);
-    centred(REP_SLIDE_Y + REP_SLIDE_H + 14, buf, INK_BRIGHT, 3);
+    vg_centred(REP_SLIDE_Y + REP_SLIDE_H + 14, buf, INK_BRIGHT, 3);
 
     snprintf(buf, sizeof(buf), "%d CR PER POINT", CREDIT_PER_HULL);
-    centred(REP_BUY_Y + REP_BUY_H + 12, buf, INK, 2);
+    vg_centred(REP_BUY_Y + REP_BUY_H + 12, buf, INK, 2);
 
     vg_button(REP_BUY_X,  REP_BUY_Y,  REP_BUY_W,  REP_BUY_H,  "BUY",
               s_buy > 0, s_buy > 0);
@@ -134,6 +131,6 @@ void vg_draw_repair(void) {
     if (cap == 0) {
         const char* why = (vg.health >= vg.health_max) ? "HULL INTACT"
                                                        : "NOT ENOUGH CREDITS";
-        centred(REP_SLIDE_Y + REP_SLIDE_H + 48, why, INK_BRIGHT, 2);
+        vg_centred(REP_SLIDE_Y + REP_SLIDE_H + 48, why, INK_BRIGHT, 2);
     }
 }

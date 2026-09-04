@@ -46,8 +46,6 @@ struct VgNetOut {
 // Whether a network is compiled in at all.
 bool vg_net_available(void);
 // The width it expects, for the caller to check against its own observation.
-int  vg_net_inputs(void);
-int  vg_net_weights(void);
 
 // DOES IT KNOW THIS SHIP?
 //

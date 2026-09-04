@@ -90,10 +90,6 @@ bool vg_net_knows_ship(const float* obs, int n) {
     return true;   // an older header that did not record what it saw
 #endif
 }
-int  vg_net_inputs(void)    { return PILOT_NET_IN; }
-int  vg_net_weights(void)   { return PILOT_NET_IN * PILOT_NET_H + PILOT_NET_H
-                                   + PILOT_NET_H * PILOT_NET_H + PILOT_NET_H
-                                   + PILOT_NET_H * PILOT_NET_OUT + PILOT_NET_OUT; }
 
 void vg_net_run(const float* obs, int n, VgNetOut* out) {
     if (!obs || !out) return;

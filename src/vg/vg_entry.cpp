@@ -1,4 +1,5 @@
 #include "vg_screens.h"
+#include "vg_ui.h"
 #include "vg_console.h"
 #include "generated/bezel_console.h"
 #include "vg_draw.h"
@@ -135,10 +136,6 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
 }
 
 // ---------------------------------------------------------------------------
-
-static void centred(int y, const char* s, uint16_t col, int scale) {
-    vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
-}
 
 void vg_draw_entry(void) {
     // The same terminal the ship select is bolted into. REGISTRATION rather than

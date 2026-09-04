@@ -10,6 +10,7 @@
 #include "vg_sky.h"
 #include "vg_tourney.h"
 #include "vg_screens.h"
+#include "vg_ui.h"
 #include "vg_draw.h"   // vg_press_set: the live contact, recorded once a frame
 #include "vg_save.h"
 #include "vg_cine.h"

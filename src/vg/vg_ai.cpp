@@ -482,13 +482,6 @@ float    g_ai_range[SHIP_CLASSES]   = { 0 };   // summed range, world units
 // with an empty rack should be leaving, not pointing.
 float    g_ai_aimk[(int)SHIP_CLASSES * STEER_KINDS] = { 0 };
 
-void vg_ai_census_reset(void) {
-    for (int c = 0; c < SHIP_CLASSES; c++) {
-        for (int k = 0; k < STEER_KINDS; k++) g_ai_steer[c * STEER_KINDS + k] = 0;
-        g_ai_frames[c] = g_ai_locked[c] = g_ai_armed[c] = 0;
-        g_ai_aim[c] = g_ai_range[c] = 0.0f;
-    }
-}
 
 // Which row of the class table this hull is, or -1 if it is not one of them.
 static int class_of(const ShipSpec* sp) {

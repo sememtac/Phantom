@@ -1,4 +1,5 @@
 #include "vg_draw.h"
+#include "vg_ui.h"
 #include "vg_game.h"
 #include "vg_ift.h"
 #include "vg_tourney.h"
@@ -13,10 +14,6 @@
 // Full-screen state overlays: the title card, the damage vignette, and the
 // between-states text. Deliberately separate from the HUD -- these appear and
 // vanish with game state rather than being instruments that are always present.
-
-static void centred(int y, const char* s, uint16_t col, int scale) {
-    vg_text((SCR_W - vg_text_width(s, scale)) / 2, y, s, col, scale);
-}
 
 // Light off an explosion nearby. Same border as the damage vignette because it
 // is the same physical claim -- something outside the canopy is illuminating the
@@ -280,13 +277,13 @@ static void draw_story(void) {
             // position, then hands over. The two are never both climbing.
             const float la = r * (1.0f - h);
             if (la > 0.01f)
-                centred(y, story_line(i), vg_dim(INK_BRIGHT, la), TITLE_SCALE);
+                vg_centred(y, story_line(i), vg_dim(INK_BRIGHT, la), TITLE_SCALE);
             continue;
         }
 
         // The rest of the text clears out during the handoff, so the reveal is
         // not left sharing the screen with the tail of the paragraph.
-        centred(y, story_line(i), vg_dim(INK_BRIGHT, f * (1.0f - h)), 2);
+        vg_centred(y, story_line(i), vg_dim(INK_BRIGHT, f * (1.0f - h)), 2);
     }
 }
 
@@ -373,7 +370,7 @@ void vg_draw_overlays(void) {
     // somehow started a match they are not flying -- and the prompt is also the
     // instruction, because the way out of a demo is the way into the game.
     if (vg.demo && fmodf(vg.state_t, 1.4f) < 0.9f)
-        centred(SCR_H - 54, "DEMO -- TOUCH TO PLAY", INK_BRIGHT, 2);
+        vg_centred(SCR_H - 54, "DEMO -- TOUCH TO PLAY", INK_BRIGHT, 2);
 
     switch (vg.state) {
     case VG_ATTRACT: {
@@ -382,7 +379,7 @@ void vg_draw_overlays(void) {
         const float ta = title_alpha();
         draw_glitch_title("PHANTOM", TITLE_Y, TITLE_SCALE, ta);
         if (ta > 0.01f && fmodf(vg.state_t, 1.2f) < 0.8f)
-            centred(250, "TOUCH TO START", vg_dim(INK_MAX, ta), 3);
+            vg_centred(250, "TOUCH TO START", vg_dim(INK_MAX, ta), 3);
         draw_story();
         break;
     }
@@ -410,8 +407,8 @@ void vg_draw_overlays(void) {
                 if (out < a) a = out;
             }
             if (a > 0.01f) {
-                centred(196, vg_sky_place(), vg_dim(INK_MAX, a), 4);
-                centred(244, vg_tourney_round_name(vt.round), vg_dim(INK_BRIGHT, a), 2);
+                vg_centred(196, vg_sky_place(), vg_dim(INK_MAX, a), 4);
+                vg_centred(244, vg_tourney_round_name(vt.round), vg_dim(INK_BRIGHT, a), 2);
             }
         }
 
@@ -430,32 +427,32 @@ void vg_draw_overlays(void) {
         const bool said_opp = (vg_bcast.ift_fired & (1u << IFT_INTRO_OPP)) && vg_bcast.ch[BC_IFT].t <= 0.0f;
 
         if (said_you && t > INTRO_DRIFT && t < INTRO_YOU_END) {
-            centred(360, vg.callsign, INK_MAX, 5);
-            centred(414, vg.spec->name, INK_BRIGHT, 2);
+            vg_centred(360, vg.callsign, INK_MAX, 5);
+            vg_centred(414, vg.spec->name, INK_BRIGHT, 2);
         } else if (said_opp && t > INTRO_OPP_START && t < INTRO_OPP_END) {
             const Entrant* o = vg_tourney_opponent();
             if (o) {
                 // The callsign, not "PHANTOM" -- see the note in vg_bracket.cpp. Both
                 // sites are the same act, naming the pilot you are about to fight, so
                 // they change together or one of them is wrong.
-                centred(360, o->tag, INK_MAX, 5);
+                vg_centred(360, o->tag, INK_MAX, 5);
                 snprintf(buf, sizeof(buf), "%s   %s",
                          vg_spec(o->cls)->name, vg_voice_archetype(o->voice));
-                centred(414, buf, INK_BRIGHT, 2);
+                vg_centred(414, buf, INK_BRIGHT, 2);
             }
         }
         break;
     }
 
     case VG_ROUND_WON:
-        centred(160, "ROUND WON", INK_MAX, 5);
+        vg_centred(160, "ROUND WON", INK_MAX, 5);
         snprintf(buf, sizeof(buf), "HULL %d/%d",
                  (int)(vg.health + 0.5f), (int)(vg.health_max + 0.5f));
-        centred(232, buf, INK_BRIGHT, 3);
+        vg_centred(232, buf, INK_BRIGHT, 3);
         snprintf(buf, sizeof(buf), "+%d CR", vg_last_purse());
-        centred(276, buf, INK_MAX, 4);
+        vg_centred(276, buf, INK_MAX, 4);
         snprintf(buf, sizeof(buf), "BANK %d", vg.credits);
-        centred(320, buf, INK_FAINT, 2);
+        vg_centred(320, buf, INK_FAINT, 2);
         break;
 
     // Winning closes the loop the intro opened. The crawl says a rumour goes
@@ -474,9 +471,9 @@ void vg_draw_overlays(void) {
             if (a < 0.0f) a = 0.0f;
             draw_glitch_title("CHAMPION", 128, 6, a);
             snprintf(buf, sizeof(buf), "%s   %s", vg.callsign, vg.spec->name);
-            centred(212, buf, vg_dim(INK_BRIGHT, a), 3);
+            vg_centred(212, buf, vg_dim(INK_BRIGHT, a), 3);
             snprintf(buf, sizeof(buf), "BANK %d CR", vg.credits);
-            centred(254, buf, vg_dim(INK_FAINT, a), 2);
+            vg_centred(254, buf, vg_dim(INK_FAINT, a), 2);
         }
 
         // 2. The rumour arrives, and is left alone long enough to be read.
@@ -497,8 +494,8 @@ void vg_draw_overlays(void) {
                 // 480 with room either side. The payoff line goes UP a step with it,
                 // to 3, because the hierarchy here is brightness and size and the
                 // setup must not arrive as loud as the thing it sets up.
-                centred(204, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK, a), 2);
-                centred(232, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 3);
+                vg_centred(204, "THE HANGAR BAYS HAVE A NEW RUMOR", vg_dim(INK, a), 2);
+                vg_centred(232, "THEY CALL YOU...", vg_dim(INK_BRIGHT, a), 3);
             }
         }
 
@@ -539,11 +536,11 @@ void vg_draw_overlays(void) {
         vg_text((SCR_W - vg_text_width(buf, 2)) / 2 - j, 214, buf, COL_HUD, 2);
         snprintf(buf, sizeof(buf), "ELIMINATED IN THE %s",
                  vg_tourney_round_name(vt.round));
-        centred(246, buf, COL_HUD_DIM, 2);
+        vg_centred(246, buf, COL_HUD_DIM, 2);
         snprintf(buf, sizeof(buf), "BANK %d CR", vg.credits);
-        centred(278, buf, INK_FAINT, 2);
+        vg_centred(278, buf, INK_FAINT, 2);
         if (vg.state_t > 2.2f && fmodf(vg.state_t, 1.0f) < 0.6f)
-            centred(330, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
+            vg_centred(330, "TAP TO RETURN", COL_STAR_BRIGHT, 2);
 
         // The moment itself: one hard white frame, gone almost before it
         // registers. Drawn LAST so it covers everything, including the glitch --

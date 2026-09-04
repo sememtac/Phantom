@@ -172,28 +172,4 @@ void vg_draw_missile_bearings(const VgCam& cam);
 // well as over a finished match.
 void vg_draw_ift(void);
 
-// ===========================================================================
-// WHERE THE FINGER IS, FOR THE WHOLE INTERFACE
-//
-// A control that does not acknowledge a press feels broken before it feels
-// slow: you cannot tell whether the machine took the input or whether you
-// missed. Every button in the game had that fault, so the fix belongs in one
-// place rather than in each screen.
-//
-// Recorded once a frame in vg_state_update, which is the single entry every
-// state passes through, and read by whatever is drawing. That is why no draw
-// function had to grow a VgInput parameter: a button already knows its own
-// rectangle, so it can ask this whether the press is inside it.
-//
-// It is the LIVE contact, not a tap. A tap is an event that has already
-// finished; this is the finger still being down, which is the thing a lit key
-// is reporting.
-// ===========================================================================
-void vg_press_set(bool held, float x, float y);
-bool vg_press_in(int x, int y, int w, int h);
-
-static inline bool vg_in_rect(float x, float y, int rx, int ry, int rw, int rh) {
-    return x >= (float)rx && x < (float)(rx + rw) &&
-           y >= (float)ry && y < (float)(ry + rh);
-}
 

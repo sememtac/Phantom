@@ -1,4 +1,5 @@
 #include "vg_console.h"
+#include "vg_ui.h"
 #include "vg_raster.h"
 #include "vg_draw.h"
 #include "vg_glitch.h"

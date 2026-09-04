@@ -352,8 +352,7 @@ void vg_bracket_focus_player(void);            // centre on the next match
 // the whole rectangle, because a solid slab reads as a block rather than a
 // control and throws away the frame that makes the rest of the interface look
 // built.
-void vg_button(int x, int y, int w, int h, const char* label,
-               bool primary, bool live);
+// vg_button moved to vg_ui.h with the other shared widgets.
 
 void vg_draw_select(void);
 void vg_draw_pause(void);
