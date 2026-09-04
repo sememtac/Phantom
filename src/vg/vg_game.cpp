@@ -716,14 +716,25 @@ void vg_game_update(float dt, const VgInput* in) {
                  && ((vg.state == VG_KILL && vg.state_t < KILL_SPEECH + 1.2f)
                   || (vg.state == VG_OVER)));
 
-    // ---- PAUSE, from anywhere that flies ----------------------------------
+    // ---- PAUSE, FROM ANYWHERE EXCEPT THE TITLE ----------------------------
     //
     // Handled HERE, ahead of the state machine, because it is one rule and not a
     // rule per state. It used to be written out in each case that wanted it, and
     // the copy in the match required `playing` -- so the key did nothing in
     // VG_HIT, which is exactly where a player being shot at reaches for it.
-    // Anything that flies can be paused, and pause always returns where it came
-    // from.
+    //
+    // AND IT WAS STILL TOO NARROW: `flying` meant the key did nothing on any
+    // page. A menu key that works in some places and not others is not a menu
+    // key, it is a thing to remember, and the settings behind it -- volume, the
+    // scanlines -- are exactly what somebody sitting on the ship-select screen
+    // wants to reach.
+    //
+    // THE TITLE IS THE ONE EXCEPTION, because the pause menu's way out is the
+    // title: a pause over it would offer to take you where you already are.
+    //
+    // NOT DURING A CUT. The set is off and the state changes at the join, so a
+    // pause taken over the black would suspend whichever side of it happened to
+    // be current.
     if (in->pwr_edge) {
         if (vg.state == VG_PAUSE) {
             // One key, one meaning: "take me back one". From a sub-page that is
@@ -732,11 +743,14 @@ void vg_game_update(float dt, const VgInput* in) {
             if (vg.pause_page) {
                 vg.pause_page = 0;
             } else {
-                vg_state_resume((vg.pause_from == VG_COURSE) ? VG_COURSE
-                                                            : VG_PLAYING);
+                vg_state_resume((VgState)vg.pause_from, vg.pause_t);
             }
-        } else if (flying) {
-            vg.pause_from = (vg.state == VG_COURSE) ? VG_COURSE : VG_PLAYING;
+        } else if (vg.state != VG_ATTRACT && vg_tv.phase == TV_NONE) {
+            // THE REAL STATE, not a guess between two of them. What is behind the
+            // pause has to be put back, and the renderer draws it -- see
+            // vg_state_shown.
+            vg.pause_from = (uint8_t)vg.state;
+            vg.pause_t    = vg.state_t;
             vg.pause_page = 0;
             vg_state_go(VG_PAUSE);
         }

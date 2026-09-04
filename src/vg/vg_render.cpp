@@ -515,13 +515,20 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
 
     // Menus fly the idle scene underneath but carry no instruments -- a HUD on
     // the ship-select screen would be reporting on a fight that is not happening.
-    if (vg_state_is_menu(vg.state)) {
+    // WHAT IS ON THE SCREEN, which is not always what the state is. A pause taken
+    // over a page keeps drawing that page underneath it -- see vg_state_shown.
+    const VgState shown = vg_state_shown();
+
+    if (vg_state_is_menu(shown)) {
         // WHICH SCREEN IS THE STATE'S OWN BUSINESS, and it says so in its row.
         // This was a switch with a default arm that drew the overlays, which
         // meant a menu added without a case here drew a picture belonging to
         // another screen and reported nothing. See VgStateDef::draw.
-        vg_state_draw();
-        vg_draw_ift();
+        vg_state_draw(shown);
+        // The broadcast is part of the game that is currently suspended, and the
+        // pause screen covers most of the band it speaks in.
+        if (vg.state != VG_PAUSE) vg_draw_ift();
+        if (vg.state == VG_PAUSE) vg_draw_pause();
         return;
     }
 

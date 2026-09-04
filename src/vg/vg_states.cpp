@@ -426,10 +426,10 @@ void vg_state_go(VgState to) {
     if (d->enter) d->enter();
 }
 
-void vg_state_resume(VgState to) {
+void vg_state_resume(VgState to, float t) {
     if ((int)to >= VG_STATE_COUNT) return;
     vg.state   = to;
-    vg.state_t = 0.0f;
+    vg.state_t = t;
 }
 
 void vg_state_cut(VgState to) {
@@ -464,12 +464,18 @@ void vg_state_cut(VgState to) {
 // cut is a state, and entering a state is one thing.
 // The dispatch. Here rather than in vg_game.cpp because the table is here, and
 // because "what does this state do this frame" is a table lookup now.
-// The screen this state puts up, or nothing at all if it flies. Called from the
+// The screen a state puts up, or nothing at all if it flies. Called from the
 // menu branch of vg_render, which is the one place that asks.
-void vg_state_draw(void) {
-    if ((int)vg.state >= VG_STATE_COUNT) return;
-    const VgStateDef* d = &STATES[vg.state];
+void vg_state_draw(VgState s) {
+    if ((int)s >= VG_STATE_COUNT) return;
+    const VgStateDef* d = &STATES[s];
     if (d->draw) d->draw();
+}
+
+VgState vg_state_shown(void) {
+    if (vg.state != VG_PAUSE) return vg.state;
+    return ((int)vg.pause_from < VG_STATE_COUNT) ? (VgState)vg.pause_from
+                                                 : VG_PLAYING;
 }
 
 void vg_state_update(float dt, const VgInput* in, const Tap* tap) {
@@ -876,7 +882,6 @@ void vg_upd_bracket(float dt, const VgInput* in, const Tap* tap) {
 void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
     // No world step: paused means paused.
     const bool from_course = (vg.pause_from == VG_COURSE);
-    const VgState back     = from_course ? VG_COURSE : VG_PLAYING;
     (void)dt;
 
     // PWR again, which is what paused it. NOT the + key -- that is the roll
@@ -909,7 +914,7 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
     if (tap->up) {
         switch (vg_pause_item_at(tap->x, tap->y, from_course)) {
         case PAUSE_RESUME:
-            vg_state_resume(back);
+            vg_state_resume((VgState)vg.pause_from, vg.pause_t);
             break;
         case PAUSE_CONFIG:
             vg.pause_page = 1;

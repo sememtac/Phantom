@@ -146,3 +146,9 @@ const char* vg_ship_axis_name(int i);
 // chart gave up three of radius to pay for it.
 #define SHIPVIEW_MODEL_DY   205
 #define SHIPVIEW_MODEL_H     58
+
+// The class mark's half extents, beside the hull. Bigger than the bracket's,
+// because here it is being TAUGHT rather than read at a glance and there is room
+// for it to be looked at.
+#define SHIPVIEW_GLYPH_HW    11
+#define SHIPVIEW_GLYPH_HH     9

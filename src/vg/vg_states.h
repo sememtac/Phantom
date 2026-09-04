@@ -63,6 +63,17 @@ void vg_upd_won(float dt, const VgInput* in, const Tap* tap);
 // The lookup: run whatever the current state's row says to run.
 void vg_state_update(float dt, const VgInput* in, const Tap* tap);
 
-// ...and draw whatever it says to draw. Null for a state that flies, so this is
+// ...and draw whatever `s` says to draw. Null for a state that flies, so this is
 // a no-op there rather than a case nobody wrote.
-void vg_state_draw(void);
+//
+// It takes a state rather than reading the current one because of the pause: what
+// is on the screen behind that menu is the state it SUSPENDED, and it has to keep
+// being drawn or the page vanishes the moment somebody reaches for the volume.
+void vg_state_draw(VgState s);
+
+// WHOSE PICTURE IS ON THE SCREEN. The current state, except while paused, when it
+// is whatever the pause is holding. Pausing does not change what you are looking
+// at -- a paused match still shows its cockpit and a paused page still shows its
+// page -- and every caller that asks "what is being drawn" wants this rather than
+// vg.state.
+VgState vg_state_shown(void);

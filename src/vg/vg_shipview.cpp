@@ -595,5 +595,25 @@ void vg_shipview_draw(VgShipView* v, int cls, int x, int y, int w, int h) {
 
     vg_fill_rect(L->x + 8, L->my - 8, L->w - 16, 1, INK_TRACE);
     draw_plan_view(L, vg_spec((ShipClass)shown), shown);
+
+    // THE MARK, BESIDE THE HULL IT STANDS FOR.
+    //
+    // The bracket sheet has room for a mark and none for a silhouette, so the
+    // sheet is where the player reads them -- and a symbol nobody has been taught
+    // is a symbol nobody reads. This is where it gets taught: the one screen with
+    // room for both puts them side by side, so the shape and the sign are learned
+    // together and the sheet inherits it.
+    //
+    // Far left of the slot, clear of the hull. The plan view is centred and about
+    // ninety pixels wide at the roster's widest, in a panel of well over two
+    // hundred, so the space either side of it was doing nothing.
+    //
+    // The LAGGED class, the same one the hull is drawn from -- a mark that changed
+    // a frame before the shape beside it would be teaching the wrong pairing.
+    vg_ship_glyph((ShipClass)shown,
+                  L->x + SHIPVIEW_FIELD_PAD + SHIPVIEW_GLYPH_HW,
+                  L->my + L->mh / 2,
+                  SHIPVIEW_GLYPH_HW, SHIPVIEW_GLYPH_HH, INK_BRIGHT);
+
     draw_plan_noise(L, p);
 }

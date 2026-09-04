@@ -1,4 +1,4 @@
-// The desktop entry point.
+﻿// The desktop entry point.
 //
 // On the device the Arduino core calls setup() once and loop() for ever. That is
 // all this does, so main.cpp -- the whole frame sequence, the telemetry, the
@@ -74,6 +74,19 @@ static void screen_match(void) {
     vg_sky_set_reveal(1.0f);
 }
 
+// A PAUSE IS NOT A PLACE, it suspends one -- so it needs something to suspend.
+// The flag used to cut straight to VG_PAUSE over whatever the boot sequence had
+// left on the screen, which is a pause menu floating over the title.
+//
+// A match, because that is where a player meets it. Pausing over a PAGE is the
+// other half of the same key and is reached by pressing PWR on one.
+static void screen_pause(void) {
+    screen_match();
+    vg.pause_from = (uint8_t)VG_PLAYING;
+    vg.pause_t    = 0.0f;
+    vg.pause_page = 0;
+}
+
 struct HostScreen {
     const char* name;
     VgState     state;
@@ -88,7 +101,7 @@ static const HostScreen SCREENS[] = {
     { "bracket",  VG_BRACKET,   screen_tourney, "the tournament sheet" },
     { "repair",   VG_REPAIR,    screen_tourney, "the repair page" },
     { "course",   VG_COURSE,    screen_none,    "the ring course" },
-    { "pause",    VG_PAUSE,     screen_none,    "the pause menu" },
+    { "pause",    VG_PAUSE,     screen_pause,   "the pause menu, over a match" },
     { "intro",    VG_INTRO,     screen_tourney, "the launch cutscene" },
     { "match",    VG_PLAYING,   screen_match,   "flying, against the bracket" },
     { "roundwon", VG_ROUND_WON, screen_tourney, "the round-won card" },

@@ -628,6 +628,12 @@ struct VgGame {
     // match -- and the second button on that screen means different things
     // depending on the answer.
     uint8_t     pause_from;
+    // ...AND ITS CLOCK. Resuming used to zero vg.state_t, which is right for a
+    // match -- nothing there reads it -- and wrong for everything else: the
+    // launch cutscene is timed off it, so a pause over the fighters and a resume
+    // played the whole introduction again. A pause that rewinds what it
+    // suspended is not a pause.
+    float       pause_t;
     uint8_t     pause_page;   // 0 the menu, 1 the audio page
 
     // The mix -- music and sfx levels -- moved to vg_sfx.h as VgVolume.
@@ -780,7 +786,8 @@ void vg_state_cut(VgState to);     // through the set, then the same at the join
 // Coming back from a suspension, which is NOT an arrival: the state was never
 // left. It is not entered again and its set-up does not run -- re-entering
 // VG_COURSE here would rebuild the course the player is sitting in.
-void vg_state_resume(VgState to);
+// Back to a state without a transition, at the clock it was left at.
+void vg_state_resume(VgState to, float t);
 
 void vg_game_select_ship(ShipClass c);
 
