@@ -51,23 +51,27 @@
 #define CANVAS_W    (9 * BRK_CW)
 #define CANVAS_H    (8 * BRK_RY)
 
-// A CAPTION STRIP ACROSS THE TOP OF THE WINDOW, and the sheet has what is left.
+// A CAPTION STRIP ACROSS THE TOP OF THE WINDOW, and the sheet runs UNDER it.
 //
 // The round and the bank used to sit on a black band above the map, on plating
 // the art now owns -- and the art has no hole for them, because they are not a
-// banner and not a key. They belong to the picture, so they go inside the window,
-// pinned while the sheet moves under them.
+// banner and not a key. They belong to the picture, so they go inside the window.
 //
-// 22px is a scale 2 line with four either side. It costs the sheet half a row and
-// buys a number the player is constantly deciding against a fixed place to be.
+// The sheet is NOT stopped short of them. It used to be, and the map then had a
+// band of empty sky along its top edge that read as the tree failing to reach the
+// glass. The strip is opaque and drawn after, so the tree passes behind it the
+// way a caption on a broadcast passes over what it is captioning.
 #define CAP_H       22
 
-// The window, from the art, less the caption. VIEW_* is the SHEET's strip, which
-// is what every reader of it downstream means by it.
+// The window, from the art. VIEW_* is the whole hole: the sheet has all of it.
 #define VIEW_X0     BRK_VIEW_X0
+#define VIEW_Y0     BRK_VIEW_Y0
 #define VIEW_W      BRK_VIEW_W
-#define VIEW_Y0     (BRK_VIEW_Y0 + CAP_H)
-#define VIEW_H      (BRK_VIEW_H - CAP_H)
+#define VIEW_H      BRK_VIEW_H
+
+// How heavy a box border and a connector are. The sheet is half again the size it
+// was and a hairline at this scale reads as a scratch rather than as structure.
+#define BRK_LINE_W  2
 
 static float s_pan_x = 0.0f;
 static float s_pan_y = 0.0f;
@@ -89,6 +93,11 @@ static float s_pan_y = 0.0f;
 // for this. vt.slot[r] is the field at the START of round r, so match m is
 // slot[r][2m] against slot[r][2m+1] and the winner is slot[r+1][m] -- which makes
 // the loser the other one. Fifteen matches, reconstructable at any point.
+//
+// NO ROUND NAMES. The first pass headed each round's results with QUARTER FINAL
+// or SEMI FINAL, which is a scoreboard organising itself for the reader. A crawl
+// does not organise: it states outcomes, coldly, in the order they happened, and
+// which round a name went out in is on the sheet underneath it.
 //
 // A VERB, AND IT IS IN THE PRESENT TENSE. The first pass ran winner and loser
 // with three spaces between them and no verb, on the grounds that IFT_MATCH_END
@@ -129,10 +138,6 @@ void vg_bracket_chyron(void) {
     for (int r = done - 1; r >= 0; r--) {
         const int n = TOURNEY_ENTRANTS >> r;
 
-        at += snprintf(s_chyron + at, sizeof(s_chyron) - at, "%s%s",
-                       at ? CHY_OUT : "", vg_tourney_round_name((uint8_t)r));
-        if (at >= (int)sizeof(s_chyron) - 1) break;
-
         for (int m = 0; m < n / 2; m++) {
             const int a = vt.slot[r][m * 2];
             const int b = vt.slot[r][m * 2 + 1];
@@ -141,7 +146,7 @@ void vg_bracket_chyron(void) {
             const int l = (w == a) ? b : a;
 
             at += snprintf(s_chyron + at, sizeof(s_chyron) - at,
-                           CHY_OUT "%s" CHY_VERB "%s",
+                           "%s%s" CHY_VERB "%s", at ? CHY_OUT : "",
                            vt.entrant[w].tag, vt.entrant[l].tag);
             if (at >= (int)sizeof(s_chyron) - 1) break;
         }
@@ -217,14 +222,22 @@ void vg_bracket_focus_player(void) {
     clamp_pan();
 }
 
-// A horizontal or vertical rule, clipped to the viewport so connectors cannot
-// bleed into the header or over the ready button.
-static void rule(int x, int y, int w, int h, uint16_t col) {
-    if (y < VIEW_Y0) { h -= (VIEW_Y0 - y); y = VIEW_Y0; }
-    if (y + h > VIEW_Y0 + VIEW_H) h = VIEW_Y0 + VIEW_H - y;
-    if (h <= 0 || w <= 0) return;
-    if (x + w < VIEW_X0 || x > VIEW_X0 + VIEW_W) return;
-    vg_fill_rect(x, y, w, h, col);
+// A CONNECTOR, AND IT IS A LINE RATHER THAN A FILL.
+//
+// It was a fill one pixel thick, with its own arithmetic for clipping to the
+// strip. The clip is the viewport's job now, and the fill was the wrong primitive
+// for two reasons: it cannot be thickened without becoming a rectangle, and under
+// the warp a fill leaves as a strip of QUADS where a line leaves as chords.
+static void rule(float ax, float ay, float bx, float by, uint16_t col) {
+    vg_line_w(ax, ay, bx, by, col, BRK_LINE_W);
+}
+
+// A box outline at BRK_LINE_W, drawn as nested frames. vg_rect knows about the
+// warp -- it leaves as four lines rather than four fills when the bracket is
+// open -- so this is the one shape that does not have to be built by hand.
+static void box_frame(int x, int y, int w, int h, uint16_t col) {
+    for (int i = 0; i < BRK_LINE_W; i++)
+        vg_rect(x + i, y + i, w - 2 * i, h - 2 * i, col);
 }
 
 // THE CALLSIGN AND WHAT THEY FLY, laid out once for both kinds of box.
@@ -257,7 +270,7 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
     if (idx < 0) {
         // Not decided yet. An empty frame still shows the shape of the draw,
         // which is half the reason to look at the sheet before a match.
-        vg_rect(sx, sy, BOX_W, BOX_H, INK_FAINT);
+        box_frame(sx, sy, BOX_W, BOX_H, INK_FAINT);
         return;
     }
 
@@ -281,7 +294,7 @@ static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) 
     uint16_t frame = alive ? (is_next_opp ? INK_MAX : INK_TRACE) : INK_FAINT;
     uint16_t ink   = alive ? (is_next_opp ? INK_MAX : INK_BRIGHT) : INK_FAINT;
 
-    vg_rect(sx, sy, BOX_W, BOX_H, frame);
+    box_frame(sx, sy, BOX_W, BOX_H, frame);
     vg_fill_rect(sx + 1, sy + 1, BOX_HUE_W - 1, BOX_H - 2, hue);
     box_label(sx, sy, e->tag, e->cls, ink);
 
@@ -308,12 +321,19 @@ void vg_draw_bracket(void) {
     const Entrant* opp = vg_tourney_opponent();
     (void)opp;
 
-    // THE RIG. Broadcast rather than terminal: no glass, because this page is the
-    // picture and not a machine showing you one -- and because the warp would cut
-    // every rule on the sheet into chords and overflow the slice. See
-    // VgConsoleForm. The banner is the chyron, and the chassis is painted by
-    // close(), last, over anything that ran past a hole.
-    vg_console_open(&BEZEL_TOURNEY, VG_CON_BROADCAST, s_chyron, nullptr);
+    // THE RIG, AND THE SHEET IS BEHIND GLASS.
+    //
+    // The first pass said a broadcast is not a machine in a room and took a flat
+    // form with no warp, no fiducials and no sweep. Looked at, that was the wrong
+    // reading: trackside equipment is a MONITOR, and a bracket on a monitor is
+    // still on a tube. Flat, the sheet read as a diagram pasted onto the panel.
+    //
+    // The fear was the slice, and it was answered by measuring rather than by
+    // avoiding it. The warp cuts a line into VG_CON_SEG chords at one primitive
+    // per chord and the sheet is a lot of lines -- but its connectors are lines
+    // rather than fills now, and vg_rect leaves as four lines when the bracket is
+    // open, so the sheet costs chords rather than quads. 411 of 950.
+    vg_console_open(&BEZEL_TOURNEY, s_chyron, nullptr);
 
     // CLIPPED TO THE WINDOW, and this is not belt and braces. The steel masks
     // whatever the sheet spills onto plating, but the two key wells and the
@@ -346,9 +366,10 @@ void vg_draw_bracket(void) {
                 // middle of it afterwards.
                 const int x0 = ((ax < bx2) ? ax : bx2) + BOX_W;
                 const int x1 = (ax < bx2) ? bx2 : ax;
-                int hsx, hsy;
+                int hsx, hsy, hex, hey;
                 canvas_to_screen(x0, ay + BOX_H / 2, &hsx, &hsy);
-                rule(hsx, hsy, x1 - x0, 1, INK_FAINT);
+                canvas_to_screen(x1, ay + BOX_H / 2, &hex, &hey);
+                rule((float)hsx, (float)hsy, (float)hex, (float)hey, INK_FAINT);
                 continue;
             }
 
@@ -359,14 +380,14 @@ void vg_draw_bracket(void) {
             canvas_to_screen(spine, ay + BOX_H / 2, &sx, &sy_a);
             canvas_to_screen(spine, by2 + BOX_H / 2, &sx, &sy_b);
 
-            rule(sx, sy_a, 1, sy_b - sy_a, INK_FAINT);
+            rule((float)sx, (float)sy_a, (float)sx, (float)sy_b, INK_FAINT);
 
-            int hx = left ? (ax + BOX_W) : (ax - 12);
+            const int hx = left ? (ax + BOX_W) : (ax - 12);
             int hsx, hsy;
             canvas_to_screen(hx, ay + BOX_H / 2, &hsx, &hsy);
-            rule(hsx, hsy, 12, 1, INK_FAINT);
+            rule((float)hsx, (float)hsy, (float)(hsx + 12), (float)hsy, INK_FAINT);
             canvas_to_screen(hx, by2 + BOX_H / 2, &hsx, &hsy);
-            rule(hsx, hsy, 12, 1, INK_FAINT);
+            rule((float)hsx, (float)hsy, (float)(hsx + 12), (float)hsy, INK_FAINT);
         }
     }
 
@@ -399,13 +420,25 @@ void vg_draw_bracket(void) {
     // the sheet moves under them. INK_WELL and not COL_BLACK: a fill whose colour
     // is zero is DROPPED, which is how the band this replaces went four months
     // without ever painting.
+    // FLAT, LIKE A KEY, and for the same two reasons.
+    //
+    // A caption is a band of solid fill with words on it, and the warp takes
+    // those apart differently: a fill leaves as a strip of quads and text is
+    // moved as one rigid block, so the black comes away from the word. And the
+    // band has a JOB -- it covers the top of the sheet -- which it stops doing
+    // the moment the tube pulls it a few pixels down the glass. That is what it
+    // did: four rows of tree showed above it along the top of the aperture.
+    vg_console_flat(0.0f, 0.0f, nullptr, nullptr);
+
     vg_fill_rect(BRK_VIEW_X0, BRK_VIEW_Y0, BRK_VIEW_W, CAP_H, INK_WELL);
-    vg_text(BRK_VIEW_X0 + 4, BRK_VIEW_Y0 + 4,
+    vg_text(BRK_TEXT_X0 + 4, BRK_VIEW_Y0 + 4,
             vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
 
     snprintf(buf, sizeof(buf), "%d CR", vg.credits);
-    vg_text(BRK_VIEW_X0 + BRK_VIEW_W - 4 - vg_text_width(buf, 2),
+    vg_text(BRK_TEXT_X0 + BRK_TEXT_W - 4 - vg_text_width(buf, 2),
             BRK_VIEW_Y0 + 4, buf, INK_MAX, 2);
+
+    vg_console_bend();
 
     // THE VS LINE AND THE ARCHETYPE ARE GONE.
     //

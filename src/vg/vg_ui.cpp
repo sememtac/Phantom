@@ -88,6 +88,12 @@ void vg_ticker(VgRect fill, VgRect run, const char* text, const char* note,
     // cleared at all.
     vg_fill_rect(fill.x, fill.y, fill.w, fill.h, INK_WELL);
 
+    // THE BIGGEST SIZE THE HOLE WILL TAKE, down from what the caller asked for.
+    // Same rule as a key: a banner that only fits the window it was written
+    // against is not a banner, it is a coincidence. Three pixels of margin top and
+    // bottom, which is what is left of a 27px slot after a scale 3 glyph.
+    while (scale > 1 && 7 * scale + 6 > run.h) scale--;
+
     const int tw    = vg_text_width(text, scale);
     const int cy    = run.y + (run.h - 1) / 2;
 
@@ -99,7 +105,14 @@ void vg_ticker(VgRect fill, VgRect run, const char* text, const char* note,
     const int   period = tw + VG_TICKER_GAP;
     const float u      = t * VG_TICKER_RATE;
     const int   off    = (int)(u - floorf(u / (float)period) * (float)period);
-    const int   ty     = cy - (note ? 12 : 10);
+    // CENTRED ON THE MIDDLE OF THE HOLE. It was a flat -10, which is exactly
+    // right for a scale 3 glyph and three pixels too high for anything else --
+    // the chyron at scale 2 sat with all its slack underneath it.
+    //
+    // A NOTE KEEPS ITS OWN NUMBER, because then the window holds two lines rather
+    // than one and the banner is not what is being centred: it moves up to leave
+    // room, and the pair is centred between them.
+    const int   ty     = cy - (note ? 12 : (7 * scale) / 2);
 
     // Clipped to the FILL rect. In the console it is needed because the screen
     // aperture notches up either side of the headline bar, so there are exempt

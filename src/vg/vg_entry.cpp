@@ -145,8 +145,7 @@ void vg_draw_entry(void) {
     // The same terminal the ship select is bolted into. REGISTRATION rather than
     // CALLSIGN: the banner is the tournament's own wording for what this desk is
     // for, and the word on the glass below is what you are entering.
-    vg_console_open(&BEZEL_CONSOLE, VG_CON_TERMINAL, "CALLSIGN REGISTRATION",
-                    nullptr);
+    vg_console_open(&BEZEL_CONSOLE, "CALLSIGN REGISTRATION", nullptr);
 
     const int midy = ENT_WHEEL_Y + ENT_WHEEL_H / 2;
 

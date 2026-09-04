@@ -105,31 +105,33 @@
 // and how far apart two readings of it sit, and a chyron on a page with no
 // chassis at all wants the same two numbers.
 
-// WHICH KIND OF MACHINE THIS IS, and the two differ in more than their art.
+// THERE WAS A FORM HERE, AND IT DID NOT SURVIVE BEING LOOKED AT.
 //
-// A TERMINAL is a thing you stand at. There is glass between you and what it is
-// showing, so the picture is bent onto a tube, laid over a fiducial grid, crossed
-// by a sweep and occasionally torn -- and its banner is a TITLE: two words, set
-// large, telling you what desk you are at.
+// It named two machines: a TERMINAL you stand at, with glass between you and the
+// picture, and a BROADCAST that IS the picture and therefore has none. It carried
+// two differences -- the glass, and whether the banner was set as a title or as a
+// crawl -- and the tournament page was written against it.
 //
-// A BROADCAST is not a machine in a room, it is the picture itself. There is no
-// glass, and its banner is a CRAWL: a page of results that has to get through
-// itself in a reasonable time, so it is set smaller.
+// Both differences went.
 //
-// THE GLASS IS NOT ONLY A FICTION. The warp cuts every line into VG_CON_SEG
-// chords at one primitive per chord, and the tournament sheet is about a hundred
-// and thirty rules and eighty box edges. That is the documented way to overflow a
-// primitive slice, and an overflow drops whatever was submitted LAST -- which on
-// a menu is the chassis.
-enum VgConsoleForm : uint8_t {
-    VG_CON_TERMINAL = 0,    // behind glass; the banner is a title
-    VG_CON_BROADCAST,       // flat; the banner is a crawl
-};
+// THE BANNER SIZES ITSELF NOW. A ticker takes the largest scale its hole will
+// hold, so a title in a tall window and a crawl in a shallow one arrive at their
+// own answers without anybody declaring which they are.
+//
+// AND THE BROADCAST WANTED GLASS. The argument was that trackside equipment is
+// not a machine in a room -- but it is a MONITOR, and a bracket on a monitor is
+// still on a tube. Flown, the flat version read as a diagram pasted onto the
+// panel; the curve, the alignment crosses and the sweep are what say the picture
+// is being displayed rather than drawn.
+//
+// The slice fear was real and was answered by measurement rather than by avoiding
+// it: the sheet's connectors are lines rather than fills and vg_rect leaves as
+// four lines under the warp, so the sheet costs chords. 411 of 950 with
+// everything up.
 
-// Put up the chassis's banner and, for a terminal, open the glass. `note` is a
-// second line in the headline window, or null for one line at the larger size.
-void vg_console_open(const VgBezel* b, VgConsoleForm form,
-                     const char* headline, const char* note);
+// Put up the chassis's banner and open the glass. `note` is a second line in the
+// headline window, or null for one line at the larger size.
+void vg_console_open(const VgBezel* b, const char* headline, const char* note);
 
 // Close the glass, then paint the chassis over everything.
 void vg_console_close(void);

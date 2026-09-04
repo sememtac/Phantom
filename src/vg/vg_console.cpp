@@ -22,8 +22,7 @@ static void fill_box(const VgBezelSlot* s, uint16_t col) {
 
 // ---------------------------------------------------------------------------
 
-void vg_console_open(const VgBezel* b, VgConsoleForm form,
-                     const char* headline, const char* note) {
+void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     // vg_bezel_use is the one place the current machine is kept. This function had
     // its own copy of the pointer as well, written every frame and never read.
     vg_bezel_use(b);
@@ -41,18 +40,11 @@ void vg_console_open(const VgBezel* b, VgConsoleForm form,
         const VgRect run  = { hl->x0, hl->y0,
                               (int16_t)(hl->x1 - hl->x0 + 1),
                               (int16_t)(hl->y1 - hl->y0 + 1) };
-        // A TITLE IS SET LARGE AND A CRAWL IS NOT. Two words at scale 3 are a
-        // sign over a desk; a tournament's results at scale 3 are twenty-six
-        // characters of a four-hundred character read, which never shows enough
-        // of itself at once to have a shape. And a note means both lines are
-        // smaller, because two of them share one window.
-        const int scale = (form == VG_CON_BROADCAST) ? 2 : (note ? 2 : 3);
-        vg_ticker(fill, run, headline, note, vg.state_t, scale);
+        // THE LARGEST THE HOLE WILL TAKE, and the ticker steps down from it. A
+        // note is the one thing this end knows and it cannot: two lines share the
+        // window, so both of them are smaller.
+        vg_ticker(fill, run, headline, note, vg.state_t, note ? 2 : 3);
     }
-
-    // A BROADCAST STOPS HERE: the banner and the plating, and no tube under it.
-    // See VgConsoleForm.
-    if (form == VG_CON_BROADCAST) return;
 
     // GLASS FROM HERE. The plating is cold steel and dead flat; the display under
     // it is a tube, and a tube bends its picture. The curve pulls the corners of

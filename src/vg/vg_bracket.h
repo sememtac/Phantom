@@ -10,9 +10,10 @@
 // bands never painted -- COL_BLACK is dropped by this renderer -- and the keys
 // were three rectangles this header had to keep in step with three hit tests.
 //
-// Now it is the same machine ship select and registration are in, in its
-// BROADCAST form: no glass, because this page is the picture rather than a
-// terminal showing you one. See VgConsoleForm.
+// Now it is the same machine ship select and registration are in, and behind the
+// same glass. There was a flat form for it briefly, on the reading that a
+// broadcast is the picture rather than a machine showing you one -- but trackside
+// equipment is a MONITOR, and a bracket on a monitor is still on a tube.
 //
 // The keys are holes in the art. Slots come out of the drawing top to bottom
 // then left to right, so the big window is slot 0 and REPAIR, COURSE and READY
@@ -20,16 +21,33 @@
 // console layer was built on and this is the screen that tests it.
 // ===========================================================================
 
-// THE WINDOW THE SHEET IS DRAWN IN, from the drawing rather than from a number
-// somebody measured off it. A redrawn rig moves the sheet instead of quietly
-// cropping it -- the same derivation VG_GLASS_* makes for the terminal, and the
-// same lip inset, because it is the same kind of bevel overhanging its own hole.
-#define BRK_VIEW_X0   (BEZEL_TOURNEY_S0_X0 + VG_GLASS_INSET_X)
-#define BRK_VIEW_Y0   (BEZEL_TOURNEY_S0_Y0 + VG_GLASS_INSET_Y)
-#define BRK_VIEW_X1   (BEZEL_TOURNEY_S0_X1 - VG_GLASS_INSET_X)
-#define BRK_VIEW_Y1   (BEZEL_TOURNEY_S0_Y1 - VG_GLASS_INSET_Y)
+// THE WINDOW THE SHEET IS DRAWN IN, and it is the hole's FULL extent.
+//
+// The BOX rectangle, not the inner one and not inset off it. The inner rectangle
+// is the largest that fits inside an octagonal hole, so laying the sheet out
+// against it stops the tree short of the chamfers and leaves a margin of sky all
+// the way round -- the map read as a picture pasted into the window rather than
+// as the window's contents. The box overshoots onto metal and the chassis paints
+// over it, which is the same trade the ticker makes with its own hole.
+//
+// From the drawing either way, so a redrawn rig moves the sheet instead of
+// quietly cropping it.
+#define BRK_VIEW_X0   BEZEL_TOURNEY_S0_BX0
+#define BRK_VIEW_Y0   BEZEL_TOURNEY_S0_BY0
+#define BRK_VIEW_X1   BEZEL_TOURNEY_S0_BX1
+#define BRK_VIEW_Y1   BEZEL_TOURNEY_S0_BY1
 #define BRK_VIEW_W    (BRK_VIEW_X1 - BRK_VIEW_X0 + 1)
 #define BRK_VIEW_H    (BRK_VIEW_Y1 - BRK_VIEW_Y0 + 1)
+
+// ...AND THE INNER RECTANGLE, for anything that has to be READ.
+//
+// The box overshoots onto metal at the chamfers, which is right for a fill and
+// wrong for a word: the caption laid out against it put the last letter of the
+// bank under the steel. The sheet wants the box because it is a picture and the
+// chassis is its frame; the caption wants the inner rectangle because every
+// pixel of a number has to be visible or it is a different number.
+#define BRK_TEXT_X0   BEZEL_TOURNEY_S0_X0
+#define BRK_TEXT_W    (BEZEL_TOURNEY_S0_X1 - BEZEL_TOURNEY_S0_X0 + 1)
 
 // The three keys, in reading order. Named so the draw and the state machine can
 // say which is which; the RECTANGLES are the drawing's and nobody here has them.

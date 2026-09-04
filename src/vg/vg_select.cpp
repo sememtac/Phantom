@@ -69,7 +69,7 @@ void vg_draw_select(void) {
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
 
-    vg_console_open(&BEZEL_CONSOLE, VG_CON_TERMINAL,
+    vg_console_open(&BEZEL_CONSOLE,
                     vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
                            : "SELECT SHIP",
                     vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
