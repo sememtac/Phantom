@@ -152,3 +152,8 @@ const char* vg_ship_axis_name(int i);
 // for it to be looked at.
 #define SHIPVIEW_GLYPH_HW    11
 #define SHIPVIEW_GLYPH_HH     9
+
+// The clear space between the tail of the hull and the mark. They have to read as
+// a PAIR -- that is the whole point of drawing them together -- and two objects
+// with a lot of air between them read as two objects.
+#define SHIPVIEW_GLYPH_GAP    9

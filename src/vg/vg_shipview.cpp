@@ -250,7 +250,16 @@ static void draw_chart(const Lay* L, const float ax[5]) {
 // Nose to the RIGHT, because the slot is wide and short and a plan view is long
 // and narrow. Scaled UNIFORMLY off the widest span in the roster, so a class that
 // is genuinely narrow reads as narrow instead of being stretched to fill the box.
-static void draw_plan_view(const Lay* L, const ShipSpec* sp, int cls) {
+// PIXELS PER OUTLINE UNIT. The plan view is scaled off the slot height and the
+// roster's widest hull, and the outlines run to 1.0 either side of their origin
+// -- so this is also the hull's half LENGTH, which is what the mark beside it has
+// to be placed against.
+static float plan_scale(const Lay* L) {
+    return ((float)L->mh * 0.46f) / plan_max_half_span();
+}
+
+// `dx` shifts the hull off the middle of its slot, to make room for the mark.
+static void draw_plan_view(const Lay* L, const ShipSpec* sp, int cls, int dx) {
     const VgShipPlan& pl = vg_ship_plan[(cls < SHIP_CLASSES) ? cls : 0];
     if (!pl.pts || pl.n < 2) return;
     (void)sp;
@@ -269,10 +278,9 @@ static void draw_plan_view(const Lay* L, const ShipSpec* sp, int cls) {
     // border, and the only report would have been that the new ship looked wrong.
     //
     // The drawing is 0.9% larger than it was, which is the rounding coming out.
-    const float MAX_HALF_SPAN = plan_max_half_span();
-    const float sy = ((float)L->mh * 0.46f) / MAX_HALF_SPAN;
+    const float sy = plan_scale(L);
     const float sx = sy;                            // uniform: no stretching
-    const float cx = (float)(L->x + L->w / 2);
+    const float cx = (float)(L->x + L->w / 2 + dx);
     const float cy = (float)(L->my + L->mh / 2);
 
     // Both sides at once, walking the half-outline and mirroring as we go, so the
@@ -594,24 +602,34 @@ void vg_shipview_draw(VgShipView* v, int cls, int x, int y, int w, int h) {
     }
 
     vg_fill_rect(L->x + 8, L->my - 8, L->w - 16, 1, INK_TRACE);
-    draw_plan_view(L, vg_spec((ShipClass)shown), shown);
 
-    // THE MARK, BESIDE THE HULL IT STANDS FOR.
+    // THE HULL AND ITS MARK, DRAWN AS A PAIR AND CENTRED AS ONE.
     //
     // The bracket sheet has room for a mark and none for a silhouette, so the
-    // sheet is where the player reads them -- and a symbol nobody has been taught
-    // is a symbol nobody reads. This is where it gets taught: the one screen with
-    // room for both puts them side by side, so the shape and the sign are learned
-    // together and the sheet inherits it.
+    // sheet is where the player SPENDS them -- and a symbol nobody has been
+    // taught is a symbol nobody reads. This is where it gets taught: the one
+    // screen with room for both puts them side by side, so the shape and the sign
+    // are learned together and the sheet inherits it.
     //
-    // Far left of the slot, clear of the hull. The plan view is centred and about
-    // ninety pixels wide at the roster's widest, in a panel of well over two
-    // hundred, so the space either side of it was doing nothing.
+    // THE MARK GOES AFTER THE HULL, on the right, which is the order they are
+    // read in. The hull steps left by half of what the mark and its gap take, so
+    // the pair sits centred in the slot rather than the hull staying put and the
+    // mark hanging off one side.
     //
+    // The outlines run to 1.0 either side of their origin, so plan_scale is also
+    // the hull's half length and the mark can be placed against the tail rather
+    // than against the panel's edge -- where it would have been forty pixels
+    // adrift and reading as a separate thing.
+    const int mark_w = SHIPVIEW_GLYPH_GAP + 2 * SHIPVIEW_GLYPH_HW;
+    const int plan_dx = -(mark_w / 2);
+
+    draw_plan_view(L, vg_spec((ShipClass)shown), shown, plan_dx);
+
     // The LAGGED class, the same one the hull is drawn from -- a mark that changed
     // a frame before the shape beside it would be teaching the wrong pairing.
     vg_ship_glyph((ShipClass)shown,
-                  L->x + SHIPVIEW_FIELD_PAD + SHIPVIEW_GLYPH_HW,
+                  L->x + L->w / 2 + plan_dx + (int)plan_scale(L)
+                      + SHIPVIEW_GLYPH_GAP + SHIPVIEW_GLYPH_HW,
                   L->my + L->mh / 2,
                   SHIPVIEW_GLYPH_HW, SHIPVIEW_GLYPH_HH, INK_BRIGHT);
 
