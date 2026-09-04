@@ -183,13 +183,13 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
         snprintf(out, n, "SALVO %d. STACKED LOCK RELEASE", sp->magazine);
         break;
     case WPN_SAAAM:
-        snprintf(out, n, "SEMI-ACTIVE, MANUAL MISSILE GUIDANCE");
+        snprintf(out, n, "SEMI-ACTIVE MISSILE GUIDANCE");
         break;
     default: out[0] = 0; break;
     }
 }
 
-// A LABELLED FIELD: an INVERSE-VIDEO tab, then the value beside it.
+// A LABELLED FIELD: an INVERSE-VIDEO tab, then the value beside it, WRAPPED.
 //
 // The label is knocked out of a filled block rather than drawn in dim ink,
 // because a caption and its contents are different KINDS of thing and the panel
@@ -200,42 +200,55 @@ static void wpn_how(const ShipSpec* sp, char* out, int n) {
 // INK_ONFILL, never COL_BLACK: vg_text treats colour 0 as invisible, so black
 // text on a fill is no text at all.
 //
-// TWO COLUMNS, PASSED IN, because the rows have to agree. Centring each row on
-// its own put the two tabs at different x -- and since both labels are the same
-// width, the entire offset was the length of the value beside them, which is not
-// a thing the caption column should know about. Read down, it looked like two
-// unrelated captions instead of one specification block.
+// THE CAPTION STAYS SMALL AND THE VALUE GROWS. A label is chrome -- you learn
+// what MSL means once and never read it again -- while the value beside it has
+// to be legible on a 314 ppi panel, where scale 1 is a point and a half tall.
+// Keeping the tab at scale 1 also buys the value five characters on its first
+// line, which is the difference between two lines and three.
 //
-// The fill still hugs its OWN label, so a longer caption later grows its tab
-// rather than shifting the values.
-static void field(int lx, int vx, int y,
-                  const char* label, const char* value, uint16_t vcol) {
-    vg_fill_rect(lx - 2, y - 1, vg_text_width(label, 1) + 4, 9, INK);
-    vg_text(lx, y, label, INK_ONFILL, 1);
-    vg_text(vx, y, value, vcol, 1);
-}
+// AND IT WRAPS, with a hanging indent: the first line starts after the tab and
+// the rest run the full width of the column. That is what lets the screen stay
+// divided. A 243px column is twenty characters at scale 2 and the descriptions
+// are twenty-five to thirty-one, so the only way to read them at that size
+// without taking the wheel's strip is to give them a second line.
+//
+// Breaks on spaces, never mid-word. Returns the bottom of what it drew, so the
+// caller can stack the next row under a block whose height it does not know.
+static int field_wrap(int x, int y, int w, const char* label,
+                      const char* value, uint16_t vcol) {
+    const int tw  = vg_text_width(label, 1);
+    const int ind = tw + 4 + 9;                 // tab, its padding, then the gap
 
-// WHERE THE TWO COLUMNS SIT. Centred on the WIDER row, so the block keeps the
-// panel's axis, and the shorter row is flush with it rather than centred inside
-// it.
-//
-// The GAP GIVES FIRST. A field that will not fit is a writing problem and gets
-// fixed in the string, but the panel must not be the thing that reports it: an
-// overlong value would otherwise draw its tab outside the left border and run
-// its last characters past the right one. Closing the gap to 4 buys five
-// characters, and past that the block pins to the margin and simply clips.
-static void field_cols(const char* l0, const char* v0,
-                       const char* l1, const char* v1, int* lx, int* vx) {
-    const int w0 = vg_text_width(l0, 1), w1 = vg_text_width(l1, 1);
-    const int lw = (w0 > w1) ? w0 : w1;
-    const int a  = vg_text_width(v0, 1), b = vg_text_width(v1, 1);
-    const int vw = (a > b) ? a : b;
-    const int room = SEL_PANEL_W - 2 * SEL_FIELD_PAD;
-    const int gap  = (lw + 9 + vw <= room) ? 9 : 4;
-    int x = SEL_PANEL_X + (SEL_PANEL_W - (lw + gap + vw)) / 2;
-    if (x < SEL_PANEL_X + SEL_FIELD_PAD) x = SEL_PANEL_X + SEL_FIELD_PAD;
-    *lx = x;
-    *vx = x + lw + gap;
+    vg_fill_rect(x - 2, y + 2, tw + 4, 9, INK);
+    vg_text(x, y + 3, label, INK_ONFILL, 1);
+
+    int at = 0, line = 0;
+    while (value[at]) {
+        const int left = (line == 0) ? (w - ind) : w;
+        const int cols = left / 12;             // 6px a glyph at scale 2
+        if (cols < 1) break;
+
+        int take = 0, brk = 0;
+        while (value[at + take] && take < cols) {
+            if (value[at + take] == ' ') brk = take;
+            take++;
+        }
+        // Only break early if there is more to come: the last line keeps its tail.
+        if (value[at + take] && brk > 0) take = brk;
+
+        char buf[48];
+        int n = 0;
+        for (int i = 0; i < take && n < (int)sizeof(buf) - 1; i++) buf[n++] = value[at + i];
+        buf[n] = 0;
+
+        vg_text((line == 0) ? x + ind : x, y + line * 18, buf, vcol, 2);
+
+        at += take;
+        while (value[at] == ' ') at++;
+        line++;
+        if (line >= 3) break;                   // a description that long is a bug
+    }
+    return y + line * 18;
 }
 
 static void draw_chart(const float ax[5]) {
@@ -808,32 +821,36 @@ void vg_draw_select(void) {
     }
 
     // --- the panel ---------------------------------------------------------
-    const ShipSpec* sp = vg_spec((ShipClass)cur);
     vg_rect(SEL_PANEL_X, SEL_PANEL_Y, SEL_PANEL_W, SEL_PANEL_H, INK_TRACE);
 
     // IDENTITY FIRST, THEN FIELDS. The name and its tagline are one thing -- a
     // tagline is a subtitle and belongs against the name it subtitles -- and the
-    // two labelled rows beneath are specification. Interleaved, the unlabelled
-    // tagline sat between two labelled rows and read as a field whose caption had
-    // gone missing.
-    vg_text_track(SEL_PANEL_X
-                      + (SEL_PANEL_W
-                         - vg_text_track_width(sp->name, 3, SEL_TITLE_TRACK)) / 2,
-                  SEL_PANEL_Y + 8, sp->name, INK_MAX, 3, SEL_TITLE_TRACK);
-    vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(sp->tagline, 1)) / 2,
-            SEL_PANEL_Y + 34, sp->tagline, INK_FAINT, 1);
-
-    // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not a
-    // new word either: the rack instrument in flight is labelled MSL, so it
-    // already means "the round" to anyone who has flown.
+    // two labelled rows beneath are specification.
+    //
+    // The tagline stays at scale 1 and the two fields do not, which is a ranking
+    // rather than an oversight: on a column this narrow something has to, and the
+    // tagline is the line that is pure flavour. MSL and WPN are what the screen
+    // is FOR.
     {
+        const ShipSpec* hs = vg_spec((ShipClass)cur);
+        const int bx = SEL_PANEL_X + SEL_FIELD_PAD;
+        const int bw = SEL_PANEL_W - 2 * SEL_FIELD_PAD;
+
+        vg_text_track(SEL_PANEL_X
+                          + (SEL_PANEL_W
+                             - vg_text_track_width(hs->name, 3, SEL_TITLE_TRACK)) / 2,
+                      SEL_PANEL_Y + 6, hs->name, INK_MAX, 3, SEL_TITLE_TRACK);
+        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(hs->tagline, 1)) / 2,
+                SEL_PANEL_Y + 32, hs->tagline, INK_FAINT, 1);
+
+        // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not
+        // a new word either: the rack instrument in flight is labelled MSL, so it
+        // already means "the round" to anyone who has flown.
         char how[48];
-        wpn_how(sp, how, sizeof(how));
-        const char* msl = vg_wpn_name(sp->wpn);
-        int lx, vx;
-        field_cols("MSL", msl, "WPN", how, &lx, &vx);
-        field(lx, vx, SEL_PANEL_Y + 50, "MSL", msl, INK_BRIGHT);
-        field(lx, vx, SEL_PANEL_Y + 64, "WPN", how, INK);
+        wpn_how(hs, how, sizeof(how));
+        const int b = field_wrap(bx, SEL_PANEL_Y + 46, bw, "MSL",
+                                 vg_wpn_name(hs->wpn), INK_BRIGHT);
+        field_wrap(bx, b + 22, bw, "WPN", how, INK);
     }
 
     {

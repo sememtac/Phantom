@@ -39,6 +39,20 @@
 #define SEL_AP_X1       (BEZEL_CONSOLE_APERTURE_X1 - 7)
 #define SEL_AP_Y1       (BEZEL_CONSOLE_APERTURE_Y1 - 1)
 
+// THE SCREEN STAYS DIVIDED: the left strip is the ship wheel and nothing else
+// draws over it. What changed is the SIZE of the reading matter in the right
+// column, and it changed because of the device.
+//
+// The panel is 2.16in on the diagonal at 480x480, which is 314 ppi. A scale 1
+// glyph is 7px, and 7px there is 0.57mm -- a point and a half. That is not small
+// type, it is type nobody can read, and it never showed on the desktop because
+// the window is scaled up three times.
+//
+// Scale 2 is 1.13mm and legible. The right column is 243px of usable width, which
+// is TWENTY characters at that scale against weapon descriptions of 25 to 31 --
+// so the descriptions WRAP. Wrapping is what keeps the division: the alternative
+// was to run the header across the whole glass, and the whole glass includes the
+// wheel.
 #define SEL_WHEEL_X     SEL_AP_X0
 // WIDER, AND THE PANEL PAID FOR IT. The names are tracked now and a tracked
 // BALLISTA is 117px against the 96 it used to be, so the window had to grow with
@@ -110,8 +124,19 @@
 // Down 4 to pay for the header, which is spread out: the four lines were 8 / 32 /
 // 46 / 58 from the panel top and are 8 / 34 / 50 / 64 now. SPEED has been the
 // binding constraint on this number three times, and it still is.
-#define SEL_CHART_CY    238
-#define SEL_CHART_R     45
+// THE HEADER PUSHED THESE DOWN AND THE CHART PAID FOR IT.
+//
+// Four rows, and BOTH labelled ones wrap to two lines at scale 2 in a 243px
+// column, so the header now reaches y 217 where it used to stop at 181. What is
+// left for the chart and the plan view is 147px against the 183 they had.
+//
+// The chart's radius went 45 -> 38 -> 32 across this and the plan view 60 -> 48
+// -> 40. That is the real price of readable body text in a divided layout, and
+// it is worth knowing exactly where it went: the MSL row wraps only because
+// "AR-AAM  ACTIVE RADAR" is 20 characters against the 17 that fit beside its tab.
+// Three characters of caption are costing the chart six pixels of radius.
+#define SEL_CHART_CY    272
+#define SEL_CHART_R     32
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
@@ -127,8 +152,8 @@
 // Down 4, because the chart's lower labels had come to rest ON the rule above
 // the plan view. Moving the chart is what caused it -- DAMAGE and RANGE sit
 // 0.809 of the way out, so they fall faster than the centre does.
-#define SEL_MODEL_Y     304
-#define SEL_MODEL_H     60
+#define SEL_MODEL_Y     324
+#define SEL_MODEL_H     40
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
 //
