@@ -22,7 +22,8 @@ static void fill_box(const VgBezelSlot* s, uint16_t col) {
 
 // ---------------------------------------------------------------------------
 
-void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
+void vg_console_open(const VgBezel* b, VgConsoleForm form,
+                     const char* headline, const char* note) {
     // vg_bezel_use is the one place the current machine is kept. This function had
     // its own copy of the pointer as well, written every frame and never read.
     vg_bezel_use(b);
@@ -40,10 +41,18 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
         const VgRect run  = { hl->x0, hl->y0,
                               (int16_t)(hl->x1 - hl->x0 + 1),
                               (int16_t)(hl->y1 - hl->y0 + 1) };
-        // A note means BOTH lines are smaller: two of them in one window is the
-        // rule, and it is the headline's rather than the ticker's.
-        vg_ticker(fill, run, headline, note, vg.state_t, note ? 2 : 3);
+        // A TITLE IS SET LARGE AND A CRAWL IS NOT. Two words at scale 3 are a
+        // sign over a desk; a tournament's results at scale 3 are twenty-six
+        // characters of a four-hundred character read, which never shows enough
+        // of itself at once to have a shape. And a note means both lines are
+        // smaller, because two of them share one window.
+        const int scale = (form == VG_CON_BROADCAST) ? 2 : (note ? 2 : 3);
+        vg_ticker(fill, run, headline, note, vg.state_t, scale);
     }
+
+    // A BROADCAST STOPS HERE: the banner and the plating, and no tube under it.
+    // See VgConsoleForm.
+    if (form == VG_CON_BROADCAST) return;
 
     // GLASS FROM HERE. The plating is cold steel and dead flat; the display under
     // it is a tube, and a tube bends its picture. The curve pulls the corners of
@@ -234,7 +243,7 @@ bool vg_console_key_at(int n, float x, float y) {
     return vg_in_rect(x, y, kx, ky, kw, kh);
 }
 
-void vg_console_key(int n, const char* label) {
+void vg_console_key(int n, const char* label, bool live) {
     const VgBezelSlot* s = vg_bezel_slot(n);
     int kx, ky, kw, kh;
     if (!s || !key_rect(n, &kx, &ky, &kw, &kh)) return;
@@ -249,9 +258,24 @@ void vg_console_key(int n, const char* label) {
     // light the key, or the player learns the key is unreliable when what is
     // really happening is that it lights on a smaller area than it accepts.
     const bool down = vg_press_in(kx, ky, kw, kh);
-    const int  lw   = vg_text_width(label, 3);
-    const int  lx   = s->x0 + ((s->x1 - s->x0 + 1) - lw) / 2;
-    const int  ly   = s->y0 + ((s->y1 - s->y0 + 1) - 21) / 2;
+
+    // THE BIGGEST SIZE THE HOLE WILL TAKE. Down from 3, which is what a key
+    // window wide enough for it gets; the broadcast rig's wells are 84px and
+    // REPAIR at scale 3 is 108. Two pixels of margin either side, because a
+    // label touching the bevel reads as overflowing it.
+    const int iw = s->x1 - s->x0 + 1;
+    const int ih = s->y1 - s->y0 + 1;
+    int scale = 3;
+    while (scale > 1 && (vg_text_width(label, scale) > iw - 4 ||
+                         7 * scale + 6 > ih))
+        scale--;
+
+    const int  lw   = vg_text_width(label, scale);
+    const int  lx   = s->x0 + (iw - lw) / 2;
+    // The LABEL is centred, not the label and its underline together. Centring
+    // the pair reads better and moves every existing key two pixels, which is a
+    // change to two screens that were not being asked to change.
+    const int  ly   = s->y0 + (ih - 7 * scale) / 2;
 
     // FLAT, WHEREVER THIS IS CALLED FROM. A key is set into the plating, not into
     // the glass, and the plating does not bend.
@@ -268,9 +292,13 @@ void vg_console_key(int n, const char* label) {
     // Null offsets: a key is set into the PLATING, and the plating does not move.
     vg_console_flat(0.0f, 0.0f, nullptr, nullptr);
 
-    fill_box(s, down ? INK_TRACE : INK_WELL);
-    vg_text(lx, ly, label, INK_MAX, 3);
-    vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
+    // A KEY THAT CANNOT BE TAKEN GOES DIM AND KEEPS ITS HIT TEST. The well does
+    // not light under a thumb either: the press registers, and what the player is
+    // being told is that pressing it will not help.
+    fill_box(s, (down && live) ? INK_TRACE : INK_WELL);
+    vg_text(lx, ly, label, live ? INK_MAX : INK_TRACE, scale);
+    vg_fill_rect(lx, ly + 7 * scale + 3, lw, 2,
+                 live ? (down ? INK_MAX : INK_BRIGHT) : INK_TRACE);
 
     vg_console_bend();
 }

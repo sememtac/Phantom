@@ -105,9 +105,31 @@
 // and how far apart two readings of it sit, and a chyron on a page with no
 // chassis at all wants the same two numbers.
 
-// Put up the chassis's headline and open the glass. `note` is a second line in
-// the headline window, or null for a one-line headline at the larger size.
-void vg_console_open(const VgBezel* b, const char* headline, const char* note);
+// WHICH KIND OF MACHINE THIS IS, and the two differ in more than their art.
+//
+// A TERMINAL is a thing you stand at. There is glass between you and what it is
+// showing, so the picture is bent onto a tube, laid over a fiducial grid, crossed
+// by a sweep and occasionally torn -- and its banner is a TITLE: two words, set
+// large, telling you what desk you are at.
+//
+// A BROADCAST is not a machine in a room, it is the picture itself. There is no
+// glass, and its banner is a CRAWL: a page of results that has to get through
+// itself in a reasonable time, so it is set smaller.
+//
+// THE GLASS IS NOT ONLY A FICTION. The warp cuts every line into VG_CON_SEG
+// chords at one primitive per chord, and the tournament sheet is about a hundred
+// and thirty rules and eighty box edges. That is the documented way to overflow a
+// primitive slice, and an overflow drops whatever was submitted LAST -- which on
+// a menu is the chassis.
+enum VgConsoleForm : uint8_t {
+    VG_CON_TERMINAL = 0,    // behind glass; the banner is a title
+    VG_CON_BROADCAST,       // flat; the banner is a crawl
+};
+
+// Put up the chassis's banner and, for a terminal, open the glass. `note` is a
+// second line in the headline window, or null for one line at the larger size.
+void vg_console_open(const VgBezel* b, VgConsoleForm form,
+                     const char* headline, const char* note);
 
 // Close the glass, then paint the chassis over everything.
 void vg_console_close(void);
@@ -121,7 +143,18 @@ bool vg_console_glass(int* x, int* y, int* w, int* h);
 // The chassis already drew the box, so a key is its label, the line under it that
 // marks the primary action, and the one thing a key must do: change while it is
 // pressed.
-void vg_console_key(int n, const char* label);
+//
+// THE LABEL IS SET TO FIT THE HOLE. It was scale 3 always, which is right for the
+// terminal's key window -- 256px wide, and ENTER is 90 of them -- and impossible
+// on the broadcast rig, whose three wells are 84px each while REPAIR at scale 3
+// is 108. A key that does not know how wide its own hole is can only work on the
+// drawing it was written against.
+//
+// `live` is a key that is offered but cannot be taken -- REPAIR with nothing to
+// repair or nothing to pay with. It goes dim and keeps its hit test, because a
+// key that answers "can I afford this" by looking unavailable is telling you
+// something, and one that stops responding is broken.
+void vg_console_key(int n, const char* label, bool live);
 
 // STOP THE CURVE FOR ONE OBJECT, and say where the curve would have put it.
 //

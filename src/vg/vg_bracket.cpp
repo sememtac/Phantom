@@ -1,6 +1,8 @@
 ﻿#include "vg_bracket.h"
 #include "vg_ui.h"
 #include "vg_shipview.h"
+#include "vg_console.h"
+#include "vg_raster.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include "vg_tourney.h"
@@ -49,21 +51,23 @@
 #define CANVAS_W    (9 * BRK_CW)
 #define CANVAS_H    (8 * BRK_RY)
 
-// Viewport: the strip of screen the map is drawn into, below the header and
-// above the ready button.
-#define VIEW_Y0     84
-#define VIEW_H      286
+// A CAPTION STRIP ACROSS THE TOP OF THE WINDOW, and the sheet has what is left.
+//
+// The round and the bank used to sit on a black band above the map, on plating
+// the art now owns -- and the art has no hole for them, because they are not a
+// banner and not a key. They belong to the picture, so they go inside the window,
+// pinned while the sheet moves under them.
+//
+// 22px is a scale 2 line with four either side. It costs the sheet half a row and
+// buys a number the player is constantly deciding against a fixed place to be.
+#define CAP_H       22
 
-// The chyron's strip, inside the header band and under the round and the bank.
-// Scale 3 is 21px tall and the ticker centres it, so 38 leaves eight either side.
-#define CHY_Y       40
-#define CHY_H       38
-// SCALE 2, NOT THE HEADLINE'S 3. At scale 3 the panel holds twenty-six
-// characters, so a round of sixteen takes the better part of a minute to pass,
-// and the shape of it -- a round name, then pairs -- never fits on screen at
-// once. At 2 it holds forty, which is a round name and two results together,
-// and 1.13mm is the size the ship wheel is already read at on this panel.
-#define CHY_SCALE   2
+// The window, from the art, less the caption. VIEW_* is the SHEET's strip, which
+// is what every reader of it downstream means by it.
+#define VIEW_X0     BRK_VIEW_X0
+#define VIEW_W      BRK_VIEW_W
+#define VIEW_Y0     (BRK_VIEW_Y0 + CAP_H)
+#define VIEW_H      (BRK_VIEW_H - CAP_H)
 
 static float s_pan_x = 0.0f;
 static float s_pan_y = 0.0f;
@@ -148,7 +152,11 @@ void vg_bracket_chyron(void) {
 }
 
 static void clamp_pan(void) {
-    const float maxx = (float)(CANVAS_W - SCR_W);
+    // AGAINST THE WINDOW, NOT THE SCREEN. The sheet used to own the full width of
+    // the panel; it owns the aperture now, which is 122px narrower, and a clamp
+    // that still said SCR_W would stop panning with the last column under the
+    // steel.
+    const float maxx = (float)(CANVAS_W - VIEW_W);
     const float maxy = (float)(CANVAS_H - VIEW_H);
     if (s_pan_x < 0.0f) s_pan_x = 0.0f;
     if (s_pan_x > (maxx > 0 ? maxx : 0)) s_pan_x = (maxx > 0 ? maxx : 0);
@@ -163,16 +171,18 @@ void vg_bracket_pan(float dx, float dy) {
     clamp_pan();
 }
 
+// THE KEYS ARE HOLES IN THE ART and their rectangles come out of it, so a hit
+// test is which hole was hit. Three macros and three rectangles went with them.
 bool vg_bracket_course_at(float x, float y) {
-    return vg_in_rect(x, y, BRK_CRS_X, BRK_CRS_Y, BRK_CRS_W, BRK_CRS_H);
+    return vg_console_key_at(BRK_KEY_COURSE, x, y);
 }
 
 bool vg_bracket_ready_at(float x, float y) {
-    return vg_in_rect(x, y, BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H);
+    return vg_console_key_at(BRK_KEY_READY, x, y);
 }
 
 bool vg_bracket_repair_at(float x, float y) {
-    return vg_in_rect(x, y, BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H);
+    return vg_console_key_at(BRK_KEY_REPAIR, x, y);
 }
 
 // Where a slot sits in canvas space. In round r each surviving entrant spans
@@ -194,7 +204,7 @@ static void slot_place(int r, int idx, int* col, int* local) {
 }
 
 static void canvas_to_screen(int cx, int cy, int* sx, int* sy) {
-    *sx = cx - (int)s_pan_x;
+    *sx = VIEW_X0 + cx - (int)s_pan_x;
     *sy = VIEW_Y0 + cy - (int)s_pan_y;
 }
 
@@ -202,7 +212,7 @@ void vg_bracket_focus_player(void) {
     int col, local, bx, by;
     slot_place(vt.round, vt.player_pos, &col, &local);
     slot_box(col, vt.round, local, &bx, &by);
-    s_pan_x = (float)(bx + BOX_W / 2 - SCR_W / 2);
+    s_pan_x = (float)(bx + BOX_W / 2) - (float)VIEW_W * 0.5f;
     s_pan_y = (float)(by + BOX_H / 2) - (float)VIEW_H * 0.5f;
     clamp_pan();
 }
@@ -213,7 +223,7 @@ static void rule(int x, int y, int w, int h, uint16_t col) {
     if (y < VIEW_Y0) { h -= (VIEW_Y0 - y); y = VIEW_Y0; }
     if (y + h > VIEW_Y0 + VIEW_H) h = VIEW_Y0 + VIEW_H - y;
     if (h <= 0 || w <= 0) return;
-    if (x + w < 0 || x > SCR_W) return;
+    if (x + w < VIEW_X0 || x > VIEW_X0 + VIEW_W) return;
     vg_fill_rect(x, y, w, h, col);
 }
 
@@ -241,7 +251,7 @@ static void box_label(int sx, int sy, const char* tag, ShipClass cls,
 static void draw_entrant(int idx, int bx, int by, bool alive, bool is_next_opp) {
     int sx, sy;
     canvas_to_screen(bx, by, &sx, &sy);
-    if (sx + BOX_W < 0 || sx > SCR_W) return;
+    if (sx + BOX_W < VIEW_X0 || sx > VIEW_X0 + VIEW_W) return;
     if (sy + BOX_H < VIEW_Y0 || sy > VIEW_Y0 + VIEW_H) return;
 
     if (idx < 0) {
@@ -296,6 +306,20 @@ void vg_draw_bracket(void) {
     }
 
     const Entrant* opp = vg_tourney_opponent();
+    (void)opp;
+
+    // THE RIG. Broadcast rather than terminal: no glass, because this page is the
+    // picture and not a machine showing you one -- and because the warp would cut
+    // every rule on the sheet into chords and overflow the slice. See
+    // VgConsoleForm. The banner is the chyron, and the chassis is painted by
+    // close(), last, over anything that ran past a hole.
+    vg_console_open(&BEZEL_TOURNEY, VG_CON_BROADCAST, s_chyron, nullptr);
+
+    // CLIPPED TO THE WINDOW, and this is not belt and braces. The steel masks
+    // whatever the sheet spills onto plating, but the two key wells and the
+    // chyron are HOLES: a box drawn 30px below the aperture lands in a key, and
+    // the chassis has no pixels there to cover it with.
+    vg_rast_viewport(VIEW_X0, VIEW_Y0, VIEW_W, VIEW_H);
 
     // --- connectors, under the boxes ---
     for (int r = 0; r < TOURNEY_ROUNDS; r++) {
@@ -367,40 +391,21 @@ void vg_draw_bracket(void) {
         }
     }
 
-    // --- header ---
-    //
-    // INK_WELL, NOT COL_BLACK, and this band has never painted. A fill whose
-    // colour is zero is DROPPED -- the same rule that makes black text invisible
-    // -- so the sky has been showing through behind the round label and the bank
-    // for as long as they have been there. Third time this trap has been found in
-    // this codebase, and the first two were fills exactly like it.
-    //
-    // Full height as well: it was VIEW_Y0 - 2, which left two rows of raw sky
-    // between the band and the top of the map for a box to bleed into.
-    vg_fill_rect(0, 0, SCR_W, VIEW_Y0, INK_WELL);
+    vg_rast_viewport_full();
 
-    // Round on the left, bank on the right, the match you are about to fly
-    // across the middle at full size. Credits are a number the player is
-    // constantly deciding against, so they get a fixed corner and stay there.
+    // --- the caption -------------------------------------------------------
     //
-    // Both are held SCR_SAFE clear of the border: the panel is a rounded square
-    // and anything pinned to an edge loses its leading characters to the corner.
-    vg_text(SCR_SAFE, 12, vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
+    // Round on the left, bank on the right, inside the window and pinned while
+    // the sheet moves under them. INK_WELL and not COL_BLACK: a fill whose colour
+    // is zero is DROPPED, which is how the band this replaces went four months
+    // without ever painting.
+    vg_fill_rect(BRK_VIEW_X0, BRK_VIEW_Y0, BRK_VIEW_W, CAP_H, INK_WELL);
+    vg_text(BRK_VIEW_X0 + 4, BRK_VIEW_Y0 + 4,
+            vg_tourney_round_name(vt.round), INK_BRIGHT, 2);
 
     snprintf(buf, sizeof(buf), "%d CR", vg.credits);
-    vg_text(SCR_W - SCR_SAFE - vg_text_width(buf, 3), 8, buf, INK_MAX, 3);
-
-    // THE CHYRON, across the full width under the round and the bank.
-    //
-    // A strip of its own rather than a window in a chassis, because there is no
-    // chassis on this page yet. When the broadcast art is baked this becomes the
-    // cyan slot and the two rectangles come from the drawing instead of from
-    // here -- vg_ticker takes them either way, which is the whole reason it was
-    // lifted out of the console.
-    {
-        const VgRect band = { 0, CHY_Y, SCR_W, CHY_H };
-        vg_ticker(band, band, s_chyron, nullptr, vg.state_t, CHY_SCALE);
-    }
+    vg_text(BRK_VIEW_X0 + BRK_VIEW_W - 4 - vg_text_width(buf, 2),
+            BRK_VIEW_Y0 + 4, buf, INK_MAX, 2);
 
     // THE VS LINE AND THE ARCHETYPE ARE GONE.
     //
@@ -417,26 +422,28 @@ void vg_draw_bracket(void) {
     // centred on it. If that turns out to be too quiet in the hand, this is four
     // lines to put back.
 
-    // --- footer ---
+    // --- the keys, which are holes in the plating --------------------------
     //
-    // INK_WELL for the same reason as the header: this fill has never painted
-    // either.
-    vg_fill_rect(0, VIEW_Y0 + VIEW_H, SCR_W, SCR_H - VIEW_Y0 - VIEW_H, INK_WELL);
-
+    // No footer band and no rectangles. The chassis drew the wells; a key is its
+    // label and what it does under a thumb.
+    //
     // THE HULL READOUT WENT TO THE REPAIR PAGE, where the decision it informs is
     // actually taken. It was the biggest thing on the bottom of this screen and
-    // all it could tell you was whether to press a button that leads somewhere
-    // that says it again.
+    // all it could tell you was whether to press a key that leads somewhere that
+    // says it again.
     const int hurt = (int)(vg.health_max - vg.health + 0.5f);
 
-    // REPAIR only lights when there is both damage to undo and money to do it
-    // with, so the button itself answers "can I afford this".
+    // REPAIR is offered whether or not it can be taken, and goes dim when it
+    // cannot, so the key itself answers "can I afford this". The hit test does
+    // not change: a key that stops responding reads as broken.
     const bool can_repair = hurt > 0 && vg.credits >= CREDIT_PER_HULL;
-    vg_button(BRK_REP_X, BRK_REP_Y, BRK_REP_W, BRK_REP_H, "REPAIR",
-              false, can_repair);
+    vg_console_key(BRK_KEY_REPAIR, "REPAIR", can_repair);
+
     // Always offered, never required. A player can spend a whole tournament
     // without touching it, and one who wants to practise can come back between
     // any two rounds.
-    vg_button(BRK_CRS_X, BRK_CRS_Y, BRK_CRS_W, BRK_CRS_H, "COURSE", true, false);
-    vg_button(BRK_GO_X, BRK_GO_Y, BRK_GO_W, BRK_GO_H, "READY", true, true);
+    vg_console_key(BRK_KEY_COURSE, "COURSE", true);
+    vg_console_key(BRK_KEY_READY,  "READY",  true);
+
+    vg_console_close();
 }

@@ -69,7 +69,7 @@ void vg_draw_select(void) {
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
 
-    vg_console_open(&BEZEL_CONSOLE,
+    vg_console_open(&BEZEL_CONSOLE, VG_CON_TERMINAL,
                     vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
                            : "SELECT SHIP",
                     vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
@@ -203,6 +203,6 @@ void vg_draw_select(void) {
     vg_shipview_draw(&s_view, cur, SEL_PANEL_X, SEL_PANEL_Y,
                      SEL_PANEL_W, SEL_PANEL_H);
 
-    vg_console_key(VG_CON_KEY, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
+    vg_console_key(VG_CON_KEY, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER", true);
     vg_console_close();
 }
