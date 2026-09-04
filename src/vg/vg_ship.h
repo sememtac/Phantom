@@ -503,7 +503,7 @@ static inline const char* vg_wpn_desc(WeaponSystem w) {
     case WPN_ARAAM: return "ACTIVE RADAR";
     case WPN_RFAAM: return "RAPID FIRE";
     case WPN_SLAAM: return "SALVO LOCK";
-    case WPN_SAAAM: return "SEMI-ACTIVE";
+    case WPN_SAAAM: return "ACTIVE GUIDANCE";
     }
     return "";
 }

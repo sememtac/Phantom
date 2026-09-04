@@ -756,8 +756,14 @@ void vg_draw_select(void) {
         const char* nm  = vg_spec((ShipClass)idx)->name;
         // Readable at every step, just quieter. Faded to a hint would defeat the
         // point of showing them at all.
-        const int      sc  = (a <= 1) ? 2 : 1;
-        const int      tr  = (sc == 2) ? SEL_NAME_TRACK : 1;
+        // EVERY NEIGHBOUR AT SCALE 2, where the far ones used to drop to 1. On
+        // the device scale 1 is 0.57mm and simply cannot be read, so a row drawn
+        // at it is a row that is not there -- and the whole argument for showing
+        // the entire roster was that a chooser should not hide your options.
+        // Distance is carried by ink alone now, which is what it should have been
+        // carrying all along.
+        const int      sc  = 2;
+        const int      tr  = SEL_NAME_TRACK;
         const uint16_t col = (a == 1) ? INK : INK_FAINT;
         vg_text_track(SEL_WHEEL_X
                           + (SEL_WHEEL_W - vg_text_track_width(nm, sc, tr)) / 2,
@@ -768,16 +774,23 @@ void vg_draw_select(void) {
     // The detent: two rules bracketing the selected row, plus the spine down the
     // left edge. That spine is the same 6px inverse-video mark the cards carried
     // -- the shape of the screen changed, the vocabulary did not.
-    vg_fill_rect(SEL_WHEEL_X, detent - 18, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent + 17, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent - 18, SEL_SPINE_W, 36, INK_BRIGHT);
+    // The detent grew with the name it brackets: a 21px glyph inside a 36px well
+    // leaves three pixels top and bottom, which reads as the row being too small
+    // for its own word rather than as a selection.
+    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, detent + 20, SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_SPINE_W, 42, INK_BRIGHT);
 
+    // THE SELECTED NAME AT SCALE 3. It is the one word on this screen you are
+    // actually choosing between, and at scale 2 it was 1.13mm on the device --
+    // legible, and no larger than the specification beside it, which had the
+    // hierarchy the wrong way round.
     {
         const char* nm = vg_spec((ShipClass)cur)->name;
         vg_text_track(SEL_WHEEL_X
                           + (SEL_WHEEL_W
-                             - vg_text_track_width(nm, 2, SEL_NAME_TRACK)) / 2,
-                      detent - 7, nm, INK_MAX, 2, SEL_NAME_TRACK);
+                             - vg_text_track_width(nm, 3, SEL_NAME_TRACK)) / 2,
+                      detent - 10, nm, INK_MAX, 3, SEL_NAME_TRACK);
     }
 
     // --- the panel ---------------------------------------------------------
@@ -806,9 +819,13 @@ void vg_draw_select(void) {
         // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not
         // a new word either: the rack instrument in flight is labelled MSL, so it
         // already means "the round" to anyone who has flown.
-        const int b = field_wrap(bx, SEL_PANEL_Y + 42, bw, "MSL",
+        // The tagline gets air under it and the two fields close up. They are a
+        // PAIR -- the round and what the system does with it -- and they were
+        // sitting further apart than either sat from the subtitle above, which
+        // read as three separate lines rather than a caption and a block.
+        const int b = field_wrap(bx, SEL_PANEL_Y + 52, bw, "MSL",
                                  vg_wpn_name(hs->wpn), INK_BRIGHT);
-        field_wrap(bx, b + 20, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
+        field_wrap(bx, b + 8, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
     }
 
     {

@@ -61,8 +61,17 @@
 // 148 and a panel starting at 188 is the most the roster allows, and the limit is
 // not the wheel: BALLISTA's WPN row measures 243px and the panel's inside is 244.
 // One more pixel of wheel and that line closes its gap; six more and it clips.
-#define SEL_WHEEL_W     148
-#define SEL_PANEL_X     188
+// THE WHEEL TOOK WIDTH BACK FROM THE PANEL, because the panel stopped needing
+// it. The weapon rows used to carry thirty-one characters of prose and now carry
+// twelve to fifteen, so the column that was sized for the longest sentence is
+// sized for the longest NAME instead -- and the wheel, which has to be read at
+// arm's length on a 314 ppi panel, is where the width does more good.
+//
+// 176 and a panel at 216 is the balance. The wheel holds BALLISTA at scale 3 with
+// ten pixels either side; the panel holds ACTIVE GUIDANCE on one line beside its
+// tab, which is fifteen characters and exactly what the column has room for.
+#define SEL_WHEEL_W     176
+#define SEL_PANEL_X     216
 #define SEL_PANEL_W     (SEL_AP_X1 - SEL_PANEL_X)
 #define SEL_PANEL_Y     SEL_AP_Y0
 #define SEL_PANEL_H     (SEL_AP_Y1 - SEL_AP_Y0)
@@ -73,7 +82,7 @@
 #define SEL_WHEEL_H     196
 #define SEL_WHEEL_Y     (SEL_PANEL_Y + (SEL_PANEL_H - SEL_WHEEL_H) / 2)
 #define SEL_WHEEL_MID   (SEL_WHEEL_Y + SEL_WHEEL_H / 2)   // the detent row
-#define SEL_WHEEL_PITCH 44      // px between neighbours on the wheel
+#define SEL_WHEEL_PITCH 50      // px between neighbours on the wheel
 
 // EXTRA SPACE BETWEEN THE LETTERS OF A SHIP NAME.
 //
@@ -82,7 +91,10 @@
 // the curve was closing the gaps on one side of the arc enough to weld letters
 // together. 3px at the wheel's scale 2, 2 at the panel's scale 3, which is less
 // because a bigger glyph already carries a bigger bearing.
-#define SEL_NAME_TRACK  3
+// Down from 3 with the names a size larger: tracking exists to keep the curve
+// from welding letters together, and a bigger glyph carries a bigger bearing of
+// its own, so the same job needs less of it.
+#define SEL_NAME_TRACK  2
 #define SEL_TITLE_TRACK 2
 
 // HOW MANY NAMES THE WHEEL SHOWS AT ONCE, selection included.
@@ -136,7 +148,7 @@
 // at the second it cleared it by seven pixels and still read as touching it. The
 // gap is ten now, which is the fourth time this constant has been moved for that
 // one label.
-#define SEL_CHART_CY    253
+#define SEL_CHART_CY    251
 #define SEL_CHART_R     40
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
@@ -153,8 +165,8 @@
 // Down 4, because the chart's lower labels had come to rest ON the rule above
 // the plan view. Moving the chart is what caused it -- DAMAGE and RANGE sit
 // 0.809 of the way out, so they fall faster than the centre does.
-#define SEL_MODEL_Y     314
-#define SEL_MODEL_H     50
+#define SEL_MODEL_Y     312
+#define SEL_MODEL_H     52
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
 //
