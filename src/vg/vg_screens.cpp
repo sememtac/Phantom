@@ -785,12 +785,21 @@ void vg_draw_select(void) {
     // actually choosing between, and at scale 2 it was 1.13mm on the device --
     // legible, and no larger than the specification beside it, which had the
     // hierarchy the wrong way round.
+    // CENTRED IN WHAT IS LEFT, not in the box. The spine is 6px of solid ink hard
+    // against the left edge, so a name centred on the whole width sits nine pixels
+    // from it -- which measures as clear and reads as joined, because the first
+    // upright of a B nine pixels from a bar looks like part of the bar.
+    //
+    // And no tracking on this one. At scale 3 the font's own bearing is three
+    // pixels, which is enough; the tracking was there for scale 2, where it was
+    // not. Dropping it is what makes the margins possible at all -- BALLISTA is
+    // 155px tracked against 141 plain, in a box with 152 to give once the spine
+    // and the margins are taken out.
     {
         const char* nm = vg_spec((ShipClass)cur)->name;
-        vg_text_track(SEL_WHEEL_X
-                          + (SEL_WHEEL_W
-                             - vg_text_track_width(nm, 3, SEL_NAME_TRACK)) / 2,
-                      detent - 10, nm, INK_MAX, 3, SEL_NAME_TRACK);
+        const int   x0 = SEL_WHEEL_X + SEL_SPINE_W + 10;
+        const int   room = SEL_WHEEL_W - SEL_SPINE_W - 18;
+        vg_text(x0 + (room - vg_text_width(nm, 3)) / 2, detent - 10, nm, INK_MAX, 3);
     }
 
     // --- the panel ---------------------------------------------------------
@@ -823,7 +832,7 @@ void vg_draw_select(void) {
         // PAIR -- the round and what the system does with it -- and they were
         // sitting further apart than either sat from the subtitle above, which
         // read as three separate lines rather than a caption and a block.
-        const int b = field_wrap(bx, SEL_PANEL_Y + 52, bw, "MSL",
+        const int b = field_wrap(bx, SEL_PANEL_Y + 50, bw, "MSL",
                                  vg_wpn_name(hs->wpn), INK_BRIGHT);
         field_wrap(bx, b + 8, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
     }

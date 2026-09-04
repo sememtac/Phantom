@@ -146,10 +146,12 @@
 // sits at CY - R - 10, so it is the first thing the header runs into: at the
 // first attempt at these numbers it was drawn straight through the WPN row, and
 // at the second it cleared it by seven pixels and still read as touching it. The
-// gap is ten now, which is the fourth time this constant has been moved for that
-// one label.
-#define SEL_CHART_CY    251
-#define SEL_CHART_R     40
+// gap is sixteen now, which is the fifth time this constant has been moved for
+// that one label. Ten looked clear in a measurement and still read as touching on
+// the panel, which is the whole lesson: the number that matters is not the gap,
+// it is whether the eye reads two lines or one block.
+#define SEL_CHART_CY    253
+#define SEL_CHART_R     38
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
