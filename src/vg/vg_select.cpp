@@ -30,6 +30,29 @@ int vg_select_row_at(float x, float y) {
     return vg_wheel_row_at(&s_wheel, x, y);
 }
 
+// HOW BRIGHT A ROW'S MARKER IS, by its distance from the detent.
+//
+// It follows the row's own ink, so the marker and the name agree about how far
+// from the selection they are and the column reads as one gradient rather than as
+// two ladders. The selection is the exception and keeps the top of the ladder for
+// its NAME: the mark is chrome, and chrome that ties with the thing it marks
+// competes with it.
+//
+// Three rungs is the whole range this wheel can ask for. The window is capped at
+// SEL_WHEEL_SHOWN = 5 and it is centred, so the furthest row is two from the
+// detent however long the roster gets. The fallback is for a wider window, not for
+// this one -- and it stops short of INK_TRACE on purpose, because the lit row is
+// drawn in INK_TRACE across the full width and a marker in it would vanish under
+// the thumb that was pressing it.
+static uint16_t spine_ink(int a) {
+    switch (a) {
+    case 0:  return INK_BRIGHT;
+    case 1:  return INK;
+    case 2:  return INK_FAINT;
+    }
+    return INK_FAINT;
+}
+
 bool vg_select_confirm_at(float x, float y) {
     return vg_console_key_at(VG_CON_KEY, x, y);
 }
@@ -111,9 +134,30 @@ void vg_draw_select(void) {
     // The detent grew with the name it brackets: a 21px glyph inside a 36px well
     // leaves three pixels top and bottom, which reads as the row being too small
     // for its own word rather than as a selection.
-    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent + 20, SEL_WHEEL_W, 1, INK_TRACE);
-    vg_fill_rect(SEL_WHEEL_X, detent - 21, SEL_SPINE_W, 42, INK_BRIGHT);
+    vg_fill_rect(SEL_WHEEL_X, detent - SEL_SPINE_H / 2,
+                 SEL_WHEEL_W, 1, INK_TRACE);
+    vg_fill_rect(SEL_WHEEL_X, detent + SEL_SPINE_H / 2 - 1,
+                 SEL_WHEEL_W, 1, INK_TRACE);
+
+    // THE MARKER, ON EVERY ROW.
+    //
+    // It used to be the selection's alone, and a mark that only one row carries is
+    // a mark you have to go looking for to learn what it means. Every row has one
+    // now and the BRIGHTNESS is what says which row you are on -- a column of them
+    // fading either side of the detent, so the hierarchy is read as a gradient
+    // rather than found as the one row that is different.
+    //
+    // LAST, over the rails, which is where the single spine already was. The rails
+    // run the full width and cross the marker's top and bottom rows, so drawing
+    // these first would let INK_TRACE cut the ends off every one of them.
+    //
+    // The selected row is unchanged by this: the same bar, the same height, the
+    // same ink, in the same order. What changed is what is underneath it.
+    for (int k = shown_lo; k < shown_lo + shown_n; k++) {
+        const int a = (k < 0) ? -k : k;
+        vg_fill_rect(SEL_WHEEL_X, vg_wheel_row_y(&s_wheel, k) - SEL_SPINE_H / 2,
+                     SEL_SPINE_W, SEL_SPINE_H, spine_ink(a));
+    }
 
     // THE SELECTED NAME AT SCALE 3. It is the one word on this screen you are
     // actually choosing between, and at scale 2 it was 1.13mm on the device --

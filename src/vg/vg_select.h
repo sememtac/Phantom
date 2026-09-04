@@ -92,7 +92,12 @@
 #define SEL_WHEEL_N   ((SHIP_CLASSES < SEL_WHEEL_SHOWN) ? SHIP_CLASSES : SEL_WHEEL_SHOWN)
 #define SEL_WHEEL_LO  (-((SEL_WHEEL_N - 1) / 2))
 #define SEL_WHEEL_DETENT (SEL_WHEEL_MID - ((2 * SEL_WHEEL_LO + SEL_WHEEL_N - 1) * SEL_WHEEL_PITCH) / 2)
-#define SEL_SPINE_W     6       // the selected row's inverse-video spine
+// THE ROW MARKER: a short inverse-video bar hard against the left edge, one per
+// row. It was the selection's alone -- the same 6px mark the cards carried before
+// the wheel existed -- and 42 is the height of the detent block, so the selected
+// one spans exactly the two rules that bracket it.
+#define SEL_SPINE_W     6
+#define SEL_SPINE_H     42
 
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
