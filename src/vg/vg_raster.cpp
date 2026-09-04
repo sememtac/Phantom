@@ -7,6 +7,9 @@
 #include <math.h>
 #include "vg_canopy_draw.h"
 #include "vg_bezel.h"
+#if defined(_MSC_VER)
+#include <stdio.h>   // the overflow report, desktop only
+#endif
 
 // The submit half. Everything here runs ONCE per frame and costs frame time
 // directly -- unlike the band raster in vg_band.cpp, which hides under DMA. Work
@@ -73,6 +76,7 @@ struct Sub {
     float   warp_seg;
     float   jx, jy;
     bool    overflow;
+    int     refused;                 // primitives this slice had to throw away
     int     tri;
 };
 
@@ -358,7 +362,51 @@ static int s_peak = 0;
 // one gets closest to its own bound, and nothing measured that.
 static int s_peak_slice[NSUB] = { 0 };
 
+// ---------------------------------------------------------------------------
+// SAYING SO WHEN A SLICE OVERFLOWS
+//
+// A full slice does not fail, it DROPS -- push returns null and the caller
+// carries on. So an overflow looks like a picture with something missing from
+// it, and what is missing is whatever was submitted last, which on a menu is the
+// console chassis. It has been reported three times as "the panel disappeared",
+// and each time the panel was fine and the list was full.
+//
+// DESKTOP ONLY, and edge triggered. This is a development instrument: the board
+// has no console to print to and a player has nothing to do with the answer, and
+// a line every frame would bury the frame it started on. It prints when a slice
+// begins overflowing and again when it stops, with the slice's ceiling and how
+// many primitives it had to throw away -- which is the number you need, because
+// it says how much bigger the slice has to be.
+//
+// NOT an abort. It fires mid-session, in a menu somebody is using, and killing
+// the process would take the screen away before it could be looked at.
+#if defined(_MSC_VER)
+static void overflow_report(void) {
+    static bool was[NSUB] = { false };
+    static const char* NAME[NSUB] = { "starfield+hoops", "rails",
+                                      "world objects", "instruments" };
+    for (int i = 0; i < NSUB; i++) {
+        const bool now = s_sub[i].overflow;
+        if (now && !was[i])
+            fprintf(stderr,
+                    "RASTER OVERFLOW: slice %d (%s) is full at %d primitives "
+                    "and threw away %d. Whatever was submitted last is missing "
+                    "from the picture.\n",
+                    i, NAME[i], SUB_AT[i + 1] - SUB_AT[i], s_sub[i].refused);
+        else if (!now && was[i])
+            fprintf(stderr, "RASTER OVERFLOW: slice %d (%s) is inside its "
+                            "bounds again.\n", i, NAME[i]);
+        was[i] = now;
+    }
+}
+#else
+static inline void overflow_report(void) {}
+#endif
+
 void vg_rast_begin_frame(void) {
+    // Before the flags are cleared below, and before the cursors are reset.
+    overflow_report();
+
     // From the cursors, before they are reset, so the peak does not depend on join
     // having run at all.
     if (live_count() > s_peak) s_peak = live_count();
@@ -381,6 +429,7 @@ void vg_rast_begin_frame(void) {
         u->warp_seg = HUD_WARP_SEG;
         u->jx = 0.0f; u->jy = 0.0f;
         u->overflow = false;
+        u->refused  = 0;
         u->tri      = 0;
     }
     s_cur[0] = &s_sub[0];
@@ -398,7 +447,7 @@ bool vg_rast_overflowed(void)  {
 
 static inline Prim* push(void) {
     Sub* u = sub();
-    if (u->at >= u->end) { u->overflow = true; return nullptr; }
+    if (u->at >= u->end) { u->overflow = true; u->refused++; return nullptr; }
     return &s_prims[u->at++];
 }
 
