@@ -99,7 +99,7 @@ int vg_select_row_at(float x, float y) {
 }
 
 bool vg_select_confirm_at(float x, float y) {
-    return vg_in_rect(x, y, SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
+    return vg_in_rect(x, y, SEL_GO_HIT_X, SEL_GO_HIT_Y, SEL_GO_HIT_W, SEL_GO_HIT_H);
 }
 
 // THE FIVE AXES, AS A SHAPE.
@@ -659,7 +659,12 @@ void console_close(const char* key) {
     const int  lw   = vg_text_width(key, 3);
     const int  lx   = SEL_GO_X + (SEL_GO_W - lw) / 2;
     const int  ly   = SEL_GO_Y + (SEL_GO_H - 21) / 2;
-    const bool down = vg_press_in(SEL_GO_X, SEL_GO_Y, SEL_GO_W, SEL_GO_H);
+    // THE SAME RECT THE TAP USES, not the one the key is drawn in. A press that
+    // will register has to light the key, or the player learns that the key is
+    // unreliable when what is actually happening is that it lights on a smaller
+    // area than it accepts.
+    const bool down = vg_press_in(SEL_GO_HIT_X, SEL_GO_HIT_Y,
+                                  SEL_GO_HIT_W, SEL_GO_HIT_H);
 
     vg_fill_rect(BEZEL_CONSOLE_BAR_BOT_BOX_X0, BEZEL_CONSOLE_BAR_BOT_BOX_Y0,
                  BEZEL_CONSOLE_BAR_BOT_BOX_X1 - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 1,
@@ -805,14 +810,17 @@ void vg_draw_select(void) {
     // --- the panel ---------------------------------------------------------
     vg_rect(SEL_PANEL_X, SEL_PANEL_Y, SEL_PANEL_W, SEL_PANEL_H, INK_TRACE);
 
-    // IDENTITY FIRST, THEN FIELDS. The name and its tagline are one thing -- a
-    // tagline is a subtitle and belongs against the name it subtitles -- and the
-    // two labelled rows beneath are specification.
+    // THE NAME, AND THEN WHAT IT CARRIES. There used to be a tagline between them
+    // and there is not any more.
     //
-    // The tagline stays at scale 1 and the two fields do not, which is a ranking
-    // rather than an oversight: on a column this narrow something has to, and the
-    // tagline is the line that is pure flavour. MSL and WPN are what the screen
-    // is FOR.
+    // It was the one line on the panel still drawn at scale 1, which on this
+    // display is 0.57mm -- and rather than find it room at a readable size, it
+    // went. A tagline tells you how to feel about a hull before you have flown
+    // it, and the two rows under it tell you what the hull actually does. Let the
+    // player decide which one they want; the specification is the part that is
+    // any use in deciding.
+    //
+    // ShipSpec::tagline is still there and nothing reads it now.
     {
         const ShipSpec* hs = vg_spec((ShipClass)cur);
         const int bx = SEL_PANEL_X + SEL_FIELD_PAD;
@@ -822,8 +830,6 @@ void vg_draw_select(void) {
                           + (SEL_PANEL_W
                              - vg_text_track_width(hs->name, 3, SEL_TITLE_TRACK)) / 2,
                       SEL_PANEL_Y + 6, hs->name, INK_MAX, 3, SEL_TITLE_TRACK);
-        vg_text(SEL_PANEL_X + (SEL_PANEL_W - vg_text_width(hs->tagline, 1)) / 2,
-                SEL_PANEL_Y + 32, hs->tagline, INK_FAINT, 1);
 
         // MSL is what it CARRIES, WPN is what the system DOES with it. MSL is not
         // a new word either: the rack instrument in flight is labelled MSL, so it
@@ -832,7 +838,7 @@ void vg_draw_select(void) {
         // PAIR -- the round and what the system does with it -- and they were
         // sitting further apart than either sat from the subtitle above, which
         // read as three separate lines rather than a caption and a block.
-        const int b = field_wrap(bx, SEL_PANEL_Y + 50, bw, "MSL",
+        const int b = field_wrap(bx, SEL_PANEL_Y + 34, bw, "MSL",
                                  vg_wpn_name(hs->wpn), INK_BRIGHT);
         field_wrap(bx, b + 8, bw, "WPN", vg_wpn_desc(hs->wpn), INK);
     }

@@ -150,8 +150,8 @@
 // that one label. Ten looked clear in a measurement and still read as touching on
 // the panel, which is the whole lesson: the number that matters is not the gap,
 // it is whether the eye reads two lines or one block.
-#define SEL_CHART_CY    250
-#define SEL_CHART_R     35
+#define SEL_CHART_CY    241
+#define SEL_CHART_R     42
 // px from a vertex out to its label. Tightened from 13: SPEED sits directly
 // under the panel's description lines and was within 3px of them.
 #define SEL_CHART_LABEL 10
@@ -171,8 +171,8 @@
 // the roster and the plan view is scaled so that wing fills the slot -- so the
 // wing tip was landing two pixels from the panel's bottom border and crossing it.
 // The chart gave up three of radius to pay for the move.
-#define SEL_MODEL_Y     306
-#define SEL_MODEL_H     54
+#define SEL_MODEL_Y     304
+#define SEL_MODEL_H     58
 
 // THE TITLE AND THE ENTER KEY ARE IN THE CHASSIS, not on the screen.
 //
@@ -236,6 +236,23 @@
 #define SEL_CHYRON_GAP  54
 
 #define SEL_TITLE_CY    ((BEZEL_CONSOLE_BAR_TOP_Y0 + BEZEL_CONSOLE_BAR_TOP_Y1) / 2)
+// THE HIT AREA IS BIGGER THAN THE KEY, and it has to be.
+//
+// The lit window the key is drawn in is 30px tall, which on a 314 ppi panel is
+// 2.4mm. A fingertip is nearer 8, so a target that size is one you have to aim
+// at -- and a press that misses by two millimetres reads as the button not
+// working rather than as the finger being off. Nothing else is hit-tested below
+// the glass, so the area is free to run out into the plating: 5mm tall and 24
+// wide, around a key that looks exactly as it did.
+//
+// The DRAWN rect stays what it was. Growing the picture of the key to match
+// would put it over the chassis; growing only what it accepts costs nothing and
+// is invisible, which is the point.
+#define SEL_GO_HIT_X    (BEZEL_CONSOLE_BAR_BOT_BOX_X0 - 20)
+#define SEL_GO_HIT_Y    (BEZEL_CONSOLE_BAR_BOT_BOX_Y0 - 9)
+#define SEL_GO_HIT_W    (BEZEL_CONSOLE_BAR_BOT_BOX_X1                          - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 41)
+#define SEL_GO_HIT_H    (BEZEL_CONSOLE_BAR_BOT_BOX_Y1                          - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 34)
+
 #define SEL_GO_X        BEZEL_CONSOLE_BAR_BOT_X0
 #define SEL_GO_Y        BEZEL_CONSOLE_BAR_BOT_Y0
 #define SEL_GO_W        (BEZEL_CONSOLE_BAR_BOT_X1 - BEZEL_CONSOLE_BAR_BOT_X0)
@@ -332,10 +349,10 @@ float vg_pause_slider_value(float x);
 #define ENT_HUE_SPAN    0.6667f
 // The key is the chassis window, exactly as it is on the select screen: one
 // machine, one place the key lives.
-#define ENT_GO_X        SEL_GO_X
-#define ENT_GO_Y        SEL_GO_Y
-#define ENT_GO_W        SEL_GO_W
-#define ENT_GO_H        SEL_GO_H
+#define ENT_GO_X        SEL_GO_HIT_X
+#define ENT_GO_Y        SEL_GO_HIT_Y
+#define ENT_GO_W        SEL_GO_HIT_W
+#define ENT_GO_H        SEL_GO_HIT_H
 
 // --- tournament map --------------------------------------------------------
 // Three buttons now, so they are narrower. The row still starts at 60 and ends
