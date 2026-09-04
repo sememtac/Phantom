@@ -696,6 +696,13 @@ static uint32_t s_cyc_aa[2], s_cyc_ln[2], s_cyc_tri[2], s_cyc_oth[2];
 // is not a measurement.
 static uint32_t s_cyc_can[2];
 
+// THE CHASSIS, ON ITS OWN. It had no bucket and fell into `oth`, which is where a
+// measurement goes to be guessed at: the menu's 3.577 ms of "other" had to be
+// matched against 94,235 stored pixels at nine cycles each to work out what it
+// was. Every other primitive type has a counter; this one is the biggest single
+// item in a menu frame and had none.
+static uint32_t s_cyc_bez[2];
+
 //
 // `oth` is a bucket -- points, glyphs and rectangle fills -- and it is the largest item in
 // `prim` during a course run. Optimising against a bucket is how four rounds of canopy work
@@ -722,10 +729,19 @@ static uint32_t s_cyc_pt[2], s_cyc_gl[2], s_cyc_fl[2];
 // The sums stay. They answer the question they were built for -- how the two cores
 // divide, which is what the split nudge balances on -- and they are what `can` on the
 // telemetry line has always meant.
-static uint32_t s_wall_cyc[8];
-static uint32_t* const CYC_ALL[8] = { s_cyc_aa, s_cyc_ln, s_cyc_tri, s_cyc_oth,
-                                      s_cyc_can, s_cyc_pt, s_cyc_gl, s_cyc_fl };
-enum { W_AA = 0, W_LN, W_TRI, W_OTH, W_CAN, W_PT, W_GL, W_FL };
+// ONE PLACE THAT SAYS HOW MANY. The bound used to be a literal 8 in four places
+// -- the array, the snapshot, the two loops and the reset -- and adding the
+// chassis's bucket as a ninth left every one of them at eight, so the counter
+// was collected and never accumulated. It read a flat zero on the board while
+// the chassis was plainly drawing.
+#define CYC_N 9
+static uint32_t s_wall_cyc[CYC_N];
+static uint32_t* const CYC_ALL[CYC_N] = { s_cyc_aa, s_cyc_ln, s_cyc_tri, s_cyc_oth,
+                                      s_cyc_can, s_cyc_pt, s_cyc_gl, s_cyc_fl,
+                                      s_cyc_bez };
+static_assert(sizeof(CYC_ALL) / sizeof(CYC_ALL[0]) == CYC_N,
+              "one counter per bucket, and CYC_N is what every loop over them uses");
+enum { W_AA = 0, W_LN, W_TRI, W_OTH, W_CAN, W_PT, W_GL, W_FL, W_BEZ };
 
 // WHAT THE PRIMITIVE PASS'S SPLIT IS ACTUALLY DOING.
 //
@@ -744,6 +760,7 @@ uint32_t vg_rast_ln_us(void)   { return s_wall_cyc[W_LN]  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return s_wall_cyc[W_TRI] / 240u; }
 uint32_t vg_rast_oth_us(void)  { return s_wall_cyc[W_OTH] / 240u; }
 uint32_t vg_rast_can_us(void)  { return s_wall_cyc[W_CAN] / 240u; }
+uint32_t vg_rast_bez_us(void)  { return s_wall_cyc[W_BEZ] / 240u; }
 // Both cores' canopy work added together -- the split's own question, not the frame's.
 uint32_t vg_rast_can_both_us(void) { return (s_cyc_can[0] + s_cyc_can[1]) / 240u; }
 uint32_t vg_rast_canhalf_us(void) { return s_can_half / 240u; }
@@ -1444,6 +1461,7 @@ static void band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1) {
         else if (p->type == PRIM_LINE)          s_cyc_ln[core]  += dc;
         else if (p->type == PRIM_TRI)           s_cyc_tri[core] += dc;
         else if (p->type == PRIM_CANOPY)        s_cyc_can[core] += dc;
+        else if (p->type == PRIM_BEZEL)         s_cyc_bez[core] += dc;
         else if (p->type == PRIM_POINT)         s_cyc_pt[core]  += dc;
         else if (p->type == PRIM_GLYPH)         s_cyc_gl[core]  += dc;
         else if (p->type == PRIM_FILL)          s_cyc_fl[core]  += dc;
@@ -1532,8 +1550,8 @@ draw_band(int band_index, uint16_t* band) {
     const int at = vg_canopy_split_at(band_index);
     // Both cores' counters as they stand, so this band's share can be told from the
     // running totals after the join -- see s_wall_cyc.
-    uint32_t snap[8][2];
-    for (int i = 0; i < 8; i++) { snap[i][0] = CYC_ALL[i][0]; snap[i][1] = CYC_ALL[i][1]; }
+    uint32_t snap[CYC_N][2];
+    for (int i = 0; i < CYC_N; i++) { snap[i][0] = CYC_ALL[i][0]; snap[i][1] = CYC_ALL[i][1]; }
     const bool split = rowsplit_start(RS_PRIM, band + at * SCR_W, by0 + at, by0, by1);
     const uint32_t ch0 = esp_cpu_get_cycle_count();
     band_prims(band, by0, split ? by0 + at - 1 : by1, by0, by1);
@@ -1545,7 +1563,7 @@ draw_band(int band_index, uint16_t* band) {
     s_can_n++;
     // The slower half is what the band actually waited for. With no split the helper's
     // delta is zero and the maximum is simply this core's, which is also correct.
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < CYC_N; i++) {
         const uint32_t d0 = CYC_ALL[i][0] - snap[i][0];
         const uint32_t d1 = CYC_ALL[i][1] - snap[i][1];
         s_wall_cyc[i] += (d0 > d1) ? d0 : d1;
@@ -1657,7 +1675,8 @@ void vg_rast_flush(void) {
     s_sky_us = s_prim_us = s_scan_us = s_tv_us = 0;
     for (int c = 0; c < 2; c++) {
         s_cyc_aa[c] = s_cyc_ln[c] = s_cyc_tri[c] = s_cyc_oth[c] = s_cyc_can[c] = 0;
-        for (int i = 0; i < 8; i++) s_wall_cyc[i] = 0;
+        s_cyc_bez[c] = 0;
+        for (int i = 0; i < CYC_N; i++) s_wall_cyc[i] = 0;
         s_cyc_pt[c] = s_cyc_gl[c] = s_cyc_fl[c] = 0;
         s_ln_px[c] = s_ln_n[c] = 0;
     }

@@ -159,6 +159,9 @@ uint32_t vg_rast_ln_n(void);
 // both cores added together, which made `can` plus `prim` exceed the `rast` containing
 // them. vg_rast_can_both_us is the old sum, kept for the split's own balance question.
 uint32_t vg_rast_can_us(void);
+// The console chassis. Its own bucket because it is the biggest single item in
+// a menu frame and used to hide in `oth`.
+uint32_t vg_rast_bez_us(void);
 uint32_t vg_rast_can_both_us(void);
 // HOW HARD THE WALL WARNING IS RUNNING, 0 to 100. Not a time -- see the note at its
 // definition, where it has been three different wrong things.

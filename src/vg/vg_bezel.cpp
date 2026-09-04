@@ -45,6 +45,12 @@ void IRAM_ATTR vg_bezel_rows(uint16_t* band, int by0, int r0, int r1) {
     const VgBezel* b = s_cur;
     if (!b) return;
 
+    // Hoisted out of the loops. The palette is 512 bytes and stays in cache all
+    // frame, but reloading the base pointer through two levels of struct on every
+    // pixel is work the compiler cannot always see through.
+    const uint16_t* pal  = b->pal;
+    const uint8_t*  data = b->data;
+
     for (int r = r0; r < r1; r++) {
         const int y = by0 + r;
         if (y < 0 || y >= SCR_H) continue;
@@ -53,24 +59,55 @@ void IRAM_ATTR vg_bezel_rows(uint16_t* band, int by0, int r0, int r1) {
         uint16_t* dst_row = &band[r * SCR_W];
 
         for (uint16_t si = s0; si < s1; si++) {
-            const VgBezelSpan* sp = &b->span[si];
-            const uint8_t*  src = &b->data[sp->off];
-            uint16_t*       dst = &dst_row[sp->x0];
-            for (uint16_t i = 0; i < sp->len; i++)
-                *dst++ = b->pal[*src++];
+            const VgBezelSpan* sp  = &b->span[si];
+            const uint8_t*     src = &data[sp->off];
+            uint16_t*          dst = &dst_row[sp->x0];
+            int                n   = sp->len;
+
+            // TWO PIXELS TO A STORE. Measured on the board at 3.58 ms for 94,235
+            // pixels, which is the biggest single item in a menu frame -- nine
+            // cycles a pixel for a byte load, an indexed load and a 16-bit store.
+            //
+            // The stores are the half worth attacking. The panel is 16-bit and the
+            // bus is 32, so a pair of pixels is one word, and the scanline pass
+            // next door already found that most of its cost was loop overhead
+            // rather than arithmetic.
+            //
+            // A span starts at an arbitrary x, so the first pixel may be at an odd
+            // halfword. It goes out on its own to reach alignment, and an
+            // unaligned 32-bit store on Xtensa is a fault rather than a slowdown,
+            // so this is correctness and not tuning.
+            if ((((uintptr_t)dst) & 2u) && n > 0) {
+                *dst++ = pal[*src++];
+                n--;
+            }
+
+            uint32_t* d32 = (uint32_t*)dst;
+
+            // Four at a time. The pairs are built as words: the low halfword is
+            // the lower address, which is what a little-endian store wants, and
+            // the palette is already in the panel's byte order.
+            while (n >= 4) {
+                const uint32_t p0 = (uint32_t)pal[src[0]] | ((uint32_t)pal[src[1]] << 16);
+                const uint32_t p1 = (uint32_t)pal[src[2]] | ((uint32_t)pal[src[3]] << 16);
+                d32[0] = p0;
+                d32[1] = p1;
+                d32 += 2;
+                src  += 4;
+                n    -= 4;
+            }
+            while (n >= 2) {
+                *d32++ = (uint32_t)pal[src[0]] | ((uint32_t)pal[src[1]] << 16);
+                src += 2;
+                n   -= 2;
+            }
+
+            dst = (uint16_t*)d32;
+            while (n-- > 0) *dst++ = pal[*src++];
         }
     }
 }
 
-// WHERE THE GLASS IS, in one panel row.
-//
-// The chassis stores a span for every stretch it paints, so the stretches it
-// does not paint are the gaps between them -- the screen aperture and the two
-// bar windows, exactly. Returned as [x0, x1] pairs.
-//
-// This exists for the scanlines. A scanline is a property of the display behind
-// the plating; running it across the plating too was darkening every third row
-// of a lump of steel, which is not a thing steel does.
 int vg_bezel_gaps(int y, int16_t* out) {
     const VgBezel* b = s_cur;
     if (!b || y < 0 || y >= SCR_H) {
