@@ -16,6 +16,11 @@ static const VgBezel* s_bez = nullptr;
 // twice would let them disagree by a pixel on the frames it matters.
 static float s_sweep_y = 0.0f;
 
+// Whether the glass bracket is open. A key has to be drawn FLAT wherever it is
+// called from -- see vg_console_key -- and the only way to put the bracket back
+// afterwards is to know it was open.
+static bool s_glass = false;
+
 static void fill_box(const VgBezelSlot* s, uint16_t col) {
     vg_fill_rect(s->bx0, s->by0, s->bx1 - s->bx0 + 1, s->by1 - s->by0 + 1, col);
 }
@@ -93,6 +98,7 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     // the default that is five straight pieces with visible joints.
     vg_hud_warp(true, SEL_GLASS_WARP);
     vg_hud_warp_seg(SEL_GLASS_SEG);
+    s_glass = true;
 
     int gx0, gy0, gx1, gy1;
     if (!vg_console_glass(&gx0, &gy0, &gx1, &gy1)) return;
@@ -207,6 +213,7 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
 }
 
 void vg_console_close(void) {
+    s_glass = false;
     // Back to flat before the steel. The chassis is a span blit and never goes
     // through warp_pt, so this is belt and braces -- but leaving the bracket open
     // across a state change would hand the next screen a bent panel.
@@ -274,7 +281,27 @@ void vg_console_key(int n, const char* label) {
     const int  lx   = s->x0 + ((s->x1 - s->x0 + 1) - lw) / 2;
     const int  ly   = s->y0 + ((s->y1 - s->y0 + 1) - 21) / 2;
 
+    // FLAT, WHEREVER THIS IS CALLED FROM. A key is set into the plating, not into
+    // the glass, and the plating does not bend.
+    //
+    // It used to be drawn after the bracket closed, because the close and the key
+    // were one function. Splitting them so a screen can have SEVERAL keys put the
+    // key inside the bracket, and the curve took it apart in two ways at once: the
+    // well is a fill and leaves as warped quads, the label is text and is warped
+    // as one rigid block, so the two moved by different amounts and the black came
+    // away from the word. And a two-pixel underline bent into chords loses pixels
+    // where the chords meet, which is the uneven thickness.
+    //
+    // Neither is a bug in the warp. A key simply does not belong in it.
+    const bool was = s_glass;
+    if (was) vg_hud_warp(false, 1.0f);
+
     fill_box(s, down ? INK_TRACE : INK_WELL);
     vg_text(lx, ly, label, INK_MAX, 3);
     vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
+
+    if (was) {
+        vg_hud_warp(true, SEL_GLASS_WARP);
+        vg_hud_warp_seg(SEL_GLASS_SEG);
+    }
 }
