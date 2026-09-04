@@ -162,7 +162,10 @@ static void clamp_pan(void) {
     // that still said SCR_W would stop panning with the last column under the
     // steel.
     const float maxx = (float)(CANVAS_W - VIEW_W);
-    const float maxy = (float)(CANVAS_H - VIEW_H);
+    // The canvas is CAP_H taller than its content, because of the margin under
+    // the caption -- see canvas_to_screen. Panning has to be able to reach the
+    // bottom row past it.
+    const float maxy = (float)(CANVAS_H + CAP_H - VIEW_H);
     if (s_pan_x < 0.0f) s_pan_x = 0.0f;
     if (s_pan_x > (maxx > 0 ? maxx : 0)) s_pan_x = (maxx > 0 ? maxx : 0);
     if (s_pan_y < 0.0f) s_pan_y = 0.0f;
@@ -208,9 +211,19 @@ static void slot_place(int r, int idx, int* col, int* local) {
     else            { *col = 8 - r; *local = idx - half; }
 }
 
+// CANVAS TO SCREEN, and the canvas carries a TOP MARGIN the width of the caption.
+//
+// The sheet is drawn into the whole aperture -- it has to be, or the tree stops
+// short of the chamfers and reads as a picture pasted into the window -- but the
+// caption is opaque and sits over the top of it, so laying row zero at the top of
+// the aperture put the first box under the round and the bank.
+//
+// A margin rather than a clip: the strip is still drawn on, so panning slides the
+// tree under the caption the way any scroll region does. What it buys is that
+// nothing is hidden there to begin with.
 static void canvas_to_screen(int cx, int cy, int* sx, int* sy) {
     *sx = VIEW_X0 + cx - (int)s_pan_x;
-    *sy = VIEW_Y0 + cy - (int)s_pan_y;
+    *sy = VIEW_Y0 + CAP_H + cy - (int)s_pan_y;
 }
 
 void vg_bracket_focus_player(void) {
@@ -218,7 +231,8 @@ void vg_bracket_focus_player(void) {
     slot_place(vt.round, vt.player_pos, &col, &local);
     slot_box(col, vt.round, local, &bx, &by);
     s_pan_x = (float)(bx + BOX_W / 2) - (float)VIEW_W * 0.5f;
-    s_pan_y = (float)(by + BOX_H / 2) - (float)VIEW_H * 0.5f;
+    // Centred in what is left under the caption, not in the whole aperture.
+    s_pan_y = (float)(by + BOX_H / 2) - (float)(VIEW_H - CAP_H) * 0.5f;
     clamp_pan();
 }
 
@@ -230,6 +244,22 @@ void vg_bracket_focus_player(void) {
 // the warp a fill leaves as a strip of QUADS where a line leaves as chords.
 static void rule(float ax, float ay, float bx, float by, uint16_t col) {
     vg_line_w(ax, ay, bx, by, col, BRK_LINE_W);
+}
+
+// WHERE THE WINNER OF MATCH m IN ROUND r ENDS UP.
+//
+// The champion is the exception and has to be: it is drawn at slot_box(4, 3, 0),
+// with the FINAL's row span rather than its own, because a span of sixteen rows
+// would put it off the bottom of the canvas. Asking slot_place for round 4 gives
+// the right column and the wrong row.
+static void parent_box(int r, int m, int* bx, int* by) {
+    if (r + 1 >= TOURNEY_ROUNDS) {
+        slot_box(4, TOURNEY_ROUNDS - 1, 0, bx, by);
+        return;
+    }
+    int col, local;
+    slot_place(r + 1, m, &col, &local);
+    slot_box(col, r + 1, local, bx, by);
 }
 
 // A box outline at BRK_LINE_W, drawn as nested frames. vg_rect knows about the
@@ -353,29 +383,42 @@ void vg_draw_bracket(void) {
             slot_box(ca, r, la, &ax, &ay);
             slot_box(cb, r, lb, &bx2, &by2);
 
+            // WHERE THE WINNER GOES, because that is what a bracket line is FOR.
+            //
+            // The sheet drew a spine between each pair and two stubs out to it,
+            // and then stopped -- so every round was a set of pairs floating
+            // beside the next round rather than feeding it. The line from the
+            // spine to the parent box is the one that makes it a tree.
+            int px, py;
+            parent_box(r, m, &px, &py);
+            int pex, pcy;                       // the parent's near edge, centred
+
             if (ca != cb) {
                 // THE FINAL, and it is the only pair that straddles the middle.
                 // Its two boxes sit either SIDE of the champion's rather than
-                // above and below each other, so there is no spine to drop
-                // between them and the general case cannot draw it.
+                // above and below each other, so there is no spine to drop and
+                // each finalist reaches the champion directly.
                 //
-                // It used to be skipped outright, which left the champion box
-                // floating with nothing joining it to the two fighters who get
-                // there -- the one box on the sheet the whole tree points at.
-                // One rule straight through, and the champion is drawn over the
-                // middle of it afterwards.
-                const int x0 = ((ax < bx2) ? ax : bx2) + BOX_W;
-                const int x1 = (ax < bx2) ? bx2 : ax;
-                int hsx, hsy, hex, hey;
-                canvas_to_screen(x0, ay + BOX_H / 2, &hsx, &hsy);
-                canvas_to_screen(x1, ay + BOX_H / 2, &hex, &hey);
-                rule((float)hsx, (float)hsy, (float)hex, (float)hey, INK_FAINT);
+                // TWO SEGMENTS, NOT ONE RULE THROUGH. The first version ran a
+                // single line from one finalist to the other and said the
+                // champion box would cover the middle of it. The champion box is
+                // an OUTLINE, so the line showed straight through the name in it.
+                const int lx = (ax < bx2) ? ax : bx2;
+                const int rx = (ax < bx2) ? bx2 : ax;
+                int a0, a1, b0, b1;
+                canvas_to_screen(lx + BOX_W, ay + BOX_H / 2, &a0, &a1);
+                canvas_to_screen(px,         py + BOX_H / 2, &b0, &b1);
+                rule((float)a0, (float)a1, (float)b0, (float)b1, INK_FAINT);
+
+                canvas_to_screen(px + BOX_W, py + BOX_H / 2, &a0, &a1);
+                canvas_to_screen(rx,         ay + BOX_H / 2, &b0, &b1);
+                rule((float)a0, (float)a1, (float)b0, (float)b1, INK_FAINT);
                 continue;
             }
 
             const bool left = (ca <= 4);
             // Spine sits in the gutter between this column and the next.
-            int spine = left ? (ax + BOX_W + 12) : (ax - 12);
+            const int spine = left ? (ax + BOX_W + 12) : (ax - 12);
             int sx, sy_a, sy_b;
             canvas_to_screen(spine, ay + BOX_H / 2, &sx, &sy_a);
             canvas_to_screen(spine, by2 + BOX_H / 2, &sx, &sy_b);
@@ -388,6 +431,13 @@ void vg_draw_bracket(void) {
             rule((float)hsx, (float)hsy, (float)(hsx + 12), (float)hsy, INK_FAINT);
             canvas_to_screen(hx, by2 + BOX_H / 2, &hsx, &hsy);
             rule((float)hsx, (float)hsy, (float)(hsx + 12), (float)hsy, INK_FAINT);
+
+            // ...and out to the parent. The spine's midpoint IS the parent's
+            // centre -- each survivor sits at the middle of the span its two
+            // children cover, which is the arithmetic that makes the tree
+            // converge -- so this needs no averaging, only the parent's row.
+            canvas_to_screen(left ? px : (px + BOX_W), py + BOX_H / 2, &pex, &pcy);
+            rule((float)sx, (float)pcy, (float)pex, (float)pcy, INK_FAINT);
         }
     }
 
