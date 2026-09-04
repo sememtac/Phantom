@@ -100,7 +100,7 @@ int vg_select_row_at(float x, float y) {
 }
 
 bool vg_select_confirm_at(float x, float y) {
-    return vg_console_key_at(SEL_GO_SLOT, x, y);
+    return vg_console_key_at(VG_CON_KEY, x, y);
 }
 
 // THE FIVE AXES, AS A SHAPE.
@@ -613,7 +613,7 @@ void vg_draw_select(void) {
     draw_plan_view(vg_spec((ShipClass)shown), shown);
     draw_plan_noise(p);
 
-    vg_console_key(SEL_GO_SLOT, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
+    vg_console_key(VG_CON_KEY, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
     vg_console_close();
 }
 

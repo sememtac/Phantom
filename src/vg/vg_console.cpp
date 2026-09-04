@@ -1,15 +1,9 @@
 #include "vg_console.h"
-#include "vg_screens.h"
 #include "vg_raster.h"
 #include "vg_draw.h"
 #include "vg_glitch.h"
 #include "vg_game.h"
 #include <math.h>
-
-// The machine currently on screen. A menu with no chassis leaves this null and
-// every call here becomes a no-op, which is what lets the title screen share the
-// state machine without sharing the furniture.
-static const VgBezel* s_bez = nullptr;
 
 // Where the sweep landed this frame. The fault is drawn AT the line rather than
 // anywhere on the glass, so the two have to agree, and working the position out
@@ -28,7 +22,8 @@ static void fill_box(const VgBezelSlot* s, uint16_t col) {
 // ---------------------------------------------------------------------------
 
 void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
-    s_bez = b;
+    // vg_bezel_use is the one place the current machine is kept. This function had
+    // its own copy of the pointer as well, written every frame and never read.
     vg_bezel_use(b);
     if (!b) return;
 
@@ -61,8 +56,8 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
         // accumulated one runs the ticker at the frame rate rather than the clock
         // -- one speed on the desktop, another on the board, and a replay that
         // does not reproduce.
-        const int   period = tw + SEL_CHYRON_GAP;
-        const float u   = vg.state_t * SEL_CHYRON_RATE;
+        const int   period = tw + VG_CON_TICKER_GAP;
+        const float u   = vg.state_t * VG_CON_TICKER_RATE;
         const int   off = (int)(u - floorf(u / (float)period) * (float)period);
         const int   ty  = cy - (note ? 12 : 10);
 
@@ -96,8 +91,8 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     //
     // Finer chords than the cockpit uses: a panel border is 266px on a side and at
     // the default that is five straight pieces with visible joints.
-    vg_hud_warp(true, SEL_GLASS_WARP);
-    vg_hud_warp_seg(SEL_GLASS_SEG);
+    vg_hud_warp(true, VG_CON_WARP);
+    vg_hud_warp_seg(VG_CON_SEG);
     s_glass = true;
 
     int gx0, gy0, gx1, gy1;
@@ -117,12 +112,12 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     // reason: a curve needs something regular laid across it to be seen. Bent
     // text is just badly set and a bent border could be a drawn shape, but a grid
     // of identical marks that are no longer on a grid can only be glass.
-    for (int gy = gy0 + SEL_TICK_STEP / 2; gy < gy1; gy += SEL_TICK_STEP)
-        for (int gx = gx0 + SEL_TICK_STEP / 2; gx < gx1; gx += SEL_TICK_STEP) {
-            vg_line((float)(gx - SEL_TICK_ARM), (float)gy,
-                    (float)(gx + SEL_TICK_ARM), (float)gy, INK_TRACE);
-            vg_line((float)gx, (float)(gy - SEL_TICK_ARM),
-                    (float)gx, (float)(gy + SEL_TICK_ARM), INK_TRACE);
+    for (int gy = gy0 + VG_CON_TICK_STEP / 2; gy < gy1; gy += VG_CON_TICK_STEP)
+        for (int gx = gx0 + VG_CON_TICK_STEP / 2; gx < gx1; gx += VG_CON_TICK_STEP) {
+            vg_line((float)(gx - VG_CON_TICK_ARM), (float)gy,
+                    (float)(gx + VG_CON_TICK_ARM), (float)gy, INK_TRACE);
+            vg_line((float)gx, (float)(gy - VG_CON_TICK_ARM),
+                    (float)gx, (float)(gy + VG_CON_TICK_ARM), INK_TRACE);
         }
 
     // THE SWEEP: one line down the glass on a loop, which is the cheapest
@@ -145,7 +140,7 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     // and one that is sometimes in bits is a signal.
     {
         const float hh   = (float)(gy1 - gy0);
-        const float u    = vg.state_t * SEL_SWEEP_RATE;
+        const float u    = vg.state_t * VG_CON_SWEEP_RATE;
         const float pass = floorf(u / hh);
         const uint32_t ph = vg_glitch_hash((uint32_t)pass * 2654435761u);
 
@@ -157,8 +152,8 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
         }
 
         const float sy = (float)gy0 + f * hh;
-        const float x0 = (float)(gx0 - SEL_SWEEP_OVER);
-        const float x1 = (float)(gx1 + SEL_SWEEP_OVER);
+        const float x0 = (float)(gx0 - VG_CON_SWEEP_OVER);
+        const float x1 = (float)(gx1 + VG_CON_SWEEP_OVER);
         s_sweep_y = sy;
 
         // Two lines rather than one -- a faint band with a brighter edge leading
@@ -188,7 +183,7 @@ void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
     // Same vocabulary as a hit -- vg_glitch's hash, bucketed rather than sampled
     // per frame -- because the game has one way of saying a readout is in trouble.
     {
-        const uint32_t slow = (uint32_t)(vg.state_t * SEL_FAULT_RATE);
+        const uint32_t slow = (uint32_t)(vg.state_t * VG_CON_FAULT_RATE);
         const uint32_t sh   = vg_glitch_hash(slow * 40503u + 17u);
         if ((sh % 5u) == 0u) {
             const int w  = gx1 - gx0;
@@ -222,6 +217,22 @@ void vg_console_close(void) {
     // LAST, so the steel masks whatever ran past the glass, with the drawing's own
     // outline rather than with a rectangle.
     vg_bezel_prim();
+}
+
+void vg_console_flat(float cx, float cy, int* dx, int* dy) {
+    if (dx || dy) {
+        float wx = cx, wy = cy;
+        if (s_glass) vg_hud_warp_at(VG_CON_WARP, cx, cy, &wx, &wy);
+        if (dx) *dx = (int)lrintf(wx - cx);
+        if (dy) *dy = (int)lrintf(wy - cy);
+    }
+    if (s_glass) vg_hud_warp(false, 1.0f);
+}
+
+void vg_console_bend(void) {
+    if (!s_glass) return;
+    vg_hud_warp(true, VG_CON_WARP);
+    vg_hud_warp_seg(VG_CON_SEG);
 }
 
 bool vg_console_glass(int* x, int* y, int* w, int* h) {
@@ -293,15 +304,12 @@ void vg_console_key(int n, const char* label) {
     // where the chords meet, which is the uneven thickness.
     //
     // Neither is a bug in the warp. A key simply does not belong in it.
-    const bool was = s_glass;
-    if (was) vg_hud_warp(false, 1.0f);
+    // Null offsets: a key is set into the PLATING, and the plating does not move.
+    vg_console_flat(0.0f, 0.0f, nullptr, nullptr);
 
     fill_box(s, down ? INK_TRACE : INK_WELL);
     vg_text(lx, ly, label, INK_MAX, 3);
     vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
 
-    if (was) {
-        vg_hud_warp(true, SEL_GLASS_WARP);
-        vg_hud_warp_seg(SEL_GLASS_SEG);
-    }
+    vg_console_bend();
 }

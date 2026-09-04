@@ -126,7 +126,7 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
                               ENT_HUE_W + 2 * ENT_HUE_PAD,
                               ENT_HUE_H + ENT_HUE_PAD)) {
             set_hue_from(tx);
-        } else if (vg_console_key_at(SEL_GO_SLOT, tx, ty)) {
+        } else if (vg_console_key_at(VG_CON_KEY, tx, ty)) {
             commit();
             return true;
         }
@@ -199,13 +199,9 @@ void vg_draw_entry(void) {
         // this is: a flat part set into the console, not something painted on the
         // tube. vg_hud_warp_at answers "where did the panel put this spot" without
         // opening the bracket, which is what the rear-view patch uses it for.
-        float wx, wy;
-        const float cx = (float)ENT_HUE_X + (float)ENT_HUE_W * 0.5f;
-        const float cy = (float)ENT_HUE_Y + (float)ENT_HUE_H * 0.5f;
-        vg_hud_warp_at(SEL_GLASS_WARP, cx, cy, &wx, &wy);
-        const int dx = (int)lrintf(wx - cx), dy = (int)lrintf(wy - cy);
-
-        vg_hud_warp(false, 1.0f);
+        int dx, dy;
+        vg_console_flat((float)ENT_HUE_X + (float)ENT_HUE_W * 0.5f,
+                        (float)ENT_HUE_Y + (float)ENT_HUE_H * 0.5f, &dx, &dy);
 
         // The ramp itself, one column per two pixels. It beats any number of
         // discrete swatches for showing that hue is continuous.
@@ -226,10 +222,9 @@ void vg_draw_entry(void) {
         vg_fill_rect(mx - 5, ENT_HUE_Y - 7 + dy, 11, ENT_HUE_H + 14, INK_MAX);
         vg_fill_rect(mx - 2, ENT_HUE_Y - 4 + dy,  5, ENT_HUE_H + 8,  hue);
 
-        vg_hud_warp(true, SEL_GLASS_WARP);
-        vg_hud_warp_seg(SEL_GLASS_SEG);
+        vg_console_bend();
     }
 
-    vg_console_key(SEL_GO_SLOT, "NEXT");
+    vg_console_key(VG_CON_KEY, "NEXT");
     vg_console_close();
 }

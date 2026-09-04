@@ -33,6 +33,13 @@
 // know the shape of the aperture.
 // ===========================================================================
 
+// WHICH HOLE THE KEY IS IN. Slot 0 is the big window every screen lays itself out
+// in, so the first key is slot 1. It was SEL_GO_SLOT and lived with the ship
+// select screen, which registration then reached across for -- a screen's
+// constant doing a machine's job. A drawing with several keys names them from
+// here upward.
+#define VG_CON_KEY      1
+
 // THE GLASS IS THE HOLE, INSET. The chassis's lip overhangs its own aperture, so
 // ink drawn hard against the edge of the hole lands under the metal. Seven
 // pixels across and one down is what the select screen was using as a hand-picked
@@ -41,6 +48,12 @@
 #define VG_GLASS_INSET_X 7
 #define VG_GLASS_INSET_Y 1
 
+// --- what the machine looks like -------------------------------------------
+//
+// These are the CONSOLE'S, not one screen's. They were named SEL_* and lived in
+// vg_screens.h because ship select was the only tenant; the tournament table will
+// spend every one of them and should not have to say SEL_ to do it.
+//
 // How hard the display bends, as a multiple of the cockpit's own HUD_WARP_K.
 // The curve has to be readable as curvature and stop well short of reading as a
 // fault, and the ceiling on that is lower than a ladder of screenshots suggests.
@@ -56,43 +69,43 @@
 //
 // 0.5 leaves the borders visibly bowed -- a straight line is long enough to show
 // a gentle curve -- while the arc across one word is under a pixel.
-#define SEL_GLASS_WARP  0.5f
+#define VG_CON_WARP  0.5f
 
 // The chord length the curve is cut into on this screen. The cockpit's 64 leaves
 // the 266px panel border as five straight pieces with visible joints; 18 reads as
 // a curve, at one primitive per chord.
-#define SEL_GLASS_SEG   24.0f
+#define VG_CON_SEG   24.0f
 
 // THE FIDUCIAL GRID. Spacing and arm length of the alignment crosses tiled
 // across the glass. 74 gives five across and three down inside the aperture,
 // which is enough to read as a pattern and few enough that they stay chrome --
 // at half this they start to look like content.
-#define SEL_TICK_STEP   74
-#define SEL_TICK_ARM    3
+#define VG_CON_TICK_STEP   74
+#define VG_CON_TICK_ARM    3
 
 // How fast the sweep crosses the glass, in px a second. Slow: it is a sign of
 // life, not an animation, and anything quick enough to follow with the eye is
 // something the eye then has to keep following.
-#define SEL_SWEEP_RATE  38.0f
+#define VG_CON_SWEEP_RATE  38.0f
 
 // How far past the aperture the sweep is drawn at each end. The warp pulls a
 // point inward in proportion to its distance from the centre, and the ends of a
 // full-width line are the furthest points on it -- drawn edge to edge the sweep
 // stops short of both edges and reads as cut off. The chassis trims the excess.
-#define SEL_SWEEP_OVER  26
+#define VG_CON_SWEEP_OVER  26
 
 // How often the glass is offered a fault, in buckets a second. One in six of
 // them takes it, so a tear lands every few seconds. Rare is the entire setting:
 // a panel that glitches constantly is a style, one that is clean and then is not
 // is broken.
-#define SEL_FAULT_RATE  1.4f
+#define VG_CON_FAULT_RATE  1.4f
 
-#define SEL_CHYRON_RATE 46.0f
+#define VG_CON_TICKER_RATE 46.0f
 
 // The clear space between one pass of the banner and the next. Three characters
 // at the title's own scale: enough that the two readings do not run together,
 // short enough that the glass is never empty.
-#define SEL_CHYRON_GAP  54
+#define VG_CON_TICKER_GAP  54
 
 // Put up the chassis's headline and open the glass. `note` is a second line in
 // the headline window, or null for a one-line headline at the larger size.
@@ -111,6 +124,30 @@ bool vg_console_glass(int* x, int* y, int* w, int* h);
 // marks the primary action, and the one thing a key must do: change while it is
 // pressed.
 void vg_console_key(int n, const char* label);
+
+// STOP THE CURVE FOR ONE OBJECT, and say where the curve would have put it.
+//
+// Some things must not be bent vertex by vertex, and each fails differently:
+//
+//   A DENSE RUN OF THIN FILLS -- a colour ramp -- leaves the warp as a strip of
+//   quads, two triangles each. Two hundred columns became eight hundred
+//   primitives and overflowed the instrument slice, which drops whatever was
+//   submitted last: the chassis vanished.
+//
+//   A TWO-PIXEL RULE cut into chords loses a pixel where the chords meet, so a
+//   key's underline came out unevenly thick.
+//
+//   A BITMAP FONT unspaces. The glyph stays upright while its origin moves, so
+//   the gaps between letters stop being equal.
+//
+// All three want to be drawn FLAT and moved bodily to where the tube would have
+// put them -- the trade vg_hud_warp_at already makes for the rear-view patch.
+//
+// Pass dx/dy to be told the displacement at (cx, cy); pass null for a thing that
+// sits in the PLATING rather than on the glass, which does not move at all.
+// Always pair with vg_console_bend.
+void vg_console_flat(float cx, float cy, int* dx, int* dy);
+void vg_console_bend(void);
 
 // Does this point hit key `n`? The area is DELIBERATELY BIGGER than the hole --
 // see the note in the implementation. Use this for the tap test so that what
