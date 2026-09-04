@@ -21,9 +21,88 @@ void host_dataset_close(void);
 #include <stdlib.h>
 #include <string.h>
 
+#include "vg_states.h"
+#include "vg_sky.h"
+
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
 extern void loop(void);
+
+// ===========================================================================
+// WHERE TO START, AND WHAT HAS TO BE TRUE FOR IT TO MEAN ANYTHING
+//
+// Every page in the game, reachable in one command, with enough state behind it
+// to be worth looking at. It was five ad-hoc flags -- entry, select, pause,
+// course, bracket -- each with its own bool, its own arm of the parser and its
+// own line in the apply block, and half the screens had no way in at all.
+//
+// The cost of that is not tidiness. A page you cannot reach without clicking
+// through three menus is a page nobody looks at after a change, and the repair
+// screen and the round-won card went unlooked-at for exactly that reason.
+//
+// A ROW PER SCREEN, the same shape as STATES[] in vg_states.cpp and for the same
+// reason: adding a page should be adding a line.
+// ===========================================================================
+
+static int   g_rounds  = 0;      // rounds already settled
+static int   g_credits = -1;     // the bank, or leave the profile's alone
+static float g_hull    = -1.0f;  // fraction of full, or leave it whole
+static int   g_ship    = -1;     // class index, or leave the profile's alone
+
+// A TOURNAMENT TO LOOK AT: the draw, and however many rounds are behind it. The
+// player wins every one, because a loss ends the run and there is no sheet to
+// look at afterwards.
+static void screen_tourney(void) {
+    vg_tournament_begin(vg.ship);
+    for (int r = 0; r < g_rounds && r < TOURNEY_ROUNDS; r++)
+        vg_tourney_resolve(true);
+}
+
+static void screen_none(void) {}
+
+// BOTH HALVES OF A MATCH, and the backdrop the cutscene would have raised.
+//
+// This is vg_gym_start's problem with no gym in it: a tournament runs
+// vg_match_start at one end of the launch cutscene and vg_begin_flight at the
+// other, so calling only the first comes up with no cockpit drawing selected, the
+// boot chain disarmed and a dark panel. See the note there, which was written
+// after exactly that.
+static void screen_match(void) {
+    screen_tourney();
+    vg_match_start();
+    vg_begin_flight();
+    vg_sky_set_reveal(1.0f);
+}
+
+struct HostScreen {
+    const char* name;
+    VgState     state;
+    void      (*setup)(void);   // what has to exist before the page means anything
+    const char* what;
+};
+
+static const HostScreen SCREENS[] = {
+    { "title",    VG_ATTRACT,   screen_none,    "the attract screen" },
+    { "entry",    VG_ENTRY,     screen_none,    "callsign registration" },
+    { "select",   VG_SELECT,    screen_none,    "ship select" },
+    { "bracket",  VG_BRACKET,   screen_tourney, "the tournament sheet" },
+    { "repair",   VG_REPAIR,    screen_tourney, "the repair page" },
+    { "course",   VG_COURSE,    screen_none,    "the ring course" },
+    { "pause",    VG_PAUSE,     screen_none,    "the pause menu" },
+    { "intro",    VG_INTRO,     screen_tourney, "the launch cutscene" },
+    { "match",    VG_PLAYING,   screen_match,   "flying, against the bracket" },
+    { "roundwon", VG_ROUND_WON, screen_tourney, "the round-won card" },
+    { "over",     VG_OVER,      screen_tourney, "knocked out" },
+    { "won",      VG_WON,       screen_tourney, "took the whole thing" },
+};
+
+#define SCREEN_N ((int)(sizeof(SCREENS) / sizeof(SCREENS[0])))
+
+static const HostScreen* screen_by_name(const char* n) {
+    for (int i = 0; i < SCREEN_N; i++)
+        if (!strcmp(SCREENS[i].name, n)) return &SCREENS[i];
+    return nullptr;
+}
 
 int main(int argc, char** argv) {
     // UNBUFFERED. The game narrates its own start-up over the serial port, and
@@ -34,13 +113,7 @@ int main(int argc, char** argv) {
     int scale = 2;
     int frames = 0;   // 0 = run until the window is closed
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
-    bool course = false;                  // start on the practice range
-    bool pause_ = false;                  // start on the pause screen
-    bool entry  = false;                  // start on callsign registration
-    bool select = false;                  // start on the ship-select screen
-    bool bracket = false;                 // start on the tournament sheet
-    int  bracket_rounds = 0;              // ...with this many rounds settled
-    int  select_class = -1;               // ...and, optionally, on a named class
+    const HostScreen* screen = nullptr;    // --screen NAME: where to start
     const char* dump = nullptr;           // where to write (obs, action) pairs
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
@@ -84,24 +157,43 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
-        else if (!strcmp(argv[i], "--course")) course = true;
-        // The class index is OPTIONAL, so "--select" alone still works and any
-        // script that used it keeps working. Sniffed for a digit rather than
-        // consumed blindly, or "--select --headless" would eat the next flag.
-        else if (!strcmp(argv[i], "--entry")) entry = true;
-        else if (!strcmp(argv[i], "--pause")) pause_ = true;
-        // The optional count is how many rounds to settle first, so the sheet
-        // can be captured with results on it. Sniffed for a digit rather than
-        // consumed blindly, the same way --select does it.
+        else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
+            screen = screen_by_name(argv[++i]);
+            if (!screen) {
+                fprintf(stderr, "no screen called %s. one of:", argv[i]);
+                for (int k = 0; k < SCREEN_N; k++)
+                    fprintf(stderr, " %s", SCREENS[k].name);
+                fprintf(stderr, "\n");
+                return 1;
+            }
+        }
+        // --- the state a page is looked at against ---
+        else if (!strcmp(argv[i], "--rounds") && i + 1 < argc)
+            g_rounds = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--credits") && i + 1 < argc)
+            g_credits = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hull") && i + 1 < argc)
+            g_hull = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--ship") && i + 1 < argc)
+            g_ship = atoi(argv[++i]);
+        // THE OLD NAMES STILL WORK, and they are aliases rather than a second
+        // mechanism. Scripts, baselines and half the notes name them.
+        //
+        // The trailing number is OPTIONAL on both, so "--select" alone behaves as
+        // it always did. Sniffed for a digit rather than consumed blindly, or
+        // "--select --headless" would eat the next flag.
+        else if (!strcmp(argv[i], "--course")) screen = screen_by_name("course");
+        else if (!strcmp(argv[i], "--entry"))  screen = screen_by_name("entry");
+        else if (!strcmp(argv[i], "--pause"))  screen = screen_by_name("pause");
         else if (!strcmp(argv[i], "--bracket")) {
-            bracket = true;
+            screen = screen_by_name("bracket");
             if (i + 1 < argc && argv[i + 1][0] >= (int)('0') && argv[i + 1][0] <= (int)('9'))
-                bracket_rounds = atoi(argv[++i]);
+                g_rounds = atoi(argv[++i]);
         }
         else if (!strcmp(argv[i], "--select")) {
-            select = true;
-            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
-                select_class = atoi(argv[++i]);
+            screen = screen_by_name("select");
+            if (i + 1 < argc && argv[i + 1][0] >= (int)('0') && argv[i + 1][0] <= (int)('9'))
+                g_ship = atoi(argv[++i]);
         }
         // A SHOT PINS THE CLOCK. Frame N has to be the same frame in two runs or
         // the file cannot be compared with anything -- see vg_fixed_dt.
@@ -151,6 +243,13 @@ int main(int argc, char** argv) {
                    "               class B. 0 AEGIS 1 LANCE 2 CHARIOT 3 BALLISTA.\n"
                    "  --bot        the game flies the player's seat too. With\n"
                    "               --gym that is a fight nobody is holding.\n"
+                   "  --screen S   start on a page, with state behind it: title\n"
+                   "               entry select bracket repair course pause intro\n"
+                   "               match roundwon over won.\n"
+                   "  --rounds N   settle N rounds first, so a page has a past.\n"
+                   "  --credits N  set the bank. REPAIR lights or dims on it.\n"
+                   "  --hull F     set the hull to F of full, 0..1.\n"
+                   "  --ship N     fly class N.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"
@@ -195,30 +294,33 @@ int main(int argc, char** argv) {
         vg.gym_pilot  = (int8_t)pilot;
     }
 
-    // Past the menus and onto the practice range. After setup() for the
-    // same reason the gym is: the boot sequence lands on the title screen
-    // and would replace anything set up before it.
-    if (course) vg_state_cut(VG_COURSE);
-    if (entry)  vg_state_cut(VG_ENTRY);
-    if (pause_) vg_state_cut(VG_PAUSE);
-    if (select) vg_state_cut(VG_SELECT);
-    // THE SHEET NEEDS A DRAW TO SHOW. Everything else here is a state that can
-    // stand on its own; the bracket is a VIEW of a tournament, and one is only
-    // generated when the player confirms a ship. Without this the page comes up
-    // on a zeroed table -- sixteen undecided boxes and no player in any of them.
-    if (bracket) {
-        vg_tournament_begin(vg.ship);
-        // Settle rounds so the sheet has a record on it. The player wins every
-        // one, which is the only outcome that keeps them in the draw -- a loss
-        // ends the run and there is no sheet to look at afterwards.
-        for (int r = 0; r < bracket_rounds && r < TOURNEY_ROUNDS; r++)
-            vg_tourney_resolve(true);
-        vg_state_cut(VG_BRACKET);
+    // STRAIGHT TO A PAGE. After setup() for the same reason the gym is: the boot
+    // sequence lands on the title screen and would replace anything set up
+    // before it.
+    //
+    // THE ORDER IS THE POINT. The ship first, because the tournament is built
+    // around it and vg_match_start reads health_max off its spec. The screen's
+    // own set-up next. Then the bank and the hull LAST, because building a
+    // tournament heals the player and starting a match re-reads the maximum --
+    // either would undo a hull set before them.
+    if (screen) {
+        if (g_ship >= 0 && g_ship < SHIP_CLASSES)
+            vg_game_select_ship((ShipClass)g_ship);
+
+        if (screen->setup) screen->setup();
+
+        if (g_credits >= 0) vg.credits = g_credits;
+        if (g_hull >= 0.0f) {
+            float f = g_hull;
+            if (f > 1.0f) f = 1.0f;
+            // Never to nothing. A hull at zero is a death on the next frame,
+            // which is not a screen anybody asked to look at.
+            if (f < 0.02f) f = 0.02f;
+            vg.health = vg.health_max * f;
+        }
+
+        vg_state_cut(screen->state);
     }
-    // AFTER the cut: entering the state is what would otherwise leave the wheel
-    // wherever it last sat.
-    if (select && select_class >= 0 && select_class < SHIP_CLASSES)
-        vg_game_select_ship((ShipClass)select_class);
 
     if (dump && !host_dataset_open(dump)) {
         fprintf(stderr, "could not open %s for writing\n", dump);
