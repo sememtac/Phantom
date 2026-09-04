@@ -98,13 +98,6 @@ static void volume_slider(int y, const char* label, float v) {
     if (fill > 0) vg_fill_rect(PAU_SLD_X + 2, y + 2, fill, PAU_SLD_H - 4, INK_BRIGHT);
 }
 
-// Knock a rectangle back a stop. Two rows on, two off -- see the note in
-// vg_draw_pause about what that costs and why it is not one row in two.
-static void dim_rect(int x, int y, int w, int h) {
-    for (int r = 0; r + 1 < h; r += 4)
-        vg_fill_rect(x, y + r, w, 2, INK_WELL);
-}
-
 void vg_draw_pause(void) {
     // Knock the whole frame back a stop so what is behind reads as suspended
     // rather than live, without hiding the thing you are about to return to.
@@ -120,42 +113,24 @@ void vg_draw_pause(void) {
     // exactly like a dim that is too subtle, and in flight there is a dark
     // cockpit behind it either way. It only became obvious once PWR started
     // working over the MENUS, where what is behind is bright.
-    // EVERYTHING THAT IS NOT THE PAUSE, and on a page that means every hole in
-    // the chassis rather than just the big one.
+    // EVERYTHING, PLATING INCLUDED. The chassis was left alone at first, on the
+    // reading that the metal is not something showing through -- it is what the
+    // display is mounted in. Flown, that is the wrong call: what a pause suspends
+    // is the whole machine, and a crisp bezel around a knocked-back screen reads
+    // as the picture having failed rather than as the game having stopped.
     //
-    // THE PICTURE, NOT THE MACHINE. The metal is not something showing through --
-    // it is what the display is mounted in -- so the knock covers the glass and
-    // stops at the bevel. Banded across the plating it read as interference over
-    // the whole panel rather than as a screen that has been suspended.
+    // THREE ROWS ON, ONE OFF. The knock is coverage, not colour -- INK_WELL is
+    // already all but black, so what decides how hard this reads is the fraction
+    // of rows it takes. Two on and two off was half, and half was not enough to
+    // stop the page competing with the menu over it.
     //
-    // AND THE KEYS GO WITH IT. They sit in their own holes, outside the glass, so
-    // a dim confined to the big window left REPAIR, COURSE and READY lit -- and
-    // they are inert while paused, because vg_upd_pause owns the taps. A lit key
-    // that does nothing is worse than a dim one.
-    //
-    // In flight there is no chassis and the whole frame is the picture, which is
-    // what the fallback is for.
-    //
-    // TWO ROWS ON, TWO OFF. Half the coverage of a single-row comb at half the
-    // primitives, and slice 3 does not have the difference to give: measured over
-    // the tournament sheet -- a warped menu, the worst case the slice budget
-    // names -- a full-screen single-row comb peaked at 910 of 950 and threw a
-    // primitive away on one frame. An overflow drops whatever was submitted LAST,
-    // which here is the pause menu itself. The dim would have eaten the thing it
-    // was drawn for.
-    if (vg_bezel_current()) {
-        for (int n = 0; ; n++) {
-            const VgBezelSlot* sl = vg_bezel_slot(n);
-            if (!sl) break;
-            dim_rect(sl->bx0, sl->by0, sl->bx1 - sl->bx0 + 1,
-                     sl->by1 - sl->by0 + 1);
-        }
-        const VgBezelSlot* hl = vg_bezel_headline();
-        if (hl) dim_rect(hl->bx0, hl->by0, hl->bx1 - hl->bx0 + 1,
-                         hl->by1 - hl->by0 + 1);
-    } else {
-        dim_rect(0, 0, SCR_W, SCR_H);
-    }
+    // AND THE PERIOD STAYS AT FOUR, so this still costs 120 primitives. Slice 3
+    // does not have more to give: measured over the tournament sheet -- a warped
+    // menu, which the slice budget names as its worst case -- a single-row comb
+    // at 240 peaked at 910 of 950 and threw a primitive away on one frame. An
+    // overflow drops whatever was submitted LAST, which here is the pause menu
+    // itself. The dim would have eaten the thing it was drawn for.
+    for (int y = 0; y < SCR_H; y += 4) vg_fill_rect(0, y, SCR_W, 3, INK_WELL);
 
     if (vg.pause_page == 1) {
         vg_centred(120, "CONFIG", INK_MAX, 5);

@@ -524,7 +524,19 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         // This was a switch with a default arm that drew the overlays, which
         // meant a menu added without a case here drew a picture belonging to
         // another screen and reported nothing. See VgStateDef::draw.
+        // AT THE CLOCK IT WAS PAUSED AT. Everything that moves on a page is
+        // drawn from vg.state_t -- the chyron's scroll, the sweep down the glass,
+        // the panel faults, the ship view's transition -- and while paused that
+        // is the PAUSE's clock, which is still running. So the banner kept
+        // scrolling and the sweep kept crossing behind a menu that says PAUSED.
+        //
+        // Swapped for the draw and put back, rather than threaded through every
+        // one of them: the page is being asked to draw itself as it stood, and
+        // the clock is how it knows where it stood.
+        const float t_now = vg.state_t;
+        if (vg.state == VG_PAUSE) vg.state_t = vg.pause_t;
         vg_state_draw(shown);
+        vg.state_t = t_now;
         // The broadcast is part of the game that is currently suspended, and the
         // pause screen covers most of the band it speaks in.
         if (vg.state != VG_PAUSE) vg_draw_ift();
