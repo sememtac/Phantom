@@ -1,5 +1,6 @@
 #pragma once
-#include "generated/bezel_console.h"   // the chassis, and the windows it leaves
+#include "generated/bezel_console.h"
+#include "vg_console.h"   // the chassis, and the windows it leaves
 #include "vg_config.h"
 #include "vg_input.h"
 
@@ -34,10 +35,10 @@
 //
 // It cost 34px of height. The panel ran to y 396 and the aperture ends at 365,
 // so the plan view used to be drawn onto the bottom bezel.
-#define SEL_AP_X0       (BEZEL_CONSOLE_APERTURE_X0 + 7)
-#define SEL_AP_Y0       (BEZEL_CONSOLE_APERTURE_Y0 + 1)
-#define SEL_AP_X1       (BEZEL_CONSOLE_APERTURE_X1 - 7)
-#define SEL_AP_Y1       (BEZEL_CONSOLE_APERTURE_Y1 - 1)
+#define SEL_AP_X0       (BEZEL_CONSOLE_S0_X0 + VG_GLASS_INSET_X)
+#define SEL_AP_Y0       (BEZEL_CONSOLE_S0_Y0 + VG_GLASS_INSET_Y)
+#define SEL_AP_X1       (BEZEL_CONSOLE_S0_X1 - VG_GLASS_INSET_X)
+#define SEL_AP_Y1       (BEZEL_CONSOLE_S0_Y1 - VG_GLASS_INSET_Y)
 
 // THE SCREEN STAYS DIVIDED: the left strip is the ship wheel and nothing else
 // draws over it. What changed is the SIZE of the reading matter in the right
@@ -182,81 +183,13 @@
 // read as a button sitting on a button.
 // How fast the banner crosses its window, in px a second. Slow enough to read a
 // word at a time and not so slow that it looks stuck.
-// How hard the display bends, as a multiple of the cockpit's own HUD_WARP_K.
-// The curve has to be readable as curvature and stop well short of reading as a
-// fault, and the ceiling on that is lower than a ladder of screenshots suggests.
-// 2.6 is plainly broken -- the wheel box skews and its names leave their column.
-// 1.8 survives a still frame and does not survive being looked at: the tilt on
-// the wheel names and the bow on the panel border are the first things the eye
-// goes to, which is the wrong thing to notice on a screen you are reading.
-//
-// 1.0 is the cockpit's own bend, and borrowing it turned out to be the wrong
-// argument: a HUD is glanced at over a moving world, and this is a page of text
-// somebody reads. The same curve that is invisible in flight is legible here as
-// wobble, and the words pay for it.
-//
-// 0.5 leaves the borders visibly bowed -- a straight line is long enough to show
-// a gentle curve -- while the arc across one word is under a pixel.
-#define SEL_GLASS_WARP  0.5f
+// The console's own tuning -- the curve, the fiducials, the sweep and the
+// ticker -- lives in vg_console.h with the code that spends it.
 
-// The chord length the curve is cut into on this screen. The cockpit's 64 leaves
-// the 266px panel border as five straight pieces with visible joints; 18 reads as
-// a curve, at one primitive per chord.
-#define SEL_GLASS_SEG   24.0f
 
-// THE FIDUCIAL GRID. Spacing and arm length of the alignment crosses tiled
-// across the glass. 74 gives five across and three down inside the aperture,
-// which is enough to read as a pattern and few enough that they stay chrome --
-// at half this they start to look like content.
-#define SEL_TICK_STEP   74
-#define SEL_TICK_ARM    3
+// The key lives in drawing slot 1. See vg_console_key.
+#define SEL_GO_SLOT     1
 
-// How fast the sweep crosses the glass, in px a second. Slow: it is a sign of
-// life, not an animation, and anything quick enough to follow with the eye is
-// something the eye then has to keep following.
-#define SEL_SWEEP_RATE  38.0f
-
-// How far past the aperture the sweep is drawn at each end. The warp pulls a
-// point inward in proportion to its distance from the centre, and the ends of a
-// full-width line are the furthest points on it -- drawn edge to edge the sweep
-// stops short of both edges and reads as cut off. The chassis trims the excess.
-#define SEL_SWEEP_OVER  26
-
-// How often the glass is offered a fault, in buckets a second. One in six of
-// them takes it, so a tear lands every few seconds. Rare is the entire setting:
-// a panel that glitches constantly is a style, one that is clean and then is not
-// is broken.
-#define SEL_FAULT_RATE  1.4f
-
-#define SEL_CHYRON_RATE 46.0f
-
-// The clear space between one pass of the banner and the next. Three characters
-// at the title's own scale: enough that the two readings do not run together,
-// short enough that the glass is never empty.
-#define SEL_CHYRON_GAP  54
-
-#define SEL_TITLE_CY    ((BEZEL_CONSOLE_BAR_TOP_Y0 + BEZEL_CONSOLE_BAR_TOP_Y1) / 2)
-// THE HIT AREA IS BIGGER THAN THE KEY, and it has to be.
-//
-// The lit window the key is drawn in is 30px tall, which on a 314 ppi panel is
-// 2.4mm. A fingertip is nearer 8, so a target that size is one you have to aim
-// at -- and a press that misses by two millimetres reads as the button not
-// working rather than as the finger being off. Nothing else is hit-tested below
-// the glass, so the area is free to run out into the plating: 5mm tall and 24
-// wide, around a key that looks exactly as it did.
-//
-// The DRAWN rect stays what it was. Growing the picture of the key to match
-// would put it over the chassis; growing only what it accepts costs nothing and
-// is invisible, which is the point.
-#define SEL_GO_HIT_X    (BEZEL_CONSOLE_BAR_BOT_BOX_X0 - 20)
-#define SEL_GO_HIT_Y    (BEZEL_CONSOLE_BAR_BOT_BOX_Y0 - 9)
-#define SEL_GO_HIT_W    (BEZEL_CONSOLE_BAR_BOT_BOX_X1                          - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 41)
-#define SEL_GO_HIT_H    (BEZEL_CONSOLE_BAR_BOT_BOX_Y1                          - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 34)
-
-#define SEL_GO_X        BEZEL_CONSOLE_BAR_BOT_X0
-#define SEL_GO_Y        BEZEL_CONSOLE_BAR_BOT_Y0
-#define SEL_GO_W        (BEZEL_CONSOLE_BAR_BOT_X1 - BEZEL_CONSOLE_BAR_BOT_X0)
-#define SEL_GO_H        (BEZEL_CONSOLE_BAR_BOT_Y1 - BEZEL_CONSOLE_BAR_BOT_Y0)
 
 // --- pause -----------------------------------------------------------------
 // A STACK, not fixed slots. The number of entries depends on where the pause
@@ -349,10 +282,8 @@ float vg_pause_slider_value(float x);
 #define ENT_HUE_SPAN    0.6667f
 // The key is the chassis window, exactly as it is on the select screen: one
 // machine, one place the key lives.
-#define ENT_GO_X        SEL_GO_HIT_X
-#define ENT_GO_Y        SEL_GO_HIT_Y
-#define ENT_GO_W        SEL_GO_HIT_W
-#define ENT_GO_H        SEL_GO_HIT_H
+// Registration uses the same key hole as select -- one machine, one key. See
+// vg_console_key_at(SEL_GO_SLOT, ...).
 
 // --- tournament map --------------------------------------------------------
 // Three buttons now, so they are narrower. The row still starts at 60 and ends
@@ -447,15 +378,6 @@ void vg_bracket_focus_player(void);            // centre on the next match
 // built.
 void vg_button(int x, int y, int w, int h, const char* label,
                bool primary, bool live);
-
-// THE CONSOLE BRACKETS. Every screen bolted into the registration terminal draws
-// between these two: open puts up the chassis banner and opens the curve, close
-// puts down the key and paints the steel over everything. See vg_screens.cpp.
-//
-// `note` is the second line in the banner window, or null for a one-line banner
-// at the larger size.
-void console_open(const char* title, const char* note);
-void console_close(const char* key);
 
 void vg_draw_select(void);
 void vg_draw_pause(void);

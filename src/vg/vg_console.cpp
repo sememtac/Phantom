@@ -1,0 +1,280 @@
+#include "vg_console.h"
+#include "vg_screens.h"
+#include "vg_raster.h"
+#include "vg_draw.h"
+#include "vg_glitch.h"
+#include "vg_game.h"
+#include <math.h>
+
+// The machine currently on screen. A menu with no chassis leaves this null and
+// every call here becomes a no-op, which is what lets the title screen share the
+// state machine without sharing the furniture.
+static const VgBezel* s_bez = nullptr;
+
+// Where the sweep landed this frame. The fault is drawn AT the line rather than
+// anywhere on the glass, so the two have to agree, and working the position out
+// twice would let them disagree by a pixel on the frames it matters.
+static float s_sweep_y = 0.0f;
+
+static void fill_box(const VgBezelSlot* s, uint16_t col) {
+    vg_fill_rect(s->bx0, s->by0, s->bx1 - s->bx0 + 1, s->by1 - s->by0 + 1, col);
+}
+
+// ---------------------------------------------------------------------------
+
+void vg_console_open(const VgBezel* b, const char* headline, const char* note) {
+    s_bez = b;
+    vg_bezel_use(b);
+    if (!b) return;
+
+    const VgBezelSlot* hl = vg_bezel_headline();
+    if (hl) {
+        // THE BOX, NOT THE INNER RECTANGLE. The window is an octagon; a fill of
+        // the rectangle that fits inside it leaves the four chamfered corners
+        // unpainted, and the chassis does not cover them either -- they are
+        // exempt. The sky showed in the corners. The box overshoots onto metal,
+        // which the chassis paints over on the way past.
+        //
+        // INK_WELL and not COL_BLACK: a fill whose colour is zero is DROPPED, the
+        // same rule that makes black text invisible, so a COL_BLACK window was
+        // never being cleared at all.
+        fill_box(hl, INK_WELL);
+
+        const int   bx    = hl->x0;
+        const int   bw    = hl->x1 - hl->x0 + 1;
+        const int   scale = note ? 2 : 3;
+        const int   tw    = vg_text_width(headline, scale);
+        const int   cy    = (hl->y0 + hl->y1) / 2;
+
+        // RIGHT TO LEFT, AND IT WRAPS. Moving right, the block's TAIL enters the
+        // window first and the word arrives back to front -- the banner said SHIP
+        // SELECT. And a single pass leaves the glass empty between readings,
+        // which looks like a machine that has stopped; repeating every
+        // word-plus-gap makes the tail of one pass the head of the next.
+        //
+        // vg.state_t, not an integrated dt: the renderer has no dt to give, and an
+        // accumulated one runs the ticker at the frame rate rather than the clock
+        // -- one speed on the desktop, another on the board, and a replay that
+        // does not reproduce.
+        const int   period = tw + SEL_CHYRON_GAP;
+        const float u   = vg.state_t * SEL_CHYRON_RATE;
+        const int   off = (int)(u - floorf(u / (float)period) * (float)period);
+        const int   ty  = cy - (note ? 12 : 10);
+
+        // Clipped to the window BOX. It is needed because the screen aperture
+        // notches up either side of this bar, so there are exempt pixels off both
+        // ends that the chassis cannot paint over -- text ran out of the window
+        // and stayed on screen. The box lets the letters reach the glass; the
+        // chassis cuts the chamfer.
+        vg_rast_viewport(hl->bx0, hl->by0,
+                         hl->bx1 - hl->bx0 + 1, hl->by1 - hl->by0 + 1);
+
+        // WHITE, because the machine is not the one asking. A headline is the
+        // tournament talking to you through the terminal -- the same voice that
+        // speaks over a match -- so it takes COL_IFT. The keys stay amber: those
+        // are furniture, and the difference between the two is the point.
+        for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
+            vg_text(tx, ty, headline, COL_IFT, scale);
+
+        // A note does NOT run. It is a sentence to be read once, not a banner,
+        // and a moving one would be the only thing on the screen asking to be
+        // chased.
+        if (note)
+            vg_text((SCR_W - vg_text_width(note, 1)) / 2, cy + 4, note, INK, 1);
+        vg_rast_viewport_full();
+    }
+
+    // GLASS FROM HERE. The plating is cold steel and dead flat; the display under
+    // it is a tube, and a tube bends its picture. The curve pulls the corners of
+    // the picture inward and the chassis paints last over what is left, so the
+    // display does not end at a drawn border -- it disappears beneath the steel.
+    //
+    // Finer chords than the cockpit uses: a panel border is 266px on a side and at
+    // the default that is five straight pieces with visible joints.
+    vg_hud_warp(true, SEL_GLASS_WARP);
+    vg_hud_warp_seg(SEL_GLASS_SEG);
+
+    int gx0, gy0, gx1, gy1;
+    if (!vg_console_glass(&gx0, &gy0, &gx1, &gy1)) return;
+    gx1 += gx0 - 1;
+    gy1 += gy0 - 1;
+
+    // --- what makes it a display rather than a window ---------------------
+    //
+    // Both of these go down FIRST, so the screen's own instruments draw over
+    // them. They belong to the DISPLAY and not to what it is showing, and a
+    // fiducial crossing a word would be reading as content.
+    //
+    // REGISTRATION CROSSES, tiled. Every instrument panel ever built has them --
+    // alignment marks, the thing a display is checked against rather than
+    // anything it is telling you. They are inside the warp bracket for a second
+    // reason: a curve needs something regular laid across it to be seen. Bent
+    // text is just badly set and a bent border could be a drawn shape, but a grid
+    // of identical marks that are no longer on a grid can only be glass.
+    for (int gy = gy0 + SEL_TICK_STEP / 2; gy < gy1; gy += SEL_TICK_STEP)
+        for (int gx = gx0 + SEL_TICK_STEP / 2; gx < gx1; gx += SEL_TICK_STEP) {
+            vg_line((float)(gx - SEL_TICK_ARM), (float)gy,
+                    (float)(gx + SEL_TICK_ARM), (float)gy, INK_TRACE);
+            vg_line((float)gx, (float)(gy - SEL_TICK_ARM),
+                    (float)gx, (float)(gy + SEL_TICK_ARM), INK_TRACE);
+        }
+
+    // THE SWEEP: one line down the glass on a loop, which is the cheapest
+    // possible way to say the hardware is powered. A still picture is a picture;
+    // a still picture with one thing crossing it on a clock is a MACHINE showing
+    // you a picture.
+    //
+    // IT RUNS WIDE OF THE GLASS ON PURPOSE. The warp is a barrel curve, so it
+    // pulls a point inward in proportion to its distance from the centre -- and
+    // the ends of a line spanning the whole aperture are the furthest points on
+    // it. Drawn edge to edge the sweep came up SHORT of both edges, which reads as
+    // a line that has been cut rather than as glass that is curved.
+    //
+    // AND IT IS NOT A METRONOME. Every pass takes its pace from a hash of the pass
+    // number: an exponent bends the ramp without moving its ends, so a pass still
+    // starts at the top and finishes at the bottom however hard it is bent; one
+    // pass in eight STALLS partway down, which is the most convincing thing here
+    // because broken hardware hesitates rather than running slow; and one in four
+    // breaks into pieces, because a sweep that is always whole is a drawn object
+    // and one that is sometimes in bits is a signal.
+    {
+        const float hh   = (float)(gy1 - gy0);
+        const float u    = vg.state_t * SEL_SWEEP_RATE;
+        const float pass = floorf(u / hh);
+        const uint32_t ph = vg_glitch_hash((uint32_t)pass * 2654435761u);
+
+        float f = u / hh - pass;
+        f = powf(f, 0.65f + (float)(ph & 255u) * (0.85f / 255.0f));
+        if (((ph >> 9) & 7u) == 0u) {
+            const float at = 0.20f + (float)((ph >> 12) & 127u) * (0.55f / 127.0f);
+            if (f > at && f < at + 0.10f) f = at;
+        }
+
+        const float sy = (float)gy0 + f * hh;
+        const float x0 = (float)(gx0 - SEL_SWEEP_OVER);
+        const float x1 = (float)(gx1 + SEL_SWEEP_OVER);
+        s_sweep_y = sy;
+
+        // Two lines rather than one -- a faint band with a brighter edge leading
+        // it -- because a single hairline reads as a scratch ON the glass where a
+        // pair reads as something passing behind it.
+        const int n = (((ph >> 17) & 3u) == 0u) ? 3 : 1;
+        for (int i = 0; i < n; i++) {
+            const float a = x0 + (x1 - x0) * ((float)i / (float)n);
+            const float b = x0 + (x1 - x0) * ((float)(i + 1) / (float)n)
+                          - ((n > 1) ? 26.0f : 0.0f);
+            vg_line(a, sy, b, sy, INK_FAINT);
+            vg_line(a, sy + 2.0f, b, sy + 2.0f, INK_TRACE);
+        }
+    }
+
+    // AND THE SWEEP CATCHES, now and then.
+    //
+    // THE FAULT BELONGS TO THE SWEEP. It used to tear bands anywhere on the glass
+    // and scatter grain over the rest, and the trouble with that is not that it
+    // was ugly -- it handed the eye three or four new places to look every time it
+    // fired, on a screen whose job is to be read. A fault with no location is
+    // noise, and noise is distracting precisely because there is nothing in it to
+    // find. Tied to the line there is ONE place it can happen and the eye already
+    // knows where. It reads as the sweep snagging rather than the panel breaking,
+    // which is the smaller and truer claim.
+    //
+    // Same vocabulary as a hit -- vg_glitch's hash, bucketed rather than sampled
+    // per frame -- because the game has one way of saying a readout is in trouble.
+    {
+        const uint32_t slow = (uint32_t)(vg.state_t * SEL_FAULT_RATE);
+        const uint32_t sh   = vg_glitch_hash(slow * 40503u + 17u);
+        if ((sh % 5u) == 0u) {
+            const int w  = gx1 - gx0;
+            const int bh = 3 + (int)((sh >> 7) % 5u);
+            const int by = (int)s_sweep_y - bh / 2;
+
+            // A TEAR IS SHIFTED SIGNAL, not a stripe over the top: the band is
+            // knocked out and a fragment put back beside where it came from. The
+            // fragment is BRIGHT because a dark one is nothing -- out on open
+            // glass INK_WELL over near-black showed only where a band happened to
+            // cross a word.
+            if (by > gy0 && by + bh < gy1) {
+                vg_fill_rect(gx0, by, w, bh, INK_WELL);
+                const int fw = 40 + (int)((sh >> 19) % 120u);
+                int fx = gx0 + (int)((sh >> 5) % (uint32_t)(w - fw));
+                if (fx < gx0)             fx = gx0;
+                if (fx + fw > gx0 + w)    fx = gx0 + w - fw;
+                vg_fill_rect(fx, by, fw, 2, INK_BRIGHT);
+            }
+        }
+    }
+}
+
+void vg_console_close(void) {
+    // Back to flat before the steel. The chassis is a span blit and never goes
+    // through warp_pt, so this is belt and braces -- but leaving the bracket open
+    // across a state change would hand the next screen a bent panel.
+    vg_hud_warp(false, 1.0f);
+
+    // LAST, so the steel masks whatever ran past the glass, with the drawing's own
+    // outline rather than with a rectangle.
+    vg_bezel_prim();
+}
+
+bool vg_console_glass(int* x, int* y, int* w, int* h) {
+    const VgBezelSlot* g = vg_bezel_slot(0);
+    if (!g) return false;
+    const int x0 = g->x0 + VG_GLASS_INSET_X, x1 = g->x1 - VG_GLASS_INSET_X;
+    const int y0 = g->y0 + VG_GLASS_INSET_Y, y1 = g->y1 - VG_GLASS_INSET_Y;
+    if (x) *x = x0;
+    if (y) *y = y0;
+    if (w) *w = x1 - x0 + 1;
+    if (h) *h = y1 - y0 + 1;
+    return true;
+}
+
+// THE HIT AREA IS BIGGER THAN THE KEY, and it has to be.
+//
+// A key window is about 30px tall, which on a 314 ppi panel is 2.4mm. A fingertip
+// is nearer 8, so a target that size is one you have to aim at -- and a press that
+// misses by two millimetres reads as the button not working rather than as the
+// finger being off. Nothing else is hit-tested out in the plating, so the area is
+// free to run into it.
+//
+// The DRAWN key does not grow. Making the picture match would put it over the
+// chassis; growing only what it accepts costs nothing and is invisible.
+static bool key_rect(int n, int* x, int* y, int* w, int* h) {
+    const VgBezelSlot* s = vg_bezel_slot(n);
+    if (!s) return false;
+    *x = s->bx0 - 20;
+    *y = s->by0 - 9;
+    *w = (s->bx1 - s->bx0 + 1) + 40;
+    *h = (s->by1 - s->by0 + 1) + 34;
+    return true;
+}
+
+bool vg_console_key_at(int n, float x, float y) {
+    int kx, ky, kw, kh;
+    if (!key_rect(n, &kx, &ky, &kw, &kh)) return false;
+    return vg_in_rect(x, y, kx, ky, kw, kh);
+}
+
+void vg_console_key(int n, const char* label) {
+    const VgBezelSlot* s = vg_bezel_slot(n);
+    int kx, ky, kw, kh;
+    if (!s || !key_rect(n, &kx, &ky, &kw, &kh)) return;
+
+    // THE CHASSIS ALREADY DREW THE BOX. vg_button paints a well, a 2px frame and
+    // corner ticks, and every one of those is a second border inside the lit
+    // window the metal provides -- a button drawn on a button. What is left of a
+    // key when the machine owns its box is the label, the line under it, and the
+    // change under a thumb.
+    //
+    // Lit from the HIT rect, not the drawn one. A press that will register has to
+    // light the key, or the player learns the key is unreliable when what is
+    // really happening is that it lights on a smaller area than it accepts.
+    const bool down = vg_press_in(kx, ky, kw, kh);
+    const int  lw   = vg_text_width(label, 3);
+    const int  lx   = s->x0 + ((s->x1 - s->x0 + 1) - lw) / 2;
+    const int  ly   = s->y0 + ((s->y1 - s->y0 + 1) - 21) / 2;
+
+    fill_box(s, down ? INK_TRACE : INK_WELL);
+    vg_text(lx, ly, label, INK_MAX, 3);
+    vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
+}

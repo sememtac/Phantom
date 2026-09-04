@@ -1,4 +1,6 @@
 #include "vg_screens.h"
+#include "vg_console.h"
+#include "generated/bezel_console.h"
 #include "vg_draw.h"
 #include "vg_game.h"
 #include <math.h>
@@ -124,7 +126,7 @@ bool vg_entry_update(const VgInput* in, bool tap, float tx, float ty) {
                               ENT_HUE_W + 2 * ENT_HUE_PAD,
                               ENT_HUE_H + ENT_HUE_PAD)) {
             set_hue_from(tx);
-        } else if (vg_in_rect(tx, ty, ENT_GO_X, ENT_GO_Y, ENT_GO_W, ENT_GO_H)) {
+        } else if (vg_console_key_at(SEL_GO_SLOT, tx, ty)) {
             commit();
             return true;
         }
@@ -142,7 +144,7 @@ void vg_draw_entry(void) {
     // The same terminal the ship select is bolted into. REGISTRATION rather than
     // CALLSIGN: the banner is the tournament's own wording for what this desk is
     // for, and the word on the glass below is what you are entering.
-    console_open("CALLSIGN REGISTRATION", nullptr);
+    vg_console_open(&BEZEL_CONSOLE, "CALLSIGN REGISTRATION", nullptr);
 
     const int midy = ENT_WHEEL_Y + ENT_WHEEL_H / 2;
 
@@ -228,5 +230,6 @@ void vg_draw_entry(void) {
         vg_hud_warp_seg(SEL_GLASS_SEG);
     }
 
-    console_close("NEXT");
+    vg_console_key(SEL_GO_SLOT, "NEXT");
+    vg_console_close();
 }

@@ -10,6 +10,21 @@
 static const VgBezel* s_cur = nullptr;
 
 void vg_bezel_use(const VgBezel* b) { s_cur = b; }
+
+// The slots are emitted sorted by role, so the drawing ones are the leading run
+// and the Nth of them is simply the Nth entry. The role test is what keeps that
+// true if a drawing ever has no drawing slots at all.
+const VgBezelSlot* vg_bezel_slot(int n) {
+    if (!s_cur || n < 0 || n >= (int)s_cur->slots) return nullptr;
+    return (s_cur->slot[n].role == VG_SLOT_DRAW) ? &s_cur->slot[n] : nullptr;
+}
+
+const VgBezelSlot* vg_bezel_headline(void) {
+    if (!s_cur) return nullptr;
+    for (int i = 0; i < (int)s_cur->slots; i++)
+        if (s_cur->slot[i].role == VG_SLOT_HEADLINE) return &s_cur->slot[i];
+    return nullptr;
+}
 const VgBezel* vg_bezel_current(void) { return s_cur; }
 
 // vg_bezel_prim lives in vg_raster.cpp, beside vg_canopy_prim: the primitive

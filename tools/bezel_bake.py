@@ -32,37 +32,66 @@ import numpy as np
 
 PANEL = 480          # the display is 480 x 480
 
+# The jobs a painted area can have. The numbers are the firmware's enum, so they
+# are part of the format and not a detail of this script.
+SLOT     = 0         # magenta: the game draws here and decides what
+HEADLINE = 1         # cyan:    the ticker runs across here, clipped to it
+
+ROLE_NAME = { SLOT: "SLOT", HEADLINE: "HEADLINE" }
+
 
 def load(src, colors):
     """Read the drawing. Return the palette, the indices, and the exempt mask."""
     rgb = Image.open(src).convert("RGB")
     a = np.asarray(rgb).astype(int)
 
-    # The mask comes from the FULL SIZE drawing and is reduced with NEAREST.
-    # A smooth reduction blends magenta with the metal beside it and makes a
-    # fringe of pixels that are neither exempt nor the colour of the drawing.
-    # MAGENTA BY HUE, NOT BY LEVEL. The first test asked for a lot of red, a lot
-    # of blue and little green, and the green limit is what let pixels through:
-    # (255, 130, 255) is plainly magenta and failed it. Ask instead whether red
-    # and blue both stand clear of green, which is what magenta means, and no
-    # level of brightness changes the answer.
+    # ROLES COME FROM COLOUR. The artist paints what the game draws, and paints it
+    # in the colour of the JOB it does:
+    #
+    #   MAGENTA  a slot. The game draws in it and decides what.
+    #   CYAN     the headline. The ticker runs across it, clipped to it.
+    #
+    # This used to be one colour and the roles were worked out from geometry --
+    # largest region is the screen, then sort the rest by position -- which is
+    # inference dressed up as a rule. It got the two bar windows the wrong way
+    # round on the first drawing, because they differ in area by three hundred
+    # pixels and the sort was by area. The drawing knows what each hole is for;
+    # it should say so rather than be guessed at.
+    #
+    # BY HUE, NOT BY LEVEL. A test on channel levels lets (255, 130, 255)
+    # through as not-magenta, which it plainly is. Ask instead whether the two
+    # channels that define the hue both stand clear of the third, and brightness
+    # stops mattering.
     r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
-    exempt = (np.minimum(r, b) - g) > 40
+    role_hit = {
+        SLOT:     (np.minimum(r, b) - g) > 40,      # magenta
+        HEADLINE: (np.minimum(g, b) - r) > 40,      # cyan
+    }
 
-    # GROWN BY TWO PIXELS. The edge of a painted area is smoothed against the
-    # metal beside it, so a ring of part-magenta pixels sits just outside any
-    # test. Widening the test only moves the ring. Growing the area swallows it,
-    # at the cost of two pixels of metal that the game draws over anyway.
-    for _ in range(2):
-        e = exempt.copy()
-        e[1:, :] |= exempt[:-1, :]
-        e[:-1, :] |= exempt[1:, :]
-        e[:, 1:] |= exempt[:, :-1]
-        e[:, :-1] |= exempt[:, 1:]
-        exempt = e
+    # GROWN BY TWO PIXELS, each role on its own. The edge of a painted area is
+    # smoothed against the metal beside it, so a ring of part-coloured pixels sits
+    # just outside any test. Widening the test only moves the ring; growing the
+    # area swallows it, at the cost of two pixels of metal the game draws over.
+    def grow(m):
+        for _ in range(2):
+            e = m.copy()
+            e[1:, :] |= m[:-1, :]
+            e[:-1, :] |= m[1:, :]
+            e[:, 1:] |= m[:, :-1]
+            e[:, :-1] |= m[:, 1:]
+            m = e
+        return m
 
-    mask = np.asarray(Image.fromarray((exempt * 255).astype(np.uint8))
-                      .resize((PANEL, PANEL), Image.NEAREST)) > 127
+    # Reduced with NEAREST. A smooth reduction blends the marker paint with the
+    # metal beside it and invents pixels that are neither.
+    def shrink(m):
+        return np.asarray(Image.fromarray((grow(m) * 255).astype(np.uint8))
+                          .resize((PANEL, PANEL), Image.NEAREST)) > 127
+
+    roles = {k: shrink(v) for k, v in role_hit.items()}
+    mask  = np.zeros((PANEL, PANEL), bool)
+    for m in roles.values():
+        mask |= m
 
     art = rgb.resize((PANEL, PANEL), Image.LANCZOS)
 
@@ -87,44 +116,54 @@ def load(src, colors):
     err = np.abs(np.asarray(pal_im.convert("RGB")).astype(int)
                  - np.asarray(art).astype(int))[~mask]
     rgb3 = [(pal[i * 3], pal[i * 3 + 1], pal[i * 3 + 2]) for i in range(colors)]
-    return pal565, rgb3, idx, mask, err
+    return pal565, rgb3, idx, mask, roles, err
 
 
-def regions(mask):
-    """Find each exempt area and the largest rectangle that fits inside it.
+def regions(roles):
+    """Every painted area, with the job its colour gives it.
 
-    The game needs to know where it may draw. A bounding box is not enough: the
-    screen aperture is notched around the title window, so its box includes
-    metal. The largest rectangle that fits inside the area is a place the layout
-    can use without testing anything at draw time.
+    Returns a list of (role, inner, box) in READING ORDER within each role --
+    top to bottom, then left to right. That is the order a screen refers to them
+    in, so a drawing with three keys along the bottom hands them over left to
+    right without anybody having to say which is which.
+
+    Two rectangles per area, because they answer different questions. `inner` is
+    the largest rectangle that fits INSIDE the area and is what a hit test and a
+    layout want. `box` is the full extent, chamfered corners included, and is
+    what a fill and a clip want: filling only the inner rectangle leaves the
+    corners unpainted, and clipping to it cuts a moving label short of the glass.
     """
-    seen = np.zeros(mask.shape, np.int32)
-    out, tag = [], 0
-    for sy in range(PANEL):
-        for sx in range(PANEL):
-            if not mask[sy, sx] or seen[sy, sx]:
-                continue
-            tag += 1
-            stack, n = [(sy, sx)], 0
-            seen[sy, sx] = tag
-            while stack:
-                y, x = stack.pop()
-                n += 1
-                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    ny, nx = y + dy, x + dx
-                    if 0 <= ny < PANEL and 0 <= nx < PANEL                             and mask[ny, nx] and not seen[ny, nx]:
-                        seen[ny, nx] = tag
-                        stack.append((ny, nx))
-            ys, xs = np.nonzero(seen == tag)
-            box = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
-            out.append((n, max_rect(seen == tag), box))
-    # The aperture is the largest by area. The two bar windows are within a few
-    # hundred pixels of each other, so area does NOT order them reliably -- it
-    # put the bottom bar first on the drawing this was written for. Order them
-    # by where they sit instead, which is what the names mean.
-    out.sort(reverse=True, key=lambda r: r[0])
-    rest = sorted(out[1:], key=lambda r: r[1][1])
-    return [(r[1], r[2]) for r in [out[0]] + rest]
+    out = []
+    for role, mask in roles.items():
+        seen = np.zeros(mask.shape, np.int32)
+        tag = 0
+        for sy in range(PANEL):
+            for sx in range(PANEL):
+                if not mask[sy, sx] or seen[sy, sx]:
+                    continue
+                tag += 1
+                stack = [(sy, sx)]
+                seen[sy, sx] = tag
+                while stack:
+                    y, x = stack.pop()
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < PANEL and 0 <= nx < PANEL                                 and mask[ny, nx] and not seen[ny, nx]:
+                            seen[ny, nx] = tag
+                            stack.append((ny, nx))
+                m = seen == tag
+                ys, xs = np.nonzero(m)
+                box = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
+                out.append((role, max_rect(m), box))
+
+    # Reading order within a role. Rows first, and two areas count as the same row
+    # when they overlap vertically -- a line of keys along the bottom is one row
+    # however their tops happen to land.
+    def key(e):
+        _, _, (x0, y0, _, _) = e
+        return (y0 // 24, x0)
+    out.sort(key=lambda e: (e[0], key(e)))
+    return out
 
 
 def max_rect(m):
@@ -220,30 +259,33 @@ def write(path, name, pal, idx_p, spans, data, wins):
         fh.write("// so a row's spans are row[y] up to row[y + 1].\n")
         fh.write("static const uint16_t %s_ROW[%d] = {\n%s\n};\n\n"
                  % (name, PANEL + 1, col(rows, 12, "%5d")))
-        fh.write("// WHERE THE GAME MAY DRAW, in upright screen coordinates.\n")
-        fh.write("// The largest rectangle inside each exempt area, biggest\n")
-        fh.write("// first: the screen aperture, then the two bar windows.\n")
-        fh.write("// Emitted rather than measured by hand, so a redrawn chassis\n")
+        fh.write("// WHAT THE GAME DRAWS IN, in upright screen coordinates.\n")
+        fh.write("// Role, then the largest rectangle inside the area, then its\n")
+        fh.write("// full extent. Reading order within a role. Emitted from the\n")
+        fh.write("// drawing rather than measured by hand, so a redrawn chassis\n")
         fh.write("// moves the layout with it instead of disagreeing with it.\n")
-        for tag, ((x0, y0, x1, y1), bx) in zip(("APERTURE", "BAR_TOP", "BAR_BOT"), wins):
-            fh.write("#define %s_%s_X0 %3d\n" % (name, tag, x0))
-            fh.write("#define %s_%s_Y0 %3d\n" % (name, tag, y0))
-            fh.write("#define %s_%s_X1 %3d\n" % (name, tag, x1))
-            fh.write("#define %s_%s_Y1 %3d\n" % (name, tag, y1))
-            # THE BOUNDING BOX AS WELL, because the two answer different
-            # questions. The rectangle above fits INSIDE the window and is
-            # what a hit test wants. The box is the window's full extent,
-            # chamfered corners included, and is what a fill and a clip want:
-            # filling only the inner rectangle leaves the corners unpainted,
-            # and clipping to it cuts a moving label short of the glass.
-            fh.write("#define %s_%s_BOX_X0 %3d\n" % (name, tag, bx[0]))
-            fh.write("#define %s_%s_BOX_Y0 %3d\n" % (name, tag, bx[1]))
-            fh.write("#define %s_%s_BOX_X1 %3d\n" % (name, tag, bx[2]))
-            fh.write("#define %s_%s_BOX_Y1 %3d\n" % (name, tag, bx[3]))
+        fh.write("static const VgBezelSlot %s_SLOT[%d] = {\n" % (name, len(wins)))
+        for k, (role, inr, box) in enumerate(wins):
+            fh.write("    { %d, %3d,%4d,%4d,%4d,  %3d,%4d,%4d,%4d },   // %d %s\n"
+                     % ((role,) + tuple(inr) + tuple(box) + (k, ROLE_NAME[role])))
+        fh.write("};\n\n")
+        # AND THE SAME NUMBERS AS DEFINES, for a screen that lays itself out at
+        # compile time. The table is for the console layer, which is generic and
+        # asks at runtime; these are for a screen that knows its own drawing and
+        # would rather have constants. S0, S1... are the drawing slots in reading
+        # order; HL is the headline.
+        for k, (role, inr, box) in enumerate(wins):
+            tag = "HL" if role == HEADLINE else ("S%d" % k)
+            for suf, v in (("X0", inr[0]), ("Y0", inr[1]),
+                           ("X1", inr[2]), ("Y1", inr[3]),
+                           ("BX0", box[0]), ("BY0", box[1]),
+                           ("BX1", box[2]), ("BY1", box[3])):
+                fh.write("#define %s_%s_%s %3d\n" % (name, tag, suf, v))
         fh.write("\n")
         fh.write("static const VgBezel %s = {\n" % name)
-        fh.write("    %s_PAL, %s_DATA, %s_SPAN, %s_ROW,\n" % (name, name, name, name))
-        fh.write("    %d, %d,\n};\n" % (len(spans), len(data)))
+        fh.write("    %s_PAL, %s_DATA, %s_SPAN, %s_ROW, %s_SLOT,\n"
+                 % (name, name, name, name, name))
+        fh.write("    %d, %d, %d,\n};\n" % (len(spans), len(data), len(wins)))
 
 
 def main(argv):
@@ -261,7 +303,7 @@ def main(argv):
     if len(args) < 1:
         sys.exit(__doc__)
 
-    pal, _rgb, idx, mask, err = load(args[0], colors)
+    pal, _rgb, idx, mask, roles, err = load(args[0], colors)
 
 
     idx_p, mask_p = to_panel(idx), to_panel(mask)
@@ -280,10 +322,10 @@ def main(argv):
 
     if report:
         return
-    wins = regions(mask)
-    for tag, (w, bx) in zip(("aperture", "top bar", "bottom bar"), wins):
-        print("  %-10s inner x %3d..%3d y %3d..%3d   box x %3d..%3d y %3d..%3d"
-              % (tag, w[0], w[2], w[1], w[3], bx[0], bx[2], bx[1], bx[3]))
+    wins = regions(roles)
+    for k, (role, w, bx) in enumerate(wins):
+        print("  %d %-8s inner x %3d..%3d y %3d..%3d   box x %3d..%3d y %3d..%3d"
+              % (k, ROLE_NAME[role], w[0], w[2], w[1], w[3], bx[0], bx[2], bx[1], bx[3]))
     write(args[1], name, pal, idx_p, spans, data, wins)
     print("  wrote %s" % args[1])
 

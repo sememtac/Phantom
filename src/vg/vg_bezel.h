@@ -35,6 +35,31 @@
 // Nothing here is owned or copied. A bezel lives in flash and is pointed at.
 // ===========================================================================
 
+// WHAT A PAINTED AREA IS FOR. The artist paints the holes in the chassis in the
+// colour of the job they do, and the baker carries that through, so a screen asks
+// the drawing where its headline goes rather than being told a number.
+//
+// The roles used to be worked out from geometry -- largest region is the screen,
+// sort the rest by position -- which is inference dressed up as a rule, and it
+// put the two bar windows the wrong way round on the first drawing.
+enum : uint8_t {
+    VG_SLOT_DRAW = 0,       // magenta: the game draws here and decides what
+    VG_SLOT_HEADLINE = 1,   // cyan:    the ticker runs across here
+};
+
+// One hole, and TWO rectangles for it, because they answer different questions.
+//
+//   INNER  the largest rectangle that fits inside the hole. What a hit test and a
+//          layout want -- everything in it is really in the hole.
+//   BOX    the hole's full extent, chamfered corners included. What a fill and a
+//          clip want: filling only the inner rectangle leaves the corners
+//          unpainted, and clipping to it cuts a moving label short of the glass.
+struct VgBezelSlot {
+    uint8_t role;
+    int16_t x0, y0, x1, y1;
+    int16_t bx0, by0, bx1, by1;
+};
+
 // One run of stored pixels in a panel row, between two exempt areas.
 struct VgBezelSpan {
     uint16_t x0;        // where the run starts
@@ -47,10 +72,20 @@ struct VgBezel {
     const uint8_t*     data;    // one palette index per stored pixel
     const VgBezelSpan* span;    // every run, in panel row order
     const uint16_t*    row;     // first span of each row; SCR_H + 1 entries
+    const VgBezelSlot* slot;    // the holes, by role then reading order
 
     uint16_t spans;
     uint32_t pixels;
+    uint8_t  slots;
 };
+
+// The Nth hole the game draws in, top to bottom then left to right, or null.
+// A drawing with three keys along the bottom hands them over left to right, so a
+// screen names them by position and never by coordinate.
+const VgBezelSlot* vg_bezel_slot(int n);
+
+// The headline hole, or null if the drawing has none.
+const VgBezelSlot* vg_bezel_headline(void);
 
 // WHICH BEZEL, or none. A menu that wants the console asks for it and a menu
 // that does not gets nothing drawn, so this costs a null test on screens that

@@ -1,5 +1,6 @@
 ﻿#include "vg_screens.h"
 #include "vg_bezel.h"
+#include "vg_console.h"
 #include "generated/bezel_console.h"
 #include "vg_sfx.h"
 #include "vg_course.h"
@@ -99,7 +100,7 @@ int vg_select_row_at(float x, float y) {
 }
 
 bool vg_select_confirm_at(float x, float y) {
-    return vg_in_rect(x, y, SEL_GO_HIT_X, SEL_GO_HIT_Y, SEL_GO_HIT_W, SEL_GO_HIT_H);
+    return vg_console_key_at(SEL_GO_SLOT, x, y);
 }
 
 // THE FIVE AXES, AS A SHAPE.
@@ -435,249 +436,6 @@ static void draw_plan_noise(float p) {
     }
 }
 
-// ===========================================================================
-// THE CONSOLE, AS A PAIR OF BRACKETS
-//
-// Two screens are bolted into this machine now -- callsign registration and ship
-// select -- and they are the same machine, so the chassis, the running banner,
-// the key and the curve of the glass belong in one place rather than in each of
-// them. What a screen supplies is its banner, its note and the word on its key.
-//
-// console_open leaves the WARP BRACKET OPEN. Everything a screen draws between
-// the two calls is on the glass and bends; the banner and the key are drawn
-// outside it, because they sit in windows cut into the plating and a lit inset
-// that bows with the tube reads as a decal stuck on it.
-// ===========================================================================
-
-// The banner window, the ticker across it, and then the glass.
-// Where the sweep landed this frame. The fault is drawn at the line rather than
-// anywhere on the glass, so the two have to agree, and working the position out
-// twice would let them disagree by a pixel on the frames it matters.
-static float s_sweep_y = 0.0f;
-
-void console_open(const char* title, const char* note) {
-    vg_fill_rect(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
-                 BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
-                 BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1,
-                 INK_WELL);
-
-    const int   bx    = BEZEL_CONSOLE_BAR_TOP_X0;
-    const int   bw    = BEZEL_CONSOLE_BAR_TOP_X1 - bx + 1;
-    const int   scale = note ? 2 : 3;
-    const int   tw    = vg_text_width(title, scale);
-
-    // RIGHT TO LEFT, and it WRAPS. Moving right the block's tail enters first and
-    // the word arrives back to front -- SHIP SELECT. And a single pass leaves the
-    // glass empty between readings, which looks like a machine that has stopped;
-    // repeating every word-plus-gap makes the tail of one pass the head of the
-    // next.
-    //
-    // vg.state_t, not an integrated dt: the renderer has no dt to give, and an
-    // accumulated one runs the ticker at the frame rate rather than the clock.
-    //
-    // Clipped to the window BOX. It is needed because the screen aperture notches
-    // up either side of this bar, so there are exempt pixels off both ends that
-    // the chassis cannot paint over -- text ran out of the window and stayed on
-    // screen. The box lets the letters reach the glass; the chassis cuts the
-    // chamfer.
-    const int   period = tw + SEL_CHYRON_GAP;
-    const float u   = vg.state_t * SEL_CHYRON_RATE;
-    const int   off = (int)(u - floorf(u / (float)period) * (float)period);
-    const int   ty  = SEL_TITLE_CY - (note ? 12 : 10);
-
-    vg_rast_viewport(BEZEL_CONSOLE_BAR_TOP_BOX_X0, BEZEL_CONSOLE_BAR_TOP_BOX_Y0,
-                     BEZEL_CONSOLE_BAR_TOP_BOX_X1 - BEZEL_CONSOLE_BAR_TOP_BOX_X0 + 1,
-                     BEZEL_CONSOLE_BAR_TOP_BOX_Y1 - BEZEL_CONSOLE_BAR_TOP_BOX_Y0 + 1);
-
-    // WHITE, because the machine is not the one asking. A banner is the
-    // tournament talking to you through the terminal -- the same voice that
-    // speaks over a match -- so it takes COL_IFT. The key stays amber: that is
-    // furniture, and the difference between the two is the point.
-    for (int tx = bx + bw - off; tx + tw > bx; tx -= period)
-        vg_text(tx, ty, title, COL_IFT, scale);
-
-    // A note does NOT run. It is a sentence to be read once, not a banner, and a
-    // moving one would be the only thing on the screen asking to be chased.
-    if (note) centred(SEL_TITLE_CY + 4, note, INK, 1);
-    vg_rast_viewport_full();
-
-    // GLASS FROM HERE. The plating is cold steel and dead flat; the display under
-    // it is a tube, and a tube bends its picture. The curve pulls the corners of
-    // the picture inward and the chassis paints last over what is left, so the
-    // display does not end at a drawn border -- it disappears beneath the steel.
-    //
-    // Finer chords than the cockpit uses: a panel border is 266px on a side and
-    // at the default that is five straight pieces with visible joints.
-    vg_hud_warp(true, SEL_GLASS_WARP);
-    vg_hud_warp_seg(SEL_GLASS_SEG);
-
-    // --- what makes it a display rather than a window ---------------------
-    //
-    // Both of these go down FIRST, so the screen's own instruments draw over
-    // them. That is the right way round and not just the safe one: they belong
-    // to the DISPLAY, not to what it is showing, and a fiducial that crossed a
-    // word would be reading as content.
-    //
-    // REGISTRATION CROSSES, tiled. Every instrument panel ever built has them --
-    // they are alignment marks, the thing a display is checked against rather
-    // than anything it is telling you -- and a regular grid of them across the
-    // glass is what says "this readout was manufactured". They are in the
-    // concept art for the same reason.
-    //
-    // They also do a second job here, which is why they are inside the warp
-    // bracket: a curve needs something regular laid across it to be seen at all.
-    // Bent text is just badly set and a bent border could be a drawn shape, but a
-    // grid of identical marks that are not on a grid any more can only be glass.
-    for (int gy = SEL_AP_Y0 + SEL_TICK_STEP / 2; gy < SEL_AP_Y1; gy += SEL_TICK_STEP)
-        for (int gx = SEL_AP_X0 + SEL_TICK_STEP / 2; gx < SEL_AP_X1; gx += SEL_TICK_STEP) {
-            vg_line((float)(gx - SEL_TICK_ARM), (float)gy,
-                    (float)(gx + SEL_TICK_ARM), (float)gy, INK_TRACE);
-            vg_line((float)gx, (float)(gy - SEL_TICK_ARM),
-                    (float)gx, (float)(gy + SEL_TICK_ARM), INK_TRACE);
-        }
-
-    // THE SWEEP. One line down the glass, on a loop, which is the cheapest
-    // possible way to say the hardware is powered: a still picture is a picture,
-    // and a still picture with one thing crossing it on a clock is a MACHINE
-    // showing you a picture.
-    //
-    // IT RUNS WIDE OF THE GLASS ON PURPOSE. The warp is a barrel curve, so it
-    // pulls a point inward in proportion to its distance from the centre -- and
-    // the ends of a line spanning the whole aperture are the furthest points on
-    // it. Drawn edge to edge the sweep came up SHORT of both edges, which read as
-    // the line being cut off rather than as the glass being curved. It is drawn
-    // past both edges now and the chassis trims it, which is the same division of
-    // labour the banner uses.
-    //
-    // AND IT IS NOT A METRONOME. A constant rate reads as a screensaver; this is
-    // meant to be a tube that has been running in a shed in orbit for years.
-    // Every pass gets its own pace from a hash of the pass number:
-    //
-    //   AN EXPONENT ON THE RAMP, which bends the speed without moving the ends.
-    //   f and f^e both run 0 to 1, so a pass still starts at the top and finishes
-    //   at the bottom however hard it is bent -- the seam between passes stays a
-    //   seam and never becomes a jump.
-    //
-    //   A STALL, on one pass in eight. The line stops partway down, sits there,
-    //   and then carries on. It is the single most convincing thing here: broken
-    //   hardware does not run slowly, it HESITATES.
-    //
-    //   AND THE LINE BREAKS UP on one pass in four, into pieces with gaps. A
-    //   sweep that is always whole is a drawn object; one that is sometimes in
-    //   bits is a signal.
-    //
-    // All of it is a pure function of vg.state_t. Nothing is integrated and
-    // nothing is sampled per frame, so it runs at the same pace on the desktop
-    // and on the board and a replay reproduces it.
-    {
-        const float    hh   = (float)(SEL_AP_Y1 - SEL_AP_Y0);
-        const float    u    = vg.state_t * SEL_SWEEP_RATE;
-        const float    pass = floorf(u / hh);
-        const uint32_t ph   = vg_glitch_hash((uint32_t)pass * 2654435761u);
-
-        float f = u / hh - pass;
-        f = powf(f, 0.65f + (float)(ph & 255u) * (0.85f / 255.0f));
-
-        if (((ph >> 9) & 7u) == 0u) {
-            const float at = 0.20f + (float)((ph >> 12) & 127u) * (0.55f / 127.0f);
-            if (f > at && f < at + 0.10f) f = at;
-        }
-
-        const float sy = (float)SEL_AP_Y0 + f * hh;
-        s_sweep_y = sy;          // the fault below happens AT the line, not near it
-        const float x0 = (float)(SEL_AP_X0 - SEL_SWEEP_OVER);
-        const float x1 = (float)(SEL_AP_X1 + SEL_SWEEP_OVER);
-
-        // Two lines rather than one -- a faint band with a brighter edge leading
-        // it -- because a single hairline reads as a scratch ON the glass where a
-        // pair reads as something passing behind it.
-        const int n = (((ph >> 17) & 3u) == 0u) ? 3 : 1;
-        for (int i = 0; i < n; i++) {
-            const float a = x0 + (x1 - x0) * ((float)i / (float)n);
-            const float b = x0 + (x1 - x0) * ((float)(i + 1) / (float)n)
-                          - ((n > 1) ? 26.0f : 0.0f);
-            vg_line(a, sy, b, sy, INK_FAINT);
-            vg_line(a, sy + 2.0f, b, sy + 2.0f, INK_TRACE);
-        }
-    }
-
-    // AND THE SWEEP CATCHES, now and then.
-    //
-    // THE FAULT BELONGS TO THE SWEEP NOW, and that is the whole of the fix. It
-    // used to tear bands anywhere on the glass and scatter grain over the rest,
-    // and the trouble with that is not that it was ugly -- it is that it gave the
-    // eye three or four new places to look every time it fired, on a screen whose
-    // job is to be read. A fault with no location is noise, and noise is
-    // distracting precisely because there is nothing to find in it.
-    //
-    // Tied to the line, there is ONE place it can happen and the eye already
-    // knows where that is. It reads as the sweep snagging rather than as the
-    // panel breaking, which is the smaller and better claim: this is a tube that
-    // has been running a long time, not one that is failing now.
-    //
-    // Same vocabulary as a hit -- vg_glitch's hash, bucketed rather than sampled
-    // per frame -- because the game has one way of saying a readout is in trouble
-    // and a second invented here would read as a different kind of trouble.
-    {
-        const uint32_t slow = (uint32_t)(vg.state_t * SEL_FAULT_RATE);
-        const uint32_t sh   = vg_glitch_hash(slow * 40503u + 17u);
-        if ((sh % 5u) == 0u) {
-            const int x0 = SEL_AP_X0, w = SEL_AP_X1 - SEL_AP_X0;
-            const int bh = 3 + (int)((sh >> 7) % 5u);
-            const int by = (int)s_sweep_y - bh / 2;
-
-            // A TEAR IS SHIFTED SIGNAL, not a stripe laid over the top: the band
-            // is knocked out and a fragment put back beside where it came from.
-            //
-            // The fragment is BRIGHT because a dark one is nothing. The first
-            // version borrowed the plan view's colours, which work there because
-            // that slot is full of lit ship and a knock-out has something to
-            // remove; out on open glass INK_WELL over near-black showed only
-            // where a band happened to cross a word.
-            if (by > SEL_AP_Y0 && by + bh < SEL_AP_Y1) {
-                vg_fill_rect(x0, by, w, bh, INK_WELL);
-                const int fw = 40 + (int)((sh >> 19) % 120u);
-                int fx = x0 + (int)((sh >> 5) % (uint32_t)(w - fw));
-                if (fx < x0)          fx = x0;
-                if (fx + fw > x0 + w) fx = x0 + w - fw;
-                vg_fill_rect(fx, by, fw, 2, INK_BRIGHT);
-            }
-        }
-    }
-}
-
-// Back to flat, then the key, then the steel over everything.
-void console_close(const char* key) {
-    vg_hud_warp(false, 1.0f);
-
-    // THE CHASSIS ALREADY DREW THE KEY'S BOX. vg_button paints a well, a 2px
-    // frame and corner ticks, and every one of those is a second border inside
-    // the lit window the metal provides -- a button on a button. What is left of
-    // a key when the machine owns its box is the label, the line under it that
-    // marks the primary action, and the one thing a key must do: change while it
-    // is held.
-    const int  lw   = vg_text_width(key, 3);
-    const int  lx   = SEL_GO_X + (SEL_GO_W - lw) / 2;
-    const int  ly   = SEL_GO_Y + (SEL_GO_H - 21) / 2;
-    // THE SAME RECT THE TAP USES, not the one the key is drawn in. A press that
-    // will register has to light the key, or the player learns that the key is
-    // unreliable when what is actually happening is that it lights on a smaller
-    // area than it accepts.
-    const bool down = vg_press_in(SEL_GO_HIT_X, SEL_GO_HIT_Y,
-                                  SEL_GO_HIT_W, SEL_GO_HIT_H);
-
-    vg_fill_rect(BEZEL_CONSOLE_BAR_BOT_BOX_X0, BEZEL_CONSOLE_BAR_BOT_BOX_Y0,
-                 BEZEL_CONSOLE_BAR_BOT_BOX_X1 - BEZEL_CONSOLE_BAR_BOT_BOX_X0 + 1,
-                 BEZEL_CONSOLE_BAR_BOT_BOX_Y1 - BEZEL_CONSOLE_BAR_BOT_BOX_Y0 + 1,
-                 down ? INK_TRACE : INK_WELL);
-    vg_text(lx, ly, key, INK_MAX, 3);
-    vg_fill_rect(lx, ly + 24, lw, 2, down ? INK_MAX : INK_BRIGHT);
-
-    // LAST, so the steel masks whatever ran past the glass.
-    vg_bezel_use(&BEZEL_CONSOLE);
-    vg_bezel_prim();
-}
-
 void vg_draw_select(void) {
     const bool opp = (vg.gym && vg.sel_opp);
     const int  cur = opp ? (int)vg.gym_opp : (int)vg.ship;
@@ -716,11 +474,12 @@ void vg_draw_select(void) {
     // happens under the thickest part of the noise.
     const int shown = (ease < 0.5f && s_tr_from >= 0) ? s_tr_from : cur;
 
-    console_open(vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
-                       : "SELECT SHIP",
-                 vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
-                               : "PRACTICE -- NOTHING IS SCORED")
-                        : nullptr);
+    vg_console_open(&BEZEL_CONSOLE,
+                    vg.gym ? (opp ? "SELECT OPPONENT" : "SELECT YOUR SHIP")
+                           : "SELECT SHIP",
+                    vg.gym ? (opp ? "THEY RESPAWN UNTIL YOU LEAVE"
+                                  : "PRACTICE -- NOTHING IS SCORED")
+                           : nullptr);
 
     // --- the wheel ---------------------------------------------------------
     vg_rect(SEL_WHEEL_X, SEL_WHEEL_Y, SEL_WHEEL_W, SEL_WHEEL_H, INK_TRACE);
@@ -854,7 +613,8 @@ void vg_draw_select(void) {
     draw_plan_view(vg_spec((ShipClass)shown), shown);
     draw_plan_noise(p);
 
-    console_close((vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
+    vg_console_key(SEL_GO_SLOT, (vg.gym && !vg.sel_opp) ? "NEXT" : "ENTER");
+    vg_console_close();
 }
 
 // ---------------------------------------------------------------------------
