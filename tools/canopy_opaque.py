@@ -129,8 +129,15 @@ def load(src, colors):
 
 def to_panel(a):
     """Picture space to PANEL rows. The glass is mounted a quarter turn, so the
-    firmware reads straight lines and the rotation is done once, here."""
-    return np.rot90(a, 3)
+    firmware reads straight lines and the rotation is done once, here.
+
+    ONE QUARTER TURN, THE SAME WAY THE BEZEL BAKER TURNS. This was three, which
+    is the same axis and the opposite direction -- a hundred and eighty degrees
+    out, which on a cockpit that is very nearly symmetrical about its vertical
+    does not look like a rotation at all. It looks like the canopy is upside
+    down, which is what it was reported as.
+    """
+    return np.rot90(a, 1)
 
 
 def spans_of(exempt_p, add_p, zone_p):
