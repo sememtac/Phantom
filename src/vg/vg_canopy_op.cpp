@@ -129,6 +129,9 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     bool             live[VG_CANOPY_MAX_ZONES];
     uint16_t         edge[VG_CANOPY_MAX_ZONES];
     uint8_t          heat[VG_CANOPY_MAX_ZONES];
+    uint8_t          hotth[VG_CANOPY_MAX_ZONES];   // cells still drawn as light
+    uint8_t          revth[VG_CANOPY_MAX_ZONES];   // cells the gate is still holding
+    uint16_t         held[VG_CANOPY_MAX_ZONES];    // ...and what one of those comes to
     const uint16_t*  zpal[VG_CANOPY_MAX_ZONES];
     const int nz = (int)c->zones;
     for (int z = 0; z < nz && z < VG_CANOPY_MAX_ZONES; z++) {
@@ -142,6 +145,33 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
         if (!g) { zpal[z] = pal; continue; }
         if (s_hot_q[z] != (int16_t)g) hot_lut(c, z, g);
         zpal[z] = s_hot[z];
+
+        // THE PIXEL UNDER A HOT ONE IS OFTEN ALREADY KNOWN, and that is worth more
+        // than any arithmetic. The measured claim above SPAN_BODY in vg_canopy_draw.cpp
+        // is that a blended pixel costs its READ-MODIFY-WRITE and not its maths --
+        // eight cycles taken out of the blend there changed nothing at all -- and that
+        // the only lever left is to touch fewer pixels.
+        //
+        // The gate runs first, over this same row, and where it is still HOLDING a
+        // dither cell it has just written one flat colour there. So a hot pixel over a
+        // held cell adds a known value to a known value: the answer is a constant for
+        // the whole region and it can be STORED, with no read at all. Only the cells
+        // the world has come through need the real blend.
+        //
+        // The two thresholds come out of the same 4x4 cell, so the test is exact
+        // rather than approximate: rev 0 makes every cell held and rev 255 makes none,
+        // which is precisely when the gate stops touching the region.
+        //
+        // Worth most exactly where the spike is. A region flashes at full heat with
+        // its reveal still at zero -- every pixel light, every cell held -- so the
+        // frame that used to be 45,591 read-modify-writes is now that many stores.
+        hotth[z] = (uint8_t)(((255u - g) * 17u) >> 8);
+        const uint32_t rv = vg_canopy_zone_reveal(z);
+        revth[z] = (uint8_t)((rv * 17u) >> 8);
+        // Through add_px itself, so the stored value cannot drift from the blended one.
+        uint16_t k = vg_canopy_zone_fill(z);
+        add_px(&k, edge[z]);
+        held[z] = k;
     }
 
     // IS ANYTHING HAPPENING TO A REGION AT ALL. False for almost every frame of a
@@ -252,13 +282,23 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 const uint8_t* bay = vg_canopy_bayer_row(y);
                 // 0 while white-hot, so every cell is still light; 16 once cool, which
                 // is past every cell, so every cell has become paint.
-                const uint32_t th = ((255u - hz) * 17u) >> 8;
+                const uint32_t th   = hotth[sp->zone];
+                // ...and the same cell against the gate's own reveal. A cell at or above
+                // this one is still holding the fill, so its blended value is the
+                // constant worked out in the prologue and needs no read. Only usable
+                // when the gate actually ran this row: nothing else puts that colour
+                // there. 16 is past every cell, which turns the whole test off.
+                const uint32_t thr  = gate ? (uint32_t)revth[sp->zone] : 16u;
+                const uint16_t k    = held[sp->zone];
+                const uint16_t litz = edge[sp->zone];
                 const int32_t  step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
                 const int32_t  top  = (int32_t)(len - 1) << 16;
                 int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
                 for (int x = c0; x < c1; x++) {
-                    if ((uint32_t)bay[x & 3] >= th) {
-                        add_px(dst++, edge[sp->zone]);
+                    const uint32_t bc = bay[x & 3];
+                    if (bc >= th) {
+                        if (bc >= thr) *dst++ = k;          // known: no read
+                        else           add_px(dst++, litz); // the world is behind it
                     } else {
                         const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
                         *dst++ = spal[src[a >> 16]];

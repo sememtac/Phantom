@@ -169,6 +169,15 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m);
 // states in the same language rather than inventing a fade. One row of the 4x4.
 const uint8_t* vg_canopy_bayer_row(int y);
 
+// WHAT THE GATE HAS JUST LEFT IN THE BAND, which is a question about the CLOCK and
+// not about any drawing: how far a region has dissolved, 0 held and 255 fully in, and
+// what colour a still-held pixel of it is. A caller that knows both can work out the
+// value of a held pixel WITHOUT READING IT -- see the note at the arrival's inner loop
+// in vg_canopy_op.cpp, and the measured claim above SPAN_BODY that a blended pixel
+// costs its read-modify-write and not its arithmetic.
+uint8_t  vg_canopy_zone_reveal(int z);
+uint16_t vg_canopy_zone_fill(int z);
+
 bool     vg_canopy_gate_on(void);
 void     vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, int z);
 bool     vg_canopy_zone_live(int z);

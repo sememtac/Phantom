@@ -1358,6 +1358,13 @@ void vg_canopy_hit_step(float dt) {
 
 const uint8_t* vg_canopy_bayer_row(int y) { return &BAYER4[(y & 3) << 2]; }
 
+uint8_t  vg_canopy_zone_reveal(int z) {
+    return (z >= 0 && z < VG_CANOPY_MAX_ZONES) ? s_izon[z] : 255;
+}
+uint16_t vg_canopy_zone_fill(int z) {
+    return (z >= 0 && z < VG_CANOPY_MAX_ZONES) ? s_ifill[z] : 0;
+}
+
 bool vg_canopy_gate_on(void)      { return s_gate_on; }
 bool vg_canopy_zone_live(int z) {
     if (!s_intro_on) return true;              // nothing is holding anything back
