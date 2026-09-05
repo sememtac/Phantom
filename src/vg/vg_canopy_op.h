@@ -88,9 +88,16 @@ struct VgCanOp {
 };
 
 // IS THE EXPERIMENT ON. Default true, because a branch called opaque-canopy that
-// has to be argued into using it would answer a different question. The desktop
-// turns it off with --delta-canopy so the two can be compared in one sitting;
-// nothing on the board can, which is deliberate for now -- flying it is the test.
+// has to be argued into using it would answer a different question.
+//
+// BOTH BUILDS CAN TURN IT OFF NOW. The desktop takes --delta-canopy and the board
+// takes 'o' and 'O' over the link -- see the block beside 'q' in vg_capture.cpp,
+// which is the same argument about comparing two flights from memory. The board
+// needed it for a reason that is worth recording: two BOARDS carrying two builds
+// is not an A/B. A recorded session navigates the menus by tap COORDINATE, so a
+// build whose menus have moved replays a different session entirely -- measured,
+// on the same .phr: one board flew and the other never reached the cockpit, and
+// the canopy counter read a clean zero without anything being wrong.
 extern bool vg_canopy_op_on;
 
 // WHICH DRAWING, or none. A null one costs a test and draws nothing, which is

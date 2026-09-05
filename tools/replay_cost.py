@@ -124,6 +124,11 @@ def run(port, path, limit):
     # which is what proved the copy rather than the new command was at fault.
     # No audio: nobody is going to listen to a run with no pictures.
     try:
+        # WHICH COCKPIT, BEFORE THE RUN STARTS. Stated rather than toggled, so a
+        # run measures the one it asked for and not the one the last run left.
+        link.ser.write(b"O" if args.delta_canopy else b"o")
+        link.ser.flush()
+        time.sleep(0.2)
         link.replay_start(ses.hdr, audio=False, cmd=b"T")
     except Desync as e:
         sys.exit("%s\n  Record a new session: sizeof(VgInput) probably changed." % e)
@@ -427,6 +432,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session")
+    ap.add_argument("--delta-canopy", action="store_true",
+                    help="fly the light-delta cockpit instead of the opaque "
+                         "bake. Run once with and once without to compare "
+                         "them on ONE board and one session.")
     ap.add_argument("--port", required=True)
     ap.add_argument("--frames", type=int, default=0,
                     help="stop after this many frames (default: the whole session)")

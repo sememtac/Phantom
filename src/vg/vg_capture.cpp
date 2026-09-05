@@ -1,4 +1,7 @@
 #include "vg_capture.h"
+#include "vg_canopy_op.h"
+#include "vg_canopy_set.h"
+#include "vg_game.h"
 #include "esp_task_wdt.h"
 #include "vg_config.h"
 #include "vg_replay.h"
@@ -257,6 +260,25 @@ void vg_capture_poll(void) {
             // Entries belong to vg_replay_next. Once it owns the stream, this
             // loop must not touch another byte.
             if (vg_replay_mode() != VG_RP_OFF) break;
+            continue;
+        }
+        if (c == 'o' || c == 'O') {
+            // WHICH COCKPIT, WHILE FLYING, and this is 'q' one row down: a
+            // compile-time switch means comparing two flights from memory, which
+            // is no way to judge either how something looks or what it costs.
+            //
+            // TWO LETTERS, NOT A TOGGLE, unlike 'q'. The timed replay drives this
+            // -- see tools/replay_cost.py --delta-canopy -- and a run has to be
+            // able to STATE which cockpit it wants rather than to flip whatever
+            // the last run left. A toggle measured whichever one it happened to
+            // land on, which is a comparison that reports the wrong answer half
+            // the time and never says so.
+            //
+            // vg_canopy_op_for reads the flag, so setting it is enough for the
+            // next entry into flight; the use() call covers being in one already.
+            vg_canopy_op_on = (c == 'o');
+            vg_canopy_op_use(vg_canopy_op_on ? vg_canopy_op_for(vg.ship) : nullptr);
+            Serial.printf("\nvg_canopy: %s\n", vg_canopy_op_on ? "OPAQUE" : "DELTA");
             continue;
         }
         if (c == 'q') {
