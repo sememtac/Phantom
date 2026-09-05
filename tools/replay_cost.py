@@ -108,7 +108,45 @@ def git_commit():
         return "unknown"
 
 
-def run(port, path, limit):
+def choose_canopy(port, delta):
+    """Tell the board which cockpit to fly, and REFUSE TO GO ON unless it says so.
+
+    WHY THIS IS NOT JUST A WRITE. It was, and the pair of runs it produced were
+    identical to the microsecond -- can 5894 both ways, every scene counter equal.
+    That reads as "the two cockpits cost the same", which would be a finding. It
+    was not one: the command had not taken, and both runs flew the same cockpit.
+
+    A measurement that silently compares a thing against itself is worse than one
+    that fails, because it answers. So this waits for the device to name the
+    cockpit back and stops the run if it does not.
+
+    Sent on a plain handle before PhantomLink opens, because the link runs a reader
+    thread of its own and the acknowledgement has to be read by somebody.
+    """
+    want = "DELTA" if delta else "OPAQUE"
+    ser = open_quiet(port)
+    try:
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        for _ in range(4):
+            ser.write(b"O" if delta else b"o")
+            ser.flush()
+            t0, buf = time.time(), ""
+            while time.time() - t0 < 1.5:
+                buf += ser.read(4096).decode("ascii", "replace")
+                if "vg_canopy: " + want in buf:
+                    print("  cockpit: %s" % want)
+                    return
+        sys.exit("the board never acknowledged '%s'. Either it is running a build\n"
+                 "from before the cockpit switch existed -- see vg_capture.cpp -- or\n"
+                 "the port is not the board. Not measuring: a run that cannot state\n"
+                 "which cockpit it flew has nothing to compare."
+                 % ("O" if delta else "o"))
+    finally:
+        ser.close()
+
+
+def run(port, path, limit, delta_canopy=False):
     ses = Session.load(path)
     n = len(ses.frames)
     if limit and limit < n:
@@ -116,6 +154,10 @@ def run(port, path, limit):
     print("%s: %d frames, timed replay (no pixels)" % (os.path.basename(path), n))
 
     reset_board(port, settle=6.0)
+    # WHICH COCKPIT, before the link opens and before a frame is sent. Stated
+    # rather than toggled, so a run measures the one it asked for and not the one
+    # the last run left -- and checked, for the reason choose_canopy gives.
+    choose_canopy(port, delta_canopy)
     link = PhantomLink(port)
     link.open()
 
@@ -124,11 +166,6 @@ def run(port, path, limit):
     # which is what proved the copy rather than the new command was at fault.
     # No audio: nobody is going to listen to a run with no pictures.
     try:
-        # WHICH COCKPIT, BEFORE THE RUN STARTS. Stated rather than toggled, so a
-        # run measures the one it asked for and not the one the last run left.
-        link.ser.write(b"O" if args.delta_canopy else b"o")
-        link.ser.flush()
-        time.sleep(0.2)
         link.replay_start(ses.hdr, audio=False, cmd=b"T")
     except Desync as e:
         sys.exit("%s\n  Record a new session: sizeof(VgInput) probably changed." % e)
@@ -450,7 +487,7 @@ def main():
     if a.fetch:
         r = fetch(a.port, os.path.basename(a.session))
     elif a.run_only:
-        run(a.port, a.session, a.frames)   # never returns; see the end of run()
+        run(a.port, a.session, a.frames, a.delta_canopy)   # never returns; see the end of run()
         return
     else:
         # THREE PROCESSES, AND EACH ONE EXISTS FOR A CRASH.
@@ -475,6 +512,12 @@ def main():
                 a.session, "--port", a.port, "--run-only"]
         if a.frames:
             argv += ["--frames", str(a.frames)]
+        # AND WHICH COCKPIT. Forgetting this is not a small bug: the child chose the
+        # default either way, so --delta-canopy produced a run identical to the one it
+        # was compared against, and the tool reported "+0.0% change" with total
+        # confidence. Every flag `run` reads has to be forwarded here.
+        if a.delta_canopy:
+            argv += ["--delta-canopy"]
         # PIPED AND RE-EMITTED, not inherited. Inheriting this process's stdout is the
         # obvious way to keep the progress line live, and it works from a terminal and
         # fails when something else owns the handle -- a background runner, a redirect
