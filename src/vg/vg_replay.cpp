@@ -55,6 +55,7 @@ static uint32_t s_resync = 0;
 static const char* s_why = "not started";
 static uint32_t s_t_n   = 0;
 static uint32_t s_t_sum[5], s_t_max[5];
+static uint32_t s_c_sum[3];   // the canopy on core 0, on core 1, and the split row
 // The `world` split for the same frames, kept the same way. Reported on its own line
 // because the two answer different questions: the costs above are "what does a frame come
 // to", and these are "which part of it grows when the fight gets busy".
@@ -252,6 +253,15 @@ bool vg_replay_timed(void) { return s_timed; }
 //
 // Asking for it cannot race. Returns false when there is nothing to report, which is the
 // honest answer before any timed run and after a reboot.
+// THE CANOPY BY CORE. `can` in the COST line is one band's slower half, summed --
+// the number the frame waits for. These are the two halves themselves, and the
+// row the band was cut at, so a `can` that equals the whole pass can be told
+// from a pass that is simply that slow.
+void vg_replay_note_can(uint32_t c0, uint32_t c1, uint32_t at) {
+    if (!s_timed) return;
+    s_c_sum[0] += c0; s_c_sum[1] += c1; s_c_sum[2] += at;
+}
+
 bool vg_replay_report_cost(void) {
     if (!s_t_n) return false;
     Serial.printf("vg_replay: COST frames %u | can %u/%u | rast %u/%u | "
@@ -262,6 +272,9 @@ bool vg_replay_report_cost(void) {
                   (unsigned)(s_t_sum[2] / s_t_n), (unsigned)s_t_max[2],
                   (unsigned)(s_t_sum[3] / s_t_n), (unsigned)s_t_max[3],
                   (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4]);
+    Serial.printf("vg_replay: CAN c0 %u | c1 %u | at %u  (mean us; mean rows of a band on core 0)\n",
+                  (unsigned)(s_c_sum[0] / s_t_n), (unsigned)(s_c_sum[1] / s_t_n),
+                  (unsigned)(s_c_sum[2] / s_t_n));
     // A SECOND LINE, because the first is already at the edge of a terminal's width and
     // because these answer a different question. The WORST column matters more than the
     // mean here: `world` is a curve to flatten, so what is wanted is how far it bends.
@@ -576,6 +589,7 @@ static void begin_play(void) {
     s_resync = 0;
     s_why = "still running";
     for (int i = 0; i < 5; i++) { s_t_sum[i] = 0; s_t_max[i] = 0; }
+    s_c_sum[0] = s_c_sum[1] = s_c_sum[2] = 0;
     for (int i = 0; i < 7; i++) { s_w_sum[i] = 0; s_w_max[i] = 0; }
     // Announce BEFORE the transmit task starts. After it starts, this core and
     // core 0 would both write to Serial, and two writers corrupt the stream.

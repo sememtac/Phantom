@@ -4,12 +4,63 @@
 #include "vg_config.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <string.h>
 
 // The opaque canopy. See vg_canopy_op.h for what this is an experiment in.
 
 bool vg_canopy_op_on = true;
 
 static const VgCanOp* s_cur = nullptr;
+
+// EXPERIMENT: THE BAKE, RESIDENT, instead of streamed from flash.
+//
+// The tables are `static const`, which puts 116 KB of them in flash behind a data
+// cache a fraction of that size, and the pass reads all of it every frame: the pixel
+// bytes once each and the span table once. The delta bake is 21 KB, and a copy of it
+// to SRAM measured nothing, which says it was already living in the cache. This one
+// cannot, so every frame fetches it again -- and a line from QIO flash is a serial
+// transaction that no amount of loop tuning can hide. The desktop cannot see this:
+// its L2 holds the whole bake.
+//
+// Internal SRAM has 3 KB free, so the copy goes to PSRAM: the same cache in front,
+// but octal at double data rate behind it, several times the flash's fill rate. An
+// instrument, switched from the serial link ('r' / 'h' in vg_capture.cpp) so one
+// flash can measure both. If it moves the needle, the real change is a smaller table
+// or a residency decided at build time; this is not that change. The copy is made
+// once and kept: there is one bake, and the game never lets go of it.
+static const VgCanOp* s_src      = nullptr;    // what was asked for
+static bool           s_resident = false;
+static VgCanOp        s_copy;
+static const VgCanOp* s_copy_of  = nullptr;
+
+static const VgCanOp* resident(const VgCanOp* c) {
+    if (!c || !s_resident) return c;
+    if (s_copy_of == c) return &s_copy;
+    const size_t npal = 256 * sizeof(uint16_t);
+    const size_t nspn = (size_t)c->spans * sizeof(VgCanOpSpan);
+    const size_t nrow = (size_t)(SCR_H + 1) * sizeof(uint16_t);
+    uint16_t*    pal  = (uint16_t*)   heap_caps_malloc(npal,      MALLOC_CAP_SPIRAM);
+    uint8_t*     data = (uint8_t*)    heap_caps_malloc(c->pixels, MALLOC_CAP_SPIRAM);
+    VgCanOpSpan* span = (VgCanOpSpan*)heap_caps_malloc(nspn,      MALLOC_CAP_SPIRAM);
+    uint16_t*    row  = (uint16_t*)   heap_caps_malloc(nrow,      MALLOC_CAP_SPIRAM);
+    if (!pal || !data || !span || !row) {
+        free(pal); free(data); free(span); free(row);
+        return c;                                   // no room: the flash tables still work
+    }
+    memcpy(pal,  c->pal,  npal);
+    memcpy(data, c->data, c->pixels);
+    memcpy(span, c->span, nspn);
+    memcpy(row,  c->row,  nrow);
+    s_copy = *c;
+    s_copy.pal = pal; s_copy.data = data; s_copy.span = span; s_copy.row = row;
+    s_copy_of = c;
+    return &s_copy;
+}
+
+void vg_canopy_op_resident(bool on) {
+    s_resident = on;
+    vg_canopy_op_use(s_src);
+}
 
 // THE PAINT, RUN HOT. One table a region, and the shape of this is copied from
 // canopy_ilut rather than invented: the delta cockpit's members come up white and cool
@@ -36,7 +87,8 @@ static uint16_t (*s_hot)[256] = nullptr;     // [VG_CANOPY_MAX_ZONES][256]
 static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 
 void vg_canopy_op_use(const VgCanOp* c) {
-    s_cur = c;
+    s_src = c;
+    s_cur = resident(c);
     if (c && !s_hot)
         s_hot = (uint16_t (*)[256])heap_caps_malloc(
                     (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);

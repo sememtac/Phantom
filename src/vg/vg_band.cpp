@@ -756,6 +756,11 @@ enum { W_AA = 0, W_LN, W_TRI, W_OTH, W_CAN, W_PT, W_GL, W_FL, W_BEZ };
 // wait >> half means the helper is, and it is too low.
 // Both small against `prim` means the rendezvous itself is the cost.
 static uint32_t s_can_half = 0, s_can_wait = 0, s_can_at = 0, s_can_n = 0;
+// The canopy's cycles on EACH core, summed over the bands. s_wall_cyc[W_CAN] keeps
+// the slower half a band, which is what the frame waits for; these are the two
+// halves themselves, so a `can` that equals the whole pass can be told from a
+// pass that is simply that slow.
+static uint32_t s_can_core[2];
 uint32_t vg_rast_aa_us(void)   { return s_wall_cyc[W_AA]  / 240u; }
 uint32_t vg_rast_ln_us(void)   { return s_wall_cyc[W_LN]  / 240u; }
 uint32_t vg_rast_tri_us(void)  { return s_wall_cyc[W_TRI] / 240u; }
@@ -767,6 +772,7 @@ uint32_t vg_rast_can_both_us(void) { return (s_cyc_can[0] + s_cyc_can[1]) / 240u
 uint32_t vg_rast_canhalf_us(void) { return s_can_half / 240u; }
 uint32_t vg_rast_canwait_us(void) { return s_can_wait / 240u; }
 int      vg_rast_can_split(void)  { return s_can_n ? (int)(s_can_at / s_can_n) : -1; }
+uint32_t vg_rast_can_core_us(int c) { return s_can_core[c & 1] / 240u; }
 uint32_t vg_rast_pt_us(void)   { return s_wall_cyc[W_PT]  / 240u; }
 uint32_t vg_rast_gl_us(void)   { return s_wall_cyc[W_GL]  / 240u; }
 uint32_t vg_rast_fl_us(void)   { return s_wall_cyc[W_FL]  / 240u; }
@@ -1586,6 +1592,7 @@ draw_band(int band_index, uint16_t* band) {
         const uint32_t d0 = CYC_ALL[i][0] - snap[i][0];
         const uint32_t d1 = CYC_ALL[i][1] - snap[i][1];
         s_wall_cyc[i] += (d0 > d1) ? d0 : d1;
+        if (i == W_CAN) { s_can_core[0] += d0; s_can_core[1] += d1; }
     }
 
     s_prim_us += micros() - t_prim;
@@ -1700,6 +1707,7 @@ void vg_rast_flush(void) {
         s_ln_px[c] = s_ln_n[c] = 0;
     }
     s_can_half = s_can_wait = s_can_at = s_can_n = 0;
+    s_can_core[0] = s_can_core[1] = 0;
 
     // THE WHOLE FRAME'S CHART, BOTH CORES, BEFORE ANY BAND IS DRAWN.
     //

@@ -106,6 +106,9 @@ void vg_replay_note_bands(const uint32_t* band_us, int n);
 
 // Core 0's measured idle for the same frame, microseconds. See the hook in main.cpp.
 void vg_replay_note_idle0(uint32_t us);
+// The canopy's cycles on each core, and the row the band was cut at. See the
+// CAN line in vg_replay_report_cost.
+void vg_replay_note_can(uint32_t c0_us, uint32_t c1_us, uint32_t at_rows);
 
 // The external-memory cache counters, delta'd per frame. The EXTMEM block free-runs
 // from reset and aggregates both cores; IRAM fetches and internal SRAM never touch

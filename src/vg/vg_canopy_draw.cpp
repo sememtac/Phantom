@@ -723,6 +723,21 @@ static int     s_wq = -1;                 // the quantised amount the maps were 
 static int     s_wq_want = -1;            // ...and the one the last frame asked for
 static bool    s_warp_on = false;
 
+// THE AMOUNT, HELD BY HAND. Negative is the game's own throttle; 0..1 overrides it on
+// every frame until it is released. This is an instrument and nothing else. The bend
+// is driven by (1 - throttle), so a replayed fight bends the frame exactly as much as
+// the pilot happened to fly it -- and the only way to ask what the STRETCH itself
+// costs is to fly the same frames once flat and once at full bend. Set from the
+// serial link ('f', 'F', 'n' in vg_capture.cpp) and by nothing in the game; it also
+// overrides the canopy bench's own 0 and 1, so release it before reading that.
+static float   s_warp_pin = -1.0f;
+void vg_canopy_warp_pin(float k) { s_warp_pin = k; }
+// ...AND THE LAG, HELD OFF, which with the bend pinned at zero is a RIGID frame:
+// the cockpit as it first flew, before it moved at all, and the reference every
+// cost of moving it is measured against.
+static bool    s_lag_pin_off = false;
+void vg_canopy_lag_pin_off(bool off) { s_lag_pin_off = off; }
+
 // SELECTING A DRAWING, and it is down here rather than beside s_can because of what it has to
 // invalidate: three caches, two of which are the warp's and are declared just above.
 //
@@ -836,6 +851,7 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale) {
     s_lag_py = (int)(dy + (dy < 0.0f ? -0.5f : 0.5f));
     // Pixels of y at the frame's edge, spread linearly across the columns.
     s_lag_sh = dr / (float)(SCR_H / 2);
+    if (s_lag_pin_off) { s_lag_px = 0; s_lag_py = 0; s_lag_sh = 0.0f; }
     if (s_lag_px || s_lag_py || s_lag_sh != 0.0f) s_warp_on = true;
 }
 
@@ -855,6 +871,7 @@ static float s_settle_t = -1.0f;          // < 0 means not settling
 // BUILD moves to the end of the frame -- see vg_canopy_warp_build.
 void vg_canopy_warp(float k) {
     if (!s_can) return;                    // the maps are built from the drawing
+    if (s_warp_pin >= 0.0f) k = s_warp_pin;
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * CANOPY_WARP_STEPS + 0.5f);
@@ -2146,8 +2163,52 @@ uint32_t vg_rast_tint_us(void) {
 // The scratch is refilled between rows, outside the timing. Blending into the same row
 // 480 times would drive every channel to the rail and leave every saturation branch
 // taken, which is not what the pass meets in a frame.
+static uint16_t s_bench_row[SCR_W];
+
+// THE OPAQUE PASS ON THE SAME TERMS: the whole pass, one core, a scratch row at a
+// time, so the `can` the replay reports -- one band's slower half -- can be read
+// against the work it is a half of. Rigid first, then at full bend with no lag.
+// The warp maps are left built for full bend and s_wq says so, so the next
+// frame's build call puts back whatever the game wants.
+void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us) {
+    *rigid_us = *full_us = 0;
+    if (!s_can || !vg_canopy_op_current()) return;
+    const int   save_want = s_wq_want;
+    const bool  save_on = s_warp_on, save_in = s_intro_on, save_gate = s_gate_on;
+    const int   save_px = s_lag_px, save_py = s_lag_py;
+    const float save_sh = s_lag_sh;
+    s_intro_on = false;
+    s_gate_on  = false;
+    s_warp_on  = false;
+    uint32_t cyc = 0;
+    for (int py = 0; py < SCR_H; py++) {
+        for (int x = 0; x < SCR_W; x++) s_bench_row[x] = 0x1084;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        vg_canopy_op_rows(s_bench_row, py, 0, 1);
+        cyc += esp_cpu_get_cycle_count() - t0;
+    }
+    *rigid_us = cyc / 240u;
+
+    s_lag_px = 0; s_lag_py = 0; s_lag_sh = 0.0f;
+    s_wq_want = CANOPY_WARP_STEPS;
+    vg_canopy_warp_build();
+    s_warp_on = true;
+    cyc = 0;
+    for (int py = 0; py < SCR_H; py++) {
+        for (int x = 0; x < SCR_W; x++) s_bench_row[x] = 0x1084;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        vg_canopy_op_rows(s_bench_row, py, 0, 1);
+        cyc += esp_cpu_get_cycle_count() - t0;
+    }
+    *full_us = cyc / 240u;
+
+    s_wq_want = save_want; s_warp_on = save_on;
+    s_intro_on = save_in;  s_gate_on = save_gate;
+    s_lag_px = save_px; s_lag_py = save_py; s_lag_sh = save_sh;
+}
+
 void vg_canopy_bench(VgCanopyCost* out) {
-    static uint16_t scratch[SCR_W];
+    uint16_t* const scratch = s_bench_row;
     if (!s_can) { *out = VgCanopyCost{}; return; }
     if (!s_can_ready) canopy_lut();
 

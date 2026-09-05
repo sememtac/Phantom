@@ -111,6 +111,11 @@ void vg_canopy_warp(float k);
 // Builds the warp maps vg_canopy_warp asked for. Call once a frame AFTER the band pass
 // has drawn, so the rebuild overlaps the transfer rather than delaying it.
 void vg_canopy_warp_build(void);
+// The amount held by hand, for measurement only. `k` in 0..1 overrides what
+// vg_canopy_warp is given on every frame; negative gives the throttle back.
+void vg_canopy_warp_pin(float k);
+// ...and the lag held off. With the bend pinned at zero this is a rigid frame.
+void vg_canopy_lag_pin_off(bool off);
 
 // THE FRAME TRAILING THE SHIP. `turn` is the cosmetic bank, and the offset comes from how fast
 // it is CHANGING -- so the frame swings during the onset and the release of a turn and sits
@@ -259,6 +264,9 @@ float vg_canopy_intro_flex(void);
 // `intro_us` is the cockpit intro's CEILING, with every zone mid-dissolve at once -- which the
 // staggered sequence never reaches. It is here so that the intro's dip is a number.
 struct VgCanopyCost { uint32_t us, warp_us, intro_us; int blocks, flat_px, lit_px; };
+// The opaque pass, whole and on one core, rigid and at full bend. Needs both a
+// delta drawing (the warp maps are its) and an opaque bake selected.
+void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us);
 void vg_canopy_bench(VgCanopyCost* out);
 
 // ---------------------------------------------------------------------------

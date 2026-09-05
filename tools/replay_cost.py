@@ -30,6 +30,13 @@ by the transfer wait; over it, every microsecond is on the frame.
     sub     building the primitive list
     upd     the simulation
 
+    --warp flat | full | rigid
+            Hold the cockpit's throttle bend at none, or at full, for the whole run.
+            Without it the frame bends as the recorded throttle drives it. Run the
+            same session once each way to measure what the stretch costs. Only
+            `can` can move between those two runs. `rigid` also holds the lag off,
+            so the frame does not move at all.
+
 Close every other program that uses the port first.
 """
 import argparse
@@ -81,6 +88,8 @@ WORLD = re.compile(
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
 
 KEYS = ["can", "rast", "prim", "sub", "upd"]
+# The canopy by core. `can` is the slower half a band; these are both halves.
+CAN = re.compile(r"vg_replay: CAN c0 (\d+) \| c1 (\d+) \| at (\d+)")
 WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
@@ -146,7 +155,60 @@ def choose_canopy(port, delta):
         ser.close()
 
 
-def run(port, path, limit, delta_canopy=False):
+def choose_warp(port, warp):
+    """Tell the board to hold the cockpit's bend, and refuse to go on unless it says so.
+
+    Same shape as choose_canopy, for the same reason: a run that cannot state how
+    much the frame was bent has nothing to compare. Not sent at all when no hold is
+    asked for, because run() resets the board first and a fresh board follows the
+    throttle.
+    """
+    letter, want = {"flat": (b"f", "FLAT"), "full": (b"F", "FULL"),
+                    "rigid": (b"i", "RIGID")}[warp]
+    ser = open_quiet(port)
+    try:
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        for _ in range(4):
+            ser.write(letter)
+            ser.flush()
+            t0, buf = time.time(), ""
+            while time.time() - t0 < 1.5:
+                buf += ser.read(4096).decode("ascii", "replace")
+                if "vg_canopy_warp: " + want in buf:
+                    print("  bend: %s" % want)
+                    return
+        sys.exit("the board never acknowledged '%s'. It is running a build from\n"
+                 "before the bend hold existed -- see vg_capture.cpp -- or the port\n"
+                 "is not the board. Not measuring." % letter.decode())
+    finally:
+        ser.close()
+
+
+def choose_resident(port):
+    """Tell the board to read the opaque bake from PSRAM, and refuse to go on unless
+    it says so. See `resident` in vg_canopy_op.cpp. Same shape as choose_canopy."""
+    ser = open_quiet(port)
+    try:
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        for _ in range(4):
+            ser.write(b"r")
+            ser.flush()
+            t0, buf = time.time(), ""
+            while time.time() - t0 < 1.5:
+                buf += ser.read(4096).decode("ascii", "replace")
+                if "vg_canopy_op: RESIDENT" in buf:
+                    print("  bake: PSRAM")
+                    return
+        sys.exit("the board never acknowledged 'r'. It is running a build from\n"
+                 "before the residency experiment -- see vg_capture.cpp -- or the\n"
+                 "port is not the board. Not measuring.")
+    finally:
+        ser.close()
+
+
+def run(port, path, limit, delta_canopy=False, warp=None, resident=False):
     ses = Session.load(path)
     n = len(ses.frames)
     if limit and limit < n:
@@ -158,6 +220,10 @@ def run(port, path, limit, delta_canopy=False):
     # rather than toggled, so a run measures the one it asked for and not the one
     # the last run left -- and checked, for the reason choose_canopy gives.
     choose_canopy(port, delta_canopy)
+    if warp:
+        choose_warp(port, warp)
+    if resident:
+        choose_resident(port)
     link = PhantomLink(port)
     link.open()
 
@@ -309,7 +375,7 @@ def run(port, path, limit, delta_canopy=False):
     os._exit(0)
 
 
-def fetch(port, session=None):
+def fetch(port, session=None, warp=None, resident=False):
     """Ask the device for the last timed run's cost, on a fresh connection.
 
     SEPARATE FROM THE RUN, because a handle that has carried a full session cannot be
@@ -363,7 +429,8 @@ def fetch(port, session=None):
         if m and (BLIT.search(txt) or time.time() > deadline - 8.0):
             ser.close()
             g = [int(x) for x in m.groups()]
-            out = {"frames": g[0], "commit": git_commit(), "session": session or "(unknown)"}
+            out = {"frames": g[0], "commit": git_commit(), "session": session or "(unknown)",
+                   "warp": warp or "throttle", "bake": "psram" if resident else "flash"}
             for j, k2 in enumerate(KEYS):
                 out[k2] = {"mean": g[1 + j * 2], "worst": g[2 + j * 2]}
             w = WORLD.search(txt)
@@ -385,6 +452,9 @@ def fetch(port, session=None):
                 gt = [int(x) for x in ty.groups()]
                 for j, k2 in enumerate(TKEYS):
                     out[k2] = {"mean": gt[j * 2], "worst": gt[j * 2 + 1]}
+            cn = CAN.search(txt)
+            if cn:
+                out["can_c0"], out["can_c1"], out["can_at"] = [int(x) for x in cn.groups()]
             b = BLIT.search(txt)
             if b:
                 gb = [int(x) for x in b.groups()]
@@ -398,7 +468,9 @@ def fetch(port, session=None):
 
 
 def show(r):
-    print("\n%d frames, commit %s" % (r["frames"], r["commit"]))
+    print("\n%d frames, commit %s, bend %s, bake %s" % (r["frames"], r["commit"],
+                                                        r.get("warp", "throttle"),
+                                                        r.get("bake", "flash")))
     print("  %-6s %10s %10s" % ("", "mean us", "worst us"))
     for k in KEYS:
         print("  %-6s %10d %10d" % (k, r[k]["mean"], r[k]["worst"]))
@@ -430,6 +502,9 @@ def show(r):
         if over:
             print("     %d of %d over, by %d us a frame (* marks them)"
                   % (len(over), len(r["bands"]), sum(v - w for _, v in over)))
+    if "can_c0" in r:
+        print("  -- the canopy by core; `can` above is the slower half a band, summed --")
+        print("  core0 %8d   core1 %8d   cut at row %d of 32" % (r["can_c0"], r["can_c1"], r["can_at"]))
     rast = r["rast"]["mean"]
     room = WIRE_US - rast
     if room >= 0:
@@ -463,6 +538,10 @@ def compare(now, was):
     if was["frames"] != now["frames"]:
         print("\n  Different frame counts (%d vs %d): one run ended early, so the means\n"
               "  are over different work." % (was["frames"], now["frames"]))
+    old_w, new_w = was.get("warp", "throttle"), now.get("warp", "throttle")
+    if old_w != new_w:
+        print("\n  DIFFERENT BEND (%s vs %s). This is a measurement of the stretch: `can`\n"
+              "  is the only figure that should move." % (old_w, new_w))
 
 
 def main():
@@ -473,6 +552,14 @@ def main():
                     help="fly the light-delta cockpit instead of the opaque "
                          "bake. Run once with and once without to compare "
                          "them on ONE board and one session.")
+    ap.add_argument("--warp", choices=["flat", "full", "rigid"],
+                    help="hold the cockpit's throttle bend at none or at full for "
+                         "the whole run, instead of following the recorded throttle. "
+                         "Run once each way to measure what the stretch costs. "
+                         "'rigid' also holds the lag off: the frame does not move.")
+    ap.add_argument("--resident", action="store_true",
+                    help="read the opaque bake from a copy in PSRAM instead of "
+                         "from flash. An experiment; see vg_canopy_op.cpp.")
     ap.add_argument("--port", required=True)
     ap.add_argument("--frames", type=int, default=0,
                     help="stop after this many frames (default: the whole session)")
@@ -485,9 +572,9 @@ def main():
     a = ap.parse_args()
 
     if a.fetch:
-        r = fetch(a.port, os.path.basename(a.session))
+        r = fetch(a.port, os.path.basename(a.session), a.warp, a.resident)
     elif a.run_only:
-        run(a.port, a.session, a.frames, a.delta_canopy)   # never returns; see the end of run()
+        run(a.port, a.session, a.frames, a.delta_canopy, a.warp, a.resident)   # never returns
         return
     else:
         # THREE PROCESSES, AND EACH ONE EXISTS FOR A CRASH.
@@ -518,6 +605,10 @@ def main():
         # confidence. Every flag `run` reads has to be forwarded here.
         if a.delta_canopy:
             argv += ["--delta-canopy"]
+        if a.warp:
+            argv += ["--warp", a.warp]
+        if a.resident:
+            argv += ["--resident"]
         # PIPED AND RE-EMITTED, not inherited. Inheriting this process's stdout is the
         # obvious way to keep the progress line live, and it works from a terminal and
         # fails when something else owns the handle -- a background runner, a redirect
@@ -545,6 +636,11 @@ def main():
             argv += ["--save", a.save]
         if a.against:
             argv += ["--against", a.against]
+        # The bend and the bake go to the fetch as well, so the saved result records them.
+        if a.warp:
+            argv += ["--warp", a.warp]
+        if a.resident:
+            argv += ["--resident"]
         out = subprocess.run(argv, capture_output=True, text=True)
         sys.stdout.write(out.stdout)
         if out.returncode != 0:

@@ -281,6 +281,35 @@ void vg_capture_poll(void) {
             Serial.printf("\nvg_canopy: %s\n", vg_canopy_op_on ? "OPAQUE" : "DELTA");
             continue;
         }
+        if (c == 'r' || c == 'h') {
+            // WHERE THE OPAQUE BAKE IS READ FROM, for the experiment described at
+            // `resident` in vg_canopy_op.cpp: 'r' copies it into PSRAM and reads
+            // that, 'h' reads it from flash as built. Two letters, stated and
+            // named back, for the reason 'o' and 'O' are.
+            vg_canopy_op_resident(c == 'r');
+            Serial.printf("\nvg_canopy_op: %s\n", (c == 'r') ? "RESIDENT" : "FLASH");
+            continue;
+        }
+        if (c == 'f' || c == 'F' || c == 'n' || c == 'i') {
+            // THE BEND, HELD BY HAND, and it is here for the reason 'o' is. The
+            // sphere is driven by (1 - throttle), so a replayed fight bends the
+            // frame exactly as much as the pilot flew it, and a cockpit's cost
+            // in that replay is the cost of THAT throttle history. To ask what
+            // the stretch itself costs, the same session is flown once flat and
+            // once at full bend -- 'f' and 'F' -- and 'n' gives the throttle
+            // back. Three letters rather than a toggle, for the reason 'o' and
+            // 'O' are two: a run states what it wants and the board names it.
+            //
+            // 'i' is RIGID: no bend and no lag either. That is the frame as it first
+            // flew, and the reference every cost of moving it is measured against.
+            const float k = (c == 'F') ? 1.0f : (c == 'n') ? -1.0f : 0.0f;
+            vg_canopy_warp_pin(k);
+            vg_canopy_lag_pin_off(c == 'i');
+            Serial.printf("\nvg_canopy_warp: %s\n",
+                          (c == 'f') ? "FLAT" : (c == 'F') ? "FULL"
+                        : (c == 'i') ? "RIGID" : "THROTTLE");
+            continue;
+        }
         if (c == 'q') {
             // ANTIALIASING, ON AND OFF, WHILE FLYING. A compile-time switch would
             // mean comparing two flights from memory, which is no way to judge how
@@ -345,6 +374,21 @@ void vg_capture_poll(void) {
                               (unsigned long)k.intro_us,
                               k.blocks, k.flat_px, k.lit_px,
                               use ? vg_spec(hull)->name : "none");
+            }
+            // AND THE OPAQUE PASS, for the hull that has one, on the same terms.
+            // The delta drawing goes back in for it: the warp maps are built from
+            // that drawing, whichever cockpit reads them.
+            if (const VgCanOp* op = vg_canopy_op_for(hull)) {
+                const VgCanOp* prev_op = vg_canopy_op_current();
+                if (use != prev) vg_canopy_use(use);
+                if (op != prev_op) vg_canopy_op_use(op);
+                uint32_t r = 0, f = 0;
+                vg_canopy_op_bench(&r, &f);
+                if (op != prev_op) vg_canopy_op_use(prev_op);
+                if (use != prev) vg_canopy_use(prev);
+                if (!vg_link_busy())
+                    Serial.printf("canopy_op: %lu us rigid, %lu us full bend, one core, hull %s\n",
+                                  (unsigned long)r, (unsigned long)f, vg_spec(hull)->name);
             }
         } else if (c == 'y' && !vg_link_busy()) {
             // 'y', NOT 's'. The host sends 's' to stop a capture -- phantom_link.close does

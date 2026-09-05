@@ -104,6 +104,9 @@ extern bool vg_canopy_op_on;
 // what every ship without an opaque bake gets.
 void vg_canopy_op_use(const VgCanOp* c);
 const VgCanOp* vg_canopy_op_current(void);
+// The residency experiment -- see `resident` in vg_canopy_op.cpp. True reads the
+// bake from a copy in PSRAM, false from flash as built. Measurement only.
+void vg_canopy_op_resident(bool on);
 
 // THE ARRIVAL AND THE DAMAGE ARE NOT THIS FILE'S.
 //

@@ -240,6 +240,7 @@ uint32_t vg_rast_band_window_us(void);
 uint32_t vg_rast_canhalf_us(void);
 uint32_t vg_rast_canwait_us(void);
 int      vg_rast_can_split(void);
+uint32_t vg_rast_can_core_us(int c);   // the canopy on core c, this frame
 uint32_t vg_rast_over_us(void);
 // This frame's raster cost per band, NUM_BANDS entries, for the SHAPE of the
 // overrun. A total cannot tell an even overshoot -- which no scheduling trick
