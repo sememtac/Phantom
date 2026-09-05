@@ -287,7 +287,9 @@ would move the simulation off the sequence the recording was made from.
 | `phantom_recorder.py` | the window |
 | `phantom_session.py` | the command line |
 | `phantom_vfx.py` | fires the explosions, to look at them |
-| `canopy_bake.py` | turns a canopy drawing into a table the firmware draws |
+| `canopy_bake.py` | turns a plain canopy drawing into a table the firmware draws |
+| `canopy_opaque.py` | turns an opaque canopy drawing into a table the firmware draws |
+| `canopy_set.py` | bakes every drawing in `design/canopy/` and writes the table that gives each ship its canopy |
 | `canopy_cost.py` | asks the board what the canopy costs to draw |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
 
@@ -362,6 +364,7 @@ The file name is the wiring. Name the PNG after the ship that flies it.
 
 1. Put the PNG in `design\canopy\`. Use one of these names:
    `aegis.png`, `lance.png`, `chariot.png`, `ballista.png`.
+   A ship can also have an opaque drawing. See **An opaque drawing** below.
 2. Run `.\tools\canopy.ps1`. It takes no arguments.
 3. Read the report. It shows the coverage, the cost, and the regions it found.
 
@@ -374,6 +377,7 @@ The script bakes only the drawings that changed. It prints the whole set every t
     AEGIS     aegis.png         26 KB of generated header
     LANCE     --             no cockpit frame
     CHARIOT   chariot.png       21 KB of generated header
+              chariot_opaque.png   403 KB of generated header, flown
     BALLISTA  ballista.png      21 KB of generated header
 
 ### A ship with no drawing
@@ -386,6 +390,39 @@ flies. What you lose is the frame and the sequence that brings it online, becaus
 both are made from the drawing.
 
 So you can add the four canopies one at a time and fly the game after each one.
+
+### An opaque drawing
+
+A ship can have a second drawing of a different kind. The plain drawing adds light to
+the picture behind it. An opaque drawing paints over it. Most of a cockpit is metal,
+and metal hides the stars behind it. The firmware stores one colour for each metal
+pixel and copies it to the screen. A copy costs less than a blend, so an opaque
+drawing can cover four times the area of a plain one for less time.
+
+Name it `<ship>_opaque.png`, for example `chariot_opaque.png`. Put it next to the
+plain drawing. A ship that has an opaque drawing flies it. The plain drawing must
+stay: the firmware builds the bend of the frame and the two-core split from it.
+`canopy_set.py` stops with an error if the plain drawing is missing.
+
+Save the file as RGBA (PNG colour type 6), 480 x 480 pixels or larger. The colour of
+a pixel says what it is:
+
+| colour | meaning |
+|---|---|
+| magenta | a pane. Nothing is stored. The world shows through. |
+| cyan | the lit outline. The firmware adds one flat HUD colour to the picture behind it. |
+| any other colour | metal. The firmware stores the colour and paints it over the picture. |
+
+The baker reads magenta and cyan by hue, not by level, so any bright magenta or cyan
+works. Draw the outline one or two pixels wide. The baker does not thicken it.
+
+The alpha channel holds the activation regions, one flat value per region, over the
+whole image. The lowest value comes on first. A region must cover at least 0.2% of the
+image, or the baker treats it as an edge and merges it into its neighbour.
+
+The baker writes a palette of 256 colours. Colours outside the palette snap to the
+nearest entry, and the report shows the error. The CHARIOT's opaque drawing is
+116 KB of flash. Four opaque drawings are about 460 KB.
 
 ### What the report tells you
 
@@ -464,8 +501,29 @@ others) is a checksum of the simulation. Two runs of the same build must show
 the same hashes. If the hashes differ, the change altered the simulation and
 the cost numbers compare two different scenes.
 
-**This tool does not measure the frame rate.** It sends no pixels, so the panel never
-holds the frame up. The numbers are processor time, not frame time.
+**This tool does not measure the frame rate.** It sends no pixels to the computer, and
+the numbers are processor time. The panel still runs, and the `push` figure is the
+time the processor waited for it.
+
+### Options
+
+| option | does |
+|---|---|
+| `--frames N` | stops after N frames. Use the same N for every run you compare. |
+| `--save FILE` | writes the result to a JSON file |
+| `--against FILE` | compares with a saved result |
+| `--delta-canopy` | flies every ship behind its plain drawing. Without it, a ship with an opaque drawing flies that. |
+| `--warp flat`, `full`, `rigid` | holds the bend of the frame at none, at full, or off with the lag as well. Without it, the recorded throttle drives the bend. |
+| `--resident` | reads the opaque drawing from a copy in PSRAM. This is the default in flight. |
+| `--hash` | folds the pixels of every 256th frame into one number on the board. Two builds that draw the same picture give the same number. The times of such a run are not valid. |
+
+The tool sends each choice to the board and waits for the board to name it back. If
+the board does not answer, the tool stops. A run that cannot say what it measured has
+nothing to compare.
+
+The tool measures a fight from a session that starts with the menus and the course.
+To measure the fight alone, run once to a frame before the fight and once to a frame
+after it, then subtract the first from the second.
 
 ## The regression test
 
@@ -515,7 +573,13 @@ Single bytes, typed at the board while nothing else holds the port.
 | byte | does |
 |---|---|
 | `q` | antialiasing on the instruments, on and off |
-| `k` | what the canopy costs, rigid and warped |
+| `o` `O` | `o` flies the opaque drawing of a ship that has one, `O` the plain drawing. The board names the choice back. |
+| `f` `F` `i` `n` | hold the bend of the frame flat, full, or rigid with the lag off. `n` gives the throttle back. |
+| `r` `h` | `r` reads the opaque drawing from PSRAM (the default), `h` from flash |
+| `w` | arms the picture hash for the next timed replay, and turns it off again. The setting survives a reset. |
+| `d` | prints the full breakdown once, on the next telemetry line |
+| `c` | prints the cost of the last timed replay again |
+| `k` | what the canopy costs, rigid and warped, plain and opaque |
 | `v` | the vector blend against the scalar blend: proves the pixels match, then times both |
 | `y` | what the backdrop costs, prep and fill, with a checksum |
 | `g` | the glyph nest, old against new, over fixed text |

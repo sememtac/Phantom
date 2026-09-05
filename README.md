@@ -228,6 +228,13 @@ is no default drawing. To add one, put the PNG in `design/canopy/` and run
 `.\tools\canopy.ps1`. The file name selects the ship. The rules for drawing one are in
 [tools/README.md](tools/README.md).
 
+A ship can also have an opaque drawing, `<ship>_opaque.png`. Most of a cockpit is
+metal, and metal hides what is behind it. The firmware stores one colour for each
+metal pixel and paints it over the picture. A thin outline around each pane still adds
+light. A copy costs less than a blend, so this kind of cockpit can cover more of the
+screen for less time. The CHARIOT flies one. The bend, the swing and the arrival are
+the same for both kinds.
+
 ### The instruments
 
 The interface follows [AmberConsole](https://github.com/DutchDiederik/AmberConsole).
