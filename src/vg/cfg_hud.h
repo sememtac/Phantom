@@ -404,6 +404,30 @@
 // the signal instead, and it can only get louder if it starts quiet. The alarm ramps this
 // to full, so the outline both reddens AND comes up as the boundary closes.
 #define CANOPY_OP_EDGE        0.50f
+
+// THE PLAYER'S COLOUR, PAINTED ON THE COCKPIT.
+//
+// A hull's opaque drawing can carry a mask -- design/canopy/<hull>_tint.png -- that
+// says which metal is painted. The baker gives that metal its own range of the
+// palette, so the paint is applied by rewriting palette entries when the player picks
+// a colour, and costs nothing whatever per pixel. See tint_n in vg_canopy_op.h.
+//
+// The metal is near-neutral grey and fairly dark: luminance median 61 of 255 over the
+// area the CHARIOT's mask covers. So the paint is applied AT THE METAL'S OWN
+// BRIGHTNESS -- the hue times the luminance -- which keeps every bit of the drawn
+// shading and panel line, and comes out as a deep colour rather than a bright one.
+//
+// GLOSS is what stops that being flat. Above GLOSS_AT the paint washes toward white,
+// so the highlights the artist drew read as light ON the paint rather than as pale
+// paint. 0 is a matte finish and the honest one; 1 takes the brightest metal to white
+// and reads as a wet gloss. Both were rendered before this was built and either is
+// defensible, so it is a number here rather than a decision in the code.
+//
+// KEEP mixes the bare metal back in, 0 painting fully and 1 not painting at all. It
+// exists for a hull whose frame should only be tinged with the player's colour.
+#define CANOPY_TINT_GLOSS     0.45f
+#define CANOPY_TINT_GLOSS_AT  0.42f   // luminance, 0..1, where the highlight starts
+#define CANOPY_TINT_KEEP      0.00f
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall

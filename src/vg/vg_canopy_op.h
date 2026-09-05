@@ -89,6 +89,16 @@ struct VgCanOp {
     uint32_t pixels;
     uint8_t  zones;
     uint8_t  centre;            // the region being looked THROUGH; never fails
+
+    // HOW MANY PALETTE ENTRIES TAKE THE PLAYER'S COLOUR, from 0. Zero for a drawing
+    // baked without a tint mask, which is every drawing until one is authored.
+    //
+    // The baker's promise is that these entries are used by painted metal and by
+    // NOTHING else -- see split_palette in tools/canopy_opaque.py. That is what
+    // makes a per-player paint job free: the renderer reads every metal pixel as
+    // spal[index] either way, so the colour is changed by rewriting this many
+    // entries once, not by touching 26,672 pixels a frame.
+    uint8_t  tint_n;
 };
 
 // WHICH KIND A HULL FLIES WHEN IT HAS BOTH. Default true: a hull with an opaque
@@ -112,6 +122,13 @@ const VgCanOp* vg_canopy_op_current(void);
 // Where the bake is read from -- see `resident` in vg_canopy_op.cpp. True, the
 // default, reads a copy in PSRAM; false reads flash as built. 'r' / 'h' on the link.
 void vg_canopy_op_resident(bool on);
+
+// THE PLAYER'S COLOUR ON THE FRAME. `hue` is vg.trail_hue, 0..1, the same number
+// the trail and the markers are drawn from; negative leaves the metal bare. Cheap
+// to call every frame -- it rebuilds only when the hue or the drawing has moved --
+// and it costs nothing at all in the band pass. A drawing baked without a tint
+// mask ignores it.
+void vg_canopy_op_tint(float hue);
 
 // THE ARRIVAL AND THE DAMAGE ARE NOT THIS FILE'S.
 //

@@ -11,6 +11,9 @@ thing: painted metal that replaces the pixel, with a thin additive outline, bake
 by tools/canopy_opaque.py. A hull that has one flies it. It still needs its plain
 drawing: the frame's bend and the two-core split are built from that one.
 
+It can have a third, <hull>_tint.png, a mask saying which of that metal takes the
+player's chosen colour. White is painted and black is bare.
+
 This bakes every drawing that has changed and writes the table that maps a hull to
 its canopy, so no C++ has to be edited to add one. Drop a PNG in, run this, done.
 
@@ -160,8 +163,18 @@ def main():
                      "built from the plain drawing." % (hull, hull))
         out = os.path.join(GEN, "canopy_op_%s.h" % hull)
         opname = "CANOPY_OP_%s" % hull.upper()
+        # THE TINT MASK, if the hull has one: it says which metal takes the
+        # player's colour. Its own file, because the drawing's four channels are
+        # spent -- three on the paint, the alpha on the arrival.
+        tint = os.path.join(SRC, hull + "_tint.png")
+        opts = ["--tint=" + tint] if os.path.isfile(tint) else []
+        # IN THE STAMP WITH THE REST. Editing the mask changes which palette entry
+        # every painted pixel gets, so a bake that ignored it would keep the old
+        # paint area and nothing would say so.
         want = hashlib.sha256(open(png, "rb").read()
-                              + open(op_baker, "rb").read()).hexdigest()[:16]
+                              + open(op_baker, "rb").read()
+                              + (open(tint, "rb").read() if opts else b"")
+                              ).hexdigest()[:16]
         fresh = False
         if os.path.isfile(out):
             with open(out) as fh:
@@ -170,7 +183,8 @@ def main():
             fresh = bool(m and m.group(1) == want)
         if not fresh:
             print("-- baking %s" % os.path.basename(png))
-            r = subprocess.run([sys.executable, op_baker, png, out, "--name=" + opname])
+            r = subprocess.run([sys.executable, op_baker, png, out,
+                                "--name=" + opname] + opts)
             if r.returncode != 0:
                 sys.exit("bake failed for %s" % png)
             with open(out) as fh:

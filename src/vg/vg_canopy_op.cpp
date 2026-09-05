@@ -86,9 +86,98 @@ void vg_canopy_op_resident(bool on) {
 static uint16_t (*s_hot)[256] = nullptr;     // [VG_CANOPY_MAX_ZONES][256]
 static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 
+// THE PALETTE THE FRAME IS ACTUALLY DRAWN THROUGH, which is the bake's own until a
+// player has a colour and the drawing has somewhere to put it.
+//
+// A cockpit is a ship, and a ship in this tournament is a colour -- the trail, the
+// markers and the bracket all say who you are with hue and nothing else. The frame
+// around the player's own view said nothing, and painting it is the one place the
+// player sees their colour without looking at somebody else's instrument.
+//
+// IT IS FREE, and that is a property of the BAKE rather than of this code. Every
+// metal pixel is already a palette lookup; the baker puts painted metal on entries
+// that bare metal never uses (VgCanOp::tint_n), so the paint is 150 entries rewritten
+// when the colour changes and not one instruction in the band pass. A palette whose
+// entries are shared cannot do it at all -- a plain median cut over this drawing
+// shares 142 of them, which is what the split in tools/canopy_opaque.py exists for.
+//
+// 512 bytes of INTERNAL RAM, deliberately, where the bake itself lives in PSRAM: this
+// is the one table read on the path of every stored pixel, and it is small enough to
+// stay resident in cache whatever else is moving.
+static uint16_t s_pal[256];
+static const VgCanOp* s_pal_of = nullptr;   // the drawing s_pal was built from
+static float          s_tint   = -1.0f;     // the hue asked for; < 0 is bare metal
+static int            s_pal_q  = -2;        // ...quantised, so a rebuild is rare
+
+// Rebuild the drawing palette, painted or not. Called when the drawing or the
+// colour changes and at no other time; ~256 iterations of float work, once.
+static void build_pal(void) {
+    const VgCanOp* c = s_cur;
+    if (!c) return;
+    // A HUE IS A CONTINUOUS NUMBER AND A PALETTE IS NOT. Quantised to the 565 panel's
+    // own resolution, so holding a slider does not rebuild this every frame.
+    const int q = (s_tint < 0.0f) ? -1 : (int)(s_tint * 255.0f + 0.5f);
+    if (c == s_pal_of && q == s_pal_q) return;
+    s_pal_of = c;
+    s_pal_q  = q;
+
+    memcpy(s_pal, c->pal, sizeof(s_pal));
+    if (q < 0 || !c->tint_n) return;      // no colour, or a drawing with no mask
+
+    // The hue at full saturation and value, which is what the player picked and what
+    // their trail is drawn in. Unpacked once, into NATIVE order.
+    const uint16_t hp = vg_hue_col(s_tint);
+    const uint16_t hn = (uint16_t)((hp >> 8) | (hp << 8));
+    const float hr = (float)((hn >> 11) & 31u) * (1.0f / 31.0f);
+    const float hg = (float)((hn >>  5) & 63u) * (1.0f / 63.0f);
+    const float hb = (float)( hn        & 31u) * (1.0f / 31.0f);
+
+    const float span = (CANOPY_TINT_GLOSS_AT < 0.99f)
+                     ? (1.0f / (1.0f - CANOPY_TINT_GLOSS_AT)) : 100.0f;
+    const int n = (c->tint_n < 256) ? (int)c->tint_n : 256;
+    for (int i = 0; i < n; i++) {
+        const uint16_t v  = s_pal[i];
+        const uint16_t nv = (uint16_t)((v >> 8) | (v << 8));
+        const float r = (float)((nv >> 11) & 31u) * (1.0f / 31.0f);
+        const float g = (float)((nv >>  5) & 63u) * (1.0f / 63.0f);
+        const float b = (float)( nv        & 31u) * (1.0f / 31.0f);
+        // THE METAL'S OWN BRIGHTNESS, which is what keeps the shading. The drawing is
+        // near-neutral here, so this is very nearly a multiply by the hue.
+        const float L = 0.299f * r + 0.587f * g + 0.114f * b;
+        float pr = hr * L, pg = hg * L, pb = hb * L;
+        // ...mixed back toward the bare metal, for a hull that wants a tinge.
+        pr += (r - pr) * CANOPY_TINT_KEEP;
+        pg += (g - pg) * CANOPY_TINT_KEEP;
+        pb += (b - pb) * CANOPY_TINT_KEEP;
+        // ...and the highlight left white, so the drawn highlights read as light ON
+        // the paint rather than as pale paint. See CANOPY_TINT_GLOSS.
+        float t = (L - CANOPY_TINT_GLOSS_AT) * span;
+        if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+        t *= CANOPY_TINT_GLOSS;
+        pr += (1.0f - pr) * t;
+        pg += (1.0f - pg) * t;
+        pb += (1.0f - pb) * t;
+
+        int R = (int)(pr * 31.0f + 0.5f), G = (int)(pg * 63.0f + 0.5f),
+            B = (int)(pb * 31.0f + 0.5f);
+        if (R > 31) R = 31; if (R < 0) R = 0;
+        if (G > 63) G = 63; if (G < 0) G = 0;
+        if (B > 31) B = 31; if (B < 0) B = 0;
+        const uint16_t o = (uint16_t)((R << 11) | (G << 5) | B);
+        s_pal[i] = (uint16_t)((o >> 8) | (o << 8));
+    }
+}
+
+void vg_canopy_op_tint(float hue) {
+    s_tint = hue;
+    build_pal();
+}
+
 void vg_canopy_op_use(const VgCanOp* c) {
     s_src = c;
     s_cur = resident(c);
+    // The palette is per DRAWING as well as per colour, so selecting one rebuilds it.
+    build_pal();
     if (c && !s_hot)
         s_hot = (uint16_t (*)[256])heap_caps_malloc(
                     (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -102,8 +191,12 @@ const VgCanOp* vg_canopy_op_current(void) { return s_cur; }
 // instead of against a delta table: unpack in NATIVE order, walk each channel its own
 // fraction of the distance to full, repack and swap back to panel order.
 static void hot_lut(const VgCanOp* c, int z, uint32_t t) {
+    (void)c;
     for (int g = 0; g < 256; g++) {
-        const uint32_t v = c->pal[g];                     // panel order
+        // THE LIVE PALETTE, not the bake's. A region cools out of its white flash into
+        // whatever the frame is actually painted; reading the bake here would land the
+        // arrival on bare metal and then swap the paint in on the frame it finished.
+        const uint32_t v = s_pal[g];                      // panel order
         const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
         const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
         const uint32_t R = r  + (((31u - r)  * t) >> 8);
@@ -177,7 +270,7 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     // Hoisted out of the loops, for the reason vg_bezel_rows gives: the palette
     // stays in cache all frame, and reloading a base pointer through two levels
     // of struct on every pixel is work the compiler cannot always see through.
-    const uint16_t* pal  = c->pal;
+    const uint16_t* pal  = s_pal;      // the bake's, with the player's colour on it
     const uint8_t*  data = c->data;
 
     // WHAT EACH REGION IS DOING, resolved once a band instead of once a span.

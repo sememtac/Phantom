@@ -77,6 +77,10 @@ metal that the firmware paints over the picture. The alpha channel holds the
 activation regions. Keep the plain drawing next to it; the firmware still needs it.
 The rules are in `tools/README.md` under **An opaque drawing**.
 
+A ship with an opaque drawing can have a third file, `<ship>_tint.png`. It is a
+greyscale mask, and white marks the metal that takes the player's chosen colour. Keep
+it off the lit outline: the outline is the wall warning.
+
     .\tools\canopy.ps1
 
 A ship with no drawing flies with no cockpit frame, which the game supports. You can

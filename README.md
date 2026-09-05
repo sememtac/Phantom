@@ -235,6 +235,12 @@ light. A copy costs less than a blend, so this kind of cockpit can cover more of
 screen for less time. The CHARIOT flies one. The bend, the swing and the arrival are
 the same for both kinds.
 
+A ship with an opaque canopy can also carry a mask that marks part of the metal as
+painted. That metal takes the colour the player chose for their trail, so a pilot sees
+their own colour on the frame around them. It costs no frame time: the firmware
+recolours palette entries when the player picks a colour, and the drawing code does
+not change.
+
 ### The instruments
 
 The interface follows [AmberConsole](https://github.com/DutchDiederik/AmberConsole).

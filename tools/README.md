@@ -424,6 +424,42 @@ The baker writes a palette of 256 colours. Colours outside the palette snap to t
 nearest entry, and the report shows the error. The CHARIOT's opaque drawing is
 116 KB of flash. Four opaque drawings are about 460 KB.
 
+### The player's colour on the cockpit
+
+A ship with an opaque drawing can also have a tint mask, `<ship>_tint.png`. It says
+which metal takes the colour the player chose for their trail. The rest stays as
+drawn.
+
+Draw the mask as a greyscale PNG, the same size as the drawing. White is painted.
+Black is bare. The baker uses a hard edge at the halfway point, so a soft boundary in
+the mask becomes a crisp line in the paint.
+
+The mask is its own file because the drawing has no channel left. Three channels hold
+the paint and the alpha channel holds the activation regions.
+
+**This costs no frame time.** The firmware reads each metal pixel through the palette.
+The baker gives the painted metal its own range of palette entries, which bare metal
+never uses. To paint the cockpit the firmware writes those entries once, when the
+player picks a colour. It does not touch a pixel.
+
+Two rules follow from that:
+
+1. The mask must cover some metal, but not all of it. The baker stops with an error
+   if it covers none or all.
+2. The split gives each range fewer colours. The baker reports the error, and the
+   split is in proportion to the pixels.
+
+Keep the mask off the lit outline. The outline is the wall warning, and it must mean
+the same for every player.
+
+The look is set by three values in `src/vg/cfg_hud.h`:
+
+| value | does |
+|---|---|
+| `CANOPY_TINT_GLOSS` | how much the highlights go white. 0 is matte. 1 is a wet gloss. |
+| `CANOPY_TINT_GLOSS_AT` | how bright the metal must be before it starts to go white |
+| `CANOPY_TINT_KEEP` | how much bare metal is mixed back. 0 paints fully. |
+
 ### What the report tells you
 
 | line | what to do about it |

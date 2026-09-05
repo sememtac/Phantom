@@ -173,6 +173,8 @@ static void enter_course(void) {
     // ...and the opaque bake beside it, for the hull that has one. The band pass
     // prefers this when it is not null -- see vg_canopy_op.h.
     vg_canopy_op_use(vg_canopy_op_for(vg.ship));
+    // ...in the player's own colour, if the drawing was baked with a mask for it.
+    vg_canopy_op_tint(vg.trail_hue);
     vg_canopy_intro_begin();
     // THE ONLY SOUND THAT PLAYS TO A BLACK SCREEN. It fills the second of dark before the first
     // region lights, so the wait reads as something spooling up rather than as nothing happening --
@@ -276,6 +278,8 @@ void vg_begin_flight(void) {
     // ...and the opaque bake beside it, for the hull that has one. The band pass
     // prefers this when it is not null -- see vg_canopy_op.h.
     vg_canopy_op_use(vg_canopy_op_for(vg.ship));
+    // ...in the player's own colour, if the drawing was baked with a mask for it.
+    vg_canopy_op_tint(vg.trail_hue);
     vg_canopy_intro_begin();
     vg_sfx_play(SFX_SPOOL, 1.0f);
     vg.roll     = 0;
