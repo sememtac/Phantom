@@ -23,6 +23,7 @@ void host_dataset_close(void);
 
 #include "vg_states.h"
 #include "vg_sky.h"
+#include "vg_tv.h"
 
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
@@ -81,11 +82,17 @@ static void screen_match(void) {
 //
 // A match, because that is where a player meets it. Pausing over a PAGE is the
 // other half of the same key and is reached by pressing PWR on one.
+// A PAUSE IS TAKEN FROM A MATCH THAT IS ALREADY RUNNING, and it turns out that
+// matters: the set-up alone is not a flown frame. So this puts the player in the
+// seat and PWR is pressed later, from the frame loop -- see g_pause_at.
+static int g_pause_at = 0;      // frames of play before the key goes down
+
 static void screen_pause(void) {
     screen_match();
-    vg.pause_from = (uint8_t)VG_PLAYING;
-    vg.pause_t    = 0.0f;
-    vg.pause_page = 0;
+    // Long enough for the cockpit to finish booting and the canopy to finish
+    // arriving. At 90 frames both are still in progress and the frame looks like
+    // a fault rather than like a paused match.
+    if (g_pause_at <= 0) g_pause_at = 180;
 }
 
 struct HostScreen {
@@ -108,7 +115,7 @@ static const HostScreen SCREENS[] = {
     { "bracket",  VG_BRACKET,   screen_tourney, true,  "the tournament sheet" },
     { "repair",   VG_REPAIR,    screen_tourney, true,  "the repair page" },
     { "course",   VG_COURSE,    screen_none,    true,  "the ring course" },
-    { "pause",    VG_PAUSE,     screen_pause,   false, "the pause menu, over a match" },
+    { "pause",    VG_PLAYING,   screen_pause,   false, "the pause menu, over a match" },
     { "intro",    VG_INTRO,     screen_tourney, true,  "the launch cutscene" },
     { "match",    VG_PLAYING,   screen_match,   true,  "flying, against the bracket" },
     { "roundwon", VG_ROUND_WON, screen_tourney, true,  "the round-won card" },
@@ -198,6 +205,10 @@ int main(int argc, char** argv) {
             g_ship = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--hue") && i + 1 < argc)
             g_hue = (float)atof(argv[++i]);
+        // PWR, N frames in. Works over any screen, which is the point: what the
+        // pause looks like depends entirely on what is behind it.
+        else if (!strcmp(argv[i], "--pause-at") && i + 1 < argc)
+            g_pause_at = atoi(argv[++i]);
         // THE OLD NAMES STILL WORK, and they are aliases rather than a second
         // mechanism. Scripts, baselines and half the notes name them.
         //
@@ -273,6 +284,7 @@ int main(int argc, char** argv) {
                    "  --hull F     set the hull to F of full, 0..1.\n"
                    "  --ship N     fly class N.\n"
                    "  --hue F      the player's trail colour, 0..1.\n"
+                   "  --pause-at N press PWR N frames in, over whatever screen.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"
@@ -359,6 +371,20 @@ int main(int argc, char** argv) {
     int n = 0;
     while (host_window_pump()) {
         loop();
+        // PWR, pressed from here rather than set up before the first frame. See
+        // screen_pause: a pause suspends a match, and a match that has never
+        // drawn a frame is not one.
+        // NOT WHILE THE SET IS OFF. A cut changes state at the JOIN, so a pause
+        // taken over the black is replaced by whatever the transition was on its
+        // way to -- which is what happened: the sheet came up unpaused because
+        // its own arrival overwrote the press. The count only runs once the
+        // picture is settled, which is also when a player could press it.
+        if (g_pause_at > 0 && vg_tv.phase == TV_NONE && --g_pause_at == 0) {
+            vg.pause_from = (uint8_t)vg.state;
+            vg.pause_t    = vg.state_t;
+            vg.pause_page = 0;
+            vg_state_go(VG_PAUSE);
+        }
         if (frames && ++n >= frames) break;
     }
 

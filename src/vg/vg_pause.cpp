@@ -1,5 +1,6 @@
 ﻿#include "vg_pause.h"
 #include "vg_console.h"
+#include "vg_states.h"
 #include "vg_ui.h"
 #include "vg_draw.h"
 #include "vg_game.h"
@@ -113,6 +114,25 @@ void vg_draw_pause(void) {
     // exactly like a dim that is too subtle, and in flight there is a dark
     // cockpit behind it either way. It only became obvious once PWR started
     // working over the MENUS, where what is behind is bright.
+    //
+    // A PAGE IS KNOCKED BACK. A FLIGHT IS NOT, AND CANNOT BE FROM HERE.
+    //
+    // The dim is a primitive, and in flight the CANOPY is applied to the finished
+    // band after every primitive has been drawn -- it is a light delta, not a
+    // shape. So a dim submitted with the rest of the picture is darkened first
+    // and then has the cockpit's light added back on top of it, and the frame
+    // comes out as canopy-white rather than as an amber picture turned down. It
+    // was flown and it looks like a fault.
+    //
+    // Dimming after the canopy would mean dimming in the BAND pass, which runs
+    // after everything -- including this menu, which is the one thing that must
+    // stay lit.
+    //
+    // So: pages only, which is what was asked for and where the problem was. A
+    // paused match already reads as suspended -- nothing moves, and a menu is
+    // sitting on top of it.
+    if (vg_state_is_menu(vg_state_shown())) {
+
     // EVERYTHING, PLATING INCLUDED. The chassis was left alone at first, on the
     // reading that the metal is not something showing through -- it is what the
     // display is mounted in. Flown, that is the wrong call: what a pause suspends
@@ -131,6 +151,7 @@ void vg_draw_pause(void) {
     // overflow drops whatever was submitted LAST, which here is the pause menu
     // itself. The dim would have eaten the thing it was drawn for.
     for (int y = 0; y < SCR_H; y += 4) vg_fill_rect(0, y, SCR_W, 3, INK_WELL);
+    }
 
     if (vg.pause_page == 1) {
         vg_centred(120, "CONFIG", INK_MAX, 5);
