@@ -6,6 +6,11 @@ Each drawing is named after the hull that flies it: chariot.png is the CHARIOT's
 cockpit. A hull with no drawing flies with no cockpit, which the game supports --
 there is no default texture and no substitute.
 
+A hull can have a second drawing, <hull>_opaque.png, which is a different kind of
+thing: painted metal that replaces the pixel, with a thin additive outline, baked
+by tools/canopy_opaque.py. A hull that has one flies it. It still needs its plain
+drawing: the frame's bend and the two-core split are built from that one.
+
 This bakes every drawing that has changed and writes the table that maps a hull to
 its canopy, so no C++ has to be edited to add one. Drop a PNG in, run this, done.
 
@@ -138,6 +143,46 @@ def main():
             print("-- %s is up to date" % os.path.basename(out))
         rows.append((hull, name, out))
 
+    # ---- the opaque drawings ------------------------------------------------
+    #
+    # Same rules, same stamp, a different baker. <hull>_opaque.png bakes to
+    # canopy_op_<hull>.h as CANOPY_OP_<HULL>; a hull without one gets nullptr and
+    # flies the light delta above.
+    op_baker = os.path.join(HERE, "canopy_opaque.py")
+    op_rows = []
+    for hull, name, _ in rows:
+        png = os.path.join(SRC, hull + "_opaque.png")
+        if not os.path.isfile(png):
+            op_rows.append((hull, None, None))
+            continue
+        if not name:
+            sys.exit("%s_opaque.png needs %s.png beside it: the bend and the split are "
+                     "built from the plain drawing." % (hull, hull))
+        out = os.path.join(GEN, "canopy_op_%s.h" % hull)
+        opname = "CANOPY_OP_%s" % hull.upper()
+        want = hashlib.sha256(open(png, "rb").read()
+                              + open(op_baker, "rb").read()).hexdigest()[:16]
+        fresh = False
+        if os.path.isfile(out):
+            with open(out) as fh:
+                head = fh.read(2048)
+            m = re.search(r"source\+baker sha256 ([0-9a-f]{16})", head)
+            fresh = bool(m and m.group(1) == want)
+        if not fresh:
+            print("-- baking %s" % os.path.basename(png))
+            r = subprocess.run([sys.executable, op_baker, png, out, "--name=" + opname])
+            if r.returncode != 0:
+                sys.exit("bake failed for %s" % png)
+            with open(out) as fh:
+                body = fh.read()
+            with open(out, "w") as fh:
+                fh.write("// source+baker sha256 %s -- tools/canopy_set.py rebakes when "
+                         "either changes.\n" % want)
+                fh.write(body)
+        else:
+            print("-- %s is up to date" % os.path.basename(out))
+        op_rows.append((hull, opname, out))
+
     # ---- the wiring -------------------------------------------------------
     #
     # Generated rather than hand-edited, because the hand-edited version was the one
@@ -154,9 +199,13 @@ def main():
         # Resolved relative to THIS header, which sits a directory below the
         # hand-written code it needs.
         fh.write('#include "../vg_canopy.h"\n')
+        fh.write('#include "../vg_canopy_op.h"\n')
         for hull, name, out in rows:
             if name:
                 fh.write('#include "canopy_%s.h"\n' % hull)
+        for hull, name, out in op_rows:
+            if name:
+                fh.write('#include "canopy_op_%s.h"\n' % hull)
         fh.write("\n")
         fh.write("#define VG_CANOPY_SET_ROWS \\\n")
         for i, (hull, name, out) in enumerate(rows):
@@ -164,15 +213,27 @@ def main():
             fh.write("    /* %-8s */ %s,%s\n"
                      % (hull.upper(), ("&" + name) if name else "nullptr", end))
         fh.write("\n")
+        fh.write("// The opaque drawings, same order. A hull with one flies it; the row\n")
+        fh.write("// above is still needed for the frame's bend and the two-core split.\n")
+        fh.write("#define VG_CANOPY_OP_SET_ROWS \\\n")
+        for i, (hull, name, out) in enumerate(op_rows):
+            end = " \\" if i + 1 < len(op_rows) else ""
+            fh.write("    /* %-8s */ %s,%s\n"
+                     % (hull.upper(), ("&" + name) if name else "nullptr", end))
+        fh.write("\n")
 
     print("\ncanopy set:")
-    for hull, name, out in rows:
+    for (hull, name, out), (_, opname, opout) in zip(rows, op_rows):
         if name:
             kb = os.path.getsize(out) / 1024.0
             print("  %-9s %-14s %6.0f KB of generated header" % (hull.upper(),
                                                                 hull + ".png", kb))
         else:
             print("  %-9s %-14s no cockpit frame" % (hull.upper(), "--"))
+        if opname:
+            kb = os.path.getsize(opout) / 1024.0
+            print("  %-9s %-14s %6.0f KB of generated header, flown" % ("",
+                                                                       hull + "_opaque.png", kb))
     n = sum(1 for _, name, _ in rows if name)
     print("\n%d of %d hulls have a canopy. Wrote %s"
           % (n, len(rows), os.path.relpath(path, ROOT)))

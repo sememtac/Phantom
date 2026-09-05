@@ -12,7 +12,7 @@ bool vg_canopy_op_on = true;
 
 static const VgCanOp* s_cur = nullptr;
 
-// EXPERIMENT: THE BAKE, RESIDENT, instead of streamed from flash.
+// THE BAKE, RESIDENT IN PSRAM, instead of streamed from flash.
 //
 // The tables are `static const`, which puts 116 KB of them in flash behind a data
 // cache a fraction of that size, and the pass reads all of it every frame: the pixel
@@ -22,14 +22,14 @@ static const VgCanOp* s_cur = nullptr;
 // transaction that no amount of loop tuning can hide. The desktop cannot see this:
 // its L2 holds the whole bake.
 //
-// Internal SRAM has 3 KB free, so the copy goes to PSRAM: the same cache in front,
-// but octal at double data rate behind it, several times the flash's fill rate. An
-// instrument, switched from the serial link ('r' / 'h' in vg_capture.cpp) so one
-// flash can measure both. If it moves the needle, the real change is a smaller table
-// or a residency decided at build time; this is not that change. The copy is made
-// once and kept: there is one bake, and the game never lets go of it.
+// Internal SRAM cannot hold it, so the copy goes to PSRAM: the same cache in front,
+// but octal at double data rate behind it, several times the flash's fill rate.
+// MEASURED, course-only, on the replay: 500 to 700 us a frame off the raster
+// (2026-09-05), which is why it is the default. The flash path stays behind 'h' on
+// the link ('r' puts this back) so the two can be compared on one build. The copy
+// is made once per bake and kept: the game never lets go of it.
 static const VgCanOp* s_src      = nullptr;    // what was asked for
-static bool           s_resident = false;
+static bool           s_resident = true;
 static VgCanOp        s_copy;
 static const VgCanOp* s_copy_of  = nullptr;
 

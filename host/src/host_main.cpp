@@ -210,8 +210,8 @@ int main(int argc, char** argv) {
         // pause looks like depends entirely on what is behind it.
         else if (!strcmp(argv[i], "--pause-at") && i + 1 < argc)
             g_pause_at = atoi(argv[++i]);
-        // BACK TO THE LIGHT DELTA. The opaque bake is on by default on this
-        // branch -- see vg_canopy_op.h -- and this is how the two are compared in
+        // BACK TO THE LIGHT DELTA. A hull with an opaque drawing flies it by
+        // default -- see vg_canopy_op.h -- and this is how the two are compared in
         // one sitting.
         else if (!strcmp(argv[i], "--delta-canopy")) vg_canopy_op_on = false;
         // THE OLD NAMES STILL WORK, and they are aliases rather than a second

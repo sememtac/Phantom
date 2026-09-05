@@ -2,7 +2,11 @@
 #include <stdint.h>
 
 // ===========================================================================
-// AN EXPERIMENT: THE CANOPY AS METAL, NOT AS LIGHT
+// THE CANOPY AS METAL, NOT AS LIGHT
+//
+// This is how a cockpit is drawn for a hull that has an opaque drawing; it began
+// as an experiment on the CHARIOT and was flown, measured and chosen on
+// 2026-09-05. The light delta (vg_canopy.h) remains for hulls without one.
 //
 // A canopy has always been a signed light DELTA applied over the finished
 // picture -- see vg_canopy.h. The frame catches whatever is behind it, so a rib
@@ -23,18 +27,18 @@
 //   NOTHING  the panes themselves. Not stored at all, exactly as a bezel does
 //            not store its screen aperture.
 //
-// WHAT IT COSTS AND WHAT IT BUYS is the point of the experiment. The CHARIOT's
-// delta canopy paints 16,494 pixels a half-frame and that is most of its budget.
-// This bake paints 45,591 opaque and 5,659 additive -- four times the area, but
-// the expensive kind of pixel drops by a factor of six.
+// WHAT IT COSTS AND WHAT IT BUYS. The CHARIOT's delta canopy paints 16,494 pixels
+// a half-frame and that is most of its budget. This bake paints 45,591 opaque and
+// 5,659 additive -- four times the area, but the expensive kind of pixel drops by a
+// factor of six. On the board, in the same replayed course, the opaque cockpit
+// costs 4,330 us a frame at full bend against the delta's 5,798 (2026-09-05).
 //
 // THE DRAWING SAYS WHICH IS WHICH, by colour, which is the console chassis's
 // rule rather than the canopy's: magenta is a pane, cyan is the outline, and
 // anything else is metal. The ARRIVAL SEQUENCE moved to the alpha channel,
 // because a full-colour drawing has no green channel to spare.
 //
-// If this does not work out -- on looks, on frame time, or on the art pipeline --
-// the tag pre-opaque-canopy is the commit before any of it.
+// The tag pre-opaque-canopy is the commit before any of it.
 // ===========================================================================
 
 enum : uint8_t {
@@ -87,10 +91,11 @@ struct VgCanOp {
     uint8_t  centre;            // the region being looked THROUGH; never fails
 };
 
-// IS THE EXPERIMENT ON. Default true, because a branch called opaque-canopy that
-// has to be argued into using it would answer a different question.
+// WHICH KIND A HULL FLIES WHEN IT HAS BOTH. Default true: a hull with an opaque
+// drawing flies it. False flies every hull behind its light delta, and exists for
+// comparing the two on the same frames.
 //
-// BOTH BUILDS CAN TURN IT OFF NOW. The desktop takes --delta-canopy and the board
+// BOTH BUILDS CAN TURN IT OFF. The desktop takes --delta-canopy and the board
 // takes 'o' and 'O' over the link -- see the block beside 'q' in vg_capture.cpp,
 // which is the same argument about comparing two flights from memory. The board
 // needed it for a reason that is worth recording: two BOARDS carrying two builds
@@ -104,8 +109,8 @@ extern bool vg_canopy_op_on;
 // what every ship without an opaque bake gets.
 void vg_canopy_op_use(const VgCanOp* c);
 const VgCanOp* vg_canopy_op_current(void);
-// The residency experiment -- see `resident` in vg_canopy_op.cpp. True reads the
-// bake from a copy in PSRAM, false from flash as built. Measurement only.
+// Where the bake is read from -- see `resident` in vg_canopy_op.cpp. True, the
+// default, reads a copy in PSRAM; false reads flash as built. 'r' / 'h' on the link.
 void vg_canopy_op_resident(bool on);
 
 // THE ARRIVAL AND THE DAMAGE ARE NOT THIS FILE'S.

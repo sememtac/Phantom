@@ -5,14 +5,24 @@
 // There is no default texture -- a canopy is authored per hull.
 #pragma once
 #include "../vg_canopy.h"
+#include "../vg_canopy_op.h"
 #include "canopy_aegis.h"
 #include "canopy_lance.h"
 #include "canopy_chariot.h"
 #include "canopy_ballista.h"
+#include "canopy_op_chariot.h"
 
 #define VG_CANOPY_SET_ROWS \
     /* AEGIS    */ &CANOPY_AEGIS, \
     /* LANCE    */ &CANOPY_LANCE, \
     /* CHARIOT  */ &CANOPY_CHARIOT, \
     /* BALLISTA */ &CANOPY_BALLISTA,
+
+// The opaque drawings, same order. A hull with one flies it; the row
+// above is still needed for the frame's bend and the two-core split.
+#define VG_CANOPY_OP_SET_ROWS \
+    /* AEGIS    */ nullptr, \
+    /* LANCE    */ nullptr, \
+    /* CHARIOT  */ &CANOPY_OP_CHARIOT, \
+    /* BALLISTA */ nullptr,
 

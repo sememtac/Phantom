@@ -1,6 +1,5 @@
 #include "vg_canopy_set.h"
 #include "vg_canopy_op.h"
-#include "generated/canopy_op_chariot.h"
 
 // ===========================================================================
 // WHICH COCKPIT A HULL FLIES, and the table is GENERATED
@@ -58,11 +57,25 @@ const VgCanopy* vg_canopy_for(ShipClass c) {
 // existed because the set had one.
 const VgCanopy* vg_canopy_default(void) { return nullptr; }
 
-// THE OPAQUE BAKE, and only the CHARIOT has one. The drawing is a different KIND
-// of thing from the four in the set above -- colour and coverage rather than a
-// light delta -- so it is selected separately rather than smuggled into a table
-// whose type says what a canopy is.
+// THE OPAQUE DRAWINGS, generated the same way: design/canopy/<hull>_opaque.png
+// bakes to a row here. A hull that has one flies it, and the band pass prefers it
+// to the light delta -- see vg_canopy_op.h. It is a different KIND of thing from
+// the set above -- colour and coverage rather than a light delta -- so it is a
+// second table rather than a second column in one whose type says what a canopy is.
+//
+// A HULL WITH AN OPAQUE DRAWING KEEPS ITS PLAIN ONE. The frame's bend (the warp
+// maps) and the two-core split point are built from the delta drawing's columns,
+// whichever cockpit is drawn; tools/canopy_set.py refuses an opaque drawing with no
+// plain one beside it. Building those from the opaque bake itself is the one piece
+// of the delta path an opaque hull still carries.
+static const VgCanOp* const OP_SET[SHIP_CLASSES] = {
+    VG_CANOPY_OP_SET_ROWS
+};
+static_assert(sizeof(OP_SET) / sizeof(OP_SET[0]) == SHIP_CLASSES,
+              "the generated opaque set has a different number of hulls than ShipClass "
+              "-- re-run tools/canopy_set.py");
+
 const VgCanOp* vg_canopy_op_for(ShipClass c) {
     if (!vg_canopy_op_on) return nullptr;
-    return (c == SHIP_CHARIOT) ? &CANOPY_OP_CHARIOT : nullptr;
+    return OP_SET[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
 }
