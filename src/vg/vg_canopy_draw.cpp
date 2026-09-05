@@ -914,6 +914,28 @@ static inline int warp_y(int y, float zbase) {
     return (int)((float)SCR_CY + dy * (zbase + s_w_zk * dy * dy) + 0.5f);
 }
 
+// The same three motions the delta path applies below, answered for a caller that
+// stores its cockpit some other way. See VgCanMotion in the header for why it lives
+// here rather than there.
+bool vg_canopy_motion(int py, struct VgCanMotion* m) {
+    if (!s_warp_on) return false;
+
+    // Panel row to drawing column and back. The lag picks a DIFFERENT COLUMN, which
+    // is the whole of the yaw swing -- clamped to the edge rather than dropped, for
+    // the reason given at the same step in canopy_rows_t.
+    int lx = SCR_H - 1 - py;
+    lx += s_lag_px;
+    if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
+    lx = s_wcol[lx];
+
+    m->row   = SCR_H - 1 - lx;
+    m->xofs  = (int)s_wc[lx] + s_lag_py
+             + (int)((float)(lx - SCR_H / 2) * s_lag_sh);
+    m->zbase = s_w_zbase[lx];
+    m->zk    = s_w_zk;
+    return true;
+}
+
 // THE TWO EDGES, on their own, so the block walk does not carry them.
 //
 // Only the FIRST and LAST block of a column can touch a border, so this finds those two and

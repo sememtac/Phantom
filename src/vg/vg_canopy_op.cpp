@@ -1,4 +1,5 @@
 #include "vg_canopy_op.h"
+#include "vg_canopy_draw.h"
 #include "vg_config.h"
 #include <Arduino.h>
 
@@ -46,6 +47,15 @@ static inline void add_px(uint16_t* p, uint16_t d_native) {
     *p = (uint16_t)((o >> 8) | (o << 8));
 }
 
+// ONE POINT ONTO THE SPHERE, along the column. warp_y in vg_canopy_draw.cpp is the
+// same three lines against the same state; it is static there and inlining it here
+// is cheaper than a call a span. If one is ever changed the other has to be, and the
+// motion they share comes out of vg_canopy_motion so that only THIS can drift.
+static inline int sphere_x(int x, float zbase, float zk) {
+    const float d = (float)(x - SCR_CY);
+    return (int)((float)SCR_CY + d * (zbase + zk * d * d) + 0.5f);
+}
+
 void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     const VgCanOp* c = s_cur;
     if (!c) return;
@@ -68,15 +78,45 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
         const int y = by0 + r;
         if (y < 0 || y >= SCR_H) continue;
 
-        const uint16_t s0 = c->row[y], s1 = c->row[y + 1];
+        // THE COCKPIT MOVES BY BEING READ SOMEWHERE ELSE. The spring, the throttle
+        // bend and the roll shear all arrive as one row index and one displacement
+        // along it -- see VgCanMotion. A rigid frame answers false and the whole of
+        // the rest of this loop is the straight blit it was before.
+        VgCanMotion mo;
+        const bool  mv = vg_canopy_motion(y, &mo);
+        const int   sy = mv ? mo.row : y;
+
+        const uint16_t s0 = c->row[sy], s1 = c->row[sy + 1];
         uint16_t* dst_row = &band[r * SCR_W];
 
         for (uint16_t si = s0; si < s1; si++) {
             const VgCanOpSpan* sp = &c->span[si];
             if ((int)sp->zone >= shown) continue;
 
-            uint16_t* dst = &dst_row[sp->x0];
-            int       n   = sp->len;
+            const int len = (int)sp->len;
+            int d0 = (int)sp->x0, d1 = (int)sp->x0 + len;
+            int c0 = d0, c1 = d1;
+            bool ext = false;
+
+            if (mv) {
+                d0 = sphere_x(d0, mo.zbase, mo.zk) + mo.xofs;
+                d1 = sphere_x(d1, mo.zbase, mo.zk) + mo.xofs;
+                if (d1 <= d0) continue;
+                c0 = d0; c1 = d1;
+                // CLAMPED TO THE EDGE, NOT DROPPED, the same call canopy_rows_t
+                // makes on the other axis: a run that reached a border keeps
+                // reaching it, so the frame reads as continuing past the screen
+                // rather than sliding away from it and leaving sky.
+                if (sp->x0 == 0)         { c0 = 0;     ext = true; }
+                if ((int)sp->x0 + len >= SCR_W) { c1 = SCR_W; ext = true; }
+            }
+
+            if (c0 < 0)     c0 = 0;
+            if (c1 > SCR_W) c1 = SCR_W;
+            if (c1 <= c0) continue;
+
+            uint16_t* dst = &dst_row[c0];
+            int       n   = c1 - c0;
 
             if (sp->kind == VG_CANOP_ADD) {
                 // The lit edge. A pixel at a time: there is no pairing to be had
@@ -86,12 +126,31 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 continue;
             }
 
-            // METAL. Two pixels to a store, exactly as the chassis blit does --
-            // the panel is 16-bit and the bus is 32, so a pair is one word. A span
-            // starts at an arbitrary x, so an odd first pixel goes out alone to
-            // reach alignment: an unaligned 32-bit store on Xtensa is a fault
-            // rather than a slowdown, so this is correctness and not tuning.
             const uint8_t* src = &data[sp->off];
+
+            // STRETCHED, which the sphere does and a translation does not. The run
+            // holds a palette index a pixel, so a run that lands longer or shorter
+            // than it was drawn has to be RESAMPLED -- nearest neighbour, on a 16.16
+            // step, clamped at both ends so the border extension above repeats the
+            // edge pixel instead of reading off the run.
+            if (ext || (d1 - d0) != len) {
+                const int32_t step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
+                const int32_t top  = (int32_t)(len - 1) << 16;
+                int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
+                while (n-- > 0) {
+                    const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
+                    *dst++ = pal[src[a >> 16]];
+                    acc += step;
+                }
+                continue;
+            }
+
+            // METAL, WHERE IT LANDED WHOLE. Two pixels to a store, exactly as the
+            // chassis blit does -- the panel is 16-bit and the bus is 32, so a pair
+            // is one word. A span starts at an arbitrary x, so an odd first pixel
+            // goes out alone to reach alignment: an unaligned 32-bit store on Xtensa
+            // is a fault rather than a slowdown, so this is correctness not tuning.
+            src += (c0 - d0);
             if ((((uintptr_t)dst) & 2u) && n > 0) {
                 *dst++ = pal[*src++];
                 n--;

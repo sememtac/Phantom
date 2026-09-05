@@ -122,6 +122,31 @@ void vg_canopy_warp_build(void);
 // keeping a second table that could disagree with it.
 void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 
+// ---------------------------------------------------------------------------
+// THE MOTION, FOR A DRAWING THAT IS NOT THIS ONE
+//
+// A canopy moves in three ways that have nothing to do with how it is STORED: the
+// frame lags the turn on a spring, the tube bends under the throttle, and the roll
+// shears it. All three are done by SAMPLING -- the drawing never moves, the
+// renderer reads a different part of it -- so any drawing at all can be moved by
+// the same numbers, as long as it asks the same questions.
+//
+// The opaque bake is that other drawing. It is spans in panel rows rather than
+// blocks in columns, and A PANEL ROW IS A COLUMN, so the two questions it needs are
+// which row to read and where along it the reading lands. Answered HERE, out of the
+// same state and the same arithmetic the delta path uses, because two cockpits that
+// compute their own motion are two cockpits that will eventually disagree.
+struct VgCanMotion {
+    int   row;      // the panel row of the drawing this panel row shows
+    int   xofs;     // translation along it: the bow, the pitch lag and the roll shear
+    float zbase;    // the sphere's own term for this column
+    float zk;       // ...and its dy coefficient, constant for the frame
+};
+
+// False when nothing is moving, which is the whole answer: read row for row and
+// draw every span where it was baked.
+bool vg_canopy_motion(int py, struct VgCanMotion* m);
+
 // THE COCKPIT COMING ONLINE, at the top of a match.
 //
 // The view opens black, and it arrives a REGION at a time: the whole region flashes white, the
