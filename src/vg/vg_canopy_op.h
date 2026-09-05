@@ -52,15 +52,39 @@ struct VgCanOpSpan {
     uint8_t  kind;
 };
 
+// ONE RUN OF THE REGION MAP, which is a different question from the span table.
+//
+// A span says WHAT IS DRAWN. This says WHICH REGION OF THE VIEW a pixel is in, and it
+// covers every pixel of the panel -- the panes included, which the span table stores
+// nothing for. Both things that act on a region act on the whole of it: the arrival
+// holds a region black and dissolves the world out of it, and a round through the
+// canopy takes a region to white and then to static. Neither is possible against a
+// list that only knows where the metal is.
+//
+// Separate rather than a flag on a span because the two are read at different moments.
+// The span table MOVES with the frame -- the spring, the bend, the shear -- and this
+// does not: the gate is drawn rigid, so it lands where the view is rather than where
+// the cockpit has swung to. The delta canopy splits them for the same reason.
+struct VgCanOpZone {
+    uint16_t x0;
+    uint16_t len;
+    uint8_t  zone;
+};
+
 struct VgCanOp {
     const uint16_t*    pal;     // RGB565, pre-swapped, one entry per index
     const uint8_t*     data;    // one palette index per stored opaque pixel
     const VgCanOpSpan* span;
     const uint16_t*    row;     // first span of each panel row, SCR_H + 1 entries
 
+    const VgCanOpZone* zone;    // the region map
+    const uint16_t*    zrow;    // first run of each panel row, SCR_H + 1 entries
+
     uint16_t spans;
+    uint16_t zruns;
     uint32_t pixels;
     uint8_t  zones;
+    uint8_t  centre;            // the region being looked THROUGH; never fails
 };
 
 // IS THE EXPERIMENT ON. Default true, because a branch called opaque-canopy that
@@ -74,10 +98,18 @@ extern bool vg_canopy_op_on;
 void vg_canopy_op_use(const VgCanOp* c);
 const VgCanOp* vg_canopy_op_current(void);
 
-// HOW MUCH OF IT HAS ARRIVED, 0..1. Zones are revealed in order, so the cockpit
-// assembles rather than appearing -- the same thing the delta canopy does with
-// its own zones, driven by the same boot chain.
-void vg_canopy_op_reveal(float k);
+// THE ARRIVAL AND THE DAMAGE ARE NOT THIS FILE'S.
+//
+// There was a vg_canopy_op_reveal here -- a scalar 0..1 that let zones through in
+// order -- and it was never driven by anything, which was the honest state of it: a
+// cockpit arriving is not a fraction, it is a sequence with a flash, a dissolve and a
+// cooling edge, and it is already written once in vg_canopy_draw.cpp. So is a hit.
+//
+// This draws under both of them instead. vg_canopy_zone_live says whether a region's
+// metal exists yet, vg_canopy_zone_glow says how hot its edge is running, and
+// vg_canopy_gate_run paints whatever the region is doing over the top -- all out of
+// the one clock, so the two cockpits arrive and break identically. See the block at
+// VgCanMotion in vg_canopy_draw.h; this is the same argument a second time.
 
 // Paint this core's rows of one band. Called from the band raster, in the same
 // place and under the same primitive as the delta canopy.

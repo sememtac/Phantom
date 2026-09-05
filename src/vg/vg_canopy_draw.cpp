@@ -1,4 +1,5 @@
 #include "vg_canopy_draw.h"
+#include "vg_canopy_op.h"
 #include "vg_raster.h"
 #include "vg_raster_int.h"
 #include "vg_port.h"
@@ -113,6 +114,24 @@ static bool s_can_rear = false;
 void vg_canopy_rear(bool on) { s_can_rear = on; }
 
 const VgCanopy* vg_canopy_current(void) { return s_can; }
+
+// HOW MANY REGIONS THE COCKPIT THAT IS FLYING HAS.
+//
+// The arrival, the hits and the damage progression all step through the REGIONS of the
+// drawing, and there are two drawings now with different counts: the CHARIOT's light
+// delta has four and its opaque bake has six. Every loop that read s_can->zones was
+// asking the wrong one the moment the opaque cockpit was the one on screen -- regions
+// four and five would simply never have lit, and the arrival would have finished with a
+// third of the canopy still black.
+//
+// The tests INSIDE canopy_gate and canopy_rows_t still read s_can->zones, and must. Those
+// index the delta drawing's own run tables and the question there is whether a run is in
+// range, not how many regions the sequence is walking.
+static int canopy_zones(void) {
+    const VgCanOp* o = vg_canopy_op_current();
+    if (o) return (int)o->zones;
+    return s_can ? (int)s_can->zones : 0;
+}
 
 // THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW.
 //
@@ -1187,6 +1206,20 @@ static uint16_t s_gate_mask     = 0;
 
 static void canopy_find_centre(void) {
     s_centre_z = -1;
+    // THE OPAQUE BAKE ALREADY KNOWS. Its baker reads the region at the middle of the
+    // panel and stores it, which is a better answer than the centroid search below --
+    // that one asks which region is nearest the middle ON AVERAGE, and a big L-shaped
+    // region can average its way to the centre without covering it. The delta drawing
+    // has no such field, so the search stays for it.
+    {
+        const VgCanOp* o = vg_canopy_op_current();
+        if (o) {
+            s_centre_z = (int8_t)o->centre;
+            s_colmask_ready = false;
+            for (int i = 0; i < SCR_H; i++) s_colmask[i] = 0xFFFFu;
+            return;
+        }
+    }
     s_colmask_ready = false;
     for (int i = 0; i < SCR_H; i++) s_colmask[i] = 0;
     if (!s_can || s_can->zones <= 0) return;
@@ -1244,11 +1277,11 @@ static void canopy_gate_mask(void) {
 #define CANOPY_FAULT_END    0.12f    // ...and at which as many as can be are gone
 
 void vg_canopy_damage(float hull_frac) {
-    if (!s_can || s_can->zones <= 0) return;
+    if (!s_can || canopy_zones() <= 0) return;
     if (s_centre_z < 0) canopy_find_centre();
 
     // Everything but the middle one may fail.
-    const int usable = (s_can->zones > 1) ? s_can->zones - 1 : 0;
+    const int usable = (canopy_zones() > 1) ? canopy_zones() - 1 : 0;
     if (!usable) return;
 
     float t = (CANOPY_FAULT_START - hull_frac)
@@ -1267,7 +1300,7 @@ void vg_canopy_damage(float hull_frac) {
     while (s_fault_n < want && s_fault_n < usable) {
         int free_z[VG_CANOPY_MAX_ZONES];
         int n = 0;
-        for (int z = 0; z < s_can->zones; z++) {
+        for (int z = 0; z < canopy_zones(); z++) {
             if (z == s_centre_z) continue;
             bool taken = false;
             for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) taken = true;
@@ -1323,18 +1356,24 @@ void vg_canopy_hit_step(float dt) {
     canopy_gate_mask();
 }
 
-static __attribute__((noinline))
-void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
-    const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
-    const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
+bool vg_canopy_gate_on(void)      { return s_gate_on; }
+bool vg_canopy_zone_live(int z) {
+    if (!s_intro_on) return true;              // nothing is holding anything back
+    return (z >= 0 && z < VG_CANOPY_MAX_ZONES) && s_ilive[z] != 0;
+}
+uint8_t vg_canopy_zone_glow(int z) {
+    if (!s_intro_on || z < 0 || z >= VG_CANOPY_MAX_ZONES) return 0;
+    return s_iglow[z];
+}
+
+// ONE RUN OF ONE REGION, painted with whatever that region is doing: held black while it
+// waits its turn, white on its flash, dissolving to the world, or lost to a hit or a
+// fault. Lifted out of canopy_gate whole so that a cockpit stored some other way can be
+// walked through the same arithmetic -- see the block at VgCanOpZone. Nothing here reads
+// the drawing; it reads the CLOCK, and the clock is one.
+void IRAM_ATTR vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, int z) {
     const uint8_t* bay = &BAYER4[(py & 3) << 2];
-    while (p + 3 <= e) {
-        const uint8_t h  = p[0];
-        const int     y0 = ((h & 1) << 8) | p[1];
-        const int     n  = ((h & 2) << 7) | p[2];
-        const int     z  = (h >> 2) & 15;
-        p += 3;
-        if (z >= s_can->zones) continue;
+    {
 
         // NOT WHILE THE COCKPIT IS ARRIVING.
         //
@@ -1363,7 +1402,7 @@ void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
                         if ((r & 0xFFu) < 190u)
                             qf[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
                     }
-                    continue;
+                    return;
                 }
             }
 
@@ -1386,12 +1425,12 @@ void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
                             qh[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
                     }
                 }
-                continue;
+                return;
             }
         }
 
         const uint32_t rev  = s_izon[z];
-        if (rev >= 255u) continue;                  // this region is all the way in
+        if (rev >= 255u) return;                  // this region is all the way in
         const uint16_t fill = s_ifill[z];
         uint16_t* q = &row[y0];
         if (rev == 0u) {
@@ -1404,6 +1443,22 @@ void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
             for (int i = 0; i < n; i++)
                 if ((uint32_t)bay[(y0 + i) & 3] >= th) q[i] = fill;
         }
+    }
+}
+
+// The delta drawing's own region map, run by run.
+static __attribute__((noinline))
+void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
+    const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
+    const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
+    while (p + 3 <= e) {
+        const uint8_t h  = p[0];
+        const int     y0 = ((h & 1) << 8) | p[1];
+        const int     n  = ((h & 2) << 7) | p[2];
+        const int     z  = (h >> 2) & 15;
+        p += 3;
+        if (z >= s_can->zones) continue;
+        vg_canopy_gate_run(row, lx, py, y0, n, z);
     }
 }
 
@@ -1656,7 +1711,7 @@ bool vg_canopy_intro_cued(void) { return s_icued; }
 int vg_canopy_intro_lit(void) {
     if (!s_can || !s_intro_on) return 0;
     int n = 0;
-    for (int z = 0; z < s_can->zones; z++) if (s_ilive[z]) n++;
+    for (int z = 0; z < canopy_zones(); z++) if (s_ilive[z]) n++;
     return n;
 }
 
@@ -1677,7 +1732,7 @@ void vg_canopy_intro_reset(void) {
     // chain's disarm and have to happen for every hull. Only the per-zone arrays need a
     // drawing to be about.
     if (!s_can) return;
-    for (int z = 0; z < s_can->zones; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
+    for (int z = 0; z < canopy_zones(); z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
 
 // HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
@@ -1709,11 +1764,11 @@ bool vg_canopy_intro_update(float dt) {
     // THE INSTRUMENTS' CUE, latched from inside the running sequence -- which is the only place
     // that can know the sequence is actually running. The length is derived here from the pacing
     // constants, so retuning them moves the cue with them rather than sliding it out of step.
-    const float span = CANOPY_INTRO_LEAD + (float)(s_can->zones - 1) * CANOPY_INTRO_STEP
+    const float span = CANOPY_INTRO_LEAD + (float)(canopy_zones() - 1) * CANOPY_INTRO_STEP
                      + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
     if (!s_icued && span > 0.0f && s_intro_t >= span * CANOPY_INTRO_HUD_AT) s_icued = true;
 
-    for (int z = 0; z < s_can->zones; z++) {
+    for (int z = 0; z < canopy_zones(); z++) {
         const float e = s_intro_t - (CANOPY_INTRO_LEAD + (float)z * CANOPY_INTRO_STEP);
         if (e < 0.0f) continue;                  // this one's turn has not come
         s_ilive[z]  = 1;
@@ -1748,12 +1803,12 @@ bool vg_canopy_intro_update(float dt) {
     // Over when the last zone's members have finished cooling, which is now the last thing to
     // happen anywhere in the sequence. The settle that follows is not part of it: the view is
     // fully in well before this and the frame is merely taking up its flex.
-    const float end = CANOPY_INTRO_LEAD + (float)(s_can->zones - 1) * CANOPY_INTRO_STEP
+    const float end = CANOPY_INTRO_LEAD + (float)(canopy_zones() - 1) * CANOPY_INTRO_STEP
                     + CANOPY_INTRO_FLASH + CANOPY_INTRO_DISSOLVE + CANOPY_INTRO_LIT;
     if (s_intro_t >= end) {
         s_intro_on = false;
         s_settle_t = 0.0f;
-        for (int z = 0; z < s_can->zones; z++) {
+        for (int z = 0; z < canopy_zones(); z++) {
             s_izon[z] = 255; s_ilive[z] = 1;
             if (s_iglow[z]) { s_iglow[z] = 0; canopy_ilut(z); }
         }

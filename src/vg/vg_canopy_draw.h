@@ -147,6 +147,29 @@ struct VgCanMotion {
 // draw every span where it was baked.
 bool vg_canopy_motion(int py, struct VgCanMotion* m);
 
+// ---------------------------------------------------------------------------
+// THE ARRIVAL AND THE DAMAGE, FOR THE SAME OTHER DRAWING
+//
+// Same argument as VgCanMotion above. A cockpit coming online, a panel taking a round
+// and a panel that has failed for good are all properties of the MATCH, not of how the
+// drawing is stored -- and there is one clock running all three. A second cockpit that
+// kept its own would arrive at a different moment and break in a different place.
+//
+// `gate_on`     is anything happening at all: the sequence is running, or some panel is
+//               hit or faulty. False means skip the whole walk.
+// `gate_run`    paints one run of one region with whatever that region is doing. The
+//               caller supplies the run; this supplies the state. Rigid on purpose --
+//               the gate lands where the VIEW is, not where the frame has swung to.
+// `zone_live`   whether a region's cockpit exists yet. True whenever nothing is arriving.
+// `zone_glow`   0..255, how hot that region's members are running during the arrival.
+//               The delta cockpit spends this on a per-zone colour table; a painted one
+//               has no table to spend it on, so it goes on the lit edge instead -- which
+//               is the only part of an opaque cockpit that is light in the first place.
+bool     vg_canopy_gate_on(void);
+void     vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, int z);
+bool     vg_canopy_zone_live(int z);
+uint8_t  vg_canopy_zone_glow(int z);
+
 // THE COCKPIT COMING ONLINE, at the top of a match.
 //
 // The view opens black, and it arrives a REGION at a time: the whole region flashes white, the

@@ -8,15 +8,10 @@
 
 bool vg_canopy_op_on = true;
 
-static const VgCanOp* s_cur    = nullptr;
-static float          s_reveal = 1.0f;
+static const VgCanOp* s_cur = nullptr;
 
 void vg_canopy_op_use(const VgCanOp* c) { s_cur = c; }
 const VgCanOp* vg_canopy_op_current(void) { return s_cur; }
-
-void vg_canopy_op_reveal(float k) {
-    s_reveal = (k < 0.0f) ? 0.0f : (k > 1.0f ? 1.0f : k);
-}
 
 // THE OUTLINE'S COLOUR, in NATIVE order.
 //
@@ -41,9 +36,10 @@ void vg_canopy_op_reveal(float k) {
 //
 // Recomputed a BAND rather than cached against the alarm's own quantiser: fifteen
 // mixes a frame against a per-pixel pass is not a number worth keeping state for.
-static inline uint16_t outline_native(void) {
+static inline uint16_t outline_native(float extra) {
     float          al   = 0.0f;
     const uint16_t base = vg_canopy_alarm_colour(&al);
+    if (extra > al) al = extra;
     const uint16_t c    = vg_dim(base, CANOPY_OP_EDGE + (1.0f - CANOPY_OP_EDGE) * al);
     return (uint16_t)((c >> 8) | (c << 8));
 }
@@ -81,14 +77,27 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     // of struct on every pixel is work the compiler cannot always see through.
     const uint16_t* pal  = c->pal;
     const uint8_t*  data = c->data;
-    const uint16_t  lit  = outline_native();
 
-    // HOW MANY ZONES HAVE ARRIVED. Compared against a span's zone, so the gate is
-    // one integer test a RUN rather than anything per pixel -- which is the whole
-    // reason the baker refuses to let a run straddle two zones.
-    const int shown = (s_reveal >= 1.0f)
-                    ? (int)c->zones
-                    : (int)(s_reveal * (float)c->zones + 0.5f);
+    // WHAT EACH REGION IS DOING, resolved once a band instead of once a span.
+    //
+    // Two questions, and the baker's refusal to let a run straddle two regions is what
+    // makes both of them one array lookup: does this region's cockpit exist yet, and how
+    // hot is its lit edge running. The heat is the arrival's -- the delta cockpit spends
+    // it on a colour table per region, and a painted cockpit has no table to spend it on,
+    // so it goes where the light already is.
+    bool     live[VG_CANOPY_MAX_ZONES];
+    uint16_t edge[VG_CANOPY_MAX_ZONES];
+    const int nz = (int)c->zones;
+    for (int z = 0; z < nz && z < VG_CANOPY_MAX_ZONES; z++) {
+        live[z] = vg_canopy_zone_live(z);
+        edge[z] = outline_native((float)vg_canopy_zone_glow(z) * (1.0f / 255.0f));
+    }
+
+    // IS ANYTHING HAPPENING TO A REGION AT ALL. False for almost every frame of a
+    // match, and when it is false the walk below is skipped whole -- the region map
+    // is 2,001 runs and there is no reason to read it to discover that the cockpit is
+    // simply present.
+    const bool gate = vg_canopy_gate_on();
 
     for (int r = r0; r < r1; r++) {
         const int y = by0 + r;
@@ -105,9 +114,31 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
         const uint16_t s0 = c->row[sy], s1 = c->row[sy + 1];
         uint16_t* dst_row = &band[r * SCR_W];
 
+        // THE VIEW FIRST, THEN THE COCKPIT ON TOP OF IT, which is the order the delta
+        // path draws in and for the same reason: everything behind the canopy is already
+        // in the band and the instruments come after, so this is the one point where
+        // blacking a region hides the world without touching the panel.
+        //
+        // RIGID. It reads y, not sy, and ignores mo entirely -- a region of the VIEW does
+        // not swing with the frame. The delta path makes the same call and says so.
+        //
+        // No column mask here. The delta path keeps one so a single faulty panel does not
+        // cost a full-screen walk to find; this map is 4.2 runs a row against that one's
+        // whole zone table, and the gate is off except during an arrival or a hit.
+        if (gate) {
+            const uint16_t g0 = c->zrow[y], g1 = c->zrow[y + 1];
+            for (uint16_t gi = g0; gi < g1; gi++) {
+                const VgCanOpZone* zr = &c->zone[gi];
+                vg_canopy_gate_run(dst_row, y, y, (int)zr->x0, (int)zr->len,
+                                   (int)zr->zone);
+            }
+        }
+
         for (uint16_t si = s0; si < s1; si++) {
             const VgCanOpSpan* sp = &c->span[si];
-            if ((int)sp->zone >= shown) continue;
+            // A REGION THAT HAS NOT ARRIVED HAS NO COCKPIT IN IT. One test a run, which
+            // is the whole reason a run is not allowed to straddle two regions.
+            if ((int)sp->zone >= nz || !live[sp->zone]) continue;
 
             const int len = (int)sp->len;
             int d0 = (int)sp->x0, d1 = (int)sp->x0 + len;
@@ -135,6 +166,7 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             int       n   = c1 - c0;
 
             if (sp->kind == VG_CANOP_ADD) {
+                const uint16_t lit = edge[sp->zone];
                 // The lit edge. A pixel at a time: there is no pairing to be had
                 // here the way there is for a store, because each one is a read,
                 // an unpack, three clamps and a write.
