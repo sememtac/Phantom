@@ -154,6 +154,15 @@ void vg_canopy_alarm(float k, bool white) {
     s_can_ready   = false;        // the colour table is stale; canopy_lut rebuilds it
 }
 
+uint16_t vg_canopy_alarm_colour(float* level) {
+    if (s_alarm_white) {
+        if (level) *level = 1.0f;
+        return CANOPY_ALARM_WHITE;
+    }
+    if (level) *level = s_alarm;
+    return (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm) : COL_HUD;
+}
+
 static void canopy_lut(void) {
     const int bg = (int)s_can->bg;
     // What the frame is made of right now: its own amber, pulled toward the danger red as

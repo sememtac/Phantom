@@ -196,6 +196,16 @@ void  vg_canopy_rear(bool on);
 // here took the backdrop fill from 3060 us to 1824 and the frame rate from 53.1 to 59.7.
 void  vg_canopy_alarm(float k, bool white);
 
+// WHAT THE WARNING HAS MADE OF THE FRAME'S COLOUR, for a cockpit that does not have a
+// 256-entry table to rebuild. Returns the base colour canopy_lut mixes from -- amber,
+// pulled toward COL_DANGER by the clearance, or white for the length of a strobe -- and
+// writes 0..1 through `level` for how far along that ramp it is. A strobe reports 1.
+//
+// Here rather than in the caller because the alarm's state is here, and two cockpits that
+// each decide for themselves what a warning looks like are two cockpits that disagree
+// about how close the wall is.
+uint16_t vg_canopy_alarm_colour(float* level);
+
 void  vg_canopy_intro_reset(void);
 void  vg_canopy_intro_begin(void);
 bool  vg_canopy_intro_update(float dt);

@@ -390,6 +390,20 @@
 // about three frames at sixty -- long enough to register, short enough that the red is what
 // the eye spends its time on.
 #define CANOPY_ALARM_WHITE    0xFFFF  // what a strobe goes to
+
+// HOW BRIGHT THE OPAQUE COCKPIT'S LIT EDGE SITS, 0..1, when nothing is wrong.
+//
+// The opaque bake (vg_canopy_op.h) draws its frame as METAL and only the thin outline
+// tracing each pane as light. At a full additive COL_HUD that outline reads as a solid
+// drawn line, which is the one thing it must not: it is the only part of that cockpit
+// that is still a RELATIONSHIP with the scene, and it has to look like glass catching
+// the panel rather than like paint.
+//
+// It is also now the whole of the wall warning. The delta cockpit turns its members red
+// -- see vg_canopy_alarm -- and there are no members here to turn, so the edge carries
+// the signal instead, and it can only get louder if it starts quiet. The alarm ramps this
+// to full, so the outline both reddens AND comes up as the boundary closes.
+#define CANOPY_OP_EDGE        0.50f
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall

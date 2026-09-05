@@ -1,5 +1,6 @@
 #include "vg_canopy_op.h"
 #include "vg_canopy_draw.h"
+#include "vg_raster.h"
 #include "vg_config.h"
 #include <Arduino.h>
 
@@ -24,11 +25,26 @@ void vg_canopy_op_reveal(float k) {
 // channels, so it wants the natural order and swaps at both ends -- the same pair
 // of swaps the antialiased line path already pays.
 //
-// One constant for every pixel of every outline: the drawing says WHERE the lit
-// edge is and this says what lit means. It is the HUD's own amber, so the edge
-// belongs to the instrument layer rather than to the paintwork.
+// FAINT BY DEFAULT, and that is the point of it. At a full additive COL_HUD the
+// outline read as a drawn line rather than as a lit edge, which loses the one thing
+// this half of the cockpit is for: the metal is paint and the outline is a
+// RELATIONSHIP with whatever is behind it. Held down to CANOPY_OP_EDGE, it reads as
+// glass catching the panel.
+//
+// AND IT IS NOW THE WHOLE OF THE WALL WARNING. The delta cockpit turns its members
+// red -- one colour table, nothing per pixel -- and there are no members here to
+// turn: they are the artist's own paint. So the outline carries the signal instead,
+// and it carries it BOTH WAYS: vg_canopy_alarm_colour pulls the hue from amber to
+// COL_DANGER and to white on a strobe, and the same level ramps the brightness from
+// CANOPY_OP_EDGE up to full. Starting quiet is what makes getting loud mean
+// something.
+//
+// Recomputed a BAND rather than cached against the alarm's own quantiser: fifteen
+// mixes a frame against a per-pixel pass is not a number worth keeping state for.
 static inline uint16_t outline_native(void) {
-    const uint16_t c = COL_HUD;
+    float          al   = 0.0f;
+    const uint16_t base = vg_canopy_alarm_colour(&al);
+    const uint16_t c    = vg_dim(base, CANOPY_OP_EDGE + (1.0f - CANOPY_OP_EDGE) * al);
     return (uint16_t)((c >> 8) | (c << 8));
 }
 
