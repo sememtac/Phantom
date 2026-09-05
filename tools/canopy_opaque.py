@@ -201,8 +201,13 @@ def load(src, colors, tint=None):
         idx = np.asarray(pal_im).astype(np.uint8)
         pal_rgb = np.array(pal_im.getpalette()[:colors * 3], int).reshape(colors, 3)
         tint_n = 0
+        # OVER THE STORED PIXELS, which is what the split path measures too. This
+        # was over ~exempt, so it included the additive outline -- pixels whose
+        # colour is never stored and never read from the palette. The two paths
+        # printed the same label for two different numbers, 0.96 against 0.86,
+        # and the difference was the denominator rather than the bake.
         err = np.abs(np.asarray(pal_im.convert("RGB")).astype(int)
-                     - np.asarray(art).astype(int))[~exempt]
+                     - np.asarray(art).astype(int))[~exempt & ~add]
 
     pal565 = []
     for i in range(colors):
