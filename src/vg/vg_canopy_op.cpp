@@ -253,6 +253,19 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
         const bool  mv = vg_canopy_motion(y, &mo);
         const int   sy = mv ? mo.row : y;
 
+        // ONE PROJECTION PER ENDPOINT, NOT TWO PER SPAN. The runs on a row are in
+        // order and the outline traces the metal, so most runs begin where the last
+        // one ended; the sphere is a function of x alone on a row, so that endpoint
+        // has already been projected. Keyed by the drawing's x, and reset per row.
+        // 9,724 float projections a frame become about half that, bit for bit.
+        //
+        // AND NONE AT ALL WHEN THE SPHERE IS FLAT. With the bend quantised to zero the
+        // maps hold zoom 1 and curvature 0 exactly, and sphere_x(x) is then
+        // (int)((float)x + 0.5f) == x for every column on the panel -- so a lag-only
+        // frame is a translation and its runs keep their length, which is the blit.
+        int  share_x = -1, share_d = 0;
+        const bool flat = mv && mo.zk == 0.0f && mo.zbase == 1.0f;
+
         const uint16_t s0 = c->row[sy], s1 = c->row[sy + 1];
         uint16_t* dst_row = &band[r * SCR_W];
 
@@ -288,8 +301,17 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             bool ext = false;
 
             if (mv) {
-                d0 = sphere_x(d0, mo.zbase, mo.zk) + mo.xofs;
-                d1 = sphere_x(d1, mo.zbase, mo.zk) + mo.xofs;
+                if (flat) {
+                    d0 += mo.xofs;
+                    d1 += mo.xofs;
+                } else {
+                    const int x1 = d1;                          // the drawing's x, still
+                    d0 = (d0 == share_x) ? share_d
+                                         : sphere_x(d0, mo.zbase, mo.zk) + mo.xofs;
+                    d1 = sphere_x(x1, mo.zbase, mo.zk) + mo.xofs;
+                    share_x = x1;
+                    share_d = d1;
+                }
                 if (d1 <= d0) continue;
                 c0 = d0; c1 = d1;
                 // CLAMPED TO THE EDGE, NOT DROPPED, the same call canopy_rows_t
@@ -352,9 +374,10 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 const uint32_t thr  = gate ? (uint32_t)revth[sp->zone] : 16u;
                 const uint16_t k    = held[sp->zone];
                 const uint16_t litz = edge[sp->zone];
-                const int32_t  step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
+                // 32-bit throughout -- see the note at the stretched path below.
+                const int32_t  step = (int32_t)(len << 16) / (d1 - d0);
                 const int32_t  top  = (int32_t)(len - 1) << 16;
-                int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
+                int32_t acc = (int32_t)((uint32_t)(c0 - d0) * (uint32_t)step);
                 for (int x = c0; x < c1; x++) {
                     const uint32_t bc = bay[x & 3];
                     if (bc >= th) {
@@ -394,9 +417,17 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             // resample was giving that back a pixel at a time for no reason but the
             // shape of the loop.
             if (ext || (d1 - d0) != len) {
-                const int32_t step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
+                // 32-BIT THROUGHOUT, and every value is the same one the 64-bit form gave.
+                // A 64-bit divide on this core is a library call of a few hundred cycles,
+                // and there were two of them and a 64-bit multiply on every stretched
+                // run -- about 4,800 a frame at full bend. By range they never needed
+                // it: len is at most the panel's width, so len << 16 is under 2^25 and
+                // divides in 32; top - acc is inside [0, top]; and the product was
+                // always truncated to 32 bits on assignment, which is what the unsigned
+                // multiply gives, wrap for wrap, without the undefined signed overflow.
+                const int32_t step = (int32_t)(len << 16) / (d1 - d0);
                 const int32_t top  = (int32_t)(len - 1) << 16;
-                int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
+                int32_t acc = (int32_t)((uint32_t)(c0 - d0) * (uint32_t)step);
 
                 // An odd first pixel, to reach alignment. Clamped, because it is one
                 // pixel and the range arithmetic below is not worth doing twice: an
@@ -413,9 +444,9 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 // the old shape and pays the compares, and it is one span in a frame.
                 int mid = 0;
                 if (acc >= 0 && acc <= top) {
-                    const int64_t room = (int64_t)top - (int64_t)acc;
-                    int64_t k = room / (int64_t)step + 1;
-                    mid = (k < (int64_t)n) ? (int)k : n;
+                    const int32_t room = top - acc;
+                    const int32_t k    = room / step + 1;
+                    mid = (k < n) ? k : n;
                 }
 
                 uint32_t* w = (uint32_t*)dst;

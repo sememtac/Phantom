@@ -97,6 +97,10 @@ SLOW = re.compile(r"vg_replay: SLOW(\d) frame (\d+)  (\d+) us \((\d+) fps\)  upd
                   r" \(can (\d+) prim (\d+) scan (\d+) tv (\d+)\)(?: \| A (\d+) B (\d+) wait (\d+) sxr (\d+) world (\d+))?")
 SLOWK = ["i", "frame", "us", "fps", "upd", "sub", "rast", "can", "prim", "scan", "tv",
          "A", "B", "wait", "sxr", "world"]
+# The picture hash: every Nth frame's bands folded on the device. Two builds that
+# draw the same pixels give the same word; the timings of a hashed run are polluted
+# by the fold and are not to be compared.
+BANDH = re.compile(r"vg_replay: BANDH ([0-9a-f]{8}) over (\d+) bands, 1 frame in (\d+)")
 # The canopy by core. `can` is the slower half a band; these are both halves.
 CAN = re.compile(r"vg_replay: CAN c0 (\d+) \| c1 (\d+) \| at (\d+)")
 WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
@@ -194,6 +198,38 @@ def choose_warp(port, warp):
         ser.close()
 
 
+def choose_hash(port, want):
+    """Arm or disarm the device's picture hash, and refuse to go on unless it says so.
+
+    'w' TOGGLES, and the setting survives a reset (it lives in RTC memory), so a run
+    that does not ask for the hash has to make sure the last run did not leave it
+    armed: a hashed run's timings are polluted by the fold. So this always runs,
+    sends 'w' once to learn the state from the answer, and once more if the answer
+    is not the one wanted.
+    """
+    ser = open_quiet(port)
+    try:
+        time.sleep(0.5)
+        for attempt in range(3):
+            ser.reset_input_buffer()
+            ser.write(b"w")
+            ser.flush()
+            t0, buf = time.time(), ""
+            while time.time() - t0 < 1.5:
+                buf += ser.read(4096).decode("ascii", "replace")
+                if "band hash ARMED" in buf or "band hash off" in buf:
+                    break
+            armed = "band hash ARMED" in buf
+            if ("band hash ARMED" in buf or "band hash off" in buf) and armed == want:
+                if want:
+                    print("  picture hash: ARMED (timings polluted; compare the hash only)")
+                return
+        sys.exit("the board never settled the picture hash to %s. Not measuring."
+                 % ("armed" if want else "off"))
+    finally:
+        ser.close()
+
+
 def choose_resident(port):
     """Tell the board to read the opaque bake from PSRAM, and refuse to go on unless
     it says so. See `resident` in vg_canopy_op.cpp. Same shape as choose_canopy."""
@@ -217,7 +253,7 @@ def choose_resident(port):
         ser.close()
 
 
-def run(port, path, limit, delta_canopy=False, warp=None, resident=False):
+def run(port, path, limit, delta_canopy=False, warp=None, resident=False, hash_on=False):
     ses = Session.load(path)
     n = len(ses.frames)
     if limit and limit < n:
@@ -233,6 +269,7 @@ def run(port, path, limit, delta_canopy=False, warp=None, resident=False):
         choose_warp(port, warp)
     if resident:
         choose_resident(port)
+    choose_hash(port, hash_on)
     link = PhantomLink(port)
     link.open()
 
@@ -475,6 +512,11 @@ def fetch(port, session=None, warp=None, resident=False):
             hs = HIST.search(txt)
             if hs:
                 out["hist"] = [int(x) for x in hs.groups()]
+            bh = BANDH.search(txt)
+            if bh:
+                out["bandh"] = bh.group(1)
+                out["bandh_bands"] = int(bh.group(2))
+                out["bandh_every"] = int(bh.group(3))
             cn = CAN.search(txt)
             if cn:
                 out["can_c0"], out["can_c1"], out["can_at"] = [int(x) for x in cn.groups()]
@@ -530,6 +572,9 @@ def show(r):
         print("  slowest %d us | %d frames under 60 fps, %d under 50" % (r["slowest"], r["under60"], r["under50"]))
         if "hist" in r:
             print("  60+ %d | 57-60 %d | 54-57 %d | 50-54 %d | under 50 %d" % tuple(r["hist"]))
+    if "bandh" in r:
+        print("  picture hash %s over %d bands (1 frame in %d) -- timings above are polluted"
+              % (r["bandh"], r["bandh_bands"], r["bandh_every"]))
     if r.get("slow"):
         print("  -- the slowest frames, and what each was made of --")
         print("  %6s %7s %5s %6s %6s %6s | %5s %5s %5s %5s %5s"
@@ -574,6 +619,13 @@ def compare(now, was):
     if was["frames"] != now["frames"]:
         print("\n  Different frame counts (%d vs %d): one run ended early, so the means\n"
               "  are over different work." % (was["frames"], now["frames"]))
+    if "bandh" in was and "bandh" in now:
+        if was["bandh"] == now["bandh"] and was["bandh_bands"] == now["bandh_bands"]:
+            print("\n  PICTURE IDENTICAL: hash %s over %d bands in both runs."
+                  % (now["bandh"], now["bandh_bands"]))
+        else:
+            print("\n  PICTURE DIFFERS: hash %s over %d bands, was %s over %d. Not the same pixels."
+                  % (now["bandh"], now["bandh_bands"], was["bandh"], was["bandh_bands"]))
     if "under60" in was and "under60" in now:
         print("  %-9s %10d %12d %9d" % ("under60", was["under60"], now["under60"], now["under60"] - was["under60"]))
         print("  %-9s %10d %12d %9d" % ("under50", was["under50"], now["under50"], now["under50"] - was["under50"]))
@@ -599,6 +651,10 @@ def main():
     ap.add_argument("--resident", action="store_true",
                     help="read the opaque bake from a copy in PSRAM instead of "
                          "from flash. An experiment; see vg_canopy_op.cpp.")
+    ap.add_argument("--hash", action="store_true",
+                    help="fold every Nth frame's pixels into a hash on the device and "
+                         "record it. Two builds that draw the same picture give the same "
+                         "hash. The run's timings are polluted by the fold.")
     ap.add_argument("--port", required=True)
     ap.add_argument("--frames", type=int, default=0,
                     help="stop after this many frames (default: the whole session)")
@@ -613,7 +669,7 @@ def main():
     if a.fetch:
         r = fetch(a.port, os.path.basename(a.session), a.warp, a.resident)
     elif a.run_only:
-        run(a.port, a.session, a.frames, a.delta_canopy, a.warp, a.resident)   # never returns
+        run(a.port, a.session, a.frames, a.delta_canopy, a.warp, a.resident, a.hash)   # never returns
         return
     else:
         # THREE PROCESSES, AND EACH ONE EXISTS FOR A CRASH.
@@ -648,6 +704,8 @@ def main():
             argv += ["--warp", a.warp]
         if a.resident:
             argv += ["--resident"]
+        if a.hash:
+            argv += ["--hash"]
         # PIPED AND RE-EMITTED, not inherited. Inheriting this process's stdout is the
         # obvious way to keep the progress line live, and it works from a terminal and
         # fails when something else owns the handle -- a background runner, a redirect
