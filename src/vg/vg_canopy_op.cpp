@@ -10,8 +10,49 @@ bool vg_canopy_op_on = true;
 
 static const VgCanOp* s_cur = nullptr;
 
-void vg_canopy_op_use(const VgCanOp* c) { s_cur = c; }
+// THE PAINT, RUN HOT. One table a region, and the shape of this is copied from
+// canopy_ilut rather than invented: the delta cockpit's members come up white and cool
+// to their authored colour, and that cooling IS the arrival -- without it a region just
+// switches on. It was the one part of the sequence the opaque bake could not do, because
+// its members are the artist's own paint and there was no table between the paint and
+// the panel.
+//
+// Now there is. Metal in a glowing region is read through this instead of through the
+// palette, so the pixel costs exactly what it always did -- a lookup and a store. What it
+// buys is that the paint RESOLVES OUT OF the region's white flash instead of appearing
+// beside it, which is the thing worth having.
+//
+// 8 KB of RAM, and the delta path already spends the same 8 KB on s_ilut for the same
+// three seconds. Rebuilt only when a region's quantised glow moves -- CANOPY_INTRO_QSTEP
+// steps over the whole cooling -- so a match pays a couple of dozen 256-entry loops in
+// total and nothing at all once the cockpit is up.
+static uint16_t s_hot[VG_CANOPY_MAX_ZONES][256];
+static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
+
+void vg_canopy_op_use(const VgCanOp* c) {
+    s_cur = c;
+    // A DIFFERENT DRAWING IS A DIFFERENT PALETTE, so every table built against the last
+    // one is wrong. -1 is a level no glow reaches, so this is "never built".
+    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) s_hot_q[z] = -1;
+}
 const VgCanOp* vg_canopy_op_current(void) { return s_cur; }
+
+// t is 0..255 toward white. The arithmetic is canopy_ilut's, against the art's palette
+// instead of against a delta table: unpack in NATIVE order, walk each channel its own
+// fraction of the distance to full, repack and swap back to panel order.
+static void hot_lut(const VgCanOp* c, int z, uint32_t t) {
+    for (int g = 0; g < 256; g++) {
+        const uint32_t v = c->pal[g];                     // panel order
+        const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
+        const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
+        const uint32_t R = r  + (((31u - r)  * t) >> 8);
+        const uint32_t G = gg + (((63u - gg) * t) >> 8);
+        const uint32_t B = b  + (((31u - b)  * t) >> 8);
+        const uint32_t o = (R << 11) | (G << 5) | B;
+        s_hot[z][g] = (uint16_t)(((o >> 8) | (o << 8)) & 0xFFFFu);
+    }
+    s_hot_q[z] = (int16_t)t;
+}
 
 // THE OUTLINE'S COLOUR, in NATIVE order.
 //
@@ -85,12 +126,20 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     // hot is its lit edge running. The heat is the arrival's -- the delta cockpit spends
     // it on a colour table per region, and a painted cockpit has no table to spend it on,
     // so it goes where the light already is.
-    bool     live[VG_CANOPY_MAX_ZONES];
-    uint16_t edge[VG_CANOPY_MAX_ZONES];
+    bool             live[VG_CANOPY_MAX_ZONES];
+    uint16_t         edge[VG_CANOPY_MAX_ZONES];
+    const uint16_t*  zpal[VG_CANOPY_MAX_ZONES];
     const int nz = (int)c->zones;
     for (int z = 0; z < nz && z < VG_CANOPY_MAX_ZONES; z++) {
         live[z] = vg_canopy_zone_live(z);
-        edge[z] = outline_native((float)vg_canopy_zone_glow(z) * (1.0f / 255.0f));
+        const uint32_t g = vg_canopy_zone_glow(z);
+        edge[z] = outline_native((float)g * (1.0f / 255.0f));
+        // COOL, AND THEN THE PALETTE ITSELF. A region that is not running hot reads the
+        // art directly, which is every region for all but the first three seconds of a
+        // match -- so the whole of this costs one compare a region a band.
+        if (!g) { zpal[z] = pal; continue; }
+        if (s_hot_q[z] != (int16_t)g) hot_lut(c, z, g);
+        zpal[z] = s_hot[z];
     }
 
     // IS ANYTHING HAPPENING TO A REGION AT ALL. False for almost every frame of a
@@ -174,7 +223,8 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 continue;
             }
 
-            const uint8_t* src = &data[sp->off];
+            const uint8_t*  src  = &data[sp->off];
+            const uint16_t* spal = zpal[sp->zone];
 
             // STRETCHED, which the sphere does and a translation does not. The run
             // holds a palette index a pixel, so a run that lands longer or shorter
@@ -187,7 +237,7 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                 int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
                 while (n-- > 0) {
                     const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
-                    *dst++ = pal[src[a >> 16]];
+                    *dst++ = spal[src[a >> 16]];
                     acc += step;
                 }
                 continue;
@@ -200,18 +250,18 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             // is a fault rather than a slowdown, so this is correctness not tuning.
             src += (c0 - d0);
             if ((((uintptr_t)dst) & 2u) && n > 0) {
-                *dst++ = pal[*src++];
+                *dst++ = spal[*src++];
                 n--;
             }
             uint32_t* w = (uint32_t*)dst;
             while (n >= 2) {
-                const uint16_t a = pal[src[0]];
-                const uint16_t b = pal[src[1]];
+                const uint16_t a = spal[src[0]];
+                const uint16_t b = spal[src[1]];
                 *w++ = (uint32_t)a | ((uint32_t)b << 16);
                 src += 2;
                 n   -= 2;
             }
-            if (n > 0) *(uint16_t*)w = pal[*src];
+            if (n > 0) *(uint16_t*)w = spal[*src];
         }
     }
 }
