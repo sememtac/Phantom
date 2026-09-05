@@ -35,7 +35,16 @@
 // 30 KB of internal SRAM, which is the scarce memory on this part. Bought against 590
 // us of measured wire idle, on every frame, whatever the scene is doing.
 
-#define BAND_BUFS 3
+// FIVE, and the two beyond three are the frame's slack. The render core rasters a
+// band faster than the wire sends one, so with three buffers it spends ~1.7 ms a
+// frame waiting for a buffer to come back -- and worse, when the raster ends it is
+// at most a band and a half ahead of the wire, so the next frame's input, update
+// and submit (4.5 ms) run with the panel idle for most of it. Two more buffers let
+// the queue carry ~3 ms of that across the transfer. They cost 61 KB of internal
+// RAM, which the primitive list's move to PSRAM paid for; the ring the same
+// buffers could not be built in PSRAM, because the panel's DMA cannot read it at
+// the wire's speed (design/notes/performance.md, 2026-09-05).
+#define BAND_BUFS 5
 static uint16_t* s_band[BAND_BUFS] = { nullptr, nullptr, nullptr };
 
 int vg_band_bufs(void) { return BAND_BUFS; }
@@ -972,6 +981,7 @@ void vg_line_bench(VgLineCost* out) {
 
     uint32_t ca = 0, cb = 0;
     long px = 0;
+    vg_panel_wait();   // both may still be on the wire: the queue carries across frames now
     memset(s_band[0], 0, SCR_W * BAND_H * 2);
     memset(s_band[1], 0, SCR_W * BAND_H * 2);
 
@@ -1230,7 +1240,8 @@ void vg_glyph_bench(VgGlyphCost* out) {
     uint32_t ca = 0, cb = 0;
     for (int b = 0; b < NUM_BANDS; b++) {
         const int by0 = b * BAND_H, by1 = by0 + BAND_H - 1;
-        memset(s_band[0], 0, SCR_W * BAND_H * 2);
+        vg_panel_wait();   // both may still be on the wire: the queue carries across frames now
+    memset(s_band[0], 0, SCR_W * BAND_H * 2);
         memset(s_band[1], 0, SCR_W * BAND_H * 2);
 
         const uint32_t t0 = esp_cpu_get_cycle_count();

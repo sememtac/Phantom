@@ -418,17 +418,18 @@ bool vg_replay_report_cost(void) {
 
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
                          uint32_t sub, uint32_t upd,
-                         uint32_t scan, uint32_t tv) {
+                         uint32_t scan, uint32_t tv, uint32_t blit) {
     if (!s_timed) return;
     const uint32_t v[5] = { can, rast, prim, sub, upd };
     for (int i = 0; i < 5; i++) {
         s_t_sum[i] += v[i];
         if (v[i] > s_t_max[i]) s_t_max[i] = v[i];
     }
-    // The wire still has to run whatever the CPU does, so a frame costs about
-    // max(rast, wire) plus the serial stages in front of it.
-    const uint32_t wire = 11520u;
-    const uint32_t ft   = upd + sub + (rast > wire ? rast : wire);
+    // THE FLUSH AS MEASURED, not modelled. This was upd + sub + max(rast, wire),
+    // which assumed the wire ran only while the flush did. With five band buffers
+    // the transfer carries across frames, so the flush's own wall time -- the raster
+    // plus whatever it waited for -- is the only honest figure, and it is measured.
+    const uint32_t ft   = upd + sub + blit;
     if (ft > 16667u) s_cw_over16++;      // under 60 fps
     if (ft > 20000u) s_cw_over20++;      // under 50 fps
     s_hist[ft <= 16667u ? 0 : ft <= 17544u ? 1 : ft <= 18519u ? 2 : ft <= 20000u ? 3 : 4]++;

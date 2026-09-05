@@ -159,13 +159,16 @@ static_assert(SCR_W * BAND_H * 2 <= 32768,
 // TWO IS THE CEILING, and it is devcfg.queue_size that sets it. Going deeper would
 // need a fourth band buffer for no further gain -- one queued is already enough to
 // keep the engine fed.
-#define PANEL_QUEUE_MAX 2
+// FOUR NOW, WITH FIVE BAND BUFFERS -- see BAND_BUFS in vg_band.cpp. The ceiling is
+// what bounds the render core's lead over the wire, and the lead is what carries the
+// next frame's input, update and submit across this frame's transfer.
+#define PANEL_QUEUE_MAX 4
 
 // THREE DESCRIPTORS, ONE PER BAND BUFFER, and they rotate in lockstep with them. Two
 // would provably do -- the slot two pushes back cannot still be outstanding when at
 // most two are -- but pairing a descriptor with the buffer it describes removes the
 // need to make that argument every time this is read.
-static spi_transaction_t s_tx[3];
+static spi_transaction_t s_tx[5];   // one per band buffer, rotating with them
 static int s_tx_slot    = 0;
 static int s_outstanding = 0;
 
@@ -248,23 +251,33 @@ void vg_panel_push_band(int y, int h, const uint16_t* pixels) {
     const bool first = true;
 #endif
 
-    // DRAINED ONLY FOR THE WINDOW COMMAND. It is a polled transaction and IDF
-    // forbids one while anything is queued -- but with LCD_STREAM_FRAME on, only the
-    // first band issues one. Bands 1..14 used to drain for a reason that did not
-    // apply to them, and that drain was the wire's idle time.
-    //
-    // Otherwise: make room for one, keeping the queue as deep as it is allowed to be.
-    if (first) vg_panel_wait();
-    else       while (s_outstanding >= PANEL_QUEUE_MAX) panel_reap();
-
 #if LCD_STREAM_FRAME
-    if (first) co_window(0, 0, SCR_W - 1, SCR_H - 1);
+    // THE WINDOW IS SET ONCE, and the queue is never drained for a frame.
+    //
+    // The window command is a polled transaction, and the driver forbids one while
+    // anything is queued -- so sending it every frame meant draining the queue every
+    // frame, and a drained queue at the top of the frame is a wire that idles while
+    // the first band is drawn and, worse, a lead of nothing carried over from the
+    // frame before. The window does not change. CASET and PASET persist on the
+    // controller; RAMWR starts a write at the window's origin and RAMWRC continues
+    // from wherever the last one stopped. So it is sent once, before the first band
+    // ever pushed, and every frame after that begins with a RAMWR and no wait.
+    static bool windowed = false;
+    if (first && !windowed) {
+        vg_panel_wait();
+        co_window(0, 0, SCR_W - 1, SCR_H - 1);
+        windowed = true;
+    }
+    // Make room for one, keeping the queue as deep as it is allowed to be.
+    while (s_outstanding >= PANEL_QUEUE_MAX) panel_reap();
 #else
+    // A window a band is a polled command a band, and that needs an empty queue.
+    vg_panel_wait();
     co_window(0, y, SCR_W - 1, y + h - 1);
 #endif
 
     spi_transaction_t* t = &s_tx[s_tx_slot];
-    s_tx_slot = (s_tx_slot + 1) % 3;
+    s_tx_slot = (s_tx_slot + 1) % 5;
 
     memset(t, 0, sizeof(*t));
     t->flags     = SPI_TRANS_MODE_QIO;   // data on 4 lines; cmd/addr single
@@ -346,7 +359,7 @@ bool vg_panel_init(void) {
     devcfg.clock_speed_hz = LCD_CLOCK_HZ;
     devcfg.spics_io_num   = LCD_CS;    // transactions are self-contained
     devcfg.flags          = SPI_DEVICE_HALFDUPLEX;
-    devcfg.queue_size     = 2;
+    devcfg.queue_size     = PANEL_QUEUE_MAX;
 
     if (spi_bus_add_device(LCD_HOST, &devcfg, &s_spi) != ESP_OK) {
         Serial.println("vg_panel_init: spi_bus_add_device failed");

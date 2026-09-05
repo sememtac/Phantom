@@ -613,7 +613,7 @@ void loop(void) {
 
     if (vg_replay_timed()) {
         vg_replay_note_cost(vg_rast_can_us(), vg_rast_raster_us(), vg_rast_prim_us(),
-                            t3 - t2, t2 - t1, vg_rast_scan_us(), vg_rast_tv_us());
+                            t3 - t2, t2 - t1, vg_rast_scan_us(), vg_rast_tv_us(), t4 - t3);
         {
             const int at = vg_rast_can_split();
             vg_replay_note_can(vg_rast_can_core_us(0), vg_rast_can_core_us(1),

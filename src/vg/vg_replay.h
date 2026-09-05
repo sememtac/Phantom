@@ -69,9 +69,10 @@ bool vg_replay_report_cost(void);
 // `scan` and `tv` came late and go on the end rather than beside `prim`, so the order
 // of the five the frame loop has always passed does not move. tv is the part of scan
 // that was the transition -- a subset of it, not a sixth term of the raster.
+// `blit` is the flush's wall time, t4 - t3 in main; the frame-time model is built on it.
 void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
                          uint32_t sub, uint32_t upd,
-                         uint32_t scan, uint32_t tv);
+                         uint32_t scan, uint32_t tv, uint32_t blit);
 
 // The same frame's `world` split -- see g_w_motes in vg_prof.h. Separate from the call
 // above because it answers a different question: that one is "what does a frame cost",
