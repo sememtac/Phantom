@@ -928,10 +928,30 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m) {
     if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
     lx = s_wcol[lx];
 
+    // FOLDED ABOUT THE CENTRE LINE, and that fold is what makes a bow a bow.
+    //
+    // s_wc is ANTISYMMETRIC in the column -- t*t*sign(t) -- so read straight through
+    // it shifts the drawing's left half one way along its columns and the right half
+    // the other. That is a TWIST, not a bend: one diagonal pair of corners curves and
+    // the other pair curves against it, which is exactly what it looked like flown.
+    //
+    // The delta path never had the fault, and not because it guards against it: the
+    // CHARIOT's drawing is MIRRORED, so its right half reads a folded column index and
+    // picks up the negated bow for free. An opaque bake stores every column -- a
+    // full-colour cockpit is allowed to be lopsided -- so the fold has to be asked for
+    // rather than falling out of the storage. Same index canopy_rows_t computes, so
+    // the two frames bend identically.
+    //
+    // The roll shear is folded with it, which makes it symmetric about the centre too.
+    // That is not obviously what a roll should do, but it IS what the delta cockpit has
+    // always done and what has been flown; the two matching is the point of this
+    // function, and the shear is a separate question for a separate day.
+    const int cc = (lx >= SCR_H / 2) ? (SCR_H - 1 - lx) : lx;
+
     m->row   = SCR_H - 1 - lx;
-    m->xofs  = (int)s_wc[lx] + s_lag_py
-             + (int)((float)(lx - SCR_H / 2) * s_lag_sh);
-    m->zbase = s_w_zbase[lx];
+    m->xofs  = (int)s_wc[cc] + s_lag_py
+             + (int)((float)(cc - SCR_H / 2) * s_lag_sh);
+    m->zbase = s_w_zbase[cc];
     m->zk    = s_w_zk;
     return true;
 }
