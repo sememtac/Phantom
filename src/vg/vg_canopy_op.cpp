@@ -271,16 +271,84 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             // STRETCHED, which the sphere does and a translation does not. The run
             // holds a palette index a pixel, so a run that lands longer or shorter
             // than it was drawn has to be RESAMPLED -- nearest neighbour, on a 16.16
-            // step, clamped at both ends so the border extension above repeats the
-            // edge pixel instead of reading off the run.
+            // step, clamped at both ends so the border extension repeats the edge
+            // pixel instead of reading off the run.
+            //
+            // AND THIS IS THE FLIGHT PATH, not an edge case, which is what makes it
+            // worth more than the straight loop it started as. The bend is driven by
+            // (1 - throttle), so the tube is at its most bent when the ship is slow
+            // and the sphere is stretching almost every span almost all the time. The
+            // first version cost the cockpit 55 us to 102 on the desktop bench, and
+            // all of it went on two things this now avoids.
+            //
+            // THE CLAMP IS A RANGE, NOT A TEST. The accumulator only leaves the run at
+            // the ENDS: below zero solely through the left border extension, and above
+            // the last index for the handful of trailing pixels a stretch invents. So
+            // the count that stays inside is computed once and the inner loop carries
+            // no compares at all; the tail is a constant, because every clamped index
+            // is the same index.
+            //
+            // AND THE STORES PAIR, exactly as they do in the unstretched blit below.
+            // The panel is 16-bit and the bus is 32, so two pixels are one word -- the
+            // resample was giving that back a pixel at a time for no reason but the
+            // shape of the loop.
             if (ext || (d1 - d0) != len) {
                 const int32_t step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
                 const int32_t top  = (int32_t)(len - 1) << 16;
                 int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
-                while (n-- > 0) {
+
+                // An odd first pixel, to reach alignment. Clamped, because it is one
+                // pixel and the range arithmetic below is not worth doing twice: an
+                // unaligned 32-bit store on Xtensa is a fault, not a slowdown.
+                if ((((uintptr_t)dst) & 2u) && n > 0) {
                     const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
                     *dst++ = spal[src[a >> 16]];
                     acc += step;
+                    n--;
+                }
+
+                // HOW MANY STAY INSIDE THE RUN. Zero if the accumulator starts below
+                // it, which only the left border extension can do -- that case keeps
+                // the old shape and pays the compares, and it is one span in a frame.
+                int mid = 0;
+                if (acc >= 0 && acc <= top) {
+                    const int64_t room = (int64_t)top - (int64_t)acc;
+                    int64_t k = room / (int64_t)step + 1;
+                    mid = (k < (int64_t)n) ? (int)k : n;
+                }
+
+                uint32_t* w = (uint32_t*)dst;
+                int       m = mid;
+                while (m >= 2) {
+                    const uint16_t a0 = spal[src[acc >> 16]]; acc += step;
+                    const uint16_t a1 = spal[src[acc >> 16]]; acc += step;
+                    *w++ = (uint32_t)a0 | ((uint32_t)a1 << 16);
+                    m -= 2;
+                }
+                dst = (uint16_t*)w;
+                if (m) { *dst++ = spal[src[acc >> 16]]; acc += step; m--; }
+                n -= mid;
+
+                // THE TAIL IS ONE COLOUR. Past the end of the run every index clamps
+                // to the last one, so the pixels a stretch invents beyond it are a
+                // fill rather than a resample.
+                if (n > 0) {
+                    if (acc < 0) {
+                        // The rare shape: still short of the run. Clamped, as before.
+                        while (n-- > 0) {
+                            const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
+                            *dst++ = spal[src[a >> 16]];
+                            acc += step;
+                        }
+                    } else {
+                        const uint16_t v = spal[src[len - 1]];
+                        if ((((uintptr_t)dst) & 2u) && n > 0) { *dst++ = v; n--; }
+                        uint32_t* t = (uint32_t*)dst;
+                        const uint32_t vv = (uint32_t)v | ((uint32_t)v << 16);
+                        while (n >= 2) { *t++ = vv; n -= 2; }
+                        dst = (uint16_t*)t;
+                        if (n > 0) *dst++ = v;
+                    }
                 }
                 continue;
             }
