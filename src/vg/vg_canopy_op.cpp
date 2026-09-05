@@ -105,6 +105,7 @@ static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 // is the one table read on the path of every stored pixel, and it is small enough to
 // stay resident in cache whatever else is moving.
 static uint16_t s_pal[256];
+static uint16_t s_edge_col = 0;             // the outline's colour; 0 is "keep amber"
 static const VgCanOp* s_pal_of = nullptr;   // the drawing s_pal was built from
 static float          s_tint   = -1.0f;     // the hue asked for; < 0 is bare metal
 static int            s_pal_q  = -2;        // ...quantised, so a rebuild is rare
@@ -168,8 +169,44 @@ static void build_pal(void) {
     }
 }
 
+// THE OUTLINE'S COLOUR, AT A BRIGHTNESS THAT DOES NOT DEPEND ON THE HUE.
+//
+// Resolved once per colour change rather than per band: the hue is a float, vg_hue_col
+// is a six-way branch, and this adds a luminance and a mix on top of it.
+static uint16_t edge_colour(float hue) {
+    const uint16_t hp = vg_hue_col(hue);
+    if (CANOPY_TINT_EDGE_LIFT <= 0.0f) return hp;
+
+    const uint16_t hn = (uint16_t)((hp >> 8) | (hp << 8));
+    float r = (float)((hn >> 11) & 31u) * (1.0f / 31.0f);
+    float g = (float)((hn >>  5) & 63u) * (1.0f / 63.0f);
+    float b = (float)( hn        & 31u) * (1.0f / 31.0f);
+
+    // THE TARGET IS WHAT THE OUTLINE WAS ALREADY, taken from COL_HUD itself rather
+    // than written down: the amber is the author's and this must follow it if it moves.
+    const uint16_t an = (uint16_t)((COL_HUD >> 8) | (COL_HUD << 8));
+    const float target = 0.299f * (float)((an >> 11) & 31u) * (1.0f / 31.0f)
+                       + 0.587f * (float)((an >>  5) & 63u) * (1.0f / 63.0f)
+                       + 0.114f * (float)( an        & 31u) * (1.0f / 31.0f);
+
+    const float lum = 0.299f * r + 0.587f * g + 0.114f * b;
+    float k = (lum < 0.999f) ? (target - lum) / (1.0f - lum) : 0.0f;
+    if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
+    k *= CANOPY_TINT_EDGE_LIFT;
+    r += (1.0f - r) * k;
+    g += (1.0f - g) * k;
+    b += (1.0f - b) * k;
+
+    int R = (int)(r * 31.0f + 0.5f), G = (int)(g * 63.0f + 0.5f),
+        B = (int)(b * 31.0f + 0.5f);
+    if (R > 31) R = 31; if (G > 63) G = 63; if (B > 31) B = 31;
+    const uint16_t o = (uint16_t)((R << 11) | (G << 5) | B);
+    return (uint16_t)((o >> 8) | (o << 8));
+}
+
 void vg_canopy_op_tint(float hue) {
     s_tint = hue;
+    s_edge_col = (hue >= 0.0f) ? edge_colour(hue) : 0u;
     build_pal();
 }
 
@@ -232,10 +269,18 @@ static void hot_lut(const VgCanOp* c, int z, uint32_t t) {
 // Recomputed a BAND rather than cached against the alarm's own quantiser: fifteen
 // mixes a frame against a per-pixel pass is not a number worth keeping state for.
 static inline uint16_t outline_native(float extra) {
-    float          al   = 0.0f;
-    const uint16_t base = vg_canopy_alarm_colour(&al);
+    float    al   = 0.0f;
+    uint16_t base = vg_canopy_alarm_colour(&al);
+    // THE WALL WARNING ALONE, kept apart from the arrival's own brightness below.
+    // The alarm decides the COLOUR and both decide how bright it burns; folding them
+    // into one number would have a region's arrival flash read as a wall.
+    const float alarm = al;
     if (extra > al) al = extra;
-    const uint16_t c    = vg_dim(base, CANOPY_OP_EDGE + (1.0f - CANOPY_OP_EDGE) * al);
+    // ...AND THE OUTLINE IN THE PLAYER'S COLOUR, giving way to the alarm as it rises.
+    // See CANOPY_TINT_EDGE.
+    if (CANOPY_TINT_EDGE > 0.0f && s_edge_col)
+        base = vg_mix(base, s_edge_col, CANOPY_TINT_EDGE * (1.0f - alarm));
+    const uint16_t c = vg_dim(base, CANOPY_OP_EDGE + (1.0f - CANOPY_OP_EDGE) * al);
     return (uint16_t)((c >> 8) | (c << 8));
 }
 

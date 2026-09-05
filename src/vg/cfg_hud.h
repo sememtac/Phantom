@@ -433,6 +433,32 @@
 #define CANOPY_TINT_GLOSS     0.45f
 #define CANOPY_TINT_GLOSS_AT  0.42f   // luminance, 0..1, where the highlight starts
 #define CANOPY_TINT_KEEP      0.35f
+
+// ...AND THE LIT OUTLINE IN THE SAME COLOUR. 0 leaves it HUD amber, 1 gives it the
+// player's hue outright. TRYING IT: the metal is painted and the outline is not, and
+// amber does not sit beside every hue a player can pick.
+//
+// THE ALARM ALWAYS WINS. This is mixed by (1 - the alarm level), so the outline is the
+// player's colour when nothing is wrong and reddens to CANOPY_ALARM the way it always
+// did as the wall closes. What it costs is that a player flying a red ship has less
+// warning of a red wall, which is a real problem and is deliberately not solved here.
+#define CANOPY_TINT_EDGE      1.00f
+
+// ...AND HOW FAR THAT COLOUR IS LIFTED TOWARD WHITE TO KEEP ITS BRIGHTNESS.
+//
+// A pure hue does not carry a constant brightness: green is five times the luminance
+// of blue, so an outline drawn in the raw hue is glaring on a green ship and nearly
+// invisible on a blue one. The fix cannot be to scale it up, because the hue is
+// already at full -- it is to mix in white, which raises the brightness and keeps the
+// hue. A bright light IS desaturated, so this reads as a lit edge rather than a pale
+// one, but it does cost some of the colour.
+//
+// 0 is the raw hue, uneven and fully saturated. 1 lifts every hue to the luminance
+// COL_HUD already sat at, so the outline is as bright as it has always been whatever
+// the player picked -- and turns red into pink on the way, which is the cost.
+//
+// 0.55 is the compromise, off a rendered sweep: blue reads, and red is still red.
+#define CANOPY_TINT_EDGE_LIFT 0.55f
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
