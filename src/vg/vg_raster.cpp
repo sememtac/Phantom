@@ -214,9 +214,15 @@ void vg_prim_join(void) {
 }
 
 bool vg_prim_init(void) {
-    // Internal: the list is swept once per band, 15 times a frame.
+    // PSRAM, AS AN EXPERIMENT IN WHAT INTERNAL RAM IS FOR. The list was internal
+    // because it is swept once a band, fifteen times a frame. It is also 48 KB, and
+    // internal RAM is where band buffers live: the render core is faster than the
+    // wire and waits on it only because three buffers bound its lead. Measured
+    // against the fight harness before and after; if the raster pays for this, it
+    // pays out of 1,400 us of slack under the wire, and a fourth and fifth band
+    // buffer buy back the frame's own slack.
     s_prims = (Prim*)heap_caps_malloc(sizeof(Prim) * MAX_PRIMS,
-                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_prims) {
         Serial.println("vg_prim_init: alloc failed");
         return false;

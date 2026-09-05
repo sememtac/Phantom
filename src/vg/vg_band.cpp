@@ -40,7 +40,9 @@ static uint16_t* s_band[BAND_BUFS] = { nullptr, nullptr, nullptr };
 
 int vg_band_bufs(void) { return BAND_BUFS; }
 
+static bool band_index_alloc(void);   // the prim index tables, declared with the walk below
 bool vg_band_init(void) {
+    if (!band_index_alloc()) return false;
     // Must be internal and DMA-capable: written pixel-by-pixel, then handed
     // straight to the SPI engine.
 
@@ -1328,10 +1330,21 @@ void vg_sky_bench(VgSkyCost* out) {
 // At file scope now rather than inside draw_band: draw_band builds the list and
 // band_prims reads it on BOTH cores. The merge finishes before the fork, and the
 // fork's semaphore give is the release fence that publishes it to the helper.
-static uint16_t s_active[2][MAX_PRIMS];
+// PSRAM, with the list they index -- see vg_prim_init for why. Allocated in
+// vg_band_init; 2 x 4,800 and 4,800 bytes.
+static uint16_t* s_active[2] = { nullptr, nullptr };
 static int      s_active_n = 0;
 static int      s_flip     = 0;
-static uint16_t s_bucket[MAX_PRIMS];
+static uint16_t* s_bucket = nullptr;
+static bool band_index_alloc(void) {
+    if (s_bucket) return true;
+    s_active[0] = (uint16_t*)heap_caps_calloc(MAX_PRIMS, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    s_active[1] = (uint16_t*)heap_caps_calloc(MAX_PRIMS, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    s_bucket    = (uint16_t*)heap_caps_calloc(MAX_PRIMS, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    if (s_active[0] && s_active[1] && s_bucket) return true;
+    Serial.println("vg_band_init: the prim index tables would not allocate");
+    return false;
+}
 static uint16_t s_bhead[NUM_BANDS + 1];
 
 // THE PRIMITIVE LOOP, run by both cores at once over one band.

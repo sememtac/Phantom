@@ -7,6 +7,7 @@
 #include "vg_config.h"
 #include "vg_sim.h"   // vg_frand01
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <string.h>
 #include <math.h>
 #include "vg_cockpit.h"
@@ -1124,13 +1125,21 @@ static uint16_t s_ifill[VG_CANOPY_MAX_ZONES]; // a held pixel: black before the 
 static uint8_t s_iglow[VG_CANOPY_MAX_ZONES];  // 255 white-hot members, 0 their authored level
 static bool    s_icued     = false;       // the instruments' cue, latched -- see vg_canopy_intro_cued
 static uint8_t s_iq[VG_CANOPY_MAX_ZONES];     // the quantised glow each table was built for
-static uint16_t s_ilut[VG_CANOPY_MAX_ZONES][256];
+// PSRAM, for the reason s_hot gives in vg_canopy_op.cpp: 8 KB of internal RAM is a
+// quarter of a band buffer, and this table is read for three seconds a match.
+// Allocated on first use; a null table reads as "not built", exactly like s_iq.
+static uint16_t (*s_ilut)[256] = nullptr;
 
 // A zone's member colours, from white-hot down to the authored level.
 //
 // Quantised by the caller, so this runs a couple of dozen times across a region's cool-down
 // rather than once a frame per zone.
 static void canopy_ilut(int z) {
+    if (!s_ilut) {
+        s_ilut = (uint16_t (*)[256])heap_caps_malloc(
+                     (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+        if (!s_ilut) return;                        // read back as "not built"
+    }
     const uint32_t t = (uint32_t)s_iglow[z];        // 0..255 toward white
     for (int g = 0; g < 256; g++) {
         const uint32_t v = s_can_lut[g];            // panel order
@@ -1592,7 +1601,7 @@ static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
                     p += (h & 0x80) ? len : 1;
                     continue;
                 }
-                lut = s_ilut[z];
+                if (s_ilut) lut = s_ilut[z];        // no table: the authored level, not a crash
             }
 
             int at = y0, n = len, skip = 0, n0 = len;
