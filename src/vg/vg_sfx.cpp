@@ -446,8 +446,14 @@ void vg_sfx_update(float dt) {
     // ...OR BECAUSE THERE IS NOBODY ELSE. A replay and a capture render inline so
     // the frame owns the sound; so does a build whose mixing task never started,
     // which would otherwise be silent and never say so.
+    // ...BUT NOT A TIMED RUN. Nothing records its audio, so determinism buys it
+    // nothing, and mixing inline put up to 4 ms of samples into `sub` on exactly
+    // the frames the recording took slowly -- the dips the run exists to measure,
+    // inflated by an artefact live play never pays. The task mixes, as it does in
+    // flight, contending for core 0 as it does in flight.
     const bool want_inline = !s_task_ok
-                          || (vg_replay_mode() != VG_RP_OFF) || vg_capture_active();
+                          || (vg_replay_mode() != VG_RP_OFF && !vg_replay_timed())
+                          || vg_capture_active();
     s_inline_want = want_inline;
 
     if (!want_inline) {

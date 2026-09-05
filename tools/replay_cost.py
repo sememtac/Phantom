@@ -88,6 +88,15 @@ WORLD = re.compile(
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
 
 KEYS = ["can", "rast", "prim", "sub", "upd"]
+# The dips. The device folds each frame into a frame time -- upd + sub + max(rast,
+# wire) -- and counts the ones a pilot would feel. These are the numbers a change
+# meant to stop the combat dip is judged by; a mean cannot see a dip.
+SLOWEST = re.compile(r"vg_replay: SLOWEST (\d+) us .*\| (\d+) frames under 60, (\d+) under 50")
+HIST = re.compile(r"vg_replay: FRAMES 60\+ (\d+) \| 57-60 (\d+) \| 54-57 (\d+) \| 50-54 (\d+) \| under50 (\d+)")
+SLOW = re.compile(r"vg_replay: SLOW(\d) frame (\d+)  (\d+) us \((\d+) fps\)  upd (\d+) sub (\d+) rast (\d+)"
+                  r" \(can (\d+) prim (\d+) scan (\d+) tv (\d+)\)(?: \| A (\d+) B (\d+) wait (\d+) sxr (\d+) world (\d+))?")
+SLOWK = ["i", "frame", "us", "fps", "upd", "sub", "rast", "can", "prim", "scan", "tv",
+         "A", "B", "wait", "sxr", "world"]
 # The canopy by core. `can` is the slower half a band; these are both halves.
 CAN = re.compile(r"vg_replay: CAN c0 (\d+) \| c1 (\d+) \| at (\d+)")
 WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
@@ -426,7 +435,10 @@ def fetch(port, session=None, warp=None, resident=False):
         # which is the half this was extended for.
         # BLIT prints after WORLD, so it is the one to wait for -- returning on WORLD
         # would drop the blit split exactly as returning on COST once dropped the world.
-        if m and (BLIT.search(txt) or time.time() > deadline - 8.0):
+        # And TYPES prints last of all, after the dips, so it is the one to wait for now:
+        # returning on BLIT read the dips only when the rest of the report happened to
+        # be in the same read.
+        if m and (TYPES.search(txt) or time.time() > deadline - 8.0):
             ser.close()
             g = [int(x) for x in m.groups()]
             out = {"frames": g[0], "commit": git_commit(), "session": session or "(unknown)",
@@ -452,6 +464,17 @@ def fetch(port, session=None, warp=None, resident=False):
                 gt = [int(x) for x in ty.groups()]
                 for j, k2 in enumerate(TKEYS):
                     out[k2] = {"mean": gt[j * 2], "worst": gt[j * 2 + 1]}
+            rows = []
+            for sm in SLOW.finditer(txt):
+                rows.append({k: (int(v) if v is not None else None) for k, v in zip(SLOWK, sm.groups())})
+            if rows:
+                out["slow"] = rows
+            sl = SLOWEST.search(txt)
+            if sl:
+                out["slowest"], out["under60"], out["under50"] = [int(x) for x in sl.groups()]
+            hs = HIST.search(txt)
+            if hs:
+                out["hist"] = [int(x) for x in hs.groups()]
             cn = CAN.search(txt)
             if cn:
                 out["can_c0"], out["can_c1"], out["can_at"] = [int(x) for x in cn.groups()]
@@ -502,6 +525,19 @@ def show(r):
         if over:
             print("     %d of %d over, by %d us a frame (* marks them)"
                   % (len(over), len(r["bands"]), sum(v - w for _, v in over)))
+    if "under60" in r:
+        print("  -- the dips; frame time is upd + sub + max(rast, wire) --")
+        print("  slowest %d us | %d frames under 60 fps, %d under 50" % (r["slowest"], r["under60"], r["under50"]))
+        if "hist" in r:
+            print("  60+ %d | 57-60 %d | 54-57 %d | 50-54 %d | under 50 %d" % tuple(r["hist"]))
+    if r.get("slow"):
+        print("  -- the slowest frames, and what each was made of --")
+        print("  %6s %7s %5s %6s %6s %6s | %5s %5s %5s %5s %5s"
+              % ("frame", "us", "fps", "upd", "sub", "rast", "A", "B", "wait", "sxr", "world"))
+        for s in r["slow"]:
+            print("  %6d %7d %5d %6d %6d %6d | %5s %5s %5s %5s %5s"
+                  % (s["frame"], s["us"], s["fps"], s["upd"], s["sub"], s["rast"],
+                     *[("%d" % s[k]) if s[k] is not None else "-" for k in ("A", "B", "wait", "sxr", "world")]))
     if "can_c0" in r:
         print("  -- the canopy by core; `can` above is the slower half a band, summed --")
         print("  core0 %8d   core1 %8d   cut at row %d of 32" % (r["can_c0"], r["can_c1"], r["can_at"]))
@@ -538,6 +574,9 @@ def compare(now, was):
     if was["frames"] != now["frames"]:
         print("\n  Different frame counts (%d vs %d): one run ended early, so the means\n"
               "  are over different work." % (was["frames"], now["frames"]))
+    if "under60" in was and "under60" in now:
+        print("  %-9s %10d %12d %9d" % ("under60", was["under60"], now["under60"], now["under60"] - was["under60"]))
+        print("  %-9s %10d %12d %9d" % ("under50", was["under50"], now["under50"], now["under50"] - was["under50"]))
     old_w, new_w = was.get("warp", "throttle"), now.get("warp", "throttle")
     if old_w != new_w:
         print("\n  DIFFERENT BEND (%s vs %s). This is a measurement of the stretch: `can`\n"

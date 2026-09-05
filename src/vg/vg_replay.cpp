@@ -8,6 +8,7 @@
 #include "esp_attr.h"   // RTC_NOINIT_ATTR, for the arm that outlives a reset
 #include "soc/extmem_reg.h"   // the cache miss counters
 #include <esp_random.h>
+#include "vg_prof.h"     // the submit halves and the mixer, for the slow-frame list
 #include <string.h>
 
 // Seeds drawn in a single frame. Two is the real maximum today (a sky
@@ -128,6 +129,16 @@ static uint32_t s_top_can[SLOW_TOP] = {0};
 static uint32_t s_top_prim[SLOW_TOP]= {0};
 static uint32_t s_top_scan[SLOW_TOP]= {0};
 static uint32_t s_top_tv[SLOW_TOP]  = {0};
+// WHAT THE SUBMIT WAS MADE OF on a slow frame. `sub` alone said 11 ms on three
+// fight frames and could not say whether that was the world, the instruments, the
+// rendezvous or the mixer -- which renders inline under a replay and, on a frame
+// the recording itself took slowly, renders a long one. Read straight off the
+// globals: submit has finished by the time the cost is noted.
+static uint32_t s_top_a[SLOW_TOP]   = {0};
+static uint32_t s_top_b[SLOW_TOP]   = {0};
+static uint32_t s_top_wait[SLOW_TOP]= {0};
+static uint32_t s_top_sxr[SLOW_TOP] = {0};
+static uint32_t s_top_wrld[SLOW_TOP]= {0};
 // The five raster types for the worst frame. note_types runs AFTER note_cost in the
 // same frame, so note_cost raises this flag and note_types answers it.
 static bool     s_top_want = false;
@@ -342,11 +353,13 @@ bool vg_replay_report_cost(void) {
     for (int i = 0; i < SLOW_TOP; i++) {
         if (!s_top_ft[i]) break;
         Serial.printf("vg_replay: SLOW%d frame %u  %u us (%u fps)  upd %u sub %u rast %u"
-                      " (can %u prim %u scan %u tv %u)\n",
+                      " (can %u prim %u scan %u tv %u) | A %u B %u wait %u sxr %u world %u\n",
                       i, (unsigned)s_top_fr[i], (unsigned)s_top_ft[i],
                       (unsigned)(1000000u / s_top_ft[i]), (unsigned)s_top_upd[i],
                       (unsigned)s_top_sub[i], (unsigned)s_top_rast[i], (unsigned)s_top_can[i],
-                      (unsigned)s_top_prim[i], (unsigned)s_top_scan[i], (unsigned)s_top_tv[i]);
+                      (unsigned)s_top_prim[i], (unsigned)s_top_scan[i], (unsigned)s_top_tv[i],
+                      (unsigned)s_top_a[i], (unsigned)s_top_b[i], (unsigned)s_top_wait[i],
+                      (unsigned)s_top_sxr[i], (unsigned)s_top_wrld[i]);
     }
     Serial.printf("vg_replay: SLOWEST-TYPES aa %u ln %u tri %u gl %u fl %u"
                   "  -- the raster of the worst frame\n",
@@ -428,11 +441,16 @@ void vg_replay_note_cost(uint32_t can, uint32_t rast, uint32_t prim,
             s_top_rast[k]= s_top_rast[k - 1]; s_top_can[k] = s_top_can[k - 1];
             s_top_prim[k]= s_top_prim[k - 1];
             s_top_scan[k]= s_top_scan[k - 1]; s_top_tv[k]  = s_top_tv[k - 1];
+            s_top_a[k]   = s_top_a[k - 1];    s_top_b[k]   = s_top_b[k - 1];
+            s_top_wait[k]= s_top_wait[k - 1]; s_top_sxr[k] = s_top_sxr[k - 1];
+            s_top_wrld[k]= s_top_wrld[k - 1];
             k--;
         }
         s_top_ft[k] = ft; s_top_fr[k] = s_t_n;
         s_top_upd[k] = upd; s_top_sub[k] = sub; s_top_rast[k] = rast; s_top_can[k] = can;
         s_top_prim[k] = prim; s_top_scan[k] = scan; s_top_tv[k] = tv;
+        s_top_a[k] = g_sub_a; s_top_b[k] = g_sub_b; s_top_wait[k] = g_sub_wait;
+        s_top_sxr[k] = g_sfx_render_us; s_top_wrld[k] = g_sub_world;
         if (k == 0) s_top_want = true;   // the new leader wants its types
     }
     if (ft > s_cw_worst) {
