@@ -165,6 +165,10 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m);
 //               The delta cockpit spends this on a per-zone colour table; a painted one
 //               has no table to spend it on, so it goes on the lit edge instead -- which
 //               is the only part of an opaque cockpit that is light in the first place.
+// THE ORDERED DITHER the reveal is built on, so a second cockpit crosses between two
+// states in the same language rather than inventing a fade. One row of the 4x4.
+const uint8_t* vg_canopy_bayer_row(int y);
+
 bool     vg_canopy_gate_on(void);
 void     vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, int z);
 bool     vg_canopy_zone_live(int z);

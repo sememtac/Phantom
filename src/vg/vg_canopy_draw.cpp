@@ -1356,6 +1356,8 @@ void vg_canopy_hit_step(float dt) {
     canopy_gate_mask();
 }
 
+const uint8_t* vg_canopy_bayer_row(int y) { return &BAYER4[(y & 3) << 2]; }
+
 bool vg_canopy_gate_on(void)      { return s_gate_on; }
 bool vg_canopy_zone_live(int z) {
     if (!s_intro_on) return true;              // nothing is holding anything back
@@ -1665,11 +1667,24 @@ void vg_canopy_intro_begin(void) {
     s_settle_t = -1.0f;
     s_icued    = false;
     if (!s_can_ready) canopy_lut();
-    for (int z = 0; z < s_can->zones; z++) {
+    // ALL SIXTEEN, NOT THIS DRAWING'S OWN COUNT, and the difference was a bug you
+    // could only see the second time you flew.
+    //
+    // This held s_can->zones regions, which is four on the CHARIOT's light delta -- and
+    // its opaque bake has six. Regions four and five kept the s_ilive the LAST match left
+    // set, so their share of the cockpit was simply present from the first frame of the
+    // arrival: pieces of the canopy activated ahead of the sequence. On a cold boot the
+    // array is zero and nothing shows, which is why it hid until a restart.
+    //
+    // Clearing state that no drawing has cannot be wrong, and it does not depend on which
+    // cockpit has been selected yet -- which matters, because this runs from the top of
+    // the cutscene and the selection has not necessarily happened.
+    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
         s_iglow[z] = 255;                                // and white-hot the moment it lights
-        canopy_ilut(z);
     }
+    // The colour tables are the DELTA drawing's, so only its own regions have one.
+    for (int z = 0; z < s_can->zones; z++) canopy_ilut(z);
     // Nothing left over on the spring, or the frame would start the sequence already leaning.
     for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
     s_lag_px = s_lag_py = 0;
@@ -1732,7 +1747,8 @@ void vg_canopy_intro_reset(void) {
     // chain's disarm and have to happen for every hull. Only the per-zone arrays need a
     // drawing to be about.
     if (!s_can) return;
-    for (int z = 0; z < canopy_zones(); z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
+    // All sixteen, for the reason vg_canopy_intro_begin gives at its own loop.
+    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
 
 // HOW MUCH FLEX THE FRAME IS ALLOWED, 0 through the sequence and 1 once it has settled.
@@ -1808,7 +1824,7 @@ bool vg_canopy_intro_update(float dt) {
     if (s_intro_t >= end) {
         s_intro_on = false;
         s_settle_t = 0.0f;
-        for (int z = 0; z < canopy_zones(); z++) {
+        for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) {
             s_izon[z] = 255; s_ilive[z] = 1;
             if (s_iglow[z]) { s_iglow[z] = 0; canopy_ilut(z); }
         }

@@ -128,11 +128,13 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     // so it goes where the light already is.
     bool             live[VG_CANOPY_MAX_ZONES];
     uint16_t         edge[VG_CANOPY_MAX_ZONES];
+    uint8_t          heat[VG_CANOPY_MAX_ZONES];
     const uint16_t*  zpal[VG_CANOPY_MAX_ZONES];
     const int nz = (int)c->zones;
     for (int z = 0; z < nz && z < VG_CANOPY_MAX_ZONES; z++) {
         live[z] = vg_canopy_zone_live(z);
         const uint32_t g = vg_canopy_zone_glow(z);
+        heat[z] = (uint8_t)g;
         edge[z] = outline_native((float)g * (1.0f / 255.0f));
         // COOL, AND THEN THE PALETTE ITSELF. A region that is not running hot reads the
         // art directly, which is every region for all but the first three seconds of a
@@ -225,6 +227,46 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
 
             const uint8_t*  src  = &data[sp->off];
             const uint16_t* spal = zpal[sp->zone];
+            const uint32_t  hz   = heat[sp->zone];
+
+            // METAL IS LIGHT WHILE IT IS HOT, and that is where the colour went.
+            //
+            // The light-delta cockpit's arrival is not one effect, it is a
+            // RELATIONSHIP: its members are additive, and behind them the region is
+            // dissolving out of white into the world. So the frame clips to white over
+            // the flash, burns amber over the first cells of world that come through,
+            // and settles as the background stops moving -- a wide colour excursion that
+            // nothing in the drawing contains. Painted metal replaces the pixel, so it
+            // gets none of that: it went white and then it was simply there.
+            //
+            // So while a region is running hot its metal is ADDED rather than stored,
+            // in the same lit amber the outline takes, and pixels cross to paint one
+            // dither cell at a time as it cools. A dither and not a fade, for the reason
+            // BAYER4 gives where it is declared: it is a store or an add either way, no
+            // blend, and it is the language the reveal already speaks.
+            //
+            // Costs a branch a pixel over a region's metal for the two or three seconds
+            // it is arriving, and nothing whatever after that -- heat is zero for every
+            // region for the rest of the match.
+            if (hz) {
+                const uint8_t* bay = vg_canopy_bayer_row(y);
+                // 0 while white-hot, so every cell is still light; 16 once cool, which
+                // is past every cell, so every cell has become paint.
+                const uint32_t th = ((255u - hz) * 17u) >> 8;
+                const int32_t  step = (int32_t)(((int64_t)len << 16) / (d1 - d0));
+                const int32_t  top  = (int32_t)(len - 1) << 16;
+                int32_t acc = (int32_t)((int64_t)(c0 - d0) * step);
+                for (int x = c0; x < c1; x++) {
+                    if ((uint32_t)bay[x & 3] >= th) {
+                        add_px(dst++, edge[sp->zone]);
+                    } else {
+                        const int32_t a = (acc < 0) ? 0 : (acc > top ? top : acc);
+                        *dst++ = spal[src[a >> 16]];
+                    }
+                    acc += step;
+                }
+                continue;
+            }
 
             // STRETCHED, which the sphere does and a translation does not. The run
             // holds a palette index a pixel, so a run that lands longer or shorter
