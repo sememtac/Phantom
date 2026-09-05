@@ -24,6 +24,7 @@ void host_dataset_close(void);
 #include "vg_states.h"
 #include "vg_sky.h"
 #include "vg_tv.h"
+#include "vg_canopy_op.h"
 
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
@@ -209,6 +210,10 @@ int main(int argc, char** argv) {
         // pause looks like depends entirely on what is behind it.
         else if (!strcmp(argv[i], "--pause-at") && i + 1 < argc)
             g_pause_at = atoi(argv[++i]);
+        // BACK TO THE LIGHT DELTA. The opaque bake is on by default on this
+        // branch -- see vg_canopy_op.h -- and this is how the two are compared in
+        // one sitting.
+        else if (!strcmp(argv[i], "--delta-canopy")) vg_canopy_op_on = false;
         // THE OLD NAMES STILL WORK, and they are aliases rather than a second
         // mechanism. Scripts, baselines and half the notes name them.
         //
@@ -285,6 +290,9 @@ int main(int argc, char** argv) {
                    "  --ship N     fly class N.\n"
                    "  --hue F      the player's trail colour, 0..1.\n"
                    "  --pause-at N press PWR N frames in, over whatever screen.\n"
+                   "  --delta-canopy   the CHARIOT flown behind the LIGHT\n"
+                   "               DELTA cockpit, which is what it had before\n"
+                   "               the opaque bake. For comparing the two.\n"
                    "  --course     start on the practice range, past the menus.\n"
                    "  --entry      start on callsign registration.\n"
                    "  --pause      start on the pause screen.\n"

@@ -1,4 +1,6 @@
 #include "vg_canopy_set.h"
+#include "vg_canopy_op.h"
+#include "generated/canopy_op_chariot.h"
 
 // ===========================================================================
 // WHICH COCKPIT A HULL FLIES, and the table is GENERATED
@@ -55,3 +57,12 @@ const VgCanopy* vg_canopy_for(ShipClass c) {
 // null drawing throughout. vg_game_init reached for a default here, which only ever
 // existed because the set had one.
 const VgCanopy* vg_canopy_default(void) { return nullptr; }
+
+// THE OPAQUE BAKE, and only the CHARIOT has one. The drawing is a different KIND
+// of thing from the four in the set above -- colour and coverage rather than a
+// light delta -- so it is selected separately rather than smuggled into a table
+// whose type says what a canopy is.
+const VgCanOp* vg_canopy_op_for(ShipClass c) {
+    if (!vg_canopy_op_on) return nullptr;
+    return (c == SHIP_CHARIOT) ? &CANOPY_OP_CHARIOT : nullptr;
+}

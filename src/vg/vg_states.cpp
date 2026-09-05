@@ -32,6 +32,7 @@
 #include "vg_replay.h"
 #include "vg_raster.h"
 #include "vg_canopy_set.h"
+#include "vg_canopy_op.h"
 #include <math.h>
 #include "vg_canopy_draw.h"
 #include "vg_tv.h"
@@ -169,6 +170,9 @@ static void enter_course(void) {
     // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
     // itself from the drawing's region count -- so the order here is not cosmetic.
     vg_canopy_use(vg_canopy_for(vg.ship));
+    // ...and the opaque bake beside it, for the hull that has one. The band pass
+    // prefers this when it is not null -- see vg_canopy_op.h.
+    vg_canopy_op_use(vg_canopy_op_for(vg.ship));
     vg_canopy_intro_begin();
     // THE ONLY SOUND THAT PLAYS TO A BLACK SCREEN. It fills the second of dark before the first
     // region lights, so the wait reads as something spooling up rather than as nothing happening --
@@ -269,6 +273,9 @@ void vg_begin_flight(void) {
     // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
     // itself from the drawing's region count -- so the order here is not cosmetic.
     vg_canopy_use(vg_canopy_for(vg.ship));
+    // ...and the opaque bake beside it, for the hull that has one. The band pass
+    // prefers this when it is not null -- see vg_canopy_op.h.
+    vg_canopy_op_use(vg_canopy_op_for(vg.ship));
     vg_canopy_intro_begin();
     vg_sfx_play(SFX_SPOOL, 1.0f);
     vg.roll     = 0;

@@ -9,6 +9,7 @@
 #include "vg_sky.h"
 #include "vg_canopy.h"
 #include "vg_canopy_draw.h"
+#include "vg_canopy_op.h"
 #include "vg_bezel.h"
 #include "vg_tv.h"
 #include "vg_sfx.h"   // vg_disp: the player can switch the scanlines off
@@ -1357,6 +1358,15 @@ static void band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1) {
             // reading. Where the cut lands is still the canopy's own balance
             // point, asked for by draw_band before the fork -- see
             // vg_canopy_split_at.
+            //
+            // THE OPAQUE ONE WINS IF THERE IS ONE, and that is the whole switch
+            // for the experiment -- see vg_canopy_op.h. The two are alternatives
+            // rather than layers: a cockpit is either metal that occludes or a
+            // delta that lights, and drawing both would be a frame wearing two.
+            if (vg_canopy_op_current()) {
+                vg_canopy_op_rows(band, by0, 0, by1 - by0 + 1);
+                break;
+            }
             if (!vg_canopy_current()) break;
             vg_canopy_rows(band, by0, 0, by1 - by0 + 1);
             break;
