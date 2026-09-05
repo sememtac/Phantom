@@ -3,6 +3,7 @@
 #include "vg_raster.h"
 #include "vg_config.h"
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 
 // The opaque canopy. See vg_canopy_op.h for what this is an experiment in.
 
@@ -22,15 +23,23 @@ static const VgCanOp* s_cur = nullptr;
 // buys is that the paint RESOLVES OUT OF the region's white flash instead of appearing
 // beside it, which is the thing worth having.
 //
-// 8 KB of RAM, and the delta path already spends the same 8 KB on s_ilut for the same
-// three seconds. Rebuilt only when a region's quantised glow moves -- CANOPY_INTRO_QSTEP
-// steps over the whole cooling -- so a match pays a couple of dozen 256-entry loops in
-// total and nothing at all once the cockpit is up.
-static uint16_t s_hot[VG_CANOPY_MAX_ZONES][256];
+// 8 KB, and IN PSRAM, which is not where the delta path keeps its s_ilut and is not
+// a matter of taste. Internal RAM is where the other core's stack has to come from,
+// the rowsplit helper asks for 4 KB of it on the first band ever drawn, and this
+// table as a static 8 KB was the difference between a helper that starts and one
+// that does not -- see rowsplit_start in vg_band.cpp. Read through the cache like
+// everything else in PSRAM; 512 bytes a region stays resident once touched. Rebuilt
+// only when a region's quantised glow moves -- CANOPY_INTRO_QSTEP steps over the
+// whole cooling -- so a match pays a couple of dozen 256-entry loops in total and
+// nothing at all once the cockpit is up.
+static uint16_t (*s_hot)[256] = nullptr;     // [VG_CANOPY_MAX_ZONES][256]
 static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 
 void vg_canopy_op_use(const VgCanOp* c) {
     s_cur = c;
+    if (c && !s_hot)
+        s_hot = (uint16_t (*)[256])heap_caps_malloc(
+                    (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     // A DIFFERENT DRAWING IS A DIFFERENT PALETTE, so every table built against the last
     // one is wrong. -1 is a level no glow reaches, so this is "never built".
     for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) s_hot_q[z] = -1;
@@ -142,7 +151,7 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
         // COOL, AND THEN THE PALETTE ITSELF. A region that is not running hot reads the
         // art directly, which is every region for all but the first three seconds of a
         // match -- so the whole of this costs one compare a region a band.
-        if (!g) { zpal[z] = pal; continue; }
+        if (!g || !s_hot) { zpal[z] = pal; continue; }   // no table is a cool region
         if (s_hot_q[z] != (int16_t)g) hot_lut(c, z, g);
         zpal[z] = s_hot[z];
 

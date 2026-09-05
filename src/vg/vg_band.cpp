@@ -890,6 +890,15 @@ static bool rowsplit_start(uint8_t op, uint16_t* band, int by0, int r0, int r1) 
             if (s_rs_go)   { vSemaphoreDelete(s_rs_go);   s_rs_go   = nullptr; }
             if (s_rs_done) { vSemaphoreDelete(s_rs_done); s_rs_done = nullptr; }
             s_rs_dead = true;
+            // AND SAY SO, ONCE. This ran silent for a day on a branch that added 8 KB
+            // of static tables: the stack above could not be had, the helper never
+            // started, and the whole raster ran on one core -- which was read as a
+            // cockpit costing twice its price, and measured that way three times.
+            // "Costs frame rate and nothing else" is half the machine, and half the
+            // machine must not go quietly.
+            Serial.printf("vg_band: rowsplit helper NOT started, %u bytes of internal heap free: "
+                          "the whole raster runs on ONE core\n",
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
             return false;
         }
     }
