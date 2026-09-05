@@ -423,11 +423,16 @@
 // and reads as a wet gloss. Both were rendered before this was built and either is
 // defensible, so it is a number here rather than a decision in the code.
 //
-// KEEP mixes the bare metal back in, 0 painting fully and 1 not painting at all. It
-// exists for a hull whose frame should only be tinged with the player's colour.
+// KEEP mixes the bare metal back in, 0 painting fully and 1 not painting at all --
+// which on metal this close to neutral is exactly a saturation control.
+//
+// IT SHIPS AT 0.35, and that is the author's call off a rendered sweep rather than a
+// guess: at 0 the paint is a vivid plastic, and by 0.5 the colour is a cast on grey
+// that a pilot would not name at a glance. 0.35 reads as painted metal and still says
+// whose ship it is, which is the whole reason the frame is painted at all.
 #define CANOPY_TINT_GLOSS     0.45f
 #define CANOPY_TINT_GLOSS_AT  0.42f   // luminance, 0..1, where the highlight starts
-#define CANOPY_TINT_KEEP      0.00f
+#define CANOPY_TINT_KEEP      0.35f
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
