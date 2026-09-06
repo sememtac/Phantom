@@ -3,100 +3,53 @@
 #include "vg_raster.h"
 #include "vg_raster_int.h"
 #include "vg_port.h"
-#include "vg_canopy.h"
 #include "vg_config.h"
 #include "vg_sim.h"   // vg_frand01
 #include <Arduino.h>
-#include <esp_heap_caps.h>
 #include <string.h>
 #include <math.h>
 #include "vg_cockpit.h"
 #include "vg_replay.h"   // vg_replay_mode: the split must not adapt under a replay
 
 // ===========================================================================
-// THE CANOPY, LIFTED WHOLE OUT OF vg_band.cpp
+// THE COCKPIT'S STATE, for the renderer that draws it
 //
-// One drawing, one colour table, one warp, one coming-online sequence, and the row pass
-// over all of it. It was 1,112 lines in the middle of the raster, and the map called it a
-// system trapped inside another one.
+// This used to be a renderer. One drawing, one colour table, one warp, one
+// coming-online sequence, and the row pass over all of it: the light delta, a
+// cockpit applied as a CHANGE to the finished picture, lifted whole out of
+// vg_band.cpp because the map called it a system trapped inside another one.
 //
-// WHY WHOLE AND NOT IN PIECES. The intro alone was tried and abandoned: it would have
-// forced s_can_lut, canopy_lut(), s_can_ready and s_intro_on into public view to move 311
-// lines, which is publishing a module's internals to relocate part of it. Taken whole the
-// boundary falls where the coupling already stops, and three functions cross it --
-// vg_canopy_rows, vg_canopy_split_at, and the API that was always public.
+// The delta renderer is gone. Every hull's drawing became an opaque bake on
+// 2026-09-05 -- see vg_canopy_op.h for what that is and why it won -- and once
+// the last delta row in the generated set was nullptr, the band pass, its colour
+// tables, its vector spans and its bench were code that could not execute. They
+// were retired on 2026-09-06, about 1,300 lines of this file and two .S files.
 //
-// AND IT COSTS WHAT THE BACKDROP COSTS. The row-split task already dispatched across a
-// translation unit to vg_sky_fill_rows and vg_sky_prep_bands, so a canopy on the far side
-// of one is not a new shape. The per-band call is the only thing that crosses; the span
-// loops, the block walk and px_add are all still in one unit with each other, which is
-// what the register work in 2026-08-04 was protecting.
+// WHAT STAYS IS EVERYTHING THAT IS NOT ABOUT HOW THE DRAWING IS STORED. A cockpit
+// moves in three ways -- it lags the turn on a spring, bends under the throttle,
+// shears with the roll -- and it arrives a region at a time, takes hits, loses
+// panels for good, and goes red at the wall. None of that is a property of the
+// bake. It is a property of the MATCH, and there is one clock running all of it.
+// The opaque renderer asks this module those questions (vg_canopy_motion,
+// vg_canopy_gate_run, the zone accessors, vg_canopy_alarm_colour) and keeps its
+// own inner loop, which is the boundary that was drawn when there were two
+// cockpits and that turned out to be the right one when there was one again.
+//
+// The two-core split lives here too, because its balance point is built from the
+// same per-column costs the warp needs.
 // ===========================================================================
 
 // HOW RED THE COCKPIT IS, 0 clear and 1 hard against the wall. The only wall warning there
 // is now: the ring that used to sit beside this is deleted, above.
 static float s_alarm  = 0.0f;
 
-// ===========================================================================
-// THE BAKED CANOPY
-//
-// The author draws the frame on a grey field and this applies it as a CHANGE to the
-// finished picture: brighter than the background adds light, darker takes it away. So
-// the frame is lit BY the scene rather than painted over it, and it holds that
-// relationship over a dark nebula and a bright one alike -- which is exactly what an
-// opaque line cannot do, and what the sky gamma made obvious.
-//
-// COLUMNS, because the panel is turned a quarter turn: panel_x is the picture's y and
-// panel_y is 479 minus its x, so one band is 32 columns of the drawing and a column
-// layout keeps each band's data contiguous. LEFT HALF ONLY -- the drawing is symmetric
-// to within four levels of antialiasing noise, so column x serves 479-x as well and
-// nothing needs flipping inside a run, since mirroring in x leaves the y-runs alone.
-//
-// Empty pixels are not stored: a frame covers ~7% of the screen, so the table is runs
-// of used pixels and skips the rest. 21 to 26 KB per drawing in FLASH, where there are
-// megabytes free, rather than in the internal SRAM that is actually scarce.
-//
-// The grey levels come through a 256-entry table built once, so the per-pixel work is
-// a load and a saturating add rather than any arithmetic on the hue.
-//
-// THE INK CANOPIES' NUMBERS, moved here when the vector frame was deleted from
-// vg_hud.cpp. Two of its measured rejections still govern this design: partial
-// antialiasing -- the aperture smoothed, the struts not -- existed to buy back the
-// ~380 us full smoothing cost, and became pointless when AA came off the
-// instruments altogether; and the broadened frame drawn as bundles of parallel
-// lines was ~1.3 ms for its ~15,000 pixels, where fills moved the bound checks out
-// of the inner loop and dropped the per-line overhead entirely. The baked runs
-// below are that second lesson carried to the end.
-static uint16_t s_can_lut[256];
-static bool     s_can_ready = false;
-
-// WHICH DRAWING IS BEING FLOWN.
-//
-// It used to be the CANOPY_* macros, read straight out of the generated header, and that
-// shape allowed exactly one cockpit to exist -- a macro cannot be selected at runtime. Every
-// hull can have its own now. Nothing is owned or copied: a canopy lives in flash and this
-// points at it.
-//
-// NULL UNTIL SELECTED, and this file no longer includes a drawing at all.
-//
-// It cannot: a generated header defines its tables as `static`, so including one here and
-// again wherever the per-hull table lives would put two copies of every drawing in flash.
-// vg_canopy_set.cpp owns them; this holds a pointer it is handed.
-//
-// Which means every entry point has to tolerate not having one yet. vg_game_init selects at
-// boot so it never happens in practice, but "never happens in practice" is not something to
-// dereference a pointer on -- and a missing cockpit should be a missing cockpit, not a crash.
-static const VgCanopy* s_can = nullptr;
-// The panel being looked through, worked out from the zone map when a drawing is selected
-// and never faulted. Beside s_can because it is a property OF the drawing -- see
-// canopy_find_centre.
+// The panel being looked through, worked out from the drawing when it is selected and
+// never faulted. See canopy_find_centre.
 static int8_t s_centre_z = -1;
 
-// IS THE ARRIVAL SEQUENCE RUNNING. Declared HERE, beside the drawing, and not down with the
-// rest of the intro's state where it used to live -- because the two are coupled and the
-// coupling is a safety property: vg_canopy_intro_update reads s_can->zones under this flag alone,
-// so a true flag and a null drawing is a fault. vg_canopy_use is the only place that can
-// break that pair, and it is a few lines below.
+// IS THE ARRIVAL SEQUENCE RUNNING. vg_canopy_intro_update walks the drawing's regions
+// under this flag alone, so a true flag with no drawing selected is a fault --
+// vg_canopy_intro_begin is what sets it and it checks first.
 static bool s_intro_on = false;
 
 // LOOKING AFT, so the cockpit must not be drawn.
@@ -108,51 +61,27 @@ static bool s_intro_on = false;
 // It suppresses the FRAME ONLY, not the intro's world gate. Those share one primitive, and
 // the gate is what holds the world black region by region while the cockpit comes online --
 // so switching the whole primitive off in rear view would show the entire world at full
-// brightness in the middle of the sequence. That is the same trap that lifting this
-// primitive out of vg_draw_hud was fixing.
+// brightness in the middle of the sequence.
 static bool s_can_rear = false;
 
 void vg_canopy_rear(bool on) { s_can_rear = on; }
-// ...and asked for by the OTHER cockpit, which has to make the same decision. The
-// delta path reads the flag directly a few hundred lines down; the opaque one is a
-// different translation unit and cannot.
+// ...and asked for by the renderer, which is a different translation unit and has
+// to make the same decision.
 bool vg_canopy_rear_on(void)  { return s_can_rear; }
 bool vg_canopy_intro_on(void) { return s_intro_on; }
 
-const VgCanopy* vg_canopy_current(void) { return s_can; }
-
-// HOW MANY REGIONS THE COCKPIT THAT IS FLYING HAS.
-//
-// The arrival, the hits and the damage progression all step through the REGIONS of the
-// drawing, and there are two drawings now with different counts: the CHARIOT's light
-// delta has four and its opaque bake has six. Every loop that read s_can->zones was
-// asking the wrong one the moment the opaque cockpit was the one on screen -- regions
-// four and five would simply never have lit, and the arrival would have finished with a
-// third of the canopy still black.
-//
-// The tests INSIDE canopy_gate and canopy_rows_t still read s_can->zones, and must. Those
-// index the delta drawing's own run tables and the question there is whether a run is in
-// range, not how many regions the sequence is walking.
+// HOW MANY REGIONS THE COCKPIT THAT IS FLYING HAS. The arrival, the hits and the
+// damage progression all step through the REGIONS of the drawing, and the count is
+// the drawing's own -- the CHARIOT's bake has six.
 static int canopy_zones(void) {
     const VgCanOp* o = vg_canopy_op_current();
-    if (o) return (int)o->zones;
-    return s_can ? (int)s_can->zones : 0;
+    return o ? (int)o->zones : 0;
 }
 
-// IS THERE A COCKPIT AT ALL, of either kind.
-//
-// This module was written when there was one kind of drawing, so `s_can` meant both
-// "the light delta" and "a cockpit is flying". Once every hull's drawing became an
-// opaque bake the two came apart, and every gate that still asked `!s_can` was
-// answering the wrong question: the frame would not bend, the arrival would not run,
-// and the two-core split fell back to the midpoint -- on a hull that had a perfectly
-// good cockpit on the screen.
-//
-// So the gates ask THIS, and the code that indexes the delta drawing's own tables goes
-// on asking for `s_can`, because that is a different question and it still has to be
-// asked. Both appear below and the difference is deliberate everywhere it appears.
+// IS THERE A COCKPIT AT ALL. Every entry point tolerates not having one: a hull with
+// no drawing flies with no frame, and the boot chain still has to run for it.
 static bool canopy_any(void) {
-    return s_can != nullptr || vg_canopy_op_current() != nullptr;
+    return vg_canopy_op_current() != nullptr;
 }
 
 // THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW.
@@ -162,9 +91,9 @@ static bool canopy_any(void) {
 // frame, and their colour comes from a 256-entry table, so turning the frame red is a
 // different table rather than more work.
 //
-// Quantised to sixteen steps so a steady approach rebuilds the table a few times instead
-// of sixty a second. The table is 256 entries of trivial arithmetic, so even that is
-// nearly free -- the quantising is about not thrashing s_can_ready.
+// Quantised to sixteen steps so a steady approach changes the colour a few times instead
+// of sixty a second. The renderer rebuilds its palette when the level moves, and this is
+// what keeps that from happening every frame.
 // s_alarm is declared further up, where the ring's own level used to sit beside it.
 static int   s_alarm_q = 0;
 static bool  s_alarm_white = false;
@@ -182,9 +111,9 @@ static bool  s_alarm_white = false;
 // effect was a slight change of saturation on an already-red frame, which is precisely the
 // "which shade means I am dead" problem it was meant to solve.
 //
-// The strobe is a bool and the level is quantised, so the table rebuilds on either edge of
-// a flash and on a step of the ramp. At the top rate that is about eighteen rebuilds a
-// second of 256 trivial entries, which is nothing beside a per-pixel pass.
+// The strobe is a bool and the level is quantised, so the colour moves on either edge of
+// a flash and on a step of the ramp. At the top rate that is about eighteen palette
+// rebuilds a second in the renderer, which is nothing beside a per-pixel pass.
 void vg_canopy_alarm(float k, bool white) {
     if (k < 0.0f) k = 0.0f; else if (k > 1.0f) k = 1.0f;
     const int q = (int)(k * 16.0f + 0.5f);
@@ -192,7 +121,6 @@ void vg_canopy_alarm(float k, bool white) {
     s_alarm_q     = q;
     s_alarm       = (float)q * (1.0f / 16.0f);
     s_alarm_white = white;
-    s_can_ready   = false;        // the colour table is stale; canopy_lut rebuilds it
 }
 
 uint16_t vg_canopy_alarm_colour(float* level) {
@@ -204,442 +132,6 @@ uint16_t vg_canopy_alarm_colour(float* level) {
     return (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm) : COL_HUD;
 }
 
-static void canopy_lut(void) {
-    const int bg = (int)s_can->bg;
-    // What the frame is made of right now: its own amber, pulled toward the danger red as
-    // the wall closes. One mix for the whole table rather than per pixel.
-    // The frame's own amber, pulled toward the danger red by the clearance, and then all
-    // the way to white for the length of a strobe. One mix for the whole table rather than
-    // anything per pixel.
-    uint16_t base = (s_alarm > 0.0f) ? vg_mix(COL_HUD, COL_DANGER, s_alarm) : COL_HUD;
-    if (s_alarm_white) base = CANOPY_ALARM_WHITE;
-    for (int g = 0; g < 256; g++) {
-        const float f = (g > bg)
-                      ? (float)(g - bg) / (float)(255 - bg)
-                      : (float)(bg - g) / (float)bg;
-        // NATIVE order, swapped once here. Palette colours are stored in panel order
-        // and blend_px works in native, so leaving this unswapped would put the delta's
-        // red into the blue channel -- a bug that would have looked like a design
-        // decision rather than a mistake.
-        const uint16_t c = vg_dim(base, f);
-        s_can_lut[g] = (uint16_t)((c >> 8) | (c << 8));
-    }
-    s_can_ready = true;
-}
-
-// A RUN OF ONE DELTA, which is where the cost of this actually lives.
-//
-// Two masked adds instead of three channel extracts. R+B share a word because nothing
-// can carry between them once G is masked out, and each field gets a spare bit above it
-// to catch the overflow: bit 16 above R, bit 5 above B, bit 11 above G. If the guard bit
-// is set the field saturated, so fill it -- no compares against 31 and 63, no
-// per-channel shifting back and forth.
-//
-// Subtraction is the same trick run backwards: set the guard bits first, and a field
-// that borrows through its guard has underflowed and clamps to zero.
-//
-// The delta is hoisted out of the loop, which is the other half of the win and the
-// reason the table stores runs of one level rather than a level per pixel.
-// A GUARD BIT FILLS ITS OWN FIELD, which is what makes this branchless without costing
-// more than the branches did.
-//
-// For a field of width w with its guard bit immediately above it, `m - (m >> w)` turns a
-// set guard into a solid field of ones and a clear guard into nothing. Red sits at bits
-// 11..15 under a guard at 16, so 0x10000 - 0x800 is 0xF800: exactly the red field. Blue
-// at 0..4 under bit 5 gives 0x20 - 1 = 0x1F. Both guards at once still work, because the
-// shifted fields do not overlap. Green is width 6 under bit 11, so it shifts by 6.
-//
-// The point is not the two cycles of branch. It is that the branchy form needed seven
-// mask constants -- 0x1F, 0xF800, 0x7E0 and their complements -- and sixteen registers
-// could not hold them alongside two interleaved pixels. The compiler was reloading them
-// from the stack and fetching ~0xF800 out of the literal pool EVERY iteration. Four
-// constants fit; seven did not.
-//
-// The input is not masked to 16 bits: every path below masks with 0xF81F or 0x07E0
-// anyway, so the high bytes the swap leaves behind cannot reach the result.
-
-// Subtraction is the same trick run backwards: set the guards first, and a field that
-// borrowed through its guard has underflowed. Here a STILL-SET guard is the good case, so
-// the same expression becomes a keep-mask and clears the guard on its way out -- which is
-// why this one needs no final masking at all.
-
-// TWO PIXELS PER ACCESS, because this loop is bound by memory and not by arithmetic.
-// Taking eight cycles of maths out of it earlier changed nothing at all -- the work was
-// already hidden behind the load and the store -- so the only thing left to remove is
-// the number of accesses. One 32-bit load and one 32-bit store per pair halves them.
-//
-// TWO MORE ATTEMPTS HAVE SINCE BEEN MEASURED AND REJECTED, both over the same recorded
-// session with tools/replay_cost.py, whose noise floor on this counter is one microsecond:
-//
-//   The byte swaps lifted out of px_add and done once per PAIR instead of once per pixel.
-//   Seven operations of about twenty-two are swapping, so this looked like the obvious
-//   win. It cost 32 us, +1.1%. The compiler was already folding the swap into the field
-//   masks better than the hand-written version could.
-//
-//   The whole flight table copied from flash into internal SRAM, on the theory that 11 KB
-//   read through the cache every frame was the missing time. It saved 3 us, -0.1%, for
-//   11 KB of the scarcest memory on the part.
-//
-// So the 36 cycles a flat pixel costs are neither the arithmetic nor the table: they are
-// the read-modify-write of the band itself. That was called the floor here for a month,
-// with "the only way under it is to touch fewer pixels" -- true for SCALAR code, and the
-// PIE path below went under it anyway by changing the denominator: one 128-bit access per
-// eight pixels instead of one 32-bit access per two. The scalar floor still governs this
-// loop, which now serves the spans too short to vectorise; AREA remains the artist's
-// lever and canopy_bake.py's estimate stands.
-//
-// The pixel maths stays per-pixel on purpose. Packing both into one 32-bit add would
-// need a spare bit above red to catch its carry, and red sits at the top of its half,
-// so the carry lands in the neighbouring pixel's blue. That is a real trap and not
-// worth the two cycles it would save.
-//
-// Xtensa will not do an unaligned 32-bit load, so a span starting on an odd pixel does
-// that one singly first.
-#define SPAN_BODY(FN)                                                        \
-    const uint32_t drb = (uint32_t)d & 0xF81Fu, dg = (uint32_t)d & 0x07E0u;  \
-    int i = 0;                                                               \
-    if (n > 0 && (((uintptr_t)q & 3u) != 0u)) {                              \
-        q[0] = (uint16_t)FN(q[0], drb, dg);                                  \
-        i = 1;                                                               \
-    }                                                                        \
-    for (; i + 1 < n; i += 2) {                                              \
-        uint32_t* w = (uint32_t*)(void*)(q + i);                             \
-        const uint32_t v = *w;                                               \
-        *w = FN(v & 0xFFFFu, drb, dg) | (FN(v >> 16, drb, dg) << 16);         \
-    }                                                                        \
-    for (; i < n; i++) q[i] = (uint16_t)FN(q[i], drb, dg);
-
-// ALWAYS INLINE, and not as a matter of taste.
-//
-// These were inlined by choice of the compiler, and taking them OUT of line was measured at
-// 175 us of loss when it was tried on purpose -- a flat block averages twenty pixels, which is
-// not enough to pay for a call. Then the warp grew canopy_rows_t past whatever size threshold
-// GCC weighs, and it stopped inlining them on its own: the rigid instantiation came out at 234
-// bytes calling span_sub, and the pass went 4065 -> 4190 us.
-//
-// So the decision is stated rather than left to a heuristic that cannot know what it costs
-// here. A measurement that has already been taken should not have to be taken again because an
-// unrelated function got longer.
-static inline __attribute__((always_inline))
-void span_add_scalar(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_add) }
-static inline __attribute__((always_inline))
-void span_sub_scalar(uint16_t* q, int n, uint16_t d) { SPAN_BODY(px_sub) }
-
-// THE VECTOR PATH, and where it is allowed. 1 = flat spans of CANOPY_PIE_MIN
-// pixels or more go through the PIE unit (vg_pie_spans.S), everything shorter
-// stays on the scalar pair loop above; 0 = the shipped scalar path, untouched.
-// The self-test in vg_canopy_warm proves bit-identity before the first frame
-// draws, and prints its verdict either way. Both paths are measured; the
-// author chooses with the numbers in hand.
-// Overridable from the build, which is how the desktop host selects the scalar
-// path: the PIE unit is Xtensa and the .S files cannot be assembled on a PC.
-// The self-test in vg_canopy_warm proves the two paths are bit-identical, so
-// this changes what runs and not what is drawn.
-#ifndef CANOPY_PIE
-#define CANOPY_PIE 1
-#endif
-
-#if CANOPY_PIE
-extern "C" void vg_pie_span_add8m(uint16_t* u, int nu, const uint16_t* d3,
-                                  const uint16_t* m0, const uint16_t* mL);
-extern "C" void vg_pie_span_sub8m(uint16_t* u, int nu, const uint16_t* d3,
-                                  const uint16_t* m0, const uint16_t* mL);
-
-// Every span the dispatcher sends arrives ENTIRELY on the vector path: the
-// covering 8-pixel units are blended whole, and the head and tail units keep
-// only their covered lanes, masked from these tables. mh[o] covers lanes o
-// and up; mt[t] covers lanes below t, with t = 0 meaning the last unit is
-// full. A span inside a single unit pre-combines the two.
-alignas(16) static const uint16_t s_pie_mh[8][8] = {
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF },
-    { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF },
-};
-alignas(16) static const uint16_t s_pie_mt[8][8] = {
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF },
-    { 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000, 0x0000 },
-    { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x0000 },
-};
-
-// Below four pixels the call itself is the cost; the scalar pair loop keeps
-// those. Everything else vectorises, edge lanes included.
-#define CANOPY_PIE_MIN 4
-
-// Out of line ON PURPOSE, unlike the scalar spans: inlined, the mask staging
-// and unit arithmetic would join the block walk's register file -- the exact
-// spill this file already paid 29% to escape once.
-static __attribute__((noinline))
-void span_add_pie(uint16_t* q, int n, uint16_t d) {
-    const uint16_t d3[3] = { (uint16_t)((d >> 11) & 31u), (uint16_t)((d >> 5) & 63u),
-                             (uint16_t)(d & 31u) };
-    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
-    const int off = (int)(q - base);
-    const int cov = off + n;
-    const int nu  = (cov + 7) >> 3;
-    const uint16_t* m0 = s_pie_mh[off];
-    alignas(16) uint16_t mc[8];
-    if (nu == 1) {
-        const uint16_t* mL = s_pie_mt[cov & 7];
-        for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]);
-        m0 = mc;
-    }
-    vg_pie_span_add8m(base, nu, d3, m0, s_pie_mt[cov & 7]);
-}
-static __attribute__((noinline))
-void span_sub_pie(uint16_t* q, int n, uint16_t d) {
-    const uint16_t d3[3] = { (uint16_t)((d >> 11) & 31u), (uint16_t)((d >> 5) & 63u),
-                             (uint16_t)(d & 31u) };
-    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
-    const int off = (int)(q - base);
-    const int cov = off + n;
-    const int nu  = (cov + 7) >> 3;
-    const uint16_t* m0 = s_pie_mh[off];
-    alignas(16) uint16_t mc[8];
-    if (nu == 1) {
-        const uint16_t* mL = s_pie_mt[cov & 7];
-        for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]);
-        m0 = mc;
-    }
-    vg_pie_span_sub8m(base, nu, d3, m0, s_pie_mt[cov & 7]);
-}
-
-static inline __attribute__((always_inline))
-void span_add(uint16_t* q, int n, uint16_t d) {
-    if (n >= CANOPY_PIE_MIN) { span_add_pie(q, n, d); return; }
-    span_add_scalar(q, n, d);
-}
-static inline __attribute__((always_inline))
-void span_sub(uint16_t* q, int n, uint16_t d) {
-    if (n >= CANOPY_PIE_MIN) { span_sub_pie(q, n, d); return; }
-    span_sub_scalar(q, n, d);
-}
-#else
-static inline __attribute__((always_inline))
-void span_add(uint16_t* q, int n, uint16_t d) { span_add_scalar(q, n, d); }
-static inline __attribute__((always_inline))
-void span_sub(uint16_t* q, int n, uint16_t d) { span_sub_scalar(q, n, d); }
-void vg_canopy_pie_selftest(void) {
-    Serial.println("vg_canopy: PIE compiled out (CANOPY_PIE 0); the scalar spans are shipping");
-}
-#endif
-
-// A PIXEL AT A TIME, for the antialiased edge of a shape.
-//
-// The flat span above is the cheap path and carries most of the area, but it earns that
-// by hoisting the delta, which only works where the level is constant. At the edge of a
-// member every pixel is a different level, and stored as flat spans those were 78% of
-// all the blocks while carrying 18% of the pixels -- four bytes of header to deliver one
-// byte of level, and a header decode is worth several pixels.
-//
-// So a stretch of them is one block with a level per pixel. The delta comes back inside
-// the loop, but the pairing survives: two pixels in one 32-bit access still works when
-// their deltas differ, because the maths is per-pixel either way.
-#define SPAN_LIT_BODY(FN)                                                    \
-    int i = 0;                                                               \
-    if (n > 0 && (((uintptr_t)q & 3u) != 0u)) {                              \
-        const uint32_t d = lut[lv[0]];                                       \
-        q[0] = (uint16_t)FN(q[0], d & 0xF81Fu, d & 0x07E0u);                 \
-        i = 1;                                                               \
-    }                                                                        \
-    for (; i + 1 < n; i += 2) {                                              \
-        const uint32_t d0 = lut[lv[i]], d1 = lut[lv[i + 1]];                 \
-        uint32_t* w = (uint32_t*)(void*)(q + i);                             \
-        const uint32_t v = *w;                                               \
-        *w = FN(v & 0xFFFFu, d0 & 0xF81Fu, d0 & 0x07E0u)                     \
-           | (FN(v >> 16, d1 & 0xF81Fu, d1 & 0x07E0u) << 16);                \
-    }                                                                        \
-    for (; i < n; i++) {                                                     \
-        const uint32_t d = lut[lv[i]];                                       \
-        q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                 \
-    }
-
-// NOT INLINED, and that is the whole point of it.
-//
-// Inlined, all four span variants and the block walk are live in one function at once,
-// and Xtensa has sixteen visible registers. The compiler ran out: the disassembled pair
-// loop was 79 instructions for two pixels, and among them were three stack reloads, two
-// rematerialised constants and a literal-pool fetch -- every iteration. The arithmetic
-// was never the cost; the spilling was.
-//
-// Out of line, this loop gets the register file to itself. A call costs a handful of
-// cycles once per block, and a block averages thirty-odd pixels.
-// A STRETCHED literal block, resampled rather than over-read.
-//
-// A literal block carries one level byte per DRAWING pixel. Magnified, its panel length is
-// longer than its data, and the plain span above would read past the end of its own levels
-// into the next block's -- which are frequently much brighter. That is the bright pixels
-// bleeding through the frame at full zoom: not a blend fault, an array read one block too far.
-//
-// Fixed point, 16.16: `step` is drawing pixels per panel pixel and `i0` is where the clipped
-// front starts. Only the graded edges take this path and only while the warp is on, so it
-// stays a plain per-pixel walk -- pairing it would save little and this is 4,792 pixels.
-#define SPAN_LIT_RS_BODY(FN)                                                     uint32_t idx = i0;                                                           for (int i = 0; i < n; i++) {                                                    const uint32_t d = lut[lv[idx >> 16]];                                       q[i] = (uint16_t)FN(q[i], d & 0xF81Fu, d & 0x07E0u);                         idx += step;                                                             }
-
-// THE TABLE COMES IN AS AN ARGUMENT, because the intro needs a different one per zone.
-//
-// It was a file static, read straight from the macro bodies. The intro flashes a region white
-// by giving that region its own colour table, so the table has to vary per BLOCK -- and these
-// are shared with the flight path, which must not pay for it. As an argument it does not: the
-// call already passes three registers and the loop reads through a register base rather than a
-// literal address, which on Xtensa is no worse. Measured on the canopy bench before and after.
-static __attribute__((noinline))
-void span_lit_add_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut, uint32_t i0, uint32_t step)
-{ SPAN_LIT_RS_BODY(px_add) }
-static __attribute__((noinline))
-void span_lit_sub_rs(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut, uint32_t i0, uint32_t step)
-{ SPAN_LIT_RS_BODY(px_sub) }
-
-static __attribute__((noinline)) void span_lit_add_scalar(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_add) }
-static __attribute__((noinline)) void span_lit_sub_scalar(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) { SPAN_LIT_BODY(px_sub) }
-
-#if CANOPY_PIE
-extern "C" void vg_pie_span_lit_add8m(uint16_t* u, int nu, const uint16_t* tiles,
-                                      const uint16_t* m0, const uint16_t* mL);
-extern "C" void vg_pie_span_lit_sub8m(uint16_t* u, int nu, const uint16_t* tiles,
-                                      const uint16_t* m0, const uint16_t* mL);
-
-// THE LIT DISPATCH. The vector unit has no gather, so the per-pixel LUT walk
-// cannot leave the scalar side -- but it can shrink to a STAGING walk: four
-// instructions a pixel writing lut[lv[i]] into a 16-byte tile per unit, with
-// the blend itself, the field split and the clamps all going to the vector
-// unit. Chunked at eight units so the tiles live in one small stack frame;
-// the masks work exactly as they do for the flat spans, and a chunk of one
-// unit pre-combines head and tail the same way.
-// 16, measured and not guessed: at 8 the staging and the call cost more than
-// the scalar walk they replace -- the first lit dispatch shipped at 8 with a
-// second call hop on the scalar side, and the replay read WORSE than flat-only
-// (+354 us fight, +336 course). The lit mass lives in 3.4-pixel blocks either
-// way; spans this path can win are the borders and the big members' edges.
-#define CANOPY_PIE_LIT_MIN 16
-
-static __attribute__((noinline))
-void span_lit_add_pie(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
-    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
-    const int off = (int)(q - base);
-    const int cov = off + n;
-    const int nu  = (cov + 7) >> 3;
-    alignas(16) uint16_t tiles[8][8];
-    alignas(16) uint16_t mc[8];
-    for (int u0 = 0; u0 < nu; u0 += 8) {
-        const int uc = (nu - u0 > 8) ? 8 : (nu - u0);
-        for (int u = 0; u < uc; u++) {
-            const int p0 = (u0 + u) * 8 - off;
-            uint16_t* t = tiles[u];
-            if (p0 >= 0 && p0 + 8 <= n) {
-                const uint8_t* l = lv + p0;
-                t[0] = lut[l[0]]; t[1] = lut[l[1]]; t[2] = lut[l[2]]; t[3] = lut[l[3]];
-                t[4] = lut[l[4]]; t[5] = lut[l[5]]; t[6] = lut[l[6]]; t[7] = lut[l[7]];
-            } else {
-                for (int i = 0; i < 8; i++) {
-                    const int px = p0 + i;
-                    t[i] = (px >= 0 && px < n) ? lut[lv[px]] : (uint16_t)0;
-                }
-            }
-        }
-        const uint16_t* m0 = (u0 == 0) ? s_pie_mh[off] : s_pie_mh[0];
-        const uint16_t* mL = (u0 + uc == nu) ? s_pie_mt[cov & 7] : s_pie_mt[0];
-        if (uc == 1) { for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]); m0 = mc; }
-        vg_pie_span_lit_add8m(base + u0 * 8, uc, tiles[0], m0, mL);
-    }
-}
-static __attribute__((noinline))
-void span_lit_sub_pie(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
-    uint16_t* base = (uint16_t*)((uintptr_t)q & ~(uintptr_t)15u);
-    const int off = (int)(q - base);
-    const int cov = off + n;
-    const int nu  = (cov + 7) >> 3;
-    alignas(16) uint16_t tiles[8][8];
-    alignas(16) uint16_t mc[8];
-    for (int u0 = 0; u0 < nu; u0 += 8) {
-        const int uc = (nu - u0 > 8) ? 8 : (nu - u0);
-        for (int u = 0; u < uc; u++) {
-            const int p0 = (u0 + u) * 8 - off;
-            uint16_t* t = tiles[u];
-            if (p0 >= 0 && p0 + 8 <= n) {
-                const uint8_t* l = lv + p0;
-                t[0] = lut[l[0]]; t[1] = lut[l[1]]; t[2] = lut[l[2]]; t[3] = lut[l[3]];
-                t[4] = lut[l[4]]; t[5] = lut[l[5]]; t[6] = lut[l[6]]; t[7] = lut[l[7]];
-            } else {
-                for (int i = 0; i < 8; i++) {
-                    const int px = p0 + i;
-                    t[i] = (px >= 0 && px < n) ? lut[lv[px]] : (uint16_t)0;
-                }
-            }
-        }
-        const uint16_t* m0 = (u0 == 0) ? s_pie_mh[off] : s_pie_mh[0];
-        const uint16_t* mL = (u0 + uc == nu) ? s_pie_mt[cov & 7] : s_pie_mt[0];
-        if (uc == 1) { for (int i = 0; i < 8; i++) mc[i] = (uint16_t)(m0[i] & mL[i]); m0 = mc; }
-        vg_pie_span_lit_sub8m(base + u0 * 8, uc, tiles[0], m0, mL);
-    }
-}
-
-// The shim inlines into the walk so the scalar majority pays one compare and
-// the same single call it always did -- the noinline wrapper this replaced
-// charged every three-pixel block a second hop, and the replay noticed.
-static inline __attribute__((always_inline))
-void span_lit_add(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
-    if (n >= CANOPY_PIE_LIT_MIN) { span_lit_add_pie(q, n, lv, lut); return; }
-    span_lit_add_scalar(q, n, lv, lut);
-}
-static inline __attribute__((always_inline))
-void span_lit_sub(uint16_t* q, int n, const uint8_t* lv, const uint16_t* lut) {
-    if (n >= CANOPY_PIE_LIT_MIN) { span_lit_sub_pie(q, n, lv, lut); return; }
-    span_lit_sub_scalar(q, n, lv, lut);
-}
-
-#else
-#define span_lit_add span_lit_add_scalar
-#define span_lit_sub span_lit_sub_scalar
-#endif
-
-// THE BATCH THAT IS NOT HERE. The lit mass -- 44% of AEGIS's pixels, 57% of
-// CHARIOT's -- lives in blocks averaging 3.4 pixels, and a batched walk was
-// built to reach it: short blocks staged into signed field tiles, gaps as
-// zero deltas (a bit-exact identity), flushed maskless through the vector
-// unit. It measured a LOSS of 1.5-1.9 ms combined-core against the span
-// dispatch in both scenes -- worse than pure scalar in course. Two causes,
-// both structural: only three blocks in ten abut, so a segment blends mostly
-// padding at vector price; and the batch state inlined here three times
-// re-created the register spill this file once paid 29% to escape. The
-// numbers are in design/notes/performance.md; the span paths below are the
-// shape that measured best. Do not rebuild the batch without new economics.
-
-// THE STEP WITHOUT THE DIVIDE, which is the one division the block walk still does.
-//
-// About 1,650 of them a frame, and only sixty distinct (len, n0) pairs among the lot: a graded
-// edge is a few pixels wide and the magnification is small, so the same short block stretched
-// by the same amount recurs the whole way down the drawing. Four in five fall inside len <= 8
-// and n0 <= 12, and 384 bytes of flash answer those without the divider.
-//
-// The entries ARE what the divide produces, truncation included, so the table and the fallback
-// cannot disagree about a block -- and they must not, because this indexes the level array a
-// literal block reads per pixel.
-#define CANOPY_STEP_L  8u
-#define CANOPY_STEP_N  12u
-struct CanopyStepTab { uint32_t v[CANOPY_STEP_L][CANOPY_STEP_N]; };
-static constexpr CanopyStepTab canopy_step_build(void) {
-    CanopyStepTab t = {};
-    for (uint32_t l = 1; l <= CANOPY_STEP_L; l++)
-        for (uint32_t n = 1; n <= CANOPY_STEP_N; n++)
-            t.v[l - 1][n - 1] = (l << 16) / n;
-    return t;
-}
-static constexpr CanopyStepTab s_steptab = canopy_step_build();
-
-// Rows [r0, r1) of the band, so the pass can be halved across the cores. Each panel
-// row is an independent column of the drawing -- nothing carries between them -- which
-// is what makes this splittable at all, and it is by far the biggest of the three
-// row-split jobs: measured at ~4 ms against the backdrop's 2.5 and the scanlines' 1.8.
 // ===========================================================================
 // THE SPHERE, the same one the instruments are drawn on.
 //
@@ -681,87 +173,30 @@ static int16_t s_wc[SCR_H];        // the bow's per-column shift, laid on top of
 // site's own range test on the row, not a value read from here.)
 static int16_t s_wcol[SCR_H];
 
-// WHERE A WARPED BAND BALANCES, which the baked table cannot know.
+// WHERE A BAND BALANCES, for the two-core split.
 //
-// VgCanopy::split is computed by the baker from where the drawing's work falls, and it is right
-// only while each panel row reads its own column. Warping breaks that: the inverse column map
-// duplicates some columns and skips others, so the work slides along the band and the baked
-// balance point stops being the middle of it. A band costs whichever half is slower, so the
-// error is paid in full and it grows with ZOOM -- which is the setting the look depends on.
-//
-// Rebuilt with the maps, from the same per-column costs the baker used. s_colcost is walked
-// out of the table once, on the first warp.
+// Built from where the drawing's work falls, and rebuilt with the warp maps: the inverse
+// column map duplicates some columns and skips others, so the work slides along the band
+// and a balance point taken at rest stops being the middle of it. A band costs whichever
+// half is slower, so the error is paid in full and it grows with ZOOM -- which is the
+// setting the look depends on. s_colcost is walked out of the bake once per drawing.
 static uint8_t  s_wsplit[NUM_BANDS];
 static uint16_t s_colcost[SCR_H];
 static bool     s_colcost_ready = false;
 
-// WHICH COLUMNS CAN REACH A BORDER AT ALL, and it is not a runtime question.
-//
-// A border is extended only where the drawing already reached it, and whether it did is a
-// property of the BAKED column: the first block either starts at the drawing's zero or it does
-// not, and the last block either runs to the far side or stops short. The warp MOVES those
-// runs; it cannot create them. So the answer holds for the life of the drawing, and
-// canopy_edges was asking it 480 times a frame -- walking the whole block list to find the last
-// block and then throwing the walk away.
-//
-// Five columns of the 240 have a first block at zero and fourteen have a last one reaching the
-// far side. The other 92% walked the list to draw nothing.
-//
-// Two bits and the last block's offset, built in the cost walk because that walk already reads
-// every block of every column -- the same trade s_colmask makes against the zone map.
-#define CANOPY_EDGE_NEAR  1u
-#define CANOPY_EDGE_FAR   2u
-static uint8_t  s_coledge[SCR_H];
-static uint16_t s_colend[SCR_H];   // byte offset of the column's last block
-
+// HOW MUCH WORK EACH PANEL ROW CARRIES, from the opaque bake's spans. Indexed by
+// DRAWING COLUMN, which is what warp_build walks -- and a drawing column is a panel
+// row read backwards.
 static void canopy_colcost(void) {
-    // FROM THE OPAQUE BAKE WHEN THAT IS THE COCKPIT. What this table is for is the
-    // two-core split: how much work each panel row carries, so a band can be cut where
-    // the halves come out even. That is a property of whichever drawing is being drawn.
-    //
-    // Indexed by DRAWING COLUMN, which is what warp_build walks -- and a drawing column
-    // is a panel row read backwards, so the opaque bake's spans land in the same array
-    // and every line below warp_build's call is untouched.
-    //
-    // s_coledge and s_colend stay zero here on purpose: they are the delta renderer's
-    // border extension, and the delta renderer does not run without a delta drawing.
     const VgCanOp* o = vg_canopy_op_current();
-    if (!s_can && o) {
-        for (int c = 0; c < SCR_H; c++) {
-            const int py = SCR_H - 1 - c;
-            uint32_t cost = 0;
-            for (uint16_t si = o->row[py]; si < o->row[py + 1]; si++)
-                cost += (uint32_t)o->span[si].len + 1u;   // a span header is worth about a pixel
-            s_colcost[c] = (uint16_t)(cost > 0xFFFFu ? 0xFFFFu : cost);
-            s_coledge[c] = 0;
-            s_colend[c]  = 0;
-        }
-        s_colcost_ready = true;
-        return;
-    }
     for (int c = 0; c < SCR_H; c++) {
         uint32_t cost = 0;
-        uint8_t  edge = 0;
-        uint16_t last = 0;
-        if (c < (int)s_can->cols) {
-            const uint8_t* p = &s_can->data[s_can->ofs[c]];
-            const uint8_t* e = &s_can->data[s_can->ofs[c + 1]];
-            int lastend = -1;                   // negative until a block has been seen
-            while (p + 3 <= e) {
-                const uint8_t h = p[0];
-                const int y0  = ((h & 1) << 8) | p[1];
-                const int len = ((h & 2) << 7) | p[2];
-                if (lastend < 0 && y0 == 0) edge |= CANOPY_EDGE_NEAR;
-                lastend = y0 + len;
-                last    = (uint16_t)(p - s_can->data);
-                p += 3 + ((h & 0x80) ? len : 1);
-                cost += (uint32_t)len + 1;      // a header is worth about one pixel
-            }
-            if (lastend >= SCR_W) edge |= CANOPY_EDGE_FAR;
+        if (o) {
+            const int py = SCR_H - 1 - c;
+            for (uint16_t si = o->row[py]; si < o->row[py + 1]; si++)
+                cost += (uint32_t)o->span[si].len + 1u;   // a span header is worth about a pixel
         }
         s_colcost[c] = (uint16_t)(cost > 0xFFFFu ? 0xFFFFu : cost);
-        s_coledge[c] = edge;
-        s_colend[c]  = last;
     }
     s_colcost_ready = true;
 }
@@ -784,52 +219,17 @@ void vg_canopy_warp_pin(float k) { s_warp_pin = k; }
 static bool    s_lag_pin_off = false;
 void vg_canopy_lag_pin_off(bool off) { s_lag_pin_off = off; }
 
-// SELECTING A DRAWING, and it is down here rather than beside s_can because of what it has to
-// invalidate: three caches, two of which are the warp's and are declared just above.
+// A DIFFERENT DRAWING IS A DIFFERENT SET OF COLUMN COSTS, and a different centre
+// region, so both are worked out again for it. Down here rather than beside the
+// drawing because two of the caches it drops are the warp's, declared just above.
 //
-// All three are derived from the drawing and none of them can survive a change of it. The
-// colour table is built from `bg`, which is per drawing -- two cockpits with different
-// background levels turn the same stored grey into different amounts of light, so a stale
-// table draws the new one at the wrong brightness. The per-column costs and the warp maps are
-// built from where the drawing's work falls, which is the whole point of them.
-// NULL IS A HULL WITH NO COCKPIT, and that is a supported state rather than a mistake.
-//
-// This used to ignore null and keep whatever was selected last, on the reasoning that a wrong
-// cockpit is something an artist can see where an empty frame just looks broken. That was
-// written when a default drawing was assumed. There is no default: a canopy is authored per
-// hull, the reference drawing belongs to the CHARIOT, and the other three fly without one
-// until somebody draws them.
-//
-// Everything downstream already tolerates it -- canopy_rows, the warp, the bench and the
-// PRIM_CANOPY case all return early on a null drawing -- so what was missing was only the
-// ability to SAY none.
-// A DIFFERENT OPAQUE BAKE IS A DIFFERENT SET OF COLUMN COSTS, and a different centre
-// region. Everything vg_canopy_use invalidates for its own drawing, this invalidates
-// for the other one -- except the delta colour table, which is not derived from it.
-//
-// It matters because the hulls no longer share a drawing: flying a LANCE after a
+// It matters because the hulls do not share a drawing: flying a LANCE after a
 // CHARIOT would otherwise balance the LANCE's bands against the CHARIOT's spans.
 void vg_canopy_op_changed(void) {
     s_centre_z      = -1;
     s_colcost_ready = false;
     s_wq            = -1;
     s_wq_want       = -1;
-}
-
-void vg_canopy_use(const VgCanopy* c) {
-    if (c == s_can) return;
-    s_can           = c;
-    s_centre_z      = -1;   // worked out lazily; this drawing's panels are elsewhere
-    s_can_ready     = false;
-    s_colcost_ready = false;
-    s_wq            = -1;
-    s_wq_want       = -1;   // both, or the next warp call matches a stale want and skips
-    // A SEQUENCE CANNOT BE RUNNING AGAINST A DRAWING THAT IS GONE.
-    //
-    // vg_canopy_intro_update reads s_can->zones and is guarded only by s_intro_on, so leaving the
-    // flag set while selecting nullptr arms exactly the fault that vg_canopy_intro_reset just
-    // had to be fixed for. No caller does that today, and no caller should have to know not to.
-    if (!c) s_intro_on = false;
 }
 
 // THE FRAME LAGS THE SHIP, which is what makes it read as being inside something.
@@ -937,7 +337,7 @@ void vg_canopy_warp(float k) {
     s_warp_on = (q != 0) || s_lag_px || s_lag_py || (s_lag_sh != 0.0f);
     s_wq_want = q;
     // A DRAWING WITH NO TABLE CANNOT WAIT. s_wq is -1 on the first frame and after
-    // vg_canopy_use invalidates it, and the band pass is about to read the maps -- so
+    // vg_canopy_op_changed invalidates it, and the band pass is about to read the maps -- so
     // that one case still builds here, where it always did.
     if (s_wq < 0) vg_canopy_warp_build();
 }
@@ -949,7 +349,7 @@ void vg_canopy_warp(float k) {
 // and already lags the ship through a spring and a damper, so a frame is not visible;
 // what it is NOT is free of the pixel record, and the regression baseline moves with it.
 void vg_canopy_warp_build(void) {
-    // EITHER COCKPIT, and this guard read !s_can until every hull went opaque.
+    // THIS GUARD ASKED FOR THE DELTA DRAWING until every hull went opaque.
     // Left alone it returned before building anything, so s_w_zbase and s_wcol stayed
     // zero -- and a zero sphere maps every column of the frame onto the centre line,
     // which collapses every span to no width. The cockpit did not draw at all.
@@ -1022,15 +422,17 @@ static inline int warp_y(int y, float zbase) {
     return (int)((float)SCR_CY + dy * (zbase + s_w_zk * dy * dy) + 0.5f);
 }
 
-// The same three motions the delta path applies below, answered for a caller that
-// stores its cockpit some other way. See VgCanMotion in the header for why it lives
-// here rather than there.
+// The three motions, answered for the renderer. See VgCanMotion in the header for
+// why they live here rather than there.
 bool vg_canopy_motion(int py, struct VgCanMotion* m) {
     if (!s_warp_on) return false;
 
     // Panel row to drawing column and back. The lag picks a DIFFERENT COLUMN, which
-    // is the whole of the yaw swing -- clamped to the edge rather than dropped, for
-    // the reason given at the same step in canopy_rows_t.
+    // is the whole of the yaw swing. CLAMPED TO THE EDGE, NOT DROPPED: a row that
+    // lands off the drawing repeats the edge column, which is what a texture sampler
+    // does at its border and reads as the frame continuing past the screen. Dropping
+    // it left the screen edge empty on the side the frame moved away from, so the
+    // cockpit appeared to slide and tear rather than to move.
     int lx = SCR_H - 1 - py;
     lx += s_lag_px;
     if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
@@ -1043,17 +445,16 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m) {
     // the other. That is a TWIST, not a bend: one diagonal pair of corners curves and
     // the other pair curves against it, which is exactly what it looked like flown.
     //
-    // The delta path never had the fault, and not because it guards against it: the
-    // CHARIOT's drawing is MIRRORED, so its right half reads a folded column index and
-    // picks up the negated bow for free. An opaque bake stores every column -- a
-    // full-colour cockpit is allowed to be lopsided -- so the fold has to be asked for
-    // rather than falling out of the storage. Same index canopy_rows_t computes, so
-    // the two frames bend identically.
+    // The light delta this replaced never had the fault, and not because it guarded
+    // against it: the CHARIOT's delta drawing was MIRRORED, so its right half read a
+    // folded column index and picked up the negated bow for free. An opaque bake stores
+    // every column -- a full-colour cockpit is allowed to be lopsided -- so the fold has
+    // to be asked for rather than falling out of the storage.
     //
     // The roll shear is folded with it, which makes it symmetric about the centre too.
-    // That is not obviously what a roll should do, but it IS what the delta cockpit has
-    // always done and what has been flown; the two matching is the point of this
-    // function, and the shear is a separate question for a separate day.
+    // That is not obviously what a roll should do, but it is what the delta cockpit
+    // always did and what has been flown since; the shear is a separate question for a
+    // separate day.
     const int cc = (lx >= SCR_H / 2) ? (SCR_H - 1 - lx) : lx;
 
     m->row   = SCR_H - 1 - lx;
@@ -1062,72 +463,6 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m) {
     m->zbase = s_w_zbase[cc];
     m->zk    = s_w_zk;
     return true;
-}
-
-// THE TWO EDGES, on their own, so the block walk does not carry them.
-//
-// Only the FIRST and LAST block of a column can touch a border, so this finds those two and
-// extends them -- and by living out here it takes its state, its level lookups and its extra
-// branches out of canopy_rows_t. That mattered more than the walk it used to repeat: carrying
-// them inline grew the rigid instantiation to 1185 bytes with fifty stack accesses, and cost 67
-// us on a path where none of this code even runs.
-//
-// The extensions never overlap the blocks they come from -- [0, at) and [end, SCR_W) sit
-// outside them -- so it does not matter that this runs before the walk rather than around it.
-//
-// Extended only where the drawing reached the border. Background beyond a member is not
-// something to stretch.
-static __attribute__((noinline))
-void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, int wofs, float zbase, int c) {
-    if (p + 3 > e) return;
-
-    // NEITHER BORDER, NOTHING TO DO, which is most of the screen. Both flags read as set until
-    // the table is built, so the tests below answer for themselves exactly as they always did.
-    const uint8_t edge = s_colcost_ready ? s_coledge[c]
-                                         : (uint8_t)(CANOPY_EDGE_NEAR | CANOPY_EDGE_FAR);
-    if (!edge) return;
-
-    // The near edge, from the first block.
-    if (edge & CANOPY_EDGE_NEAR) {
-        const uint8_t h  = p[0];
-        const int     y0 = ((h & 1) << 8) | p[1];
-        if (y0 == 0) {
-            int at = warp_y(0, zbase) + wofs;
-            if (at > SCR_W) at = SCR_W;
-            if (at > 0) {
-                const uint16_t d = s_can_lut[p[3]];
-                if (h & 0x40) span_sub(&row[0], at, d);
-                else          span_add(&row[0], at, d);
-            }
-        }
-    }
-
-    if (!(edge & CANOPY_EDGE_FAR)) return;
-
-    // The far edge, from the last block, which the table points straight at. The walk survives
-    // only for the frames before that table exists.
-    const uint8_t* last = nullptr;
-    if (s_colcost_ready) {
-        last = &s_can->data[s_colend[c]];
-    } else {
-        while (p + 3 <= e) {
-            last = p;
-            const uint8_t h = p[0];
-            const int len = ((h & 2) << 7) | p[2];
-            p += 3 + ((h & 0x80) ? len : 1);
-        }
-    }
-    if (!last) return;
-    const uint8_t h   = last[0];
-    const int     y0  = ((h & 1) << 8) | last[1];
-    const int     len = ((h & 2) << 7) | last[2];
-    if (y0 + len < SCR_W) return;                 // it stopped short of the border
-    int end = warp_y(y0 + len, zbase) + wofs;
-    if (end < 0) end = 0;
-    if (end >= SCR_W) return;
-    const uint16_t d = s_can_lut[(h & 0x80) ? last[3 + len - 1] : last[3]];
-    if (h & 0x40) span_sub(&row[end], SCR_W - end, d);
-    else          span_add(&row[end], SCR_W - end, d);
 }
 
 // ===========================================================================
@@ -1151,10 +486,9 @@ void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, i
 // different points and the hue swung. There is no per-zone colour table any more. The region
 // flash is a flat fill and the frame draws its authored level throughout, which cannot clip.
 //
-// The blocks still have to be withheld until their zone comes up: the gate runs BEFORE them in
-// the row, so a block drawn early would sit glowing on the black. That is what the intro table
-// is for -- its runs are cut at zone borders, so switching a zone on switches whole blocks on.
-// The flight table is not cut that way and its zone tags mean nothing; see the generated header.
+// The frame's pixels still have to be withheld until their zone comes up: the gate runs
+// BEFORE them in the row, so metal drawn early would sit lit on the black. The renderer
+// asks vg_canopy_zone_live for that, region by region.
 //
 // The frame is held RIGID throughout. The gate and the frame have to agree pixel for pixel or
 // the black would not end where the panel does, and the cheapest way to guarantee that is to
@@ -1179,47 +513,13 @@ void IRAM_ATTR canopy_edges(uint16_t* row, const uint8_t* p, const uint8_t* e, i
 // white delta over a lit world passes through magenta and amber before it whites out. Note that
 // CANOPY_INTRO_LIT_PEAK below is what governs how much of that is seen -- at 1.0 the members
 // spend their first moments fully white, which is the part with no colour in it at all.
-// s_intro_on is declared up beside s_can -- see the note there.
+// s_intro_on is declared at the top of the file -- see the note there.
 static float   s_intro_t    = 0.0f;
 static uint8_t s_izon[VG_CANOPY_MAX_ZONES];   // 0 held, 255 fully dissolved to the world
 static uint8_t s_ilive[VG_CANOPY_MAX_ZONES];  // whether this zone's blocks are drawn at all
 static uint16_t s_ifill[VG_CANOPY_MAX_ZONES]; // a held pixel: black before the flash, white after
 static uint8_t s_iglow[VG_CANOPY_MAX_ZONES];  // 255 white-hot members, 0 their authored level
 static bool    s_icued     = false;       // the instruments' cue, latched -- see vg_canopy_intro_cued
-static uint8_t s_iq[VG_CANOPY_MAX_ZONES];     // the quantised glow each table was built for
-// PSRAM, for the reason s_hot gives in vg_canopy_op.cpp: 8 KB of internal RAM is a
-// quarter of a band buffer, and this table is read for three seconds a match.
-// Allocated on first use; a null table reads as "not built", exactly like s_iq.
-static uint16_t (*s_ilut)[256] = nullptr;
-
-// A zone's member colours, from white-hot down to the authored level.
-//
-// Quantised by the caller, so this runs a couple of dozen times across a region's cool-down
-// rather than once a frame per zone.
-static void canopy_ilut(int z) {
-    // The DELTA drawing's own member colours. An opaque cockpit's arrival is a
-    // different table built somewhere else -- see s_hot in vg_canopy_op.cpp -- so with
-    // no delta drawing selected there is simply nothing here to build.
-    if (!s_can) return;
-    if (!s_ilut) {
-        s_ilut = (uint16_t (*)[256])heap_caps_malloc(
-                     (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-        if (!s_ilut) return;                        // read back as "not built"
-    }
-    const uint32_t t = (uint32_t)s_iglow[z];        // 0..255 toward white
-    for (int g = 0; g < 256; g++) {
-        const uint32_t v = s_can_lut[g];            // panel order
-        const uint32_t n = (v >> 8) | ((v << 8) & 0xFF00u);
-        const uint32_t r = (n >> 11) & 31u, gg = (n >> 5) & 63u, b = n & 31u;
-        const uint32_t R = r  + (((31u - r)  * t) >> 8);
-        const uint32_t G = gg + (((63u - gg) * t) >> 8);
-        const uint32_t B = b  + (((31u - b)  * t) >> 8);
-        const uint32_t o = (R << 11) | (G << 5) | B;
-        s_ilut[z][g] = (uint16_t)(((o >> 8) | (o << 8)) & 0xFFFFu);
-    }
-    s_iq[z] = s_iglow[z];
-}
-
 // A DITHER, NOT A FADE, and it is both cheaper and a better fit.
 //
 // Holding a region is a store per pixel. Cross-fading one would be three multiplies per pixel,
@@ -1279,86 +579,18 @@ static inline uint32_t hit_hash(uint32_t x, uint32_t y, uint32_t s) {
 static uint8_t s_fault_n   = 0;
 static uint8_t s_fault_z[VG_CANOPY_MAX_ZONES];
 
-// WHICH PANEL IS THE MIDDLE ONE, from the zone map, once per drawing.
+// WHICH PANEL IS THE MIDDLE ONE, once per drawing.
 //
-// The centroid of each region against the centre of the screen. The artist paints regions
-// and never has to say which is the windscreen -- and a drawing whose panels move gets the
-// right answer without anyone remembering to update a constant.
-// WHICH ZONES A COLUMN CONTAINS, one bit each, and WHICH ZONES WANT THE GATE.
+// The baker reads the region at the middle of the panel and stores it, so the artist
+// paints regions and never has to say which is the windscreen -- and a drawing whose
+// panels move gets the right answer without anyone remembering to update a constant.
 //
-// The gate was all-or-nothing: one faulty panel out of four and every column of every
-// frame walked the whole zone map to find it. The map covers the entire screen, so that
-// is a second full-screen pass to draw a quarter of one.
-//
-// A column that contains none of the interesting zones can be skipped outright. Built
-// from the same walk that finds the centre, because it is the same walk.
-static uint16_t s_colmask[SCR_H];
-static bool     s_colmask_ready = false;
-static uint16_t s_gate_mask     = 0;
-
+// This was a centroid search over a zone map, which asks which region is nearest the
+// middle ON AVERAGE, and a big L-shaped region can average its way to the centre
+// without covering it. The stored answer is the better one.
 static void canopy_find_centre(void) {
-    s_centre_z = -1;
-    // THE OPAQUE BAKE ALREADY KNOWS. Its baker reads the region at the middle of the
-    // panel and stores it, which is a better answer than the centroid search below --
-    // that one asks which region is nearest the middle ON AVERAGE, and a big L-shaped
-    // region can average its way to the centre without covering it. The delta drawing
-    // has no such field, so the search stays for it.
-    {
-        const VgCanOp* o = vg_canopy_op_current();
-        if (o) {
-            s_centre_z = (int8_t)o->centre;
-            s_colmask_ready = false;
-            for (int i = 0; i < SCR_H; i++) s_colmask[i] = 0xFFFFu;
-            return;
-        }
-    }
-    s_colmask_ready = false;
-    for (int i = 0; i < SCR_H; i++) s_colmask[i] = 0;
-    if (!s_can || s_can->zones <= 0) return;
-
-    uint32_t n[VG_CANOPY_MAX_ZONES] = { 0 };
-    uint32_t sx[VG_CANOPY_MAX_ZONES] = { 0 }, sy[VG_CANOPY_MAX_ZONES] = { 0 };
-
-    for (int lx = 0; lx < SCR_H; lx++) {
-        const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
-        const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
-        while (p + 3 <= e) {
-            const uint8_t h  = p[0];
-            const int     y0 = ((h & 1) << 8) | p[1];
-            const int     ln = ((h & 2) << 7) | p[2];
-            const int     z  = (h >> 2) & 15;
-            p += 3;
-            if (z >= s_can->zones || ln <= 0) continue;
-            s_colmask[lx] |= (uint16_t)(1u << z);
-            n[z]  += (uint32_t)ln;
-            sx[z] += (uint32_t)lx * (uint32_t)ln;
-            sy[z] += (uint32_t)(y0 + ln / 2) * (uint32_t)ln;
-        }
-    }
-
-    float best = 1e30f;
-    for (int z = 0; z < s_can->zones; z++) {
-        if (!n[z]) continue;
-        const float cx = (float)sx[z] / (float)n[z] - (float)SCR_H * 0.5f;
-        const float cy = (float)sy[z] / (float)n[z] - (float)SCR_W * 0.5f;
-        const float d  = cx * cx + cy * cy;
-        if (d < best) { best = d; s_centre_z = (int8_t)z; }
-    }
-    s_colmask_ready = true;
-}
-
-// WHICH ZONES THE GATE HAS ANYTHING TO SAY ABOUT, as a bitmask over zones.
-//
-// Every zone during the intro -- the reveal touches all of them -- and otherwise only the
-// ones that are hit or faulty. Recomputed wherever s_gate_on is, because they answer the
-// same question at two resolutions.
-static void canopy_gate_mask(void) {
-    if (s_intro_on) { s_gate_mask = 0xFFFFu; return; }
-    uint16_t m = 0;
-    for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++)
-        if (s_hit_t[z] > 0.0f) m |= (uint16_t)(1u << z);
-    for (int i = 0; i < s_fault_n; i++) m |= (uint16_t)(1u << s_fault_z[i]);
-    s_gate_mask = m;
+    const VgCanOp* o = vg_canopy_op_current();
+    s_centre_z = o ? (int8_t)o->centre : (int8_t)-1;
 }
 
 // HOW BROKEN THE HULL HAS TO BE before a panel goes, and how many go by the end.
@@ -1402,7 +634,6 @@ void vg_canopy_damage(float hull_frac) {
         if (!n) break;
         s_fault_z[s_fault_n++] = (uint8_t)free_z[(int)(vg_frand01() * (float)n) % n];
         s_gate_on = true;
-        canopy_gate_mask();
     }
 }
 
@@ -1411,7 +642,6 @@ void vg_canopy_hit_clear(void) {
     s_centre_z = -1;
     for (int i = 0; i < VG_CANOPY_MAX_ZONES; i++) s_hit_t[i] = 0.0f;
     s_gate_on = s_intro_on;
-    canopy_gate_mask();
 }
 
 void vg_canopy_hit(void) {
@@ -1429,7 +659,6 @@ void vg_canopy_hit(void) {
     const int z = free_z[(int)(vg_frand01() * (float)n) % n];
     s_hit_t[z] = CANOPY_HIT_TIME;
     s_gate_on  = true;
-    canopy_gate_mask();
 }
 
 void vg_canopy_hit_step(float dt) {
@@ -1448,7 +677,6 @@ void vg_canopy_hit_step(float dt) {
     // on the very next frame, and the while loop in there never ran again because the fault
     // was already recorded. A faulty panel drew for one frame and then never again.
     s_gate_on  = any || s_intro_on || (s_fault_n > 0);
-    canopy_gate_mask();
 }
 
 const uint8_t* vg_canopy_bayer_row(int y) { return &BAYER4[(y & 3) << 2]; }
@@ -1550,182 +778,6 @@ void IRAM_ATTR vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, 
     }
 }
 
-// The delta drawing's own region map, run by run.
-static __attribute__((noinline))
-void IRAM_ATTR canopy_gate(uint16_t* row, int lx, int py) {
-    const uint8_t* p = &s_can->zdata[s_can->zofs[lx]];
-    const uint8_t* e = &s_can->zdata[s_can->zofs[lx + 1]];
-    while (p + 3 <= e) {
-        const uint8_t h  = p[0];
-        const int     y0 = ((h & 1) << 8) | p[1];
-        const int     n  = ((h & 2) << 7) | p[2];
-        const int     z  = (h >> 2) & 15;
-        p += 3;
-        if (z >= s_can->zones) continue;
-        vg_canopy_gate_run(row, lx, py, y0, n, z);
-    }
-}
-
-// IN IRAM, and the reason is a measurement, not a preference. The bench runs this pass in
-// 9,387 us warped and never leaves it; in-game the band loop cycles four phases through a
-// 16 KB instruction cache fifteen times a frame, and this -- the largest tenant -- paid
-// most of the rent: placing it here was measured at -1,602 us of raster over the course
-// baseline, sky and scanlines included, because they stopped being evicted too. Placing
-// draw_band as well was measured at ZERO, to the microsecond: the walkers do not care.
-// The 7.5 KB it costs is financed by the sky texture's move to PSRAM, which freed 32.
-template <bool WARP, bool INTRO>
-static void IRAM_ATTR canopy_rows_t(uint16_t* band, int by0, int r0, int r1) {
-    if (!s_can_ready) canopy_lut();
-
-    // HOISTED OUT OF THE ROW LOOP, all of it. Which table is a compile-time choice still, so
-    // the branch folds; the drawing behind it is a runtime pointer now, and reading it once per
-    // call rather than once per row is what keeps that free.
-    const VgCanopy* const cp = s_can;
-    const uint16_t* const T_OFS  = INTRO ? cp->iofs  : cp->ofs;
-    const uint8_t*  const T_DATA = INTRO ? cp->idata : cp->data;
-    const int  T_COLS   = (int)cp->cols;
-    const bool T_MIRROR = (cp->mirror != 0);
-
-    for (int py = by0 + r0; py < by0 + r1; py++) {
-        int lx = SCR_H - 1 - py;                       // this panel row IS a column
-        if (WARP) {
-            // CLAMPED TO THE EDGE, NOT DROPPED.
-            //
-            // Shifting or magnifying moves the frame, and a row that lands off the drawing used
-            // to be skipped -- which leaves the screen edge empty on the side the frame moved
-            // away from, so the cockpit appears to slide and tear rather than to move. Clamping
-            // repeats the edge column instead, which is what a texture sampler does at its
-            // border and reads as the frame continuing past the screen. Where that column is
-            // background, nothing is drawn and nothing is smeared.
-            lx += s_lag_px;                       // the frame trailing the turn
-            if (lx < 0) lx = 0; else if (lx >= SCR_H) lx = SCR_H - 1;
-            lx = s_wcol[lx];      // always a real column -- see the note at s_wcol
-        }
-        // Mirrored only when the drawing is symmetric, which the baker decides and
-        // records. An asymmetric frame stores every column and is read straight
-        // through -- a cockpit is allowed to be lopsided.
-        int c = (T_MIRROR && lx >= T_COLS) ? (SCR_W - 1 - lx) : lx;
-        // Clamped for the same reason, and it also covers a drawing narrower than the screen.
-        if (c < 0) c = 0; else if (c >= T_COLS) c = T_COLS - 1;
-
-        const uint8_t* p = &T_DATA[T_OFS[c]];
-        const uint8_t* e = &T_DATA[T_OFS[c + 1]];
-        uint16_t* row = &band[(py - by0) * SCR_W];
-
-        // THE WORLD FIRST, then the frame on top of it. Everything behind the cockpit is
-        // already drawn by the time this primitive runs and the instruments come after it, so
-        // this is the one point in the band where blacking the view hides the world without
-        // touching the panel. Rigid, so it uses the raw column and lands where the frame does.
-        // RUNTIME, NOT THE TEMPLATE PARAMETER. The gate is wanted during the intro and
-        // whenever a panel is hit, and a hit happens while the warp is on -- which the
-        // intro never is. Keying it off INTRO would have needed a fourth instantiation of
-        // this template for warp-and-gate; one predictable branch a row is cheaper.
-        // ...AND ONLY FOR COLUMNS THAT CONTAIN A ZONE IT CARES ABOUT. One faulty panel
-        // used to cost a full-screen walk of the zone map every frame to find it. The
-        // mask is exact, so this skips nothing that would have drawn; until it is built
-        // the test passes and the behaviour is what it always was.
-        const int glx = SCR_H - 1 - py;
-        if (s_gate_on && (!s_colmask_ready || (s_colmask[glx] & s_gate_mask)))
-            canopy_gate(row, glx, py);
-        // The gate ran; the frame does not. See s_can_rear -- in rear view the world still
-        // has to arrive region by region, and the cockpit still has to be absent.
-        if (INTRO && s_can_rear) continue;
-
-        // Three bytes of header, then either one level for the whole block or a level
-        // per pixel. Nine bits each of start and length, so the odd bit of both rides
-        // in the flag byte. The side is in the header too: a block never crosses the
-        // background, so nothing here tests light against shade per pixel.
-        const int   wofs  = WARP ? (s_wc[c] + s_lag_py
-                                    + (int)((float)(c - SCR_H / 2) * s_lag_sh)) : 0;
-        // dx is the same for every block in this column, so its share of the sphere hoists.
-        const float zbase = WARP ? s_w_zbase[c] : 0.0f;
-
-        // CLAMPING THE OTHER AXIS. The column clamp above covers logical x; this covers logical
-        // y, which is a panel row's x. The two need different treatment: a column is SAMPLED, so
-        // repeating it is one index clamp, while the runs along a row are a sparse list and the
-        // ones touching a border have to be EXTENDED to it -- or the frame ends in mid-air and
-        // reads as clipped. Out of line, so the walk below never sees it.
-        if (WARP) canopy_edges(row, p, e, wofs, zbase, c);
-
-        // WHERE THE LAST BLOCK ENDED, carried across the walk. -1 is a y no block starts at,
-        // which is what the first block of a column needs.
-        int pend = -1, pwarp = 0;
-
-        while (p + 3 <= e) {
-            const uint8_t h   = p[0];
-            const int     y0  = ((h & 1) << 8) | p[1];   // the picture's y is panel x
-            const int     len = ((h & 2) << 7) | p[2];
-            p += 3;
-
-            // WHOSE TURN IT IS. The zone is only meaningful in the intro table, where a block
-            // never spans two of them, so a zone that has not come up yet skips whole blocks.
-            //
-            // The region's own flash is a flat fill and is already down by the time this runs;
-            // what the zone picks here is how hot its MEMBERS still are. Two separate things, and
-            // conflating them is what went wrong the first time -- see the note at the intro state.
-            const uint16_t* lut = s_can_lut;
-            if (INTRO) {
-                const int z = (h >> 2) & 15;
-                if (z >= s_can->zones || !s_ilive[z]) {
-                    p += (h & 0x80) ? len : 1;
-                    continue;
-                }
-                if (s_ilut) lut = s_ilut[z];        // no table: the authored level, not a crash
-            }
-
-            int at = y0, n = len, skip = 0, n0 = len;
-            if (WARP) {
-                // Both ends through the same map, and the length is the difference -- so the
-                // run still ends exactly where the next one starts.
-                //
-                // WHICH IS ALSO WHY THE START CAN BE KEPT. Three blocks in ten begin exactly
-                // where the one before them ended, and warp_y is a pure function of y down a
-                // column -- zbase is fixed for the whole of it and s_w_zk for the whole frame --
-                // so the end carried forward IS what the call would return, bit for bit. The
-                // gap-freeness above is the same property read the other way round: it wants
-                // the two values equal, and this stops computing the second one.
-                const int w0 = (y0 == pend) ? pwarp : warp_y(y0, zbase);
-                const int w1 = warp_y(y0 + len, zbase);
-                pend  = y0 + len;
-                pwarp = w1;
-                at = w0 + wofs;
-                n  = w1 + wofs - at;
-                n0 = n;                       // before clipping: what the step is measured on
-                // THE TABLE'S OWN BOUNDS NO LONGER APPLY. Baked, every block was inside the
-                // row by construction and the baker verifies it; moved at runtime, that
-                // guarantee is gone and a block can hang off either edge. Trimming the FRONT
-                // also has to advance the level array, or a literal block would paint its
-                // remaining pixels with the colours of the ones that were clipped.
-                if (at < 0)            { skip = -at; n -= skip; at = 0; }
-                if (at + n > SCR_W)    { n = SCR_W - at; }
-                if (n <= 0) { if (h & 0x80) p += len; else p++; continue; }
-            }
-
-            if (h & 0x80) {                              // a level per pixel
-                if (WARP && n0 != len) {
-                    // Stretched or squeezed: walk the levels at the ratio rather than one
-                    // for one, or the block reads past its own data. See span_lit_add_rs.
-                    const uint32_t step =
-                        ((uint32_t)(len - 1) < CANOPY_STEP_L && (uint32_t)(n0 - 1) < CANOPY_STEP_N)
-                            ? s_steptab.v[len - 1][n0 - 1]
-                            : ((uint32_t)len << 16) / (uint32_t)n0;
-                    const uint32_t i0   = (uint32_t)skip * step;
-                    if (h & 0x40) span_lit_sub_rs(&row[at], n, p, lut, i0, step);
-                    else          span_lit_add_rs(&row[at], n, p, lut, i0, step);
-                } else {
-                    if (h & 0x40) span_lit_sub(&row[at], n, p + skip, lut);
-                    else          span_lit_add(&row[at], n, p + skip, lut);
-                }
-                p += len;
-            } else {                                     // one level, delta hoisted
-                const uint16_t d = lut[*p++];
-                if (h & 0x40) span_sub(&row[at], n, d);
-                else          span_add(&row[at], n, d);
-            }
-        }
-    }
-}
-
 // WHERE THE SEQUENCE IS UP TO.
 //
 // The zones come up in the order the artist painted, which is already the zone INDEX: the baker
@@ -1754,7 +806,6 @@ void vg_canopy_intro_begin(void) {
     if (!canopy_any()) {
         s_intro_on = false;
         s_gate_on  = false;   // nothing to reveal and nothing broken
-        s_gate_mask = 0;
         s_icued    = true;
         s_settle_t = -1.0f;
         for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
@@ -1764,15 +815,13 @@ void vg_canopy_intro_begin(void) {
     }
     s_intro_on = true;
     s_gate_on  = true;   // the reveal IS the gate; set here so frame one has it
-    s_gate_mask = 0xFFFFu;
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
     s_icued    = false;
-    if (s_can && !s_can_ready) canopy_lut();
     // ALL SIXTEEN, NOT THIS DRAWING'S OWN COUNT, and the difference was a bug you
     // could only see the second time you flew.
     //
-    // This held s_can->zones regions, which is four on the CHARIOT's light delta -- and
+    // This held the drawing's own count of regions, four on the CHARIOT's light delta -- and
     // its opaque bake has six. Regions four and five kept the s_ilive the LAST match left
     // set, so their share of the cockpit was simply present from the first frame of the
     // arrival: pieces of the canopy activated ahead of the sequence. On a cold boot the
@@ -1785,9 +834,6 @@ void vg_canopy_intro_begin(void) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
         s_iglow[z] = 255;                                // and white-hot the moment it lights
     }
-    // The colour tables are the DELTA drawing's, so only its own regions have one --
-    // and with no delta drawing, none of them do. canopy_ilut answers that itself.
-    for (int z = 0; z < canopy_zones(); z++) canopy_ilut(z);
     // Nothing left over on the spring, or the frame would start the sequence already leaning.
     for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
     s_lag_px = s_lag_py = 0;
@@ -1812,7 +858,7 @@ void vg_canopy_intro_begin(void) {
 // cued while a match is being built, and nothing is cued twice.
 bool vg_canopy_intro_cued(void) { return s_icued; }
 
-// HOW MANY REGIONS HAVE LIT IN THE RUNNING SEQUENCE, 0..s_can->zones -- this drawing's
+// HOW MANY REGIONS HAVE LIT IN THE RUNNING SEQUENCE, 0..canopy_zones() -- this drawing's
 // count, not the format ceiling VG_CANOPY_MAX_ZONES.
 //
 // Reported rather than acted on, because the thing that wants it is a SOUND and this file is
@@ -1839,10 +885,10 @@ void vg_canopy_intro_reset(void) {
     s_intro_on = false;
     s_icued    = false;
     s_settle_t = -1.0f;
-    // A HULL WITH NO DRAWING REACHES HERE, and this used to read s_can->zones anyway.
+    // A HULL WITH NO DRAWING REACHES HERE, and this used to read the drawing's zone count anyway.
     //
     // vg_match_start calls this from the top of the cutscene, before anything has selected a
-    // cockpit for the hull about to fly -- so on a hull that HAS no cockpit, s_can is null and
+    // cockpit for the hull about to fly -- so on a hull that HAS no cockpit, the drawing was null and
     // the load faulted. The panic rebooted the board, and from the seat that looks like the
     // match refusing to start and dropping back to the title. Reported exactly that way.
     //
@@ -1914,9 +960,11 @@ bool vg_canopy_intro_update(float dt) {
         if (f < 0.0f) f = 0.0f;
         if (f > 1.0f) f = 1.0f;
         f *= CANOPY_INTRO_LIT_PEAK;
+        // Quantised, so the renderer's per-region tables rebuild a couple of dozen times
+        // across a cool-down rather than once a frame. It reads this through
+        // vg_canopy_zone_glow and keeps its own record of what each table was built for.
         const int q = (int)(f * CANOPY_INTRO_QSTEP + 0.5f);
-        const uint8_t want = (uint8_t)((q * 255) / CANOPY_INTRO_QSTEP);
-        if (want != s_iq[z]) { s_iglow[z] = want; canopy_ilut(z); }
+        s_iglow[z] = (uint8_t)((q * 255) / CANOPY_INTRO_QSTEP);
     }
 
     // Over when the last zone's members have finished cooling, which is now the last thing to
@@ -1928,17 +976,14 @@ bool vg_canopy_intro_update(float dt) {
         s_intro_on = false;
         s_settle_t = 0.0f;
         for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) {
-            s_izon[z] = 255; s_ilive[z] = 1;
-            if (s_iglow[z]) { s_iglow[z] = 0; canopy_ilut(z); }
+            s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0;
         }
         return false;
     }
     return true;
 }
 
-// Three instantiations, not four. The intro is always rigid -- see the note above the intro
-// state -- so there is no warped intro path to build.
-// Which of the three balance points applies, for draw_band's two-core split.
+// Which balance point applies, for draw_band's two-core split.
 // BALANCING TIME, NOT PIXELS.
 //
 // The baked split puts the cut where the DRAWING costs the same either side, and measured
@@ -1989,12 +1034,9 @@ void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us) {
 int vg_canopy_split_at(int band_index) {
     if (!canopy_any()) return ROW_SPLIT;
     if (s_intro_on)  return ROW_SPLIT;   // the world gate dwarfs the frame; midpoint is right
-    // THE BAKED SPLIT IS THE DELTA DRAWING'S. An opaque bake carries none, so it takes
-    // the warp's own table, which warp_build fills from the column costs above whatever
-    // the bend is -- at zero bend that IS the unwarped balance, so the answer is the
-    // same kind of number by a different route.
-    int at = (s_warp_on || !s_can) ? (int)s_wsplit[band_index]
-                                   : (int)s_can->split[band_index];
+    // The warp's table, which warp_build fills from the column costs above whatever the
+    // bend is -- at zero bend that IS the unwarped balance.
+    int at = (int)s_wsplit[band_index];
     // THE ADAPTIVE TERM IS DROPPED UNDER A REPLAY, and this is what makes a render
     // reproducible at all.
     //
@@ -2015,187 +1057,6 @@ int vg_canopy_split_at(int band_index) {
     if (at < 2)              at = 2;
     if (at > BAND_H - 2)     at = BAND_H - 2;
     return at;
-}
-
-// THE COLOUR TABLE IS BUILT BEFORE THE FORK, ONCE, ON ONE CORE.
-//
-// canopy_rows_t opens with a lazy rebuild -- `if (!s_can_ready) canopy_lut()` -- and the
-// alarm requant dirties the table mid-flight, so under the two-core split BOTH cores
-// could enter the 256-entry rebuild together and draw through the torn half. The first
-// split analysis flagged this as latent; the whole-loop split made it hot; what it looks
-// like from outside is a handful of wrong-coloured canopy pixels that come and go BY
-// BUILD LAYOUT, which framed two innocent changes before the race was run to ground.
-// The lazy check stays as a backstop -- once warmed it never fires in the frame.
-#if CANOPY_PIE
-// BIT-IDENTITY OR NOTHING, proven before the first frame. Plane-separated
-// min/max is exactly the guard-bit arithmetic on paper; this is where paper
-// meets the actual vzip byte order and the actual VMUL truncation. Three
-// sweeps: every 16-bit source value against four deltas (catches lane and
-// byte-order faults, which corrupt everything), a per-field exhaustive where
-// pixel j carries field values j and delta k carries field deltas k (all
-// (value, delta) pairs per field -- the planes are independent, so this IS
-// exhaustive), and the dispatcher itself across every head offset and a fan
-// of lengths. The scalar pair loop is the reference. Runs once, prints.
-void vg_canopy_pie_selftest(void) {
-    enum { NPX = 4096 };
-    uint16_t* a = (uint16_t*)heap_caps_aligned_alloc(16, NPX * 2 * 2, MALLOC_CAP_INTERNAL);
-    if (!a) { Serial.println("vg_canopy: PIE self-test SKIPPED (alloc)"); return; }
-    uint16_t* b = a + NPX;
-    const uint32_t t0 = micros();
-    uint32_t fails = 0, first = 0;
-    uint16_t f_d = 0, f_ref = 0, f_got = 0; int f_op = 0;
-    const uint16_t edge_d[4] = { 0x0000, 0xFFFF, 0x0821, 0xF7DF };
-    for (int sweep = 0; sweep < 3 && !fails; sweep++) {
-        const int nd     = (sweep == 1) ? 64 : 4;
-        const int chunks = (sweep == 0) ? 65536 / NPX : 1;
-        for (int di = 0; di < nd && !fails; di++) {
-            for (int c = 0; c < chunks && !fails; c++) {
-                uint16_t d; int n, off;
-                if (sweep == 0) {           // all sources x edge deltas, full chunks
-                    d = edge_d[di]; n = NPX; off = 0;
-                    for (int i = 0; i < NPX; i++) a[i] = (uint16_t)(c * NPX + i);
-                } else if (sweep == 1) {    // field-exhaustive: values j against delta di
-                    const uint16_t r = (uint16_t)(di & 31), g = (uint16_t)di;
-                    d = (uint16_t)((r << 11) | (g << 5) | r); n = 64; off = 0;
-                    for (int i = 0; i < 64; i++) {
-                        const uint16_t vr = (uint16_t)(i & 31), vg = (uint16_t)i;
-                        const uint16_t v = (uint16_t)((vr << 11) | (vg << 5) | vr);
-                        a[i] = (uint16_t)((v >> 8) | (v << 8));   // panel order
-                    }
-                } else {                    // the dispatcher: offsets x lengths
-                    d = edge_d[2]; off = di * 2 + 1; n = 17 + di * 31;
-                    for (int i = 0; i < off + n; i++) a[i] = (uint16_t)(i * 2557u + 41u);
-                }
-                memcpy(b, a, (size_t)(off + n) * 2);
-                for (int op = 0; op < 2 && !fails; op++) {
-                    const uint32_t drb = (uint32_t)d & 0xF81Fu, dg = (uint32_t)d & 0x07E0u;
-                    if (op == 0) { span_add(a + off, n, d);
-                        for (int i = 0; i < n; i++) b[off + i] = (uint16_t)px_add(b[off + i], drb, dg);
-                    } else {       span_sub(a + off, n, d);
-                        for (int i = 0; i < n; i++) b[off + i] = (uint16_t)px_sub(b[off + i], drb, dg);
-                    }
-                    for (int i = 0; i < n; i++) {
-                        if (a[off + i] != b[off + i] && !fails++) {
-                            first = (uint32_t)i; f_d = d; f_ref = b[off + i]; f_got = a[off + i]; f_op = op;
-                        }
-                    }
-                    memcpy(a, b, (size_t)(off + n) * 2);   // realign the copies
-                }
-            }
-        }
-    }
-#if CANOPY_PIE
-    // The lit paths, against their own scalar bodies. The LUT and levels live
-    // in the far end of the test buffer; values include both field extremes.
-    if (!fails) {
-        uint16_t* lut = a + 2048;
-        uint8_t*  lv  = (uint8_t*)(a + 2560);
-        for (int i = 0; i < 256; i++) lut[i] = (uint16_t)(i * 197u + 31u);
-        lut[0] = 0x0000; lut[1] = 0xFFFF; lut[2] = 0x0821; lut[3] = 0xF7DF;
-        for (int i = 0; i < 512; i++) lv[i] = (uint8_t)(i * 73u + 5u);
-        for (int di = 0; di < 5 && !fails; di++) {
-            const int off = (di * 2 + 1) & 7, n = 5 + di * 99;
-            for (int i = 0; i < off + n; i++) a[i] = (uint16_t)(i * 2557u + 91u);
-            memcpy(b, a, (size_t)(off + n) * 2);
-            for (int op = 0; op < 2 && !fails; op++) {
-                if (op == 0) { span_lit_add(a + off, n, lv, lut);
-                               span_lit_add_scalar(b + off, n, lv, lut); }
-                else {         span_lit_sub(a + off, n, lv, lut);
-                               span_lit_sub_scalar(b + off, n, lv, lut); }
-                for (int i = 0; i < n; i++) {
-                    if (a[off + i] != b[off + i] && !fails++) {
-                        first = (uint32_t)i; f_d = 0; f_ref = b[off + i]; f_got = a[off + i];
-                        f_op = 2 + op;
-                    }
-                }
-                memcpy(a, b, (size_t)(off + n) * 2);
-            }
-        }
-    }
-#endif
-    if (fails) Serial.printf("vg_canopy: PIE self-test FAIL op=%s i=%u d=%04x ref=%04x got=%04x (%u wrong)\n",
-                             f_op == 0 ? "add" : f_op == 1 ? "sub" : f_op == 2 ? "lit-add" : "lit-sub", (unsigned)first, f_d, f_ref, f_got, (unsigned)fails);
-    else       Serial.printf("vg_canopy: PIE self-test PASS, bit-identical to the scalar spans (%u us)\n",
-                             (unsigned)(micros() - t0));
-    // THE PER-PIXEL PRICE, both paths, same hot SRAM the band lives in. The
-    // replay verdict confounds coverage with speed; this does not. Repeated
-    // adds saturate the fields, which is fine: the blend is data-independent.
-    static const int lens[4] = { 480, 120, 20, 8 };
-    for (int li = 0; li < 4; li++) {
-        const int len = lens[li];
-        uint32_t cp = 0, cs = 0;
-        for (int r = 0; r < 200; r++) {
-            uint32_t t = ESP.getCycleCount();
-            span_add_pie(a + 1, len, 0x0821);           // off the boundary on purpose
-            cp += ESP.getCycleCount() - t;
-            t = ESP.getCycleCount();
-            span_add_scalar(a + 1, len, 0x0821);
-            cs += ESP.getCycleCount() - t;
-        }
-        Serial.printf("vg_canopy: PIE bench len %d: %u.%u c/px vector, %u.%u scalar\n",
-                      len, (unsigned)(cp / (200u * len)), (unsigned)((cp * 10u / (200u * len)) % 10u),
-                           (unsigned)(cs / (200u * len)), (unsigned)((cs * 10u / (200u * len)) % 10u));
-    }
-    {
-        uint16_t* lut = a + 2048;
-        uint8_t*  lv  = (uint8_t*)(a + 2560);
-        for (int i = 0; i < 256; i++) lut[i] = (uint16_t)(i * 197u + 31u);
-        for (int i = 0; i < 128; i++) lv[i] = (uint8_t)(i * 73u + 5u);
-        for (int li = 0; li < 2; li++) {
-            const int len = li ? 20 : 120;
-            uint32_t cp = 0, cs = 0;
-            for (int r = 0; r < 200; r++) {
-                uint32_t t = ESP.getCycleCount();
-                span_lit_add(a + 1, len, lv, lut);
-                cp += ESP.getCycleCount() - t;
-                t = ESP.getCycleCount();
-                span_lit_add_scalar(a + 1, len, lv, lut);
-                cs += ESP.getCycleCount() - t;
-            }
-            Serial.printf("vg_canopy: PIE bench lit %d: %u.%u c/px vector, %u.%u scalar\n",
-                          len, (unsigned)(cp / (200u * len)), (unsigned)((cp * 10u / (200u * len)) % 10u),
-                               (unsigned)(cs / (200u * len)), (unsigned)((cs * 10u / (200u * len)) % 10u));
-        }
-    }
-    heap_caps_free(a);
-}
-#endif
-
-// THE SELF-TEST IS NOT HERE ANY MORE, and the reason is what it tests.
-//
-// It ran on the first frame after every boot and cost the player about 115 ms of
-// it: 65,536 sources, a per-field exhaustive sweep, every alignment offset, and
-// a timing bench on top. That was right while the vector path was unproven, and
-// wrong the moment it shipped -- the sweep has NO INPUT THAT VARIES AT RUNTIME,
-// so its answer is a property of the binary, not of the boot. A thousand boots
-// of one build re-prove the same theorem and charge the pilot each time. It also
-// owned ft_worst in the first telemetry window, which made the boot diagnostic a
-// liar about the frame it was measuring.
-//
-// So it moved to serial 'v', beside every other bench in this codebase, and it
-// is the acceptance test for a change to the blend: flash, press v, read PASS.
-void vg_canopy_warm(void) {
-    if (s_can && !s_can_ready) canopy_lut();
-}
-
-void IRAM_ATTR vg_canopy_rows(uint16_t* band, int by0, int r0, int r1) {
-    if (!s_can) return;                    // no drawing selected: no cockpit, and no crash
-    // Aft with no sequence running: there is no frame to draw and no world to hold back, so
-    // the whole pass is skipped. Checked here rather than at the submit site, because the
-    // primitive still has to exist for the intro's gate to run.
-    //
-    // THE INTRO, NOT THE GATE. Damage briefly widened this to s_gate_on, which meant a
-    // single faulty panel put the ENTIRE canopy back into the aft pass for the rest of the
-    // match -- the one view that had been free of it.
-    //
-    // The rear view is a button the player presses, and it is exempt: the damage is to the
-    // FORWARD of the ship, so looking back at what is chasing you is never obscured by a
-    // panel that broke in front of you. Hits are covered by the same rule and for the same
-    // reason.
-    if (s_can_rear && !s_intro_on) return;
-    if (s_intro_on)     canopy_rows_t<false, true>(band, by0, r0, r1);
-    else if (s_warp_on) canopy_rows_t<true, false>(band, by0, r0, r1);
-    else                canopy_rows_t<false, false>(band, by0, r0, r1);
 }
 
 // AND `oth` SPLIT INTO ITS THREE, for the same reason the canopy got its own counter.
@@ -2256,10 +1117,6 @@ static uint16_t s_bench_row[SCR_W];
 // frame's build call puts back whatever the game wants.
 void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us) {
     *rigid_us = *full_us = 0;
-    // ONLY THE OPAQUE BAKE IS NEEDED NOW. This asked for a delta drawing as well,
-    // because the warp maps used to be built from one; canopy_colcost builds them
-    // from whichever cockpit is flying, so the bench runs on a hull that has no
-    // delta drawing -- which is every hull.
     if (!vg_canopy_op_current()) return;
     const int   save_want = s_wq_want;
     const bool  save_on = s_warp_on, save_in = s_intro_on, save_gate = s_gate_on;
@@ -2295,86 +1152,3 @@ void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us) {
     s_lag_px = save_px; s_lag_py = save_py; s_lag_sh = save_sh;
 }
 
-void vg_canopy_bench(VgCanopyCost* out) {
-    uint16_t* const scratch = s_bench_row;
-    if (!s_can) { *out = VgCanopyCost{}; return; }
-    if (!s_can_ready) canopy_lut();
-
-    // BOTH STATES, because the warp is the thing most likely to be changed next and its cost
-    // is the question. The game's own setting is saved and put back, so running the bench does
-    // not leave the frame flexing at whatever the bench used last.
-    const int   save_q  = s_wq;
-    const bool  save_on = s_warp_on;
-
-    // AND THE INTRO IS PINNED OFF for the first two passes, because canopy_rows now dispatches
-    // on it. Left alone, a bench run during the sequence would time the intro path and report
-    // it as the flight cost -- the same failure the glyph bench had, where the number is wrong
-    // and believed. Measured on purpose in the third pass below.
-    const bool  save_in = s_intro_on;
-    uint8_t     save_live[VG_CANOPY_MAX_ZONES], save_rev[VG_CANOPY_MAX_ZONES];
-    uint16_t    save_fill[VG_CANOPY_MAX_ZONES];
-    for (int z = 0; z < s_can->zones; z++) {
-        save_live[z] = s_ilive[z]; save_rev[z] = s_izon[z]; save_fill[z] = s_ifill[z];
-    }
-    s_intro_on = false;
-
-    uint32_t cyc = 0, cal = 0, wcyc = 0, icyc = 0;
-    vg_canopy_warp(0.0f);
-    for (int py = 0; py < SCR_H; py++) {
-        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;   // mid grey, both ways to go
-        const uint32_t t0 = esp_cpu_get_cycle_count();
-        vg_canopy_rows(scratch, py, 0, 1);
-        cyc += esp_cpu_get_cycle_count() - t0;
-
-        // The same two reads around nothing, so the harness pays for itself.
-        const uint32_t t1 = esp_cpu_get_cycle_count();
-#if defined(_MSC_VER)
-        _ReadWriteBarrier();   // the same fence, spelled for MSVC
-#else
-        asm volatile("" ::: "memory");
-#endif
-        cal += esp_cpu_get_cycle_count() - t1;
-    }
-    vg_canopy_warp(1.0f);
-    for (int py = 0; py < SCR_H; py++) {
-        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;
-        const uint32_t t0 = esp_cpu_get_cycle_count();
-        vg_canopy_rows(scratch, py, 0, 1);
-        wcyc += esp_cpu_get_cycle_count() - t0;
-    }
-    // THE INTRO, AT ITS WORST, which is the only figure worth having.
-    //
-    // Its cost is not constant: a zone that has not come up is a full-screen black fill, one
-    // mid-dissolve is a threshold test per pixel, and one that is all the way in is skipped
-    // entirely. The dear case is every zone dissolving at once -- which the sequence never
-    // actually reaches, since the zones are staggered -- so this is a ceiling and not a
-    // measurement of the sequence.
-    //
-    // Perf is not the point of the intro and the author has said so. This exists so that "it
-    // dips" is a number rather than an impression, and so the next person to widen the zones
-    // knows what they are spending.
-    s_intro_on = true;
-    for (int z = 0; z < s_can->zones; z++) {
-        s_ilive[z] = 1; s_izon[z] = 128; s_ifill[z] = CANOPY_INTRO_WHITE;
-    }
-    vg_canopy_warp(0.0f);
-    for (int py = 0; py < SCR_H; py++) {
-        for (int x = 0; x < SCR_W; x++) scratch[x] = 0x1084;
-        const uint32_t t0 = esp_cpu_get_cycle_count();
-        vg_canopy_rows(scratch, py, 0, 1);
-        icyc += esp_cpu_get_cycle_count() - t0;
-    }
-
-    s_wq = save_q; s_wq_want = save_q; s_warp_on = save_on;   // leave the game's own flex as it was
-    s_intro_on = save_in;
-    for (int z = 0; z < s_can->zones; z++) {
-        s_ilive[z] = save_live[z]; s_izon[z] = save_rev[z]; s_ifill[z] = save_fill[z];
-    }
-
-    out->us       = (cyc  > cal ? cyc  - cal : 0) / 240u;
-    out->warp_us  = (wcyc > cal ? wcyc - cal : 0) / 240u;
-    out->intro_us = (icyc > cal ? icyc - cal : 0) / 240u;
-    out->blocks   = (int)s_can->blocks;
-    out->flat_px  = (int)s_can->flat_px;
-    out->lit_px   = (int)s_can->lit_px;
-}

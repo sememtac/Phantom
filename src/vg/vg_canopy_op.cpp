@@ -8,9 +8,7 @@
 #include <string.h>
 #include <math.h>
 
-// The opaque canopy. See vg_canopy_op.h for what this is an experiment in.
-
-bool vg_canopy_op_on = true;
+// The opaque canopy. See vg_canopy_op.h for what this is and why it won.
 
 static const VgCanOp* s_cur = nullptr;
 
@@ -449,7 +447,7 @@ void vg_canopy_op_use(const VgCanOp* c) {
     // The palette is per DRAWING as well as per colour, so selecting one rebuilds it.
     build_pal();
     // ...and so are the band split's column costs and the centre region, which the
-    // delta module owns for both cockpits.
+    // cockpit-state module owns.
     vg_canopy_op_changed();
     if (c && !s_hot)
         s_hot = (uint16_t (*)[256])heap_caps_malloc(

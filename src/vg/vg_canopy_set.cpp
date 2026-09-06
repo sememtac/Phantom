@@ -18,8 +18,8 @@
 // substitute, which is the author's call and the right one -- the reference drawing
 // belongs to the CHARIOT, and a shared placeholder would put a cockpit that is not
 // this hull's in front of the player and call it finished. nullptr is a supported
-// selection: see vg_canopy_use, and the note in vg_canopy_intro_begin about the boot
-// chain still having to run when there is no sequence to play.
+// selection: see vg_canopy_op_use, and the note in vg_canopy_intro_begin about the
+// boot chain still having to run when there is no sequence to play.
 //
 // WORTH KNOWING BEFORE JUDGING A NEW DRAWING. The four hulls already differ in how
 // the frame MOVES without differing in what it looks like -- CANOPY_LAG_HULL rides
@@ -32,42 +32,13 @@
 // the binary, and that would multiply by every hull the artist adds.
 // ===========================================================================
 #include "generated/canopy_set.h"
-#include "vg_canopy_draw.h"
 
-static const VgCanopy* const SET[SHIP_CLASSES] = {
-    VG_CANOPY_SET_ROWS
-};
-
-static_assert(sizeof(SET) / sizeof(SET[0]) == SHIP_CLASSES,
-              "the generated set has a different number of hulls than ShipClass -- "
-              "re-run tools/canopy_set.py");
-
-// Clamped rather than trusted. ShipClass is a uint8_t restored from a save file, and
-// one written by a build with more hulls in it would index off the end.
-//
-// MAY RETURN NULL, and callers must not assume otherwise. That is the point: a hull
-// with no drawing has no canopy rather than borrowing another hull's.
-const VgCanopy* vg_canopy_for(ShipClass c) {
-    return SET[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
-}
-
-// WHAT TO SELECT BEFORE A SHIP HAS BEEN CHOSEN. Deliberately nothing: at boot there
-// is no cockpit to draw and no hull to draw one for, and the rasteriser tolerates a
-// null drawing throughout. vg_game_init reached for a default here, which only ever
-// existed because the set had one.
-const VgCanopy* vg_canopy_default(void) { return nullptr; }
-
-// THE OPAQUE DRAWINGS, generated the same way: design/canopy/<hull>_opaque.png
-// bakes to a row here. A hull that has one flies it, and the band pass prefers it
-// to the light delta -- see vg_canopy_op.h. It is a different KIND of thing from
-// the set above -- colour and coverage rather than a light delta -- so it is a
-// second table rather than a second column in one whose type says what a canopy is.
-//
-// A HULL WITH AN OPAQUE DRAWING KEEPS ITS PLAIN ONE. The frame's bend (the warp
-// maps) and the two-core split point are built from the delta drawing's columns,
-// whichever cockpit is drawn; tools/canopy_set.py refuses an opaque drawing with no
-// plain one beside it. Building those from the opaque bake itself is the one piece
-// of the delta path an opaque hull still carries.
+// THE DRAWINGS: design/canopy/<hull>.png bakes to a row here. Opaque -- colour and
+// coverage, metal that replaces the pixel -- see vg_canopy_op.h. It was a light delta
+// until 2026-09-05, a second table sat beside this one for the other kind, and the
+// frame's bend and the two-core split were built from the delta's columns even on a
+// hull that flew the bake. They are built from the bake's own spans now, the delta
+// table is gone, and this is the only set there is.
 static const VgCanOp* const OP_SET[SHIP_CLASSES] = {
     VG_CANOPY_OP_SET_ROWS
 };
@@ -75,7 +46,11 @@ static_assert(sizeof(OP_SET) / sizeof(OP_SET[0]) == SHIP_CLASSES,
               "the generated opaque set has a different number of hulls than ShipClass "
               "-- re-run tools/canopy_set.py");
 
+// Clamped rather than trusted. ShipClass is a uint8_t restored from a save file, and
+// one written by a build with more hulls in it would index off the end.
+//
+// MAY RETURN NULL, and callers must not assume otherwise. That is the point: a hull
+// with no drawing has no canopy rather than borrowing another hull's.
 const VgCanOp* vg_canopy_op_for(ShipClass c) {
-    if (!vg_canopy_op_on) return nullptr;
     return OP_SET[(c < SHIP_CLASSES) ? c : SHIP_AEGIS];
 }

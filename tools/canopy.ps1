@@ -24,22 +24,18 @@
 # PowerShell does not run a script from the current directory without a path, so the
 # leading .\ is required. "canopy.ps1" alone fails with CommandNotFoundException.
 #
-# The drawing is SWIZZLED: red carries the frame and green carries the activation
-# regions. In red, mid grey means leave the pixel alone, brighter adds light and darker
-# takes it away. Left-right symmetry is detected, not required. Do not send a grey
-# image -- that puts the same values in both channels, so the frame becomes its own
-# mask. Full rules in tools\README.md.
+# The drawing is OPAQUE. Magenta marks a pane, cyan marks the lit outline, and any
+# other colour is metal that the firmware paints over the picture. The alpha channel
+# holds the activation regions, one flat value for each region, over the whole image.
+# Full rules in tools\README.md under "An opaque drawing".
 #
-# WHAT TO WATCH: the baker prints what the drawing costs the frame, from a cost model
-# fitted to the device. After flashing, this asks the board itself:
+# WHAT TO WATCH: the baker prints how many pixels it stored and how far the palette is
+# from the drawing. After flashing, this asks the board what the pass costs:
 #
 #   python tools\canopy_cost.py COM6
 #
-# Coverage is the only thing that matters to the budget. 95% of the cost is the number
-# of pixels the frame covers. If the game starts to miss 60 frames a second, make the
-# shapes narrower. Levels, gradients and fine detail are all free.
-#
-# The full authoring rules, including the green channel, are in tools/README.md.
+# The number of stored pixels is the cost. If the game starts to miss 60 frames a
+# second, make the panes larger or the members narrower. Colour and detail are free.
 
 param(
     [string]$Port = "COM6",

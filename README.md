@@ -203,10 +203,12 @@ does, and a duel is a poor place to learn it. The broadcast explains the test.
 
 ### The canopy
 
-There is no crosshair. The canopy is a drawing. `tools/canopy_bake.py` turns a PNG
-into a table of runs, and the band renderer applies the table to the finished picture
-as a change. So the canopy lights what is behind it. It does not paint over it.
-The blend runs on the vector unit of the processor. See **Speed**.
+There is no crosshair. The canopy is a drawing. `tools/canopy_opaque.py` turns a PNG
+into a palette and a table of spans, and the band renderer copies the spans over the
+finished picture. Most of a cockpit is metal, and metal hides what is behind it. A
+thin outline around each pane is added to the picture instead, so it takes the colour
+of what it crosses. The sky behind the ship lights the metal, so the frame changes as
+the ship turns.
 
 The canopy bends, and it bends the opposite way to the instruments. It bends most when
 the throttle is shut and flattens as the ship speeds up. The canopy also swings behind
@@ -480,21 +482,11 @@ fight are near a hull.
 
 ### The vector unit
 
-The processor has a 128-bit vector unit, and the canopy blend runs on it. One
-instruction blends eight pixels. The scalar blend cost 36 cycles for each pixel.
-The vector blend costs 5 to 10, and a fight frame gained about 0.7 ms.
-
-The two blends give the same pixels. A test proves this at each start, before
-the first frame. The test runs both blends over every source value and compares
-the output. If one pixel differs, the test prints it. To use the scalar blend
-only, set `CANOPY_PIE` to 0 in `vg_canopy_draw.cpp`.
-
-The unit has limits, and two of them shaped the code. It cannot look up a table
-for eight pixels at once, so a blend that uses a table keeps a scalar step. A
-saturating add protects a 16-bit lane, not the three colour fields inside it.
-So the blend separates each pixel into its three fields, blends each field, and
-packs them again. The separated arithmetic gives the same result as the packed
-arithmetic, so the test can compare for equal pixels.
+The processor has a 128-bit vector unit, and it is not used. The canopy blend ran on
+it from August 2026: one instruction blended eight pixels, where the scalar blend
+cost 36 cycles for each pixel, and a fight frame gained about 0.7 ms. The opaque
+canopy replaced the blend with a copy on 2026-09-05, and the vector code was removed
+on 2026-09-06 with the renderer that used it.
 
 ### Four ways a measurement can be wrong
 

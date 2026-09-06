@@ -13,7 +13,6 @@
 #include "vg_cockpit.h"
 #include "vg_surge.h"
 #include "vg_tv.h"
-#include "vg_canopy.h"     // vg_canopy_current: is there a cockpit to redden
 #include <stdio.h>
 #include <math.h>
 #include "vg_flight.h"

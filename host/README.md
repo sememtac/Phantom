@@ -155,10 +155,7 @@ board for everything else.
 | `build/` | The build output. Git ignores this directory. |
 
 The build leaves out two game files, because both talk to the board:
-`src/vg/vg_port_co5300.cpp` and `src/third_party/es8311.c`. It also leaves out
-the two `.S` files, because they hold Xtensa assembly code. The build sets
-`CANOPY_PIE=0`, so the canopy uses the C code that those files make faster. The
-self test in the game proves that the two paths give the same pixels.
+`src/vg/vg_port_co5300.cpp` and `src/third_party/es8311.c`.
 
 ## How to share the game
 

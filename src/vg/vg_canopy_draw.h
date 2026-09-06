@@ -1,43 +1,37 @@
 #pragma once
 #include <stdint.h>
-#include "vg_canopy.h"
 
 // ===========================================================================
-// DRAWING THE CANOPY
+// THE COCKPIT'S STATE
 //
-// vg_canopy.h is the drawing as DATA -- what the baker produces. This is the system that
-// puts it on the panel: the colour table, the warp, the coming-online sequence, and the
-// row pass over all of it.
+// How the cockpit MOVES, how it ARRIVES, how it takes a HIT, how it goes red at the
+// wall, and where a band's work balances across the two cores. None of it is about how
+// the drawing is stored; all of it is about the match, and there is one clock running
+// it. The renderer -- vg_canopy_op.cpp, the opaque bake -- asks these questions per row
+// and per region and keeps its own inner loop.
 //
-// It lived inside vg_band.cpp until the systems pass, declared from vg_raster.h for the
-// same reason vg_sim.h once declared nine modules: it had nowhere of its own. 1,112 lines
-// moved and this is nearly all of what crosses the boundary -- which is the argument for
-// having moved it whole rather than in pieces.
+// This was the light-delta renderer, lifted whole out of vg_band.cpp during the systems
+// pass. The delta was retired on 2026-09-06 once every hull flew the opaque bake; what
+// crossed the boundary between the two renderers while both existed is what is left,
+// and it turned out to be the right boundary. See the note at the top of the .cpp.
 // ===========================================================================
+
+// The activation regions a drawing may have.
+//
+// SIXTEEN, which is what the FORMAT can carry: the zone tag is four bits in the bake's
+// region runs, so 16 is the ceiling until that changes. The artist decides how many a
+// drawing has -- paint the regions, the baker finds them.
+#define VG_CANOPY_MAX_ZONES 16
 
 // ---------------------------------------------------------------------------
 // What the raster asks of it, per band
 // ---------------------------------------------------------------------------
 
-// Rows [r0, r1) of one band. Called from draw_band on one core and from the row-split
-// task on the other, exactly as vg_sky_fill_rows is.
-void vg_canopy_rows(uint16_t* band, int by0, int r0, int r1);
-// Build the colour table now if the alarm dirtied it, on the calling core, so the
-// two-core pass never races the rebuild. Call once per frame before the band loop.
-void vg_canopy_warm(void);
-
-// THE VECTOR BLEND'S ACCEPTANCE TEST, on serial 'v'. Proves the PIE spans are
-// bit-identical to the scalar ones over every source value, every field delta and
-// every alignment offset, then benches both paths. Run it after any change to the
-// blend; it is not run at boot, because its answer cannot change between boots of
-// one build. Prints PASS, the first mismatch, or that the path is compiled out.
-void vg_canopy_pie_selftest(void);
-
 // WHERE THIS BAND'S WORK BALANCES, for the two-core split.
 //
-// Three different answers -- the baked point, the warped one, or the midpoint during the
-// intro -- and which applies depends on canopy state that used to be read directly out of
-// draw_band. Asked for now, so the warp maps and the intro flag stay inside this module.
+// The balance moves with the bend and is the midpoint during the intro, and which
+// applies depends on canopy state that used to be read directly out of draw_band. Asked
+// for now, so the warp maps and the intro flag stay inside this module.
 //
 // A band costs the SLOWER half, so an even-looking split of uneven work returns almost
 // nothing: measured, the midpoint gave 1.2 of the 1.9 ms it should have.
@@ -95,10 +89,9 @@ void vg_canopy_damage(float hull_frac);
 // Selecting, colouring and bending the drawing
 // ---------------------------------------------------------------------------
 
-// The baked cockpit frame, from the author's drawing via tools/canopy_bake.py. A
+// The baked cockpit frame, from the author's drawing via tools/canopy_opaque.py. A
 // primitive rather than a pass, because WHERE it lands in the order is the point: over
-// the world, under the instruments. It applies the drawing as a CHANGE to the finished
-// picture, so the frame lights what is behind it rather than painting over it.
+// the world, under the instruments.
 void vg_canopy_prim(void);
 
 // THE FRAME FLEXING WITH THE THROTTLE. `k` is 0..1; 0 is rigid.
@@ -114,8 +107,8 @@ void vg_canopy_warp_build(void);
 // The amount held by hand, for measurement only. `k` in 0..1 overrides what
 // vg_canopy_warp is given on every frame; negative gives the throttle back.
 void vg_canopy_warp_pin(float k);
-// Told when a different opaque bake is selected, so the split balance and the centre
-// region are worked out again for it. vg_canopy_use does the same for its own drawing.
+// Told when a different drawing is selected, so the split balance and the centre
+// region are worked out again for it.
 void vg_canopy_op_changed(void);
 // ...and the lag held off. With the bend pinned at zero this is a rigid frame.
 void vg_canopy_lag_pin_off(bool off);
@@ -131,7 +124,7 @@ void vg_canopy_lag_pin_off(bool off);
 void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 
 // ---------------------------------------------------------------------------
-// THE MOTION, FOR A DRAWING THAT IS NOT THIS ONE
+// THE MOTION
 //
 // A canopy moves in three ways that have nothing to do with how it is STORED: the
 // frame lags the turn on a spring, the tube bends under the throttle, and the roll
@@ -139,11 +132,11 @@ void vg_canopy_lag(float yaw, float pitch, float roll, float scale);
 // renderer reads a different part of it -- so any drawing at all can be moved by
 // the same numbers, as long as it asks the same questions.
 //
-// The opaque bake is that other drawing. It is spans in panel rows rather than
-// blocks in columns, and A PANEL ROW IS A COLUMN, so the two questions it needs are
-// which row to read and where along it the reading lands. Answered HERE, out of the
-// same state and the same arithmetic the delta path uses, because two cockpits that
-// compute their own motion are two cockpits that will eventually disagree.
+// The opaque bake is spans in panel rows, and A PANEL ROW IS A COLUMN, so the two
+// questions it needs are which row to read and where along it the reading lands.
+// Answered HERE rather than in the renderer because, while there were two renderers,
+// two cockpits that computed their own motion were two cockpits that would eventually
+// disagree -- and the state this is built from (the spring, the warp maps) is here.
 struct VgCanMotion {
     int   row;      // the panel row of the drawing this panel row shows
     int   xofs;     // translation along it: the bow, the pitch lag and the roll shear
@@ -156,12 +149,11 @@ struct VgCanMotion {
 bool vg_canopy_motion(int py, struct VgCanMotion* m);
 
 // ---------------------------------------------------------------------------
-// THE ARRIVAL AND THE DAMAGE, FOR THE SAME OTHER DRAWING
+// THE ARRIVAL AND THE DAMAGE
 //
 // Same argument as VgCanMotion above. A cockpit coming online, a panel taking a round
 // and a panel that has failed for good are all properties of the MATCH, not of how the
-// drawing is stored -- and there is one clock running all three. A second cockpit that
-// kept its own would arrive at a different moment and break in a different place.
+// drawing is stored -- and there is one clock running all three.
 //
 // `gate_on`     is anything happening at all: the sequence is running, or some panel is
 //               hit or faulty. False means skip the whole walk.
@@ -170,9 +162,8 @@ bool vg_canopy_motion(int py, struct VgCanMotion* m);
 //               the gate lands where the VIEW is, not where the frame has swung to.
 // `zone_live`   whether a region's cockpit exists yet. True whenever nothing is arriving.
 // `zone_glow`   0..255, how hot that region's members are running during the arrival.
-//               The delta cockpit spends this on a per-zone colour table; a painted one
-//               has no table to spend it on, so it goes on the lit edge instead -- which
-//               is the only part of an opaque cockpit that is light in the first place.
+//               The renderer spends it on a per-region palette -- see s_hot in
+//               vg_canopy_op.cpp -- and on the lit edge.
 // THE ORDERED DITHER the reveal is built on, so a second cockpit crosses between two
 // states in the same language rather than inventing a fade. One row of the 4x4.
 const uint8_t* vg_canopy_bayer_row(int y);
@@ -195,8 +186,8 @@ uint8_t  vg_canopy_zone_glow(int z);
 //
 // The view opens black, and it arrives a REGION at a time: the whole region flashes white, the
 // world dissolves out of that white, and the frame's members in it run hot and cool to their
-// authored level. The order is the artist's, painted into the green channel of the drawing and
-// baked as a zone per block -- see tools/canopy_bake.py and CANOPY_INTRO_* in cfg_hud.h.
+// authored level. The order is the artist's, painted into the alpha channel of the drawing --
+// see tools/canopy_opaque.py and CANOPY_INTRO_* in cfg_hud.h.
 //
 // `reset` when a match is BUILT and `begin` when the player takes the seat. Those are NOT the
 // same moment and the distinction is load-bearing: a match is built from enter_intro, at the top
@@ -229,9 +220,9 @@ uint8_t  vg_canopy_zone_glow(int z);
 // the world black while the cockpit arrives -- so turning the primitive off would show the
 // whole world at once, mid-sequence.
 void  vg_canopy_rear(bool on);
-// Looking aft, and whether the arrival is running. Both are read by the opaque
-// cockpit, which must suppress its frame in rear view exactly as the delta does and
-// must go on drawing the world gate while it does -- see vg_canopy_op_rows.
+// Looking aft, and whether the arrival is running. Both are read by the renderer,
+// which suppresses its frame in rear view and goes on drawing the world gate while it
+// does -- see vg_canopy_op_rows.
 bool  vg_canopy_rear_on(void);
 bool  vg_canopy_intro_on(void);
 
@@ -245,14 +236,11 @@ bool  vg_canopy_intro_on(void);
 // here took the backdrop fill from 3060 us to 1824 and the frame rate from 53.1 to 59.7.
 void  vg_canopy_alarm(float k, bool white);
 
-// WHAT THE WARNING HAS MADE OF THE FRAME'S COLOUR, for a cockpit that does not have a
-// 256-entry table to rebuild. Returns the base colour canopy_lut mixes from -- amber,
+// WHAT THE WARNING HAS MADE OF THE FRAME'S COLOUR. Returns the base colour -- amber,
 // pulled toward COL_DANGER by the clearance, or white for the length of a strobe -- and
 // writes 0..1 through `level` for how far along that ramp it is. A strobe reports 1.
 //
-// Here rather than in the caller because the alarm's state is here, and two cockpits that
-// each decide for themselves what a warning looks like are two cockpits that disagree
-// about how close the wall is.
+// Here rather than in the renderer because the alarm's state is here.
 uint16_t vg_canopy_alarm_colour(float* level);
 
 void  vg_canopy_intro_reset(void);
@@ -266,24 +254,17 @@ float vg_canopy_intro_flex(void);
 //
 // The canopy only draws inside a match, so the frame counter cannot be read without
 // someone at the controls -- and what it reports is one band's slower half plus the
-// rendezvous, which no table can be judged against. This runs the whole pass on one core
-// and reports it flat, with the counts it got through, so the baker's estimate has
-// something to be right or wrong about. See the note at its definition.
-// `intro_us` is the cockpit intro's CEILING, with every zone mid-dissolve at once -- which the
-// staggered sequence never reaches. It is here so that the intro's dip is a number.
-struct VgCanopyCost { uint32_t us, warp_us, intro_us; int blocks, flat_px, lit_px; };
-// The opaque pass, whole and on one core, rigid and at full bend. Needs both a
-// delta drawing (the warp maps are its) and an opaque bake selected.
+// rendezvous, which no table can be judged against. This runs the whole pass on one
+// core, rigid and then at full bend, and reports it flat. Needs a drawing selected.
 void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us);
-void vg_canopy_bench(VgCanopyCost* out);
 
 // ---------------------------------------------------------------------------
 // SATURATING 565 ADD AND SUBTRACT, in the panel's own byte order
 //
-// In the header because the blend bench in vg_band.cpp prices itself against them and
-// they are the canopy's. `static inline` rather than published storage, so each unit
-// inlines its own copy and the register work behind them is not undone by the move --
-// see THE COMPILER RAN OUT OF REGISTERS, which was 29%.
+// These were the delta renderer's blend, and they outlive it because the blend bench
+// in vg_band.cpp prices itself against them. `static inline` rather than published
+// storage, so each unit inlines its own copy and the register work behind them is not
+// undone by the move -- see THE COMPILER RAN OUT OF REGISTERS, which was 29%.
 //
 // Four mask constants, not seven. `m - (m >> w)` turns a guard bit into a solid field, so
 // one expression saturates with no compare, no branch and no complement constant. The

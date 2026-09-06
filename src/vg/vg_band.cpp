@@ -7,7 +7,6 @@
 #include "vg_port.h"
 #include "vg_capture.h"
 #include "vg_sky.h"
-#include "vg_canopy.h"
 #include "vg_canopy_draw.h"
 #include "vg_canopy_op.h"
 #include "vg_bezel.h"
@@ -1322,7 +1321,8 @@ void vg_sky_bench(VgSkyCost* out) {
     out->sum     = sum;
 }
 
-// vg_canopy_bench moved to vg_canopy_draw.cpp, with the drawing it measures.
+// vg_canopy_bench moved to vg_canopy_draw.cpp with the drawing it measured, and was
+// retired with it; vg_canopy_op_bench is the one that is left.
 
 // THE ACTIVE LIST, built once per frame. Every band used to test every
 // primitive against its row range: fifteen bands times seven hundred
@@ -1398,16 +1398,9 @@ static void band_prims(uint16_t* band, int by0, int by1, int cy0, int cy1) {
             // point, asked for by draw_band before the fork -- see
             // vg_canopy_split_at.
             //
-            // THE OPAQUE ONE WINS IF THERE IS ONE, and that is the whole switch
-            // for the experiment -- see vg_canopy_op.h. The two are alternatives
-            // rather than layers: a cockpit is either metal that occludes or a
-            // delta that lights, and drawing both would be a frame wearing two.
-            if (vg_canopy_op_current()) {
+            // The opaque bake, or nothing: a hull with no drawing has no cockpit.
+            if (vg_canopy_op_current())
                 vg_canopy_op_rows(band, by0, 0, by1 - by0 + 1);
-                break;
-            }
-            if (!vg_canopy_current()) break;
-            vg_canopy_rows(band, by0, 0, by1 - by0 + 1);
             break;
 
         case PRIM_BEZEL:
@@ -1672,8 +1665,6 @@ void vg_rast_flush(void) {
     // thing that reads the list closes it first.
     const uint32_t f0 = micros();
     vg_prim_join();
-    // The canopy's colour table, warmed before any band forks -- see vg_canopy_warm.
-    vg_canopy_warm();
     // DIAGNOSTIC: a running hash of every frame's joined primitive list, to split the
     // nondeterminism hunt in half -- if two replays disagree here, submission diverges;
     // if they agree while pixels differ, the raster does. Reported via the cost line.

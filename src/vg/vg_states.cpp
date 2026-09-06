@@ -188,12 +188,10 @@ static void enter_course(void) {
     vg_cockpit.cued    = false;
     vg_cockpit.ready       = false;
     vg_cockpit.regions_lit = 0;
-    // WHICH COCKPIT, before the sequence that lights it. vg_canopy_use drops the colour table
-    // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
-    // itself from the drawing's region count -- so the order here is not cosmetic.
-    vg_canopy_use(vg_canopy_for(vg.ship));
-    // ...and the opaque bake beside it, for the hull that has one. The band pass
-    // prefers this when it is not null -- see vg_canopy_op.h.
+    // WHICH COCKPIT, before the sequence that lights it. Selecting the drawing drops the
+    // palette, the column costs and the warp maps so they rebuild against it, and
+    // vg_canopy_intro_begin sizes itself from its region count -- so the order here is
+    // not cosmetic.
     vg_canopy_op_use(vg_canopy_op_for(vg.ship));
     // ...in the player's own colour, if the drawing was baked with a mask for it.
     vg_canopy_op_tint(vg.trail_hue);
@@ -293,12 +291,10 @@ void vg_begin_flight(void) {
     vg_cockpit.cued    = false;         // the boot chain again -- see enter_course
     vg_cockpit.ready       = false;
     vg_cockpit.regions_lit = 0;
-    // WHICH COCKPIT, before the sequence that lights it. vg_canopy_use drops the colour table
-    // and the warp maps so they rebuild against the new drawing, and vg_canopy_intro_begin sizes
-    // itself from the drawing's region count -- so the order here is not cosmetic.
-    vg_canopy_use(vg_canopy_for(vg.ship));
-    // ...and the opaque bake beside it, for the hull that has one. The band pass
-    // prefers this when it is not null -- see vg_canopy_op.h.
+    // WHICH COCKPIT, before the sequence that lights it. Selecting the drawing drops the
+    // palette, the column costs and the warp maps so they rebuild against it, and
+    // vg_canopy_intro_begin sizes itself from its region count -- so the order here is
+    // not cosmetic.
     vg_canopy_op_use(vg_canopy_op_for(vg.ship));
     // ...in the player's own colour, if the drawing was baked with a mask for it.
     vg_canopy_op_tint(vg.trail_hue);

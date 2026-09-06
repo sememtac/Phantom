@@ -130,51 +130,21 @@ def git_commit():
         return "unknown"
 
 
-def choose_canopy(port, delta):
-    """Tell the board which cockpit to fly, and REFUSE TO GO ON unless it says so.
-
-    WHY THIS IS NOT JUST A WRITE. It was, and the pair of runs it produced were
-    identical to the microsecond -- can 5894 both ways, every scene counter equal.
-    That reads as "the two cockpits cost the same", which would be a finding. It
-    was not one: the command had not taken, and both runs flew the same cockpit.
-
-    A measurement that silently compares a thing against itself is worse than one
-    that fails, because it answers. So this waits for the device to name the
-    cockpit back and stops the run if it does not.
-
-    Sent on a plain handle before PhantomLink opens, because the link runs a reader
-    thread of its own and the acknowledgement has to be read by somebody.
-    """
-    want = "DELTA" if delta else "OPAQUE"
-    ser = open_quiet(port)
-    try:
-        time.sleep(0.5)
-        ser.reset_input_buffer()
-        for _ in range(4):
-            ser.write(b"O" if delta else b"o")
-            ser.flush()
-            t0, buf = time.time(), ""
-            while time.time() - t0 < 1.5:
-                buf += ser.read(4096).decode("ascii", "replace")
-                if "vg_canopy: " + want in buf:
-                    print("  cockpit: %s" % want)
-                    return
-        sys.exit("the board never acknowledged '%s'. Either it is running a build\n"
-                 "from before the cockpit switch existed -- see vg_capture.cpp -- or\n"
-                 "the port is not the board. Not measuring: a run that cannot state\n"
-                 "which cockpit it flew has nothing to compare."
-                 % ("O" if delta else "o"))
-    finally:
-        ser.close()
-
-
 def choose_warp(port, warp):
     """Tell the board to hold the cockpit's bend, and refuse to go on unless it says so.
 
-    Same shape as choose_canopy, for the same reason: a run that cannot state how
-    much the frame was bent has nothing to compare. Not sent at all when no hold is
-    asked for, because run() resets the board first and a fresh board follows the
-    throttle.
+    WHY THIS IS NOT JUST A WRITE. A run that cannot state how much the frame was
+    bent has nothing to compare -- and a plain write once produced a pair of runs
+    identical to the microsecond, every scene counter equal, because the command
+    had not taken and both runs flew the same setting. That read as a finding. A
+    measurement that silently compares a thing against itself is worse than one
+    that fails, because it answers. So this waits for the board to name the
+    setting back and stops the run if it does not.
+
+    Sent on a plain handle before PhantomLink opens, because the link runs a reader
+    thread of its own and the acknowledgement has to be read by somebody. Not sent
+    at all when no hold is asked for, because run() resets the board first and a
+    fresh board follows the throttle.
     """
     letter, want = {"flat": (b"f", "FLAT"), "full": (b"F", "FULL"),
                     "rigid": (b"i", "RIGID")}[warp]
@@ -232,7 +202,7 @@ def choose_hash(port, want):
 
 def choose_resident(port):
     """Tell the board to read the opaque bake from PSRAM, and refuse to go on unless
-    it says so. See `resident` in vg_canopy_op.cpp. Same shape as choose_canopy."""
+    it says so. See `resident` in vg_canopy_op.cpp. Same shape as choose_warp."""
     ser = open_quiet(port)
     try:
         time.sleep(0.5)
@@ -253,7 +223,7 @@ def choose_resident(port):
         ser.close()
 
 
-def run(port, path, limit, delta_canopy=False, warp=None, resident=False, hash_on=False):
+def run(port, path, limit, warp=None, resident=False, hash_on=False):
     ses = Session.load(path)
     n = len(ses.frames)
     if limit and limit < n:
@@ -261,10 +231,9 @@ def run(port, path, limit, delta_canopy=False, warp=None, resident=False, hash_o
     print("%s: %d frames, timed replay (no pixels)" % (os.path.basename(path), n))
 
     reset_board(port, settle=6.0)
-    # WHICH COCKPIT, before the link opens and before a frame is sent. Stated
-    # rather than toggled, so a run measures the one it asked for and not the one
-    # the last run left -- and checked, for the reason choose_canopy gives.
-    choose_canopy(port, delta_canopy)
+    # Every setting before the link opens and before a frame is sent. Stated rather
+    # than toggled, so a run measures the one it asked for and not the one the last
+    # run left -- and checked, for the reason choose_warp gives.
     if warp:
         choose_warp(port, warp)
     if resident:
@@ -639,10 +608,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session")
-    ap.add_argument("--delta-canopy", action="store_true",
-                    help="fly the light-delta cockpit instead of the opaque "
-                         "bake. Run once with and once without to compare "
-                         "them on ONE board and one session.")
     ap.add_argument("--warp", choices=["flat", "full", "rigid"],
                     help="hold the cockpit's throttle bend at none or at full for "
                          "the whole run, instead of following the recorded throttle. "
@@ -669,7 +634,7 @@ def main():
     if a.fetch:
         r = fetch(a.port, os.path.basename(a.session), a.warp, a.resident)
     elif a.run_only:
-        run(a.port, a.session, a.frames, a.delta_canopy, a.warp, a.resident, a.hash)   # never returns
+        run(a.port, a.session, a.frames, a.warp, a.resident, a.hash)   # never returns
         return
     else:
         # THREE PROCESSES, AND EACH ONE EXISTS FOR A CRASH.
@@ -694,12 +659,10 @@ def main():
                 a.session, "--port", a.port, "--run-only"]
         if a.frames:
             argv += ["--frames", str(a.frames)]
-        # AND WHICH COCKPIT. Forgetting this is not a small bug: the child chose the
-        # default either way, so --delta-canopy produced a run identical to the one it
-        # was compared against, and the tool reported "+0.0% change" with total
-        # confidence. Every flag `run` reads has to be forwarded here.
-        if a.delta_canopy:
-            argv += ["--delta-canopy"]
+        # EVERY FLAG `run` READS HAS TO BE FORWARDED HERE. Forgetting one is not a
+        # small bug: the child chose the default either way, so a flag that was not
+        # forwarded produced a run identical to the one it was compared against, and
+        # the tool reported "+0.0% change" with total confidence.
         if a.warp:
             argv += ["--warp", a.warp]
         if a.resident:

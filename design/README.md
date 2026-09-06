@@ -6,7 +6,8 @@ images. `tools/canopy_set.py` reads the PNGs here and writes tables into
 
 | file | what it is |
 |---|---|
-| `canopy/chariot.png` | the CHARIOT's cockpit. Red channel is the frame, green channel is the activation mask. |
+| `canopy/<ship>.png` | a cockpit. Magenta marks a pane, cyan marks the lit outline, alpha holds the activation regions. |
+| `canopy/<ship>_tint.png` | which metal of that cockpit takes the player's colour |
 | `hudSrc.psd` | the editable source for the HUD layout |
 | `HUD.af` | Affinity Designer source |
 | `HUD.png` | HUD layout reference |
@@ -16,8 +17,9 @@ images. `tools/canopy_set.py` reads the PNGs here and writes tables into
 ## Console chassis drawings
 
 A chassis is the metal around a menu. The firmware draws it as opaque pixels, so
-it hides what is behind it. This is not a canopy: a canopy adds light to the
-picture and a chassis replaces it, so the two use different tools.
+it hides what is behind it. This is not a canopy. A canopy carries panes, an
+outline, activation regions and a tint mask, and a chassis carries only its holes,
+so the two use different tools.
 
     python tools/bezel_bake.py design/selection/SelectionConcept2.png         src/vg/generated/bezel_console.h --name=BEZEL_CONSOLE
 
@@ -58,32 +60,23 @@ into one. Edit the PNG.
 
 ## Canopy drawings
 
-Read the authoring rules in `tools/README.md` before you draw one. Two of them catch
-people:
+Read the authoring rules in `tools/README.md` under **An opaque drawing** before you
+draw one. Three of them catch people:
 
-- Use a **swizzled** PNG. Red carries the frame, green carries the activation
-  regions. A grey image puts the same values in both, so the frame becomes its own
-  mask.
-- Paint the green channel over the **whole image**, not only where the frame is. The
-  regions gate the world behind the cockpit, not just the cockpit.
+- Magenta is a pane and cyan is the lit outline. The baker reads both by hue, so
+  any bright magenta or cyan works.
+- Any other colour is metal. The firmware stores it and paints it over the picture.
+- Put the activation regions in the **alpha channel**, one flat value for each
+  region, over the **whole image**. The regions gate the world behind the cockpit,
+  not just the cockpit.
 
 Name it after the ship and put it in `canopy/`: `aegis.png`, `lance.png`,
 `chariot.png`, `ballista.png`. The file name is the wiring, so there is nothing to
 edit afterwards.
 
-`<ship>.png` is an OPAQUE drawing, which is what all four ships use. A light delta,
-the older kind, is named `<ship>_delta.png`. The two are not interchangeable and the
-rules for each are in `tools/README.md`.
-
-A ship can also have an opaque drawing, `<ship>_opaque.png`. Its colours say what
-each pixel is: magenta is a pane, cyan is the lit outline, and any other colour is
-metal that the firmware paints over the picture. The alpha channel holds the
-activation regions. Keep the plain drawing next to it; the firmware still needs it.
-The rules are in `tools/README.md` under **An opaque drawing**.
-
-A ship with an opaque drawing can have a third file, `<ship>_tint.png`. It is a
-greyscale mask, and white marks the metal that takes the player's chosen colour. Keep
-it off the lit outline: the outline is the wall warning.
+A ship can have a second file, `<ship>_tint.png`. It is a greyscale mask, and white
+marks the metal that takes the player's chosen colour. Keep it off the lit outline:
+the outline is the wall warning.
 
     .\tools\canopy.ps1
 

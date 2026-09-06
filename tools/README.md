@@ -287,8 +287,7 @@ would move the simulation off the sequence the recording was made from.
 | `phantom_recorder.py` | the window |
 | `phantom_session.py` | the command line |
 | `phantom_vfx.py` | fires the explosions, to look at them |
-| `canopy_bake.py` | turns a plain canopy drawing into a table the firmware draws |
-| `canopy_opaque.py` | turns an opaque canopy drawing into a table the firmware draws |
+| `canopy_opaque.py` | turns a canopy drawing into a palette and a table the firmware draws |
 | `canopy_set.py` | bakes every drawing in `design/canopy/` and writes the table that gives each ship its canopy |
 | `canopy_cost.py` | asks the board what the canopy costs to draw |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
@@ -298,84 +297,20 @@ would move the simulation off the sequence the recording was made from.
 The canopy is the cockpit frame. It replaces the crosshair. Each ship can have its
 own drawing.
 
-There are two kinds of drawing, and they are not interchangeable.
+The drawing is opaque: the firmware stores a colour for each pixel of the frame and
+paints it over the picture. Most of a cockpit is metal, and metal hides the stars.
+The file is `<ship>.png`. Read **An opaque drawing** below for the rules.
 
-| kind | what the firmware does | file |
-|---|---|---|
-| opaque | paints the pixel. Most of a cockpit is metal, and metal hides the stars. | `<ship>.png` |
-| light delta | adds light to the picture behind it, so the frame catches the scene | `<ship>_delta.png` |
-
-**All four ships use the opaque kind.** The art moved over on 2026-09-05, and nothing
-feeds the delta baker now. Read **An opaque drawing** below for the rules. The delta
-baker still works, and the next two sections are its format.
-
-### What a light delta file must be
-
-Use a square PNG, 480 x 480 pixels or larger. Two channels carry the work.
-
-| channel | holds |
-|---|---|
-| red | the frame |
-| green | the activation regions |
-| blue | not read |
-
-The baker reads the two channels separately. Do not send a grey image. A grey image
-puts the same values in both channels, so the frame becomes its own mask.
-
-### Red: the frame
-
-The most common red value is the background. That value means "leave this pixel
-alone". A brighter value adds light. A darker value takes light away.
-
-The firmware applies the frame to the finished picture. The frame lights what is
-behind it. It does not paint over it.
-
-### Green: the activation regions
-
-The cockpit comes online one region at a time. A region is a shape in the green
-channel. The grey value of the shape is the order. The lowest value comes on first.
-
-Each region flashes white. The world behind it then appears. The frame inside it
-lights up and cools to the value you drew.
-
-Obey these three rules:
-
-1. Give each region one flat value. A soft edge between two regions makes a third
-   value, and that value becomes a region.
-2. Use 16 regions or fewer. The baker stops and shows the values it found if
-   there are more.
-3. Cover the whole image. Every pixel needs a region, not only the pixels the frame
-   covers. The world stays black until its region comes on.
-
-### The coverage budget
-
-Area is the only cost. About 95% of the cost is the number of pixels the frame
-covers. Levels, gradients and fine detail are free.
-
-| the frame covers | what to expect |
-|---|---|
-| less than 6% | cheap |
-| 6% to 10% | there is room for it |
-| 10% to 14% | the game loses 60 frames a second in a busy fight |
-| more than 14% | the game drops to about 50 frames a second |
-
-The reference drawing covers 10.5%. To make a drawing cheaper, make the shapes
-narrower. Do not remove detail. Detail costs nothing.
-
-The table is from August 2026, before the blend moved to the vector unit of the
-processor. The whole canopy pass now costs about 10% less, so the table runs a
-little conservative. The per-pixel blend got much quicker than that, but most of
-the drawing is in short runs that keep the scalar path, so do not read the
-per-pixel gain as headroom. Measure a heavy drawing with `replay_cost.py` before
-you reject it.
+An older kind, the light delta, added light to the picture behind it. Its baker and
+its renderer were removed on 2026-09-06.
 
 ### Bake it
 
 The file name is the wiring. Name the PNG after the ship that flies it.
 
 1. Put the PNG in `design\canopy\`. Use one of these names:
-   `aegis.png`, `lance.png`, `chariot.png`, `ballista.png` for an opaque drawing,
-   or the same names with `_delta` for a light delta. Put the tint mask beside it.
+   `aegis.png`, `lance.png`, `chariot.png`, `ballista.png`. Put the tint mask
+   beside it.
 2. Run `.\tools\canopy.ps1`. It takes no arguments.
 3. Read the report. It shows the coverage, the cost, and the regions it found.
 
@@ -385,11 +320,12 @@ ship.
 
 The script bakes only the drawings that changed. It prints the whole set every time:
 
-    AEGIS     aegis.png         26 KB of generated header
-    LANCE     --             no cockpit frame
-    CHARIOT   chariot.png       21 KB of generated header
-              chariot_opaque.png   403 KB of generated header, flown
-    BALLISTA  ballista.png      21 KB of generated header
+    AEGIS     aegis.png         429 KB of generated header, painted
+    LANCE     lance.png         395 KB of generated header, painted
+    CHARIOT   chariot.png       388 KB of generated header, painted
+    BALLISTA  ballista.png      404 KB of generated header, painted
+
+`painted` means the ship has a tint mask.
 
 ### A ship with no drawing
 
@@ -404,16 +340,12 @@ So you can add the four canopies one at a time and fly the game after each one.
 
 ### An opaque drawing
 
-This is what `<ship>.png` is, and what all four ships use. A light delta adds light to
-the picture behind it. An opaque drawing paints over it. Most of a cockpit is metal,
-and metal hides the stars behind it. The firmware stores one colour for each metal
-pixel and copies it to the screen. A copy costs less than a blend, so an opaque
-drawing can cover four times the area of a plain one for less time.
+This is what `<ship>.png` is. Most of a cockpit is metal, and metal hides the stars
+behind it. The firmware stores one colour for each metal pixel and copies it to the
+screen. A copy costs less than a blend, so a drawing of this kind can cover four
+times the area of the old light delta for less time.
 
-Name it `<ship>_opaque.png`, for example `chariot_opaque.png`. Put it next to the
-plain drawing. A ship that has an opaque drawing flies it. The plain drawing must
-stay: the firmware builds the bend of the frame and the two-core split from it.
-`canopy_set.py` stops with an error if the plain drawing is missing.
+Name it `<ship>.png`, for example `chariot.png`.
 
 Save the file as RGBA (PNG colour type 6), 480 x 480 pixels or larger. The colour of
 a pixel says what it is:
@@ -568,7 +500,6 @@ time the processor waited for it.
 | `--frames N` | stops after N frames. Use the same N for every run you compare. |
 | `--save FILE` | writes the result to a JSON file |
 | `--against FILE` | compares with a saved result |
-| `--delta-canopy` | flies every ship behind its plain drawing. Without it, a ship with an opaque drawing flies that. |
 | `--warp flat`, `full`, `rigid` | holds the bend of the frame at none, at full, or off with the lag as well. Without it, the recorded throttle drives the bend. |
 | `--resident` | reads the opaque drawing from a copy in PSRAM. This is the default in flight. |
 | `--hash` | folds the pixels of every 256th frame into one number on the board. Two builds that draw the same picture give the same number. The times of such a run are not valid. |

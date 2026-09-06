@@ -160,10 +160,9 @@ void vg_game_init(void) {
     // depth and motion than the inside of a sphere, where everything sits at a
     // uniform distance.
     vg_arena_init(ARENA_TORUS);
-    // A COCKPIT FROM THE START, so nothing downstream has to cope with not having one. The
-    // per-hull choice is made again at each match entry; this is only so the rasteriser's
-    // pointer is never null between boot and the first flight.
-    vg_canopy_use(vg_canopy_default());
+    // NO COCKPIT UNTIL A SHIP IS CHOSEN. Every entry point in vg_canopy_draw.cpp and
+    // vg_canopy_op.cpp tolerates a null drawing, and there is no default to select --
+    // a canopy is authored per hull.
     // The attract loop and every menu fly a round tube. Set here so nothing has to
     // remember to clear it on the way out of a match.
     vg_anomaly_clear();

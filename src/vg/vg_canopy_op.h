@@ -4,9 +4,9 @@
 // ===========================================================================
 // THE CANOPY AS METAL, NOT AS LIGHT
 //
-// This is how a cockpit is drawn for a hull that has an opaque drawing; it began
-// as an experiment on the CHARIOT and was flown, measured and chosen on
-// 2026-09-05. The light delta (vg_canopy.h) remains for hulls without one.
+// This is how a cockpit is drawn. It began as an experiment on the CHARIOT and was
+// flown, measured and chosen on 2026-09-05; every hull's art moved over that day and
+// the light-delta renderer it replaced was retired on 2026-09-06.
 //
 // A canopy has always been a signed light DELTA applied over the finished
 // picture -- see vg_canopy.h. The frame catches whatever is behind it, so a rib
@@ -100,20 +100,6 @@ struct VgCanOp {
     // entries once, not by touching 26,672 pixels a frame.
     uint8_t  tint_n;
 };
-
-// WHICH KIND A HULL FLIES WHEN IT HAS BOTH. Default true: a hull with an opaque
-// drawing flies it. False flies every hull behind its light delta, and exists for
-// comparing the two on the same frames.
-//
-// BOTH BUILDS CAN TURN IT OFF. The desktop takes --delta-canopy and the board
-// takes 'o' and 'O' over the link -- see the block beside 'q' in vg_capture.cpp,
-// which is the same argument about comparing two flights from memory. The board
-// needed it for a reason that is worth recording: two BOARDS carrying two builds
-// is not an A/B. A recorded session navigates the menus by tap COORDINATE, so a
-// build whose menus have moved replays a different session entirely -- measured,
-// on the same .phr: one board flew and the other never reached the cockpit, and
-// the canopy counter read a clean zero without anything being wrong.
-extern bool vg_canopy_op_on;
 
 // WHICH DRAWING, or none. A null one costs a test and draws nothing, which is
 // what every ship without an opaque bake gets.

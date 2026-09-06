@@ -262,30 +262,14 @@ void vg_capture_poll(void) {
             if (vg_replay_mode() != VG_RP_OFF) break;
             continue;
         }
-        if (c == 'o' || c == 'O') {
-            // WHICH COCKPIT, WHILE FLYING, and this is 'q' one row down: a
-            // compile-time switch means comparing two flights from memory, which
-            // is no way to judge either how something looks or what it costs.
-            //
-            // TWO LETTERS, NOT A TOGGLE, unlike 'q'. The timed replay drives this
-            // -- see tools/replay_cost.py --delta-canopy -- and a run has to be
-            // able to STATE which cockpit it wants rather than to flip whatever
-            // the last run left. A toggle measured whichever one it happened to
-            // land on, which is a comparison that reports the wrong answer half
-            // the time and never says so.
-            //
-            // vg_canopy_op_for reads the flag, so setting it is enough for the
-            // next entry into flight; the use() call covers being in one already.
-            vg_canopy_op_on = (c == 'o');
-            vg_canopy_op_use(vg_canopy_op_on ? vg_canopy_op_for(vg.ship) : nullptr);
-            Serial.printf("\nvg_canopy: %s\n", vg_canopy_op_on ? "OPAQUE" : "DELTA");
-            continue;
-        }
         if (c == 'r' || c == 'h') {
             // WHERE THE OPAQUE BAKE IS READ FROM, for the experiment described at
             // `resident` in vg_canopy_op.cpp: 'r' copies it into PSRAM and reads
-            // that, 'h' reads it from flash as built. Two letters, stated and
-            // named back, for the reason 'o' and 'O' are.
+            // that, 'h' reads it from flash as built. TWO LETTERS, NOT A TOGGLE:
+            // the timed replay drives this, and a run has to be able to STATE
+            // which it wants rather than flip whatever the last run left. A toggle
+            // measured whichever one it happened to land on, which is a comparison
+            // that reports the wrong answer half the time and never says so.
             vg_canopy_op_resident(c == 'r');
             Serial.printf("\nvg_canopy_op: %s\n", (c == 'r') ? "RESIDENT" : "FLASH");
             continue;
@@ -297,8 +281,8 @@ void vg_capture_poll(void) {
             // in that replay is the cost of THAT throttle history. To ask what
             // the stretch itself costs, the same session is flown once flat and
             // once at full bend -- 'f' and 'F' -- and 'n' gives the throttle
-            // back. Three letters rather than a toggle, for the reason 'o' and
-            // 'O' are two: a run states what it wants and the board names it.
+            // back. Three letters rather than a toggle, for the reason 'r' and
+            // 'h' are two: a run states what it wants and the board names it.
             //
             // 'i' is RIGID: no bend and no lag either. That is the frame as it first
             // flew, and the reference every cost of moving it is measured against.
@@ -331,55 +315,16 @@ void vg_capture_poll(void) {
             //
             // The drawing only appears in a match, so the frame counter needs a pilot,
             // and it reports a band's slower half rather than the pass. This is the
-            // whole pass on one core, so a change to the table or the inner loop can be
-            // judged in one flash instead of one flight.
+            // whole pass on one core, so a change to the inner loop can be judged in
+            // one flash instead of one flight.
             //
-            // AND "FROM ANYWHERE" WAS NOT TRUE, which is what this selection is for.
-            //
-            // vg_canopy_bench zeroes its output and returns when no drawing is selected,
-            // and on a menu none is: a canopy is chosen on the way into flight. So the
-            // bench answered every question asked from the title screen with zeros, and
-            // the host tool graded them and printed "there is room for it". A tool that
-            // says a too-heavy drawing is fine is worse than no tool, and this one said it
-            // three times in a row after three separate flashes.
-            //
-            // So the bench is given something to measure. The saved profile's hull first,
-            // because that is the one the author is flying; failing that, whichever hull
-            // has a drawing at all, so a reading taken right after a flash still lands.
-            // The hull is named in the output either way -- one number for a drawing is
-            // only meaningful next to which drawing it was.
-            const VgCanopy* prev = vg_canopy_current();
-            const VgCanopy* use  = prev;
-            ShipClass       hull = vg.ship;
-            if (!use) {
-                use = vg_canopy_for(vg.ship);
-                for (int i = 0; !use && i < SHIP_CLASSES; i++) {
-                    use = vg_canopy_for((ShipClass)i);
-                    if (use) hull = (ShipClass)i;
-                }
-            }
-            // Swapped and put back. Safe here and only here: vg_capture_poll runs at the
-            // top of the frame, so the previous frame's raster has finished with s_can and
-            // the next one has not started. The restore costs one lazy LUT rebuild.
-            if (use != prev) vg_canopy_use(use);
-            VgCanopyCost k;
-            vg_canopy_bench(&k);
-            if (use != prev) vg_canopy_use(prev);
-            if (!vg_link_busy()) {
-                // `hull` goes LAST. The host reads the microseconds as the second
-                // whitespace-separated token, so nothing may be inserted before them.
-                Serial.printf("canopy: %lu us rigid, %lu us warped, %lu us intro, %d blocks, "
-                              "%d flat px, %d literal px, hull %s\n",
-                              (unsigned long)k.us, (unsigned long)k.warp_us,
-                              (unsigned long)k.intro_us,
-                              k.blocks, k.flat_px, k.lit_px,
-                              use ? vg_spec(hull)->name : "none");
-            }
-            // AND THE OPAQUE PASS, FOR EVERY HULL. They are four different drawings
-            // now and the heaviest paints nearly twice the area of the lightest, so one
-            // number for "the cockpit" is not a number any more. Selecting each in turn
-            // is also what rebuilds its own column costs -- see vg_canopy_op_changed --
-            // so every line is that drawing measured against its own balance.
+            // FOR EVERY HULL. They are four different drawings and the heaviest paints
+            // nearly twice the area of the lightest, so one number for "the cockpit" is
+            // not a number. Selecting each in turn is also what rebuilds its own column
+            // costs -- see vg_canopy_op_changed -- so every line is that drawing measured
+            // against its own balance. The one that was selected is put back after:
+            // vg_capture_poll runs at the top of the frame, so the previous frame's
+            // raster has finished with it and the next one has not started.
             {
                 const VgCanOp* prev_op = vg_canopy_op_current();
                 for (int i = 0; i < SHIP_CLASSES; i++) {
@@ -426,12 +371,6 @@ void vg_capture_poll(void) {
             const bool on = !vg_replay_hash_armed();
             vg_replay_hash_arm(on);
             Serial.printf("vg_replay: band hash %s\n", on ? "ARMED" : "off");
-        } else if (c == 'v' && !vg_link_busy()) {
-            // THE VECTOR BLEND, PROVED ON DEMAND. This used to run at every boot and
-            // charge the pilot 115 ms for a proof that cannot change between boots of
-            // one build -- see the note at vg_canopy_warm. It is an acceptance test for
-            // a change to the blend, so it belongs on a key, next to the other benches.
-            vg_canopy_pie_selftest();
         } else if (c == 'g' && !vg_link_busy()) {
             // The glyph nest, plain against hoisted, over identical text. `same` is the
             // part that matters: a faster loop that draws different pixels is not faster.
