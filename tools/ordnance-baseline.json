@@ -1,45 +1,276 @@
 {
   "frames": 8442,
-  "commit": "1e41622",
-  "session": "(fetched)",
+  "commit": "e94ef17",
+  "session": "ordnance.phr",
+  "warp": "throttle",
+  "bake": "flash",
   "can": {
-    "mean": 3588,
-    "worst": 7194
+    "mean": 0,
+    "worst": 0
   },
   "rast": {
-    "mean": 10619,
-    "worst": 25547
+    "mean": 6994,
+    "worst": 21077
   },
   "prim": {
-    "mean": 6924,
-    "worst": 10466
+    "mean": 5042,
+    "worst": 12020
   },
   "sub": {
-    "mean": 3510,
-    "worst": 11493
+    "mean": 1843,
+    "worst": 3461
   },
   "upd": {
-    "mean": 822,
-    "worst": 250763
+    "mean": 716,
+    "worst": 3150
   },
   "motes": {
-    "mean": 309,
-    "worst": 866
+    "mean": 354,
+    "worst": 957
   },
   "rocks": {
-    "mean": 241,
-    "worst": 1443
+    "mean": 22,
+    "worst": 517
   },
   "trails": {
-    "mean": 190,
-    "worst": 697
+    "mean": 77,
+    "worst": 173
   },
   "ships": {
-    "mean": 77,
-    "worst": 292
+    "mean": 6,
+    "worst": 44
   },
-  "ord": {
-    "mean": 103,
-    "worst": 1891
+  "msl": {
+    "mean": 6,
+    "worst": 43
+  },
+  "fire": {
+    "mean": 6,
+    "worst": 44
+  },
+  "TOTAL": {
+    "mean": 485,
+    "worst": 1031
+  },
+  "band_window": 768,
+  "bands": [
+    622,
+    348,
+    345,
+    412,
+    457,
+    440,
+    462,
+    496,
+    438,
+    427,
+    456,
+    397,
+    352,
+    337,
+    530
+  ],
+  "A(world)": {
+    "mean": 1738,
+    "worst": 2991
+  },
+  "B(instr)": {
+    "mean": 1029,
+    "worst": 1454
+  },
+  "sub_wait": {
+    "mean": 3,
+    "worst": 43
+  },
+  "arena": {
+    "mean": 1096,
+    "worst": 1921
+  },
+  "star": {
+    "mean": 134,
+    "worst": 518
+  },
+  "hud": {
+    "mean": 0,
+    "worst": 0
+  },
+  "aa": {
+    "mean": 0,
+    "worst": 0
+  },
+  "ln": {
+    "mean": 404,
+    "worst": 514
+  },
+  "tri": {
+    "mean": 288,
+    "worst": 509
+  },
+  "gl": {
+    "mean": 300,
+    "worst": 518
+  },
+  "fl": {
+    "mean": 568,
+    "worst": 5971
+  },
+  "slow": [
+    {
+      "i": 0,
+      "frame": 743,
+      "us": 24622,
+      "fps": 40,
+      "upd": 61,
+      "sub": 2211,
+      "rast": 21077,
+      "can": 0,
+      "prim": 11870,
+      "scan": 7375,
+      "tv": 7322,
+      "A": 1936,
+      "B": 1433,
+      "wait": 5,
+      "sxr": 13677,
+      "world": 547
+    },
+    {
+      "i": 1,
+      "frame": 744,
+      "us": 23396,
+      "fps": 42,
+      "upd": 60,
+      "sub": 2108,
+      "rast": 19871,
+      "can": 0,
+      "prim": 11809,
+      "scan": 6221,
+      "tv": 6177,
+      "A": 1842,
+      "B": 1439,
+      "wait": 2,
+      "sxr": 527,
+      "world": 465
+    },
+    {
+      "i": 2,
+      "frame": 745,
+      "us": 22199,
+      "fps": 45,
+      "upd": 60,
+      "sub": 2204,
+      "rast": 18647,
+      "can": 0,
+      "prim": 11811,
+      "scan": 4971,
+      "tv": 4924,
+      "A": 1939,
+      "B": 1436,
+      "wait": 4,
+      "sxr": 14975,
+      "world": 555
+    },
+    {
+      "i": 3,
+      "frame": 742,
+      "us": 21508,
+      "fps": 46,
+      "upd": 61,
+      "sub": 2128,
+      "rast": 17949,
+      "can": 0,
+      "prim": 11831,
+      "scan": 4269,
+      "tv": 4223,
+      "A": 1853,
+      "B": 1442,
+      "wait": 3,
+      "sxr": 14650,
+      "world": 471
+    },
+    {
+      "i": 4,
+      "frame": 746,
+      "us": 19818,
+      "fps": 50,
+      "upd": 60,
+      "sub": 2251,
+      "rast": 16215,
+      "can": 0,
+      "prim": 11857,
+      "scan": 2494,
+      "tv": 2448,
+      "A": 1943,
+      "B": 1437,
+      "wait": 3,
+      "sxr": 619,
+      "world": 549
+    },
+    {
+      "i": 5,
+      "frame": 752,
+      "us": 19438,
+      "fps": 51,
+      "upd": 312,
+      "sub": 3164,
+      "rast": 14700,
+      "can": 0,
+      "prim": 11839,
+      "scan": 963,
+      "tv": 920,
+      "A": 2674,
+      "B": 1295,
+      "wait": 4,
+      "sxr": 5206,
+      "world": 439
+    }
+  ],
+  "slowest": 24622,
+  "under60": 381,
+  "under50": 4,
+  "hist": [
+    8061,
+    287,
+    82,
+    8,
+    4
+  ],
+  "can_c0": 0,
+  "can_c1": 0,
+  "can_at": 16,
+  "join": {
+    "mean": 333,
+    "worst": 616
+  },
+  "wait": {
+    "mean": 26,
+    "worst": 1127
+  },
+  "push": {
+    "mean": 3180,
+    "worst": 7156
+  },
+  "res": {
+    "mean": 98,
+    "worst": 162
+  },
+  "over_n": {
+    "mean": 0,
+    "worst": 15
+  },
+  "over_us": {
+    "mean": 99,
+    "worst": 9106
+  },
+  "sky": {
+    "mean": 1806,
+    "worst": 1897
+  },
+  "scan": {
+    "mean": 90,
+    "worst": 7472
+  },
+  "idle0": {
+    "mean": 85969,
+    "worst": 6054000
   }
 }

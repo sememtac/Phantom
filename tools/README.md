@@ -525,6 +525,25 @@ Two files make it work, and both are in git:
 | `captures/regress.phr` | the session. 90 s of play, with the canopy start, a fight, the wall and the rear view in it. |
 | `tools/regress-baseline.json` | 9 frame hashes, and the commit they were taken at |
 
+### Every baseline in `tools/`, and which ones are live
+
+A baseline names the commit it was taken at. Compare only against a live one. The
+historical ones describe a build that no longer exists, and are kept as evidence, not
+as tests.
+
+| file | session | tool | status |
+|---|---|---|---|
+| `regress-baseline.json` | `captures/regress.phr` | `phantom_regress.py`, 9 frames | live |
+| `surge-baseline.json` | `captures/phantom-20260809-221925.phr` | `phantom_regress.py`, 9 frames | live |
+| `course-baseline.json` | `captures/course.phr` | `replay_cost.py` | live |
+| `ordnance-baseline.json` | `captures/ordnance.phr` | `replay_cost.py` | live |
+| `anomaly-baseline.json` | `captures/phantom-20260809-221925.phr` | `phantom_regress.py` | historical: the build before the surge event, commit 950ebf0 |
+| `regress-baseline-exact.json` | `captures/regress.phr` | `phantom_regress.py`, 4 frames | historical: commit 9f971da |
+| `course-iram-baseline.json` | `captures/course.phr` | `replay_cost.py` | historical: the IRAM milestone, commit 5f99ebd |
+
+The four live baselines were retaken together on 2026-09-06, after the opaque canopy,
+its light and the retirement of the delta renderer changed the picture on purpose.
+
 To check a change that must not alter the picture:
 
     python tools/phantom_regress.py --port COM6 captures/regress.phr --against tools/regress-baseline.json

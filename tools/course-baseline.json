@@ -1,123 +1,276 @@
 {
   "frames": 2995,
-  "commit": "71bb00d",
-  "session": "(fetched)",
+  "commit": "e94ef17",
+  "session": "course.phr",
+  "warp": "throttle",
+  "bake": "flash",
   "can": {
-    "mean": 7336,
-    "worst": 11133
+    "mean": 0,
+    "worst": 0
   },
   "rast": {
-    "mean": 13734,
-    "worst": 16876
+    "mean": 6844,
+    "worst": 14398
   },
   "prim": {
-    "mean": 10553,
-    "worst": 12986
+    "mean": 4885,
+    "worst": 5535
   },
   "sub": {
-    "mean": 3205,
-    "worst": 4895
+    "mean": 1869,
+    "worst": 2339
   },
   "upd": {
-    "mean": 789,
-    "worst": 238896
+    "mean": 851,
+    "worst": 3369
   },
   "motes": {
-    "mean": 498,
-    "worst": 817
+    "mean": 372,
+    "worst": 610
   },
   "rocks": {
-    "mean": 54,
-    "worst": 429
+    "mean": 4,
+    "worst": 33
   },
   "trails": {
-    "mean": 91,
-    "worst": 119
+    "mean": 75,
+    "worst": 145
   },
   "ships": {
-    "mean": 5,
-    "worst": 17
+    "mean": 6,
+    "worst": 16
   },
   "msl": {
-    "mean": 2,
-    "worst": 10
+    "mean": 6,
+    "worst": 45
   },
   "fire": {
-    "mean": 3,
-    "worst": 13
+    "mean": 6,
+    "worst": 120
   },
   "TOTAL": {
-    "mean": 665,
-    "worst": 949
+    "mean": 484,
+    "worst": 670
   },
   "band_window": 768,
   "bands": [
-    958,
-    918,
-    735,
-    841,
-    922,
-    752,
-    783,
-    1223,
-    796,
-    770,
-    970,
-    871,
-    975,
-    987,
-    687
+    622,
+    339,
+    337,
+    401,
+    446,
+    428,
+    451,
+    482,
+    426,
+    413,
+    442,
+    381,
+    342,
+    328,
+    530
   ],
   "A(world)": {
-    "mean": 2353,
-    "worst": 3049
+    "mean": 1775,
+    "worst": 2204
   },
   "B(instr)": {
-    "mean": 1895,
-    "worst": 2514
+    "mean": 1056,
+    "worst": 1314
   },
-  "wait": {
-    "mean": 18,
-    "worst": 35
+  "sub_wait": {
+    "mean": 3,
+    "worst": 25
   },
   "arena": {
-    "mean": 1477,
-    "worst": 1924
+    "mean": 1141,
+    "worst": 1482
   },
   "star": {
-    "mean": 127,
-    "worst": 383
+    "mean": 128,
+    "worst": 372
   },
   "hud": {
-    "mean": 1001,
-    "worst": 1337
+    "mean": 0,
+    "worst": 0
   },
+  "aa": {
+    "mean": 0,
+    "worst": 0
+  },
+  "ln": {
+    "mean": 415,
+    "worst": 500
+  },
+  "tri": {
+    "mean": 296,
+    "worst": 505
+  },
+  "gl": {
+    "mean": 293,
+    "worst": 403
+  },
+  "fl": {
+    "mean": 330,
+    "worst": 390
+  },
+  "slow": [
+    {
+      "i": 0,
+      "frame": 253,
+      "us": 17964,
+      "fps": 55,
+      "upd": 550,
+      "sub": 1926,
+      "rast": 14398,
+      "can": 0,
+      "prim": 5119,
+      "scan": 7423,
+      "tv": 7376,
+      "A": 1819,
+      "B": 1065,
+      "wait": 2,
+      "sxr": 4762,
+      "world": 458
+    },
+    {
+      "i": 1,
+      "frame": 252,
+      "us": 17636,
+      "fps": 56,
+      "upd": 581,
+      "sub": 1934,
+      "rast": 14024,
+      "can": 0,
+      "prim": 5116,
+      "scan": 7071,
+      "tv": 7027,
+      "A": 1819,
+      "B": 1072,
+      "wait": 3,
+      "sxr": 5683,
+      "world": 459
+    },
+    {
+      "i": 2,
+      "frame": 251,
+      "us": 17217,
+      "fps": 58,
+      "upd": 540,
+      "sub": 1934,
+      "rast": 13613,
+      "can": 0,
+      "prim": 5121,
+      "scan": 6655,
+      "tv": 6606,
+      "A": 1827,
+      "B": 1071,
+      "wait": 3,
+      "sxr": 7685,
+      "world": 458
+    },
+    {
+      "i": 3,
+      "frame": 250,
+      "us": 16753,
+      "fps": 59,
+      "upd": 542,
+      "sub": 2003,
+      "rast": 13134,
+      "can": 0,
+      "prim": 5114,
+      "scan": 6198,
+      "tv": 6152,
+      "A": 1890,
+      "B": 1070,
+      "wait": 3,
+      "sxr": 252,
+      "world": 505
+    },
+    {
+      "i": 4,
+      "frame": 254,
+      "us": 16390,
+      "fps": 61,
+      "upd": 572,
+      "sub": 1948,
+      "rast": 12884,
+      "can": 0,
+      "prim": 5129,
+      "scan": 5885,
+      "tv": 5841,
+      "A": 1831,
+      "B": 1082,
+      "wait": 3,
+      "sxr": 3853,
+      "world": 456
+    },
+    {
+      "i": 5,
+      "frame": 249,
+      "us": 16264,
+      "fps": 61,
+      "upd": 562,
+      "sub": 1923,
+      "rast": 12785,
+      "can": 0,
+      "prim": 5132,
+      "scan": 5734,
+      "tv": 5687,
+      "A": 1813,
+      "B": 1066,
+      "wait": 3,
+      "sxr": 4131,
+      "world": 496
+    }
+  ],
+  "slowest": 17964,
+  "under60": 4,
+  "under50": 0,
+  "hist": [
+    2991,
+    2,
+    2,
+    0,
+    0
+  ],
+  "can_c0": 0,
+  "can_c1": 0,
+  "can_at": 16,
   "join": {
-    "mean": 46,
-    "worst": 71
+    "mean": 334,
+    "worst": 483
+  },
+  "wait": {
+    "mean": 27,
+    "worst": 1202
   },
   "push": {
-    "mean": 1409,
-    "worst": 7346
+    "mean": 3140,
+    "worst": 7122
   },
   "res": {
-    "mean": 83,
-    "worst": 135
+    "mean": 97,
+    "worst": 163
   },
   "over_n": {
-    "mean": 11,
+    "mean": 0,
     "worst": 15
   },
   "over_us": {
-    "mean": 2592,
-    "worst": 4820
+    "mean": 3,
+    "worst": 2412
   },
   "sky": {
-    "mean": 2053,
-    "worst": 2134
+    "mean": 1805,
+    "worst": 1896
   },
   "scan": {
-    "mean": 1067,
-    "worst": 11691
+    "mean": 96,
+    "worst": 7496
+  },
+  "idle0": {
+    "mean": 89613,
+    "worst": 1611000
   }
 }
