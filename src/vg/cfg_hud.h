@@ -524,10 +524,25 @@
 // that run is covering. The run then picks a rung off a small ladder of palettes built
 // in advance, and the inner loop stays a lookup and a store.
 //
-// WHAT IT IS, honestly: a bright thing behind an object does not light its front face.
-// This is scattering and bloom -- light spilling around and through the frame -- and it
-// is what reads as "the cockpit is in a bright place". It answers to anything in the
-// band, so an explosion lights the frame as readily as a nebula does.
+// AND THE SIGN IS NEGATIVE, which is the whole point of it.
+//
+// It shipped positive first, on the reading that a bright patch of sky spills light
+// around the frame. That is bloom, and it is not what the eye expects: a bright thing
+// BEHIND an object does not light the face you are looking at, it silhouettes it. The
+// pilot is inside; light from dead ahead reaches the panes and not the frame's inner
+// faces, so a frame against a nebula goes DARK, not bright. Flown, and the author said
+// so before the physics did.
+//
+// So a bright background steps the metal DOWN the ladder. Positive is still allowed and
+// is the bloom reading, if a drawing ever wants it.
+//
+// WHAT IS STILL MISSING is the other half: light from behind the PLAYER, which really
+// would fall on the frame's inner faces and lift them. That needs the panorama sampled
+// opposite the view rather than the pixel behind the run, and it is a different piece
+// of work -- the mean this file already has is direction-blind.
+//
+// It answers to anything in the band, so an explosion ahead silhouettes the frame as
+// readily as a nebula does.
 //
 // GLOW is how far the brightest rung is lifted. AT and FULL are where the ladder starts
 // climbing and where it tops out, on the 0..62 scale the run test computes.
@@ -542,7 +557,7 @@
 // so they live in internal RAM at 512 bytes each, and internal RAM is the scarce thing
 // on this part. Bands between rungs are broken up by the dither the arrival already
 // carries -- see BAYER4 -- so four is enough to read as a gradient.
-#define CANOPY_GLOW           0.55f
+#define CANOPY_GLOW           -0.45f
 #define CANOPY_GLOW_AT        6
 #define CANOPY_GLOW_FULL      24
 #define CANOPY_GLOW_LEVELS    4
