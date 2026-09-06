@@ -533,16 +533,25 @@ as tests.
 
 | file | session | tool | status |
 |---|---|---|---|
-| `regress-baseline.json` | `captures/regress.phr` | `phantom_regress.py`, 9 frames | live |
-| `surge-baseline.json` | `captures/phantom-20260809-221925.phr` | `phantom_regress.py`, 9 frames | live |
-| `course-baseline.json` | `captures/course.phr` | `replay_cost.py` | live |
-| `ordnance-baseline.json` | `captures/ordnance.phr` | `replay_cost.py` | live |
+| `regress-baseline.json` | `captures/regress.phr` | `phantom_regress.py`, 9 frames | stale, see below |
+| `surge-baseline.json` | `captures/phantom-20260809-221925.phr` | `phantom_regress.py`, 9 frames | stale, see below |
+| `course-baseline.json` | `captures/course.phr` | `replay_cost.py` | stale, see below |
+| `ordnance-baseline.json` | `captures/ordnance.phr` | `replay_cost.py` | stale, see below |
 | `anomaly-baseline.json` | `captures/phantom-20260809-221925.phr` | `phantom_regress.py` | historical: the build before the surge event, commit 950ebf0 |
 | `regress-baseline-exact.json` | `captures/regress.phr` | `phantom_regress.py`, 4 frames | historical: commit 9f971da |
 | `course-iram-baseline.json` | `captures/course.phr` | `replay_cost.py` | historical: the IRAM milestone, commit 5f99ebd |
 
-The four live baselines were retaken together on 2026-09-06, after the opaque canopy,
-its light and the retirement of the delta renderer changed the picture on purpose.
+**Every recording in `captures/` is older than the menus.** A replay reaches the game
+by the taps the recording holds, and a tap is a screen coordinate. The console
+chassis and its keys moved on 2026-09-03 and 2026-09-04, and every recording is from
+August. On a build from 4 September on, each of these recordings stops at the
+callsign screen and stays there: all nine frames of `regress.phr` that the test
+samples, 300 to 5,200, are that screen. The replay tools now count the frames that
+drew a cockpit and refuse to save a baseline when there are none.
+
+So the four stale baselines describe the game as it was in August, and they cannot be
+retaken until the four sessions are recorded again on the current menus. Record them
+with `PhantomRecorder.exe` and give each file the name in the table.
 
 To check a change that must not alter the picture:
 
