@@ -108,7 +108,14 @@ void host_mouse_place(float lx, float ly) {
     // this every frame, as fast as the machine would go, snapping the desktop
     // pointer into a window nobody could see. Reported as the mouse freezing and
     // jumping back to a centre, which is exactly what it was.
-    if (!s_hwnd || vg_headless || vg_bot_on) return;
+    //
+    // AND FOCUS IS PART OF THAT RULE, which it was not until a --shot run reported
+    // it again from the other side: a shot run is NOT headless, so it has a real
+    // window that never takes focus, and it went on snapping the pointer into
+    // itself every frame while the author was using another program. The fence
+    // above has always asked for focus. Moving the pointer is the stronger act of
+    // the two and had the weaker guard.
+    if (!s_hwnd || vg_headless || vg_bot_on || !host_window_focused()) return;
     const HostView v = view_of(s_hwnd);
     if (v.w <= 0 || v.h <= 0) return;
     POINT p = { v.x + (int)(lx * (float)v.w / (float)SCR_W + 0.5f),
@@ -118,9 +125,9 @@ void host_mouse_place(float lx, float ly) {
 }
 
 void host_mouse_centre(void) {
-    // See host_mouse_place. An unfocused window takes this path every frame,
-    // and a headless run is never focused.
-    if (!s_hwnd || vg_headless || vg_bot_on) return;
+    // See host_mouse_place, including the focus test: an unfocused window took
+    // this path every frame and a headless run is never focused.
+    if (!s_hwnd || vg_headless || vg_bot_on || !host_window_focused()) return;
     const HostView v = view_of(s_hwnd);
     if (v.w <= 0 || v.h <= 0) return;
     POINT mid = { v.x + v.w / 2, v.y + v.h / 2 };
