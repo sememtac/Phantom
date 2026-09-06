@@ -113,6 +113,11 @@ static bool s_intro_on = false;
 static bool s_can_rear = false;
 
 void vg_canopy_rear(bool on) { s_can_rear = on; }
+// ...and asked for by the OTHER cockpit, which has to make the same decision. The
+// delta path reads the flag directly a few hundred lines down; the opaque one is a
+// different translation unit and cannot.
+bool vg_canopy_rear_on(void)  { return s_can_rear; }
+bool vg_canopy_intro_on(void) { return s_intro_on; }
 
 const VgCanopy* vg_canopy_current(void) { return s_can; }
 

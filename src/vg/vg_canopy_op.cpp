@@ -371,6 +371,21 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     const VgCanOp* c = s_cur;
     if (!c) return;
 
+    // NOT WHILE LOOKING AFT. The canopy is the front of the ship, and over a rear view
+    // it claims the player is facing the other way -- a continuity fault, and the delta
+    // cockpit has refused to draw aft since a playtest said so. This one did not: it was
+    // written as a renderer for the spans and never asked the question.
+    //
+    // THE WORLD GATE STILL RUNS, which is why this is not one early return. The gate and
+    // the frame are one primitive, and the gate is what holds the world black region by
+    // region while the cockpit comes online -- so switching the whole pass off during the
+    // arrival would show the entire world at full brightness. Only the frame goes.
+    //
+    // Outside the arrival there is nothing a rear view should see from the gate, so the
+    // pass leaves before it builds any of the tables below.
+    const bool rear = vg_canopy_rear_on();
+    if (rear && !vg_canopy_intro_on()) return;
+
     // Hoisted out of the loops, for the reason vg_bezel_rows gives: the palette
     // stays in cache all frame, and reloading a base pointer through two levels
     // of struct on every pixel is work the compiler cannot always see through.
@@ -485,6 +500,8 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
                                    (int)zr->zone);
             }
         }
+        // The gate ran; the frame does not. The same line canopy_rows_t carries.
+        if (rear) continue;
 
         for (uint16_t si = s0; si < s1; si++) {
             const VgCanOpSpan* sp = &c->span[si];

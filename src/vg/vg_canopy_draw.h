@@ -229,6 +229,11 @@ uint8_t  vg_canopy_zone_glow(int z);
 // the world black while the cockpit arrives -- so turning the primitive off would show the
 // whole world at once, mid-sequence.
 void  vg_canopy_rear(bool on);
+// Looking aft, and whether the arrival is running. Both are read by the opaque
+// cockpit, which must suppress its frame in rear view exactly as the delta does and
+// must go on drawing the world gate while it does -- see vg_canopy_op_rows.
+bool  vg_canopy_rear_on(void);
+bool  vg_canopy_intro_on(void);
 
 // THE WALL WARNING ON THE COCKPIT. `k` is how red, 0 clear and 1 hard against the
 // boundary; `white` strobes the frame for a moment and is driven by seconds to impact
