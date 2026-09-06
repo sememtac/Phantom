@@ -431,9 +431,16 @@ void host_window_present(const uint16_t* panel) {
     // sky code that found nothing, because the fill was correct and it was the
     // reveal that was never raised.
     //
-    // PPM because it is eight lines and no library. Panel byte order and panel
-    // orientation, exactly as the bands are handed over -- so what lands in the
-    // file is what would have gone down the wire to the display.
+    // PPM because it is eight lines and no library.
+    //
+    // TURNED UPRIGHT, the same quarter turn the window undoes a few lines below.
+    // This wrote the panel exactly as the bands are handed over, on the reasoning
+    // that a shot should be what went down the wire -- and the file is read by
+    // nobody but a pair of eyes, which is a poor thing to hand a picture lying on
+    // its side. Every screenshot taken from this build came out sideways, and it
+    // took a contact sheet of twenty-four of them before anyone said so.
+    //
+    // Byte comparisons are unaffected: both sides of one get the same turn.
     {
         extern int g_host_shot;
         static int fn = 0;
@@ -441,8 +448,9 @@ void host_window_present(const uint16_t* panel) {
             FILE* f = fopen("shot.ppm", "wb");
             if (f) {
                 fprintf(f, "P6\n%d %d\n255\n", SCR_W, SCR_H);
-                for (int i = 0; i < SCR_W * SCR_H; i++) {
-                    unsigned p16 = panel[i];
+                for (int ly = 0; ly < SCR_H; ly++)
+                for (int lx = 0; lx < SCR_W; lx++) {
+                    unsigned p16 = panel[(size_t)(SCR_H - 1 - lx) * SCR_W + ly];
                     p16 = ((p16 & 0xff) << 8) | (p16 >> 8);   // panel byte order
                     unsigned char rgb[3] = {
                         (unsigned char)(((p16 >> 11) & 31) * 255 / 31),
