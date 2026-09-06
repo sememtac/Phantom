@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -208,6 +209,20 @@ def render(port, path, wanted, out_dir):
               "the device sent every byte and the HOST lost them.")
     if bad:
         print(f"frames that could not be hashed: {bad}")
+
+    # A RENDER THAT NEVER FLEW HASHED A MENU. The END line carries how many frames
+    # had a cockpit on the screen. Zero means the recording's taps missed the menus
+    # of this build and every hash above is of the screen it stuck on -- which is
+    # perfectly reproducible, and is what a baseline of the callsign screen looked
+    # like on 2026-09-06 before anyone rendered a frame and looked. Refuse.
+    for line in said:
+        m = re.search(r"flew (\d+)", line)
+        if m and int(m.group(1)) == 0:
+            sys.exit("\nNO RESULT. The device drew a cockpit on 0 frames of this run: "
+                     "the recording never reached the game on this build.\n"
+                     "  The taps in a recording are screen coordinates. If the menus "
+                     "moved after it was recorded, it stops at a menu and stays there.\n"
+                     "  Record the session again on the current build and rerun.")
     return got, bad
 
 

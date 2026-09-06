@@ -103,6 +103,10 @@ SLOWK = ["i", "frame", "us", "fps", "upd", "sub", "rast", "can", "prim", "scan",
 BANDH = re.compile(r"vg_replay: BANDH ([0-9a-f]{8}) over (\d+) bands, 1 frame in (\d+)")
 # The canopy by core. `can` is the slower half a band; these are both halves.
 CAN = re.compile(r"vg_replay: CAN c0 (\d+) \| c1 (\d+) \| at (\d+)")
+# How many frames of the run had a cockpit on the screen. On the COST line, so a
+# report asked for again still carries it. A device built before this existed does
+# not print it, and a run against one reads as unknown rather than as zero.
+FLEW = re.compile(r"vg_replay: COST .*\| flew (\d+)")
 WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
@@ -486,6 +490,9 @@ def fetch(port, session=None, warp=None, resident=False):
                 out["bandh"] = bh.group(1)
                 out["bandh_bands"] = int(bh.group(2))
                 out["bandh_every"] = int(bh.group(3))
+            fl = FLEW.search(txt)
+            if fl:
+                out["flew"] = int(fl.group(1))
             cn = CAN.search(txt)
             if cn:
                 out["can_c0"], out["can_c1"], out["can_at"] = [int(x) for x in cn.groups()]
@@ -707,6 +714,18 @@ def main():
             sys.stderr.write(out.stderr)
             sys.exit(out.returncode)
         return
+    # A RUN THAT NEVER FLEW MEASURED A MENU. A replay reaches the game by the taps
+    # the recording holds, and a tap is a screen coordinate: move a menu and every
+    # recording made before the move stops at that menu, for its whole length, and
+    # every counter it reports is the cost of that screen. Four baselines were taken
+    # that way on 2026-09-06 and read as the game for a day. Refuse, and say why.
+    if r.get("flew") == 0:
+        sys.exit("\nNO RESULT. The device drew a cockpit on 0 of %d frames: this "
+                 "recording never reached the game on this build.\n"
+                 "  The taps in a recording are screen coordinates. If the menus "
+                 "moved after it was recorded, it stops at a menu and stays there.\n"
+                 "  Record the session again on the current build and rerun."
+                 % r.get("frames", 0))
     show(r)
 
     if a.against:

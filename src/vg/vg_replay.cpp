@@ -4,6 +4,7 @@
 #include "vg_raster.h"   // NUM_BANDS via cfg_display.h, and the band window
 #include "vg_ship.h"
 #include "vg_capture.h"
+#include "vg_canopy_op.h"   // vg_canopy_op_current: did this run ever reach the seat
 #include <Arduino.h>
 #include "esp_attr.h"   // RTC_NOINIT_ATTR, for the arm that outlives a reset
 #include "soc/extmem_reg.h"   // the cache miss counters
@@ -55,6 +56,13 @@ static uint32_t s_resync = 0;
 // and a guess at which of the six it is would be a guess. This says.
 static const char* s_why = "not started";
 static uint32_t s_t_n   = 0;
+// FRAMES ON WHICH A COCKPIT WAS ON THE SCREEN. A replay reaches the game by the taps
+// the recording holds, and a tap is a screen coordinate: move a menu and every
+// recording made before the move stops at that menu and stays there, for its whole
+// length, with nothing to say. On 2026-09-06 four baselines were taken of the
+// callsign screen that way and believed for a day. This is the number that would
+// have said so, and the tools refuse a run where it is zero.
+static uint32_t s_flew  = 0;
 static uint32_t s_t_sum[5], s_t_max[5];
 static uint32_t s_c_sum[3];   // the canopy on core 0, on core 1, and the split row
 // The `world` split for the same frames, kept the same way. Reported on its own line
@@ -276,13 +284,14 @@ void vg_replay_note_can(uint32_t c0, uint32_t c1, uint32_t at) {
 bool vg_replay_report_cost(void) {
     if (!s_t_n) return false;
     Serial.printf("vg_replay: COST frames %u | can %u/%u | rast %u/%u | "
-                  "prim %u/%u | sub %u/%u | upd %u/%u  (mean/worst us)\n",
+                  "prim %u/%u | sub %u/%u | upd %u/%u  (mean/worst us) | flew %u\n",
                   (unsigned)s_t_n,
                   (unsigned)(s_t_sum[0] / s_t_n), (unsigned)s_t_max[0],
                   (unsigned)(s_t_sum[1] / s_t_n), (unsigned)s_t_max[1],
                   (unsigned)(s_t_sum[2] / s_t_n), (unsigned)s_t_max[2],
                   (unsigned)(s_t_sum[3] / s_t_n), (unsigned)s_t_max[3],
-                  (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4]);
+                  (unsigned)(s_t_sum[4] / s_t_n), (unsigned)s_t_max[4],
+                  (unsigned)s_flew);
     Serial.printf("vg_replay: CAN c0 %u | c1 %u | at %u  (mean us; mean rows of a band on core 0)\n",
                   (unsigned)(s_c_sum[0] / s_t_n), (unsigned)(s_c_sum[1] / s_t_n),
                   (unsigned)(s_c_sum[2] / s_t_n));
@@ -572,6 +581,7 @@ void vg_replay_note_frame(float dt, const VgInput* in) {
     vg_link_write(s_rand, (int)nr * 4);
     vg_link_write(in, (int)sizeof(VgInput));
     s_index++;
+    if (vg_canopy_op_current()) s_flew++;
     s_rand_n = 0;
 }
 
@@ -602,6 +612,7 @@ static void begin_play(void) {
     restore(&sv);
 
     s_index = 0;
+    s_flew   = 0;
     s_rand_n = 0;
     vg_link_stats_reset();
     s_t_n = 0;
@@ -745,9 +756,10 @@ bool vg_replay_command(int c) {
         }
         Serial.printf("\nvg_replay: WHY %s\n", s_why);
         Serial.printf("\nvg_replay: END %u frames  wrote %u bytes  short %u  "
-                      "stall %u  mismatch %u  begins %u ends %u\n",
+                      "stall %u  mismatch %u  begins %u ends %u  flew %u\n",
                       (unsigned)s_index, (unsigned)wb, (unsigned)ws,
-                      (unsigned)wt, (unsigned)wm, (unsigned)fb, (unsigned)fe);
+                      (unsigned)wt, (unsigned)wm, (unsigned)fb, (unsigned)fe,
+                      (unsigned)s_flew);
         // THE COST OF THE SESSION, for a timed run. Microseconds of CPU, meaned over every
         // frame the device actually ran -- so two drawings measured this way are measured
         // over the same scene and the difference between them is the drawing.
