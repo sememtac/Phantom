@@ -509,6 +509,35 @@
 // the room's colour are both applied to the same 256 entries, and a strong ambient
 // makes a red ship and a green one harder to tell apart. Paint goes on first and light
 // second, which is the order the world does it in.
+// HOW MUCH OF THE VENUE'S OWN COLOUR STAYS IN THE LIGHT, against the light coming
+// from directly behind the ship. 0 lights the frame from astern alone and 1 is the
+// direction-blind room this started as.
+//
+// It is not zero, and the reason is that the sky behind the ship is very often
+// nothing at all. A window of empty space astern would take the cockpit to black and
+// hold it there through a whole turn, which reads as a fault rather than as lighting.
+// The room is the floor under that: the venue is always at least the venue.
+#define CANOPY_LIGHT_ROOM     0.35f
+
+// HOW HARD THE HEADING COUNTS. The exponent on (light astern / light on average),
+// so 0 ignores the heading entirely and 1 takes the ratio at face value. 0.45 is
+// about half: a sky three times brighter behind the ship lifts the frame by 1.6,
+// and a dead-black tail takes it down to 0.8. Enough to see through a turn and not
+// enough to make the cockpit flash.
+#define CANOPY_LIGHT_TURN     0.45f
+
+// ...AND HOW FAR IT MAY GO EITHER WAY. The low one matters more: a venue can have a
+// genuinely empty hemisphere, and without a floor the cockpit would simply go out
+// while the pilot flew away from the only thing shining.
+#define CANOPY_LIGHT_DARK     0.80f
+#define CANOPY_LIGHT_LIT      1.60f
+
+// HOW FAST THE LIGHT FOLLOWS. Per frame, at 60. 1 takes the sample as it comes and
+// pops when a bright region crosses the window edge; small is a slow sweep. 0.06 is
+// about a third of a second to settle, which is slower than the ship turns and is
+// meant to be: the light should lag the manoeuvre the way a big soft source does.
+#define CANOPY_LIGHT_LAG      0.06f
+
 #define CANOPY_AMBIENT        0.75f
 #define CANOPY_AMBIENT_LIFT   0.35f
 #define CANOPY_AMBIENT_REF    0.15f   // the venue brightness that changes nothing
@@ -536,10 +565,16 @@
 // So a bright background steps the metal DOWN the ladder. Positive is still allowed and
 // is the bloom reading, if a drawing ever wants it.
 //
-// WHAT IS STILL MISSING is the other half: light from behind the PLAYER, which really
-// would fall on the frame's inner faces and lift them. That needs the panorama sampled
-// opposite the view rather than the pixel behind the run, and it is a different piece
-// of work -- the mean this file already has is direction-blind.
+// THE OTHER HALF IS BUILT NOW, and it is the one above: light from behind the PLAYER
+// really does fall on the frame's inner faces and lift them, and CANOPY_LIGHT_TURN is
+// what lifts them. The two are opposite by design and both are wanted -- a nebula dead
+// ahead silhouettes the frame, and the same nebula astern lights it. They meet halfway
+// through a turn, which is the moment the cockpit looks most like it is in a place.
+//
+// They also work on different scales, and that is what keeps them from cancelling. This
+// one is PER RUN and reads the pixel actually behind the metal, so it answers to an
+// explosion ten pixels wide. The other is the whole hemisphere astern and moves over a
+// third of a second. One is a shadow and the other is the room.
 //
 // It answers to anything in the band, so an explosion ahead silhouettes the frame as
 // readily as a nebula does.

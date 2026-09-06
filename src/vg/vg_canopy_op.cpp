@@ -1,11 +1,12 @@
 #include "vg_canopy_op.h"
 #include "vg_canopy_draw.h"
-#include "vg_sky.h"      // vg_sky_ambient: the venue lights the metal
+#include "vg_sky.h"      // the venue and the light astern both light the metal
 #include "vg_raster.h"
 #include "vg_config.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
+#include <math.h>
 
 // The opaque canopy. See vg_canopy_op.h for what this is an experiment in.
 
@@ -178,6 +179,10 @@ static void light_pal(float lr, float lg, float lb) {
     }
 }
 
+// The light, smoothed. See the filter in build_pal.
+static float s_lit_r = 1.0f, s_lit_g = 1.0f, s_lit_b = 1.0f, s_lit_l = 0.0f;
+static bool  s_lit_seen = false;
+
 static void build_ladder(void);   // defined below, with the rungs it fills
 
 static void build_pal(void) {
@@ -187,14 +192,50 @@ static void build_pal(void) {
     // own resolution, so holding a slider does not rebuild this every frame.
     const int q = (s_tint < 0.0f) ? -1 : (int)(s_tint * 255.0f + 0.5f);
 
-    // THE VENUE'S LIGHT, QUANTISED. It only moves when a match is built, but this is
-    // read every frame and a float compare would rebuild the palette on a mean that
-    // wandered in its last bit. Six bits a channel is finer than the panel can show.
-    float ar, ag, ab, ambL;
-    vg_sky_ambient(&ar, &ag, &ab, &ambL);
-    const uint32_t ambq = ((uint32_t)(ar * 63.0f + 0.5f) << 12)
-                        | ((uint32_t)(ag * 63.0f + 0.5f) <<  6)
-                        |  (uint32_t)(ab * 63.0f + 0.5f);
+    // THE VENUE'S LIGHT, IN TWO PARTS, and the second part is the one that moves.
+    //
+    // The ROOM is vg_sky_ambient: one colour for the whole panorama, worked out once
+    // when the match is built. It is what the venue is made of and it is direction-
+    // blind, so it says the same thing whichever way the ship is pointed.
+    //
+    // THE OTHER HALF IS BEHIND THE PILOT. Light that lands on the inner faces of the
+    // frame -- the faces the player is looking at -- comes from astern, and that is
+    // the half that changes: swing a nebula from the windscreen round to the tail and
+    // it stops being a silhouette behind the frame and starts being the lamp on it.
+    // vg_sky_light_behind reads the panorama there. See CANOPY_LIGHT_ROOM for the mix.
+    float rr, rg, rb, roomL;
+    vg_sky_ambient(&rr, &rg, &rb, &roomL);
+    float br, bg, bb, backL;
+    vg_sky_light_behind(&br, &bg, &bb, &backL);
+
+    float ar = br + (rr - br) * CANOPY_LIGHT_ROOM;
+    float ag = bg + (rg - bg) * CANOPY_LIGHT_ROOM;
+    float ab = bb + (rb - bb) * CANOPY_LIGHT_ROOM;
+
+    // FOLLOWED RATHER THAN TAKEN. The sample is a window on the panorama, so a bright
+    // region crossing its edge arrives as a step; a one-pole filter turns that into
+    // the sweep the pilot is flying. It also holds the palette still through a flick
+    // of the stick, which is worth more than the accuracy it costs.
+    if (s_lit_seen) {
+        const float k = CANOPY_LIGHT_LAG;
+        s_lit_r += (ar - s_lit_r) * k; s_lit_g += (ag - s_lit_g) * k;
+        s_lit_b += (ab - s_lit_b) * k; s_lit_l += (backL - s_lit_l) * k;
+    } else {
+        s_lit_r = ar; s_lit_g = ag; s_lit_b = ab; s_lit_l = backL;
+        s_lit_seen = true;
+    }
+    ar = s_lit_r; ag = s_lit_g; ab = s_lit_b; backL = s_lit_l;
+
+    // QUANTISED, and now it has to be. This used to move only between matches, so its
+    // resolution cost nothing; it moves every frame of every turn now, and a rebuild
+    // is ~250 us of float work. Five bits of colour and seven of brightness is finer
+    // than the panel resolves and coarse enough that a slow turn rebuilds on maybe one
+    // frame in six. THE BRIGHTNESS IS IN THE KEY -- it was not, and with a light that
+    // only ever changed with the venue that was invisible.
+    const uint32_t ambq = ((uint32_t)(ar * 31.0f + 0.5f) << 17)
+                        | ((uint32_t)(ag * 31.0f + 0.5f) << 12)
+                        | ((uint32_t)(ab * 31.0f + 0.5f) <<  7)
+                        |  (uint32_t)(backL * 127.0f / 0.6f + 0.5f);
 
     if (s_src == s_pal_of && q == s_pal_q && ambq == s_pal_amb) return;
     s_pal_of  = s_src;
@@ -217,12 +258,36 @@ static void build_pal(void) {
         lg = 1.0f + (ag * inv - 1.0f) * CANOPY_AMBIENT;
         lb = 1.0f + (ab * inv - 1.0f) * CANOPY_AMBIENT;
     }
-    float gain = 1.0f + CANOPY_AMBIENT_LIFT * (ambL - CANOPY_AMBIENT_REF) / CANOPY_AMBIENT_REF;
+    // THE BRIGHTNESS IN TWO FACTORS, and they are separated because they answer
+    // different questions and one of them was already settled.
+    //
+    // THE VENUE is how bright this place is, and it does not change while you fly in
+    // it. Untouched from what flew on the board: an absolute against a neutral
+    // reference, clamped tight on the low side.
+    float gain = 1.0f + CANOPY_AMBIENT_LIFT * (roomL - CANOPY_AMBIENT_REF) / CANOPY_AMBIENT_REF;
     // CLAMPED TIGHT ON THE LOW SIDE. The venues measure 0.05 to 0.26 of brightness,
     // so a symmetric gain would darken the cockpit in half of them -- and this metal
     // is already dark enough that the panel cannot show its corners. It may brighten
     // freely and it may barely darken.
     if (gain < 0.85f) gain = 0.85f; else if (gain > 1.45f) gain = 1.45f;
+
+    // THE HEADING is how bright the sky is BEHIND YOU against how bright this place
+    // is on average, and it is the whole of the turn effect. A RATIO rather than a
+    // difference, deliberately: pointing the tail at the one bright thing in the venue
+    // should read the same whether the venue is a dim nebula or a cluster, and only a
+    // ratio does that. Measured over seven venues it runs 0.67 to 3.1 -- the same sky
+    // is three times brighter astern on one heading than another.
+    //
+    // Raised to a power rather than scaled, because a ratio is not linear: half as
+    // much light and twice as much are the same distance apart, and only an exponent
+    // treats them that way. See CANOPY_LIGHT_TURN.
+    float rel = backL / (roomL > 0.01f ? roomL : 0.01f);
+    if (rel < 0.05f) rel = 0.05f; else if (rel > 20.0f) rel = 20.0f;
+    float turn = powf(rel, CANOPY_LIGHT_TURN);
+    if (turn < CANOPY_LIGHT_DARK) turn = CANOPY_LIGHT_DARK;
+    else if (turn > CANOPY_LIGHT_LIT) turn = CANOPY_LIGHT_LIT;
+    gain *= turn;
+
     lr *= gain; lg *= gain; lb *= gain;
 
     memcpy(s_pal, c->pal, sizeof(s_pal));
@@ -378,6 +443,9 @@ void vg_canopy_op_tint(float hue) {
 void vg_canopy_op_use(const VgCanOp* c) {
     s_src = c;
     s_cur = resident(c);
+    // A NEW MATCH IS A NEW SKY, so the light starts where the new venue is rather
+    // than sweeping in from the last one over the first half second.
+    s_lit_seen = false;
     // The palette is per DRAWING as well as per colour, so selecting one rebuilds it.
     build_pal();
     // ...and so are the band split's column costs and the centre region, which the

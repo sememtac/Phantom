@@ -666,6 +666,48 @@ static SkyKind s_kind = SKY_NEBULA;
 // a venue has been built, so a caller before that is lit by nothing rather than by black.
 static float s_amb_r = 1.0f, s_amb_g = 1.0f, s_amb_b = 1.0f;
 static float s_amb_lum = 0.0f;   // the whole sphere's mean brightness, dark parts and all
+// THE LIGHT COMING FROM BEHIND THE SHIP, which is the light that actually falls on
+// the inner faces of the cockpit frame.
+//
+// vg_sky_ambient is the room: one colour for the venue, direction-blind, worked out
+// once. This is the other half, and it is the half the pilot feels when they turn --
+// swing a nebula from ahead to astern and it stops silhouetting the frame and starts
+// lighting it.
+//
+// SAMPLED THROUGH THE MODULE'S OWN MAPPING rather than a second derivation of it.
+// sky_sample(-1) is what the aft view already asks for: the texel at the centre of the
+// sky behind the ship. A window around that point is the rear hemisphere, near enough,
+// and it costs 169 texel reads a frame -- against 16,384 for the whole panorama.
+//
+// Weighted by luminance for the reason the venue mean is: light comes from the parts
+// that are shining, and a plain mean of mostly-black space is grey whatever is in it.
+void vg_sky_light_behind(float* r, float* g, float* b, float* lum) {
+    if (!s_tex) { *r = *g = *b = 1.0f; if (lum) *lum = 0.0f; return; }
+    float u, v, roll;
+    sky_sample(-1.0f, &u, &v, &roll);
+
+    float wr = 0.0f, wg = 0.0f, wb = 0.0f, ws = 0.0f, sl = 0.0f;
+    int   n = 0;
+    const int RAD = 18, STEP = 3;      // about a 100 degree cone, every third texel
+    for (int dv = -RAD; dv <= RAD; dv += STEP)
+    for (int du = -RAD; du <= RAD; du += STEP) {
+        const int tx = ((int)u + du) & SKY_TEX_MASK;
+        const int ty = ((int)v + dv) & SKY_TEX_MASK;
+        float cr, cg, cb;
+        unpack565_swapped(s_tex[(ty << SKY_TEX_BITS) + tx], &cr, &cg, &cb);
+        const float l = 0.299f * cr + 0.587f * cg + 0.114f * cb;
+        wr += cr * l; wg += cg * l; wb += cb * l; ws += l;
+        sl += l; n++;
+    }
+    if (ws > 1e-4f) {
+        const float iw = 1.0f / ws;
+        *r = wr * iw; *g = wg * iw; *b = wb * iw;
+    } else {
+        *r = *g = *b = 1.0f;
+    }
+    if (lum) *lum = (n > 0) ? sl / (float)n : 0.0f;
+}
+
 void vg_sky_ambient(float* r, float* g, float* b, float* lum) {
     *r = s_amb_r; *g = s_amb_g; *b = s_amb_b;
     if (lum) *lum = s_amb_lum;

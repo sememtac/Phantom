@@ -66,6 +66,11 @@ void vg_sky_generate(SkyKind kind, uint32_t seed);
 // free, because adding light to a picture IS a relationship with it.
 void vg_sky_ambient(float* r, float* g, float* b, float* lum);
 
+// ...AND THE LIGHT FROM ASTERN, which is what falls on the inner faces of the cockpit
+// frame and therefore what lights it. Changes as the ship turns; the venue mean above
+// does not. See the note at the definition.
+void vg_sky_light_behind(float* r, float* g, float* b, float* lum);
+
 // Carry the backdrop round by this frame's world rotation -- the SAME Mat3 the
 // stars and the arena ride, which is the whole point.
 //
