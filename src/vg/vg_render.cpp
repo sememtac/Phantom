@@ -18,6 +18,7 @@
 #include <math.h>
 #include "vg_flight.h"
 #include "vg_canopy_draw.h"
+#include "vg_canopy_op.h"   // vg_canopy_op_relight: the venue lights the cockpit
 #include "vg_bezel.h"
 
 // THE SUBMIT COUNTERS, defined here because this file writes every one of them.
@@ -258,6 +259,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // over a rear view it would claim you are facing the other way. The intro's world gate
     // still runs -- see vg_canopy_rear.
     vg_canopy_rear(rear_view);
+
+    // AND THE VENUE'S LIGHT ON IT. Asked every frame because a match can be built
+    // at any point without this layer being told; it is three compares when nothing
+    // has moved and a 256-entry palette rebuild when the sky has. See CANOPY_AMBIENT.
+    vg_canopy_op_relight();
 
     // How red the whole picture goes. Decided here because this is the layer that
     // knows both the wall distance and the rasteriser; the rasteriser itself has

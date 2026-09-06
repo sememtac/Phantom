@@ -58,6 +58,14 @@ bool vg_sky_ready(void);
 
 void vg_sky_generate(SkyKind kind, uint32_t seed);
 
+// THE VENUE'S OWN LIGHT: the mean colour of the whole panorama, 0..1 a channel.
+// Worked out once, when the sky is generated. Neutral white before that.
+//
+// It exists for the opaque cockpit, which replaces the pixel it draws and so inherits
+// nothing from the scene -- the light delta it replaced was lit by the backdrop for
+// free, because adding light to a picture IS a relationship with it.
+void vg_sky_ambient(float* r, float* g, float* b, float* lum);
+
 // Carry the backdrop round by this frame's world rotation -- the SAME Mat3 the
 // stars and the arena ride, which is the whole point.
 //

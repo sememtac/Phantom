@@ -1,5 +1,6 @@
 #include "vg_canopy_op.h"
 #include "vg_canopy_draw.h"
+#include "vg_sky.h"      // vg_sky_ambient: the venue lights the metal
 #include "vg_raster.h"
 #include "vg_config.h"
 #include <Arduino.h>
@@ -146,21 +147,81 @@ static uint16_t s_edge_col = 0;             // the outline's colour; 0 is "keep 
 static const VgCanOp* s_pal_of = nullptr;
 static float          s_tint   = -1.0f;     // the hue asked for; < 0 is bare metal
 static int            s_pal_q  = -2;        // ...quantised, so a rebuild is rare
+static uint32_t       s_pal_amb = 0xFFFFFFFFu;   // ...and the venue light it was built under
 
 // Rebuild the drawing palette, painted or not. Called when the drawing or the
 // colour changes and at no other time; ~256 iterations of float work, once.
+// THE ROOM ON EVERY ENTRY, painted metal and bare alike: one cockpit, one light.
+// Three multiplies an entry over 256 entries, and it runs only when the venue, the
+// drawing or the player's colour has moved. Never per frame, and never per pixel --
+// which is the whole reason this is done to a palette and not to a picture.
+static void light_pal(float lr, float lg, float lb) {
+    if (lr == 1.0f && lg == 1.0f && lb == 1.0f) return;
+    for (int i = 0; i < 256; i++) {
+        const uint16_t v  = s_pal[i];
+        const uint16_t nv = (uint16_t)((v >> 8) | (v << 8));
+        const float r = (float)((nv >> 11) & 31u) * (1.0f / 31.0f) * lr;
+        const float g = (float)((nv >>  5) & 63u) * (1.0f / 63.0f) * lg;
+        const float b = (float)( nv        & 31u) * (1.0f / 31.0f) * lb;
+        int R = (int)(r * 31.0f + 0.5f), G = (int)(g * 63.0f + 0.5f),
+            B = (int)(b * 31.0f + 0.5f);
+        if (R > 31) R = 31; if (R < 0) R = 0;
+        if (G > 63) G = 63; if (G < 0) G = 0;
+        if (B > 31) B = 31; if (B < 0) B = 0;
+        const uint16_t o = (uint16_t)((R << 11) | (G << 5) | B);
+        s_pal[i] = (uint16_t)((o >> 8) | (o << 8));
+    }
+}
+
 static void build_pal(void) {
     const VgCanOp* c = s_cur;
     if (!c) return;
     // A HUE IS A CONTINUOUS NUMBER AND A PALETTE IS NOT. Quantised to the 565 panel's
     // own resolution, so holding a slider does not rebuild this every frame.
     const int q = (s_tint < 0.0f) ? -1 : (int)(s_tint * 255.0f + 0.5f);
-    if (s_src == s_pal_of && q == s_pal_q) return;
-    s_pal_of = s_src;
-    s_pal_q  = q;
+
+    // THE VENUE'S LIGHT, QUANTISED. It only moves when a match is built, but this is
+    // read every frame and a float compare would rebuild the palette on a mean that
+    // wandered in its last bit. Six bits a channel is finer than the panel can show.
+    float ar, ag, ab, ambL;
+    vg_sky_ambient(&ar, &ag, &ab, &ambL);
+    const uint32_t ambq = ((uint32_t)(ar * 63.0f + 0.5f) << 12)
+                        | ((uint32_t)(ag * 63.0f + 0.5f) <<  6)
+                        |  (uint32_t)(ab * 63.0f + 0.5f);
+
+    if (s_src == s_pal_of && q == s_pal_q && ambq == s_pal_amb) return;
+    s_pal_of  = s_src;
+    s_pal_q   = q;
+    s_pal_amb = ambq;
+
+    // THE ROOM'S COLOUR, SEPARATED FROM ITS BRIGHTNESS. The hue arrives as a multiply
+    // normalised to luminance 1, so it casts without darkening; the brightness arrives
+    // as a plain gain against a neutral reference. Both are multiplies, so every shadow
+    // the artist drew survives either of them. See CANOPY_AMBIENT.
+    // The colour arrives already weighted toward whatever is shining -- see the pass
+    // at the end of vg_sky_generate -- so only its own luminance has to come out, to
+    // leave a pure cast that does not darken. The venue's BRIGHTNESS is the separate
+    // number, and it is the whole sphere including the black.
+    const float cl = 0.299f * ar + 0.587f * ag + 0.114f * ab;
+    float lr = 1.0f, lg = 1.0f, lb = 1.0f;
+    if (cl > 0.02f) {
+        const float inv = 1.0f / cl;
+        lr = 1.0f + (ar * inv - 1.0f) * CANOPY_AMBIENT;
+        lg = 1.0f + (ag * inv - 1.0f) * CANOPY_AMBIENT;
+        lb = 1.0f + (ab * inv - 1.0f) * CANOPY_AMBIENT;
+    }
+    float gain = 1.0f + CANOPY_AMBIENT_LIFT * (ambL - CANOPY_AMBIENT_REF) / CANOPY_AMBIENT_REF;
+    // CLAMPED TIGHT ON THE LOW SIDE. The venues measure 0.05 to 0.26 of brightness,
+    // so a symmetric gain would darken the cockpit in half of them -- and this metal
+    // is already dark enough that the panel cannot show its corners. It may brighten
+    // freely and it may barely darken.
+    if (gain < 0.85f) gain = 0.85f; else if (gain > 1.45f) gain = 1.45f;
+    lr *= gain; lg *= gain; lb *= gain;
 
     memcpy(s_pal, c->pal, sizeof(s_pal));
-    if (q < 0 || !c->tint_n) return;      // no colour, or a drawing with no mask
+    // A drawing with no mask, or a player with no colour yet, goes straight to the
+    // light: the room shines on bare metal too.
+    if (q < 0 || !c->tint_n) { light_pal(lr, lg, lb); return; }
 
     // The hue at full saturation and value, which is what the player picked and what
     // their trail is drawn in. Unpacked once, into NATIVE order.
@@ -223,7 +284,12 @@ static void build_pal(void) {
         const uint16_t o = (uint16_t)((R << 11) | (G << 5) | B);
         s_pal[i] = (uint16_t)((o >> 8) | (o << 8));
     }
+    // THE PAINT FIRST AND THE LIGHT SECOND, which is the order the world does it in:
+    // a ship is painted, and then it is lit by wherever it happens to be.
+    light_pal(lr, lg, lb);
 }
+
+void vg_canopy_op_relight(void) { build_pal(); }
 
 // THE OUTLINE'S COLOUR, AT A BRIGHTNESS THAT DOES NOT DEPEND ON THE HUE.
 //

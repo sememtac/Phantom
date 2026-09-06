@@ -481,6 +481,37 @@
 //
 // 0.55 is the compromise, off a rendered sweep: blue reads, and red is still red.
 #define CANOPY_TINT_EDGE_LIFT 0.55f
+
+// THE VENUE'S LIGHT ON THE COCKPIT, and it costs nothing per pixel.
+//
+// The light delta this cockpit replaced was lit by the scene for free: every pixel of
+// it was an ADD, so it inherited whatever was behind it, and that relationship is the
+// whole reason a canopy was a delta. Painted metal replaces the pixel and inherits
+// nothing, so it sat neutral grey in front of a red nebula and read as a foreign
+// object. Reported from the glass exactly that way.
+//
+// Nothing about lighting has to happen per pixel. Every metal pixel is already a
+// palette lookup, so the light is applied to the 256 entries -- once, when the venue
+// or the player's colour changes -- and the band pass does not change by one
+// instruction. vg_sky_ambient is the whole of the input: one mean colour for the
+// panorama, worked out when it is generated.
+//
+// AMBIENT is how far the metal takes the venue's HUE. The mean is normalised to
+// luminance 1 first, so this is a cast and not a brightening: at 1 the cockpit is lit
+// entirely by the room and every shadow the artist drew survives, because the whole
+// operation is a multiply.
+//
+// LIFT is the other half, and it is a plain gain: a bright venue raises the metal and
+// a dark one lowers it, against REF as the neutral point. A gain preserves the
+// shading exactly, where pulling every entry TOWARD one brightness would flatten it.
+//
+// THEY COMPETE WITH THE PAINT, which is the thing to watch. The player's colour and
+// the room's colour are both applied to the same 256 entries, and a strong ambient
+// makes a red ship and a green one harder to tell apart. Paint goes on first and light
+// second, which is the order the world does it in.
+#define CANOPY_AMBIENT        0.75f
+#define CANOPY_AMBIENT_LIFT   0.35f
+#define CANOPY_AMBIENT_REF    0.15f   // the venue brightness that changes nothing
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall

@@ -130,6 +130,11 @@ void vg_canopy_op_resident(bool on);
 // mask ignores it.
 void vg_canopy_op_tint(float hue);
 
+// THE VENUE'S LIGHT, re-read. Call once a frame: it is three compares when neither
+// the drawing, the player's colour nor the sky has moved, and a 256-entry rebuild
+// when one has. See CANOPY_AMBIENT in cfg_hud.h.
+void vg_canopy_op_relight(void);
+
 // THE ARRIVAL AND THE DAMAGE ARE NOT THIS FILE'S.
 //
 // There was a vg_canopy_op_reveal here -- a scalar 0..1 that let zones through in

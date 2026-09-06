@@ -662,6 +662,14 @@ static void gen_nebula(uint32_t seed) {
 // ---------------------------------------------------------------------------
 
 static SkyKind s_kind = SKY_NEBULA;
+// The venue's mean colour -- see the pass at the end of vg_sky_generate. Neutral until
+// a venue has been built, so a caller before that is lit by nothing rather than by black.
+static float s_amb_r = 1.0f, s_amb_g = 1.0f, s_amb_b = 1.0f;
+static float s_amb_lum = 0.0f;   // the whole sphere's mean brightness, dark parts and all
+void vg_sky_ambient(float* r, float* g, float* b, float* lum) {
+    *r = s_amb_r; *g = s_amb_g; *b = s_amb_b;
+    if (lum) *lum = s_amb_lum;
+}
 
 static float s_reveal = 1.0f;
 void  vg_sky_set_reveal(float r) { s_reveal = (r < 0.0f) ? 0.0f : (r > 1.0f ? 1.0f : r); }
@@ -750,6 +758,45 @@ void vg_sky_generate(SkyKind kind, uint32_t seed) {
                                        SKY_FLOOR_G + g * (1.0f - SKY_FLOOR_G),
                                        SKY_FLOOR_B + b * (1.0f - SKY_FLOOR_B));
         }
+    }
+
+    // WHAT COLOUR THIS VENUE IS, in one number, so something else can be lit by it.
+    //
+    // The whole panorama averaged: 16,384 texels, once, here, where the generator has
+    // just finished writing them and the cost disappears into a job that already takes
+    // milliseconds. It is the only honest place -- a mean taken later would have to walk
+    // the same table again for an answer that cannot have changed.
+    //
+    // The opaque cockpit is what asks. It stores its own colour and replaces the pixel,
+    // so unlike the light delta it inherits nothing from the scene and sat neutral grey
+    // in front of a red nebula. See CANOPY_AMBIENT in cfg_hud.h.
+    if (s_tex) {
+        // WEIGHTED BY ITS OWN BRIGHTNESS, because light comes from the bright parts.
+        //
+        // A plain mean was tried first and it is nearly neutral in every venue -- 0.223,
+        // 0.212, 0.222 in one of them. Space is mostly black, and averaging a saturated
+        // nebula against all of it leaves about 5% of chroma, which is a cast nobody can
+        // see. Weighting each texel by its luminance asks what is actually SHINING, and a
+        // red streak on a black field then reads as a red room.
+        //
+        // The unweighted mean is kept as well: it is the venue's BRIGHTNESS, which is a
+        // different question and wants the whole sphere, dark parts included.
+        float wr = 0.0f, wg = 0.0f, wb = 0.0f, ws = 0.0f, sl = 0.0f;
+        for (int i = 0; i < SKY_TEX_SIZE * SKY_TEX_SIZE; i++) {
+            float r, g, b;
+            unpack565_swapped(s_tex[i], &r, &g, &b);
+            const float l = 0.299f * r + 0.587f * g + 0.114f * b;
+            wr += r * l; wg += g * l; wb += b * l; ws += l;
+            sl += l;
+        }
+        const float n = 1.0f / (float)(SKY_TEX_SIZE * SKY_TEX_SIZE);
+        if (ws > 1e-4f) {
+            const float iw = 1.0f / ws;
+            s_amb_r = wr * iw; s_amb_g = wg * iw; s_amb_b = wb * iw;
+        } else {
+            s_amb_r = s_amb_g = s_amb_b = 1.0f;
+        }
+        s_amb_lum = sl * n;
     }
 
     // AND THE VIEW ITSELF, not just the parity that rides on it.
