@@ -435,14 +435,18 @@
 #define CANOPY_TINT_KEEP      0.35f
 
 // ...AND THE LIT OUTLINE IN THE SAME COLOUR. 0 leaves it HUD amber, 1 gives it the
-// player's hue outright. TRYING IT: the metal is painted and the outline is not, and
-// amber does not sit beside every hue a player can pick.
+// player's hue outright.
+//
+// IT IS OFF, AND THAT IS THE AUTHOR'S CALL after flying it: amber reads better against
+// the painted metal than the paint's own colour repeated. The code stays because the
+// question was worth asking and may be worth asking again on another drawing -- and
+// because it is what keeps the wall alarm honest. See the note below the lift.
 //
 // THE ALARM ALWAYS WINS. This is mixed by (1 - the alarm level), so the outline is the
 // player's colour when nothing is wrong and reddens to CANOPY_ALARM the way it always
 // did as the wall closes. What it costs is that a player flying a red ship has less
 // warning of a red wall, which is a real problem and is deliberately not solved here.
-#define CANOPY_TINT_EDGE      1.00f
+#define CANOPY_TINT_EDGE      0.00f
 
 // ...AND HOW FAR THAT COLOUR IS LIFTED TOWARD WHITE TO KEEP ITS BRIGHTNESS.
 //
@@ -453,6 +457,24 @@
 // hue. A bright light IS desaturated, so this reads as a lit edge rather than a pale
 // one, but it does cost some of the colour.
 //
+// EVENING THE PAINT'S BRIGHTNESS ACROSS HUES, which the raw hue does not do.
+//
+// A fully saturated hue carries its own luminance, and they are nothing like equal:
+// yellow is 0.886, green 0.587, red 0.299, blue 0.114. Painting the metal with the
+// hue at its own brightness therefore makes a red ship look lit and a blue one look
+// unlit, on the same drawing -- and that is a difference in the colour the player
+// picked, not in anything they did.
+//
+// Evening it out means moving every hue to one luminance, TINT_LUMA. A hue below it
+// can only get there by taking white, which desaturates; a hue above it is scaled
+// down, which does not. So this costs saturation at the dark end and brightness at
+// the bright end, and neither cost is avoidable: the hue is already at full and the
+// panel has no headroom above it.
+//
+// 0 leaves each hue at its own brightness. 1 puts them all on TINT_LUMA.
+#define CANOPY_TINT_EVEN      1.00f
+#define CANOPY_TINT_LUMA      0.45f
+
 // 0 is the raw hue, uneven and fully saturated. 1 lifts every hue to the luminance
 // COL_HUD already sat at, so the outline is as bright as it has always been whatever
 // the player picked -- and turns red into pink on the way, which is the cost.

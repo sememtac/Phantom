@@ -129,9 +129,28 @@ static void build_pal(void) {
     // their trail is drawn in. Unpacked once, into NATIVE order.
     const uint16_t hp = vg_hue_col(s_tint);
     const uint16_t hn = (uint16_t)((hp >> 8) | (hp << 8));
-    const float hr = (float)((hn >> 11) & 31u) * (1.0f / 31.0f);
-    const float hg = (float)((hn >>  5) & 63u) * (1.0f / 63.0f);
-    const float hb = (float)( hn        & 31u) * (1.0f / 31.0f);
+    float hr = (float)((hn >> 11) & 31u) * (1.0f / 31.0f);
+    float hg = (float)((hn >>  5) & 63u) * (1.0f / 63.0f);
+    float hb = (float)( hn        & 31u) * (1.0f / 31.0f);
+
+    // ...ON ONE BRIGHTNESS, WHATEVER THE PLAYER PICKED. See CANOPY_TINT_EVEN. Done to
+    // the paint colour once, here, so the loop below is exactly what it was.
+    const float hl = 0.299f * hr + 0.587f * hg + 0.114f * hb;
+    if (CANOPY_TINT_EVEN > 0.0f && hl > 0.0f) {
+        if (hl < CANOPY_TINT_LUMA) {
+            // Too dark to reach by scaling -- the hue is already at full -- so it
+            // takes white, and loses some of its colour doing it.
+            float k = (CANOPY_TINT_LUMA - hl) / (1.0f - hl) * CANOPY_TINT_EVEN;
+            if (k > 1.0f) k = 1.0f;
+            hr += (1.0f - hr) * k;
+            hg += (1.0f - hg) * k;
+            hb += (1.0f - hb) * k;
+        } else {
+            // Too bright, which scaling does fix, and it keeps the colour whole.
+            const float s = 1.0f + (CANOPY_TINT_LUMA / hl - 1.0f) * CANOPY_TINT_EVEN;
+            hr *= s; hg *= s; hb *= s;
+        }
+    }
 
     const float span = (CANOPY_TINT_GLOSS_AT < 0.99f)
                      ? (1.0f / (1.0f - CANOPY_TINT_GLOSS_AT)) : 100.0f;

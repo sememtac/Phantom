@@ -456,9 +456,18 @@ The look is set by three values in `src/vg/cfg_hud.h`:
 
 | value | does |
 |---|---|
+| `CANOPY_TINT_KEEP` | how much bare metal is mixed back. 0 paints fully. 1 does not paint. |
+| `CANOPY_TINT_EVEN` | how far every hue is moved to one brightness. 0 keeps each hue's own. |
+| `CANOPY_TINT_LUMA` | the brightness they are all moved to |
 | `CANOPY_TINT_GLOSS` | how much the highlights go white. 0 is matte. 1 is a wet gloss. |
 | `CANOPY_TINT_GLOSS_AT` | how bright the metal must be before it starts to go white |
-| `CANOPY_TINT_KEEP` | how much bare metal is mixed back. 0 paints fully. |
+| `CANOPY_TINT_EDGE` | how far the lit outline takes the colour too. 0 keeps it amber. |
+| `CANOPY_TINT_EDGE_LIFT` | how far that outline colour is lifted toward white to keep its brightness |
+
+A fully saturated hue does not carry a constant brightness. Yellow is nearly eight
+times as bright as blue. Without `CANOPY_TINT_EVEN` a red ship looks lit and a blue
+ship looks unlit, on the same drawing. Evening the brightness costs saturation in the
+dark hues, because a dark hue can only get brighter by taking white.
 
 ### What the report tells you
 
