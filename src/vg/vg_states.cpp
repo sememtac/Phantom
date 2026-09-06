@@ -156,6 +156,28 @@ static void enter_course(void) {
         }
     }
     vg_course_begin();
+
+    // AND THE RACK, WHICH THIS DID NOT TOUCH. Everything else the course inherits
+    // from whatever came before is cleared above -- the enemies, the missiles in the
+    // air, the debris, the fireballs -- and the weapon was simply missed.
+    //
+    // The course is reachable from the bracket as well as before the first match, so
+    // the state it inherits is a real one: fly a match down to two rounds, start the
+    // reload, take the course, and the instrument shows two cells and then a solid
+    // bar over the other ten, because the reload clock is still running. Reported
+    // from the glass as the missile slots being covered, and it is not a rendering
+    // fault at all -- the rack is honestly drawing a state the course forgot to
+    // clear.
+    //
+    // A full rack and no clock, which is what vg_match_start does and for the same
+    // reason: nothing here is going to be shot at.
+    vg_wpn.rounds   = vg.spec->magazine;
+    vg_wpn.reload_t = 0.0f;
+    vg_wpn.fire_gap = 0;
+    vg_wpn.target   = -1;
+    vg_wpn.lock_t   = 0;
+    vg_wpn.locked   = false;
+
     vg.roll      = 0;
     vg.roll_rate = 0;
     vg.bank      = 0;
