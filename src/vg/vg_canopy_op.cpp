@@ -32,10 +32,27 @@ static const VgCanOp* s_src      = nullptr;    // what was asked for
 static bool           s_resident = true;
 static VgCanOp        s_copy;
 static const VgCanOp* s_copy_of  = nullptr;
+// The four allocations the copy is made of, so they can be given back. Kept beside
+// s_copy rather than read out of it because its own pointers are const.
+static void*          s_own[4]   = { nullptr, nullptr, nullptr, nullptr };
+
+static void resident_free(void) {
+    for (int i = 0; i < 4; i++) { free(s_own[i]); s_own[i] = nullptr; }
+    s_copy_of = nullptr;
+}
 
 static const VgCanOp* resident(const VgCanOp* c) {
-    if (!c || !s_resident) return c;
+    if (!s_resident) { resident_free(); return c; }
+    if (!c) return c;
     if (s_copy_of == c) return &s_copy;
+
+    // THE LAST HULL'S COPY GOES BACK FIRST. A different drawing has been asked for, so
+    // this one will not be read again -- and freeing before allocating is also what
+    // gives the new one the best chance of fitting. Left to leak, this was 116 to 143
+    // KB of PSRAM every time the player changed ship, and the failure at the end of it
+    // was silent: the allocation simply stopped succeeding and the pass went back to
+    // reading flash, 500 to 700 us a frame slower, with nothing anywhere saying why.
+    resident_free();
     const size_t npal = 256 * sizeof(uint16_t);
     const size_t nspn = (size_t)c->spans * sizeof(VgCanOpSpan);
     const size_t nrow = (size_t)(SCR_H + 1) * sizeof(uint16_t);
@@ -45,7 +62,16 @@ static const VgCanOp* resident(const VgCanOp* c) {
     uint16_t*    row  = (uint16_t*)   heap_caps_malloc(nrow,      MALLOC_CAP_SPIRAM);
     if (!pal || !data || !span || !row) {
         free(pal); free(data); free(span); free(row);
-        return c;                                   // no room: the flash tables still work
+        // SAID ONCE, because a cockpit that quietly costs more is the kind of thing
+        // this branch has already spent a day finding. The flash tables still draw.
+        static bool told = false;
+        if (!told) {
+            told = true;
+            Serial.printf("vg_canopy_op: no PSRAM for the bake (%u bytes); reading it "
+                          "from flash instead\n",
+                          (unsigned)(npal + c->pixels + nspn + nrow));
+        }
+        return c;
     }
     memcpy(pal,  c->pal,  npal);
     memcpy(data, c->data, c->pixels);
@@ -54,6 +80,7 @@ static const VgCanOp* resident(const VgCanOp* c) {
     s_copy = *c;
     s_copy.pal = pal; s_copy.data = data; s_copy.span = span; s_copy.row = row;
     s_copy_of = c;
+    s_own[0] = pal; s_own[1] = data; s_own[2] = span; s_own[3] = row;
     return &s_copy;
 }
 
@@ -106,7 +133,17 @@ static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 // stay resident in cache whatever else is moving.
 static uint16_t s_pal[256];
 static uint16_t s_edge_col = 0;             // the outline's colour; 0 is "keep amber"
-static const VgCanOp* s_pal_of = nullptr;   // the drawing s_pal was built from
+// THE DRAWING s_pal WAS BUILT FROM, AND IT IS THE SOURCE ONE, NOT THE COPY.
+//
+// This compared against s_cur, and under residency s_cur is ALWAYS &s_copy -- one
+// address, whichever hull is flying. So the test said "same drawing" for every hull
+// after the first: the new hull's palette indices were read through the previous
+// hull's colours, and a cockpit that had looked right came back speckled and wrong on
+// the next ship. Reported exactly that way, as texture quality degrading after a quit
+// and a reload.
+//
+// s_src is the bake in flash, which is a different address per hull and cannot alias.
+static const VgCanOp* s_pal_of = nullptr;
 static float          s_tint   = -1.0f;     // the hue asked for; < 0 is bare metal
 static int            s_pal_q  = -2;        // ...quantised, so a rebuild is rare
 
@@ -118,8 +155,8 @@ static void build_pal(void) {
     // A HUE IS A CONTINUOUS NUMBER AND A PALETTE IS NOT. Quantised to the 565 panel's
     // own resolution, so holding a slider does not rebuild this every frame.
     const int q = (s_tint < 0.0f) ? -1 : (int)(s_tint * 255.0f + 0.5f);
-    if (c == s_pal_of && q == s_pal_q) return;
-    s_pal_of = c;
+    if (s_src == s_pal_of && q == s_pal_q) return;
+    s_pal_of = s_src;
     s_pal_q  = q;
 
     memcpy(s_pal, c->pal, sizeof(s_pal));

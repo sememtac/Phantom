@@ -25,6 +25,7 @@ void host_dataset_close(void);
 #include "vg_sky.h"
 #include "vg_tv.h"
 #include "vg_canopy_op.h"
+#include "vg_canopy_set.h"
 
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
@@ -50,6 +51,7 @@ static int   g_rounds  = 0;      // rounds already settled
 static int   g_credits = -1;     // the bank, or leave the profile's alone
 static float g_hull    = -1.0f;  // fraction of full, or leave it whole
 static int   g_ship    = -1;     // class index, or leave the profile's alone
+static int   g_prev_ship = -1;   // fly this hull first -- see the note at its use
 static float g_hue     = -1.0f;  // trail colour 0..1, or leave the profile's alone
 
 // A TOURNAMENT TO LOOK AT: the draw, and however many rounds are behind it. The
@@ -206,6 +208,8 @@ int main(int argc, char** argv) {
             g_ship = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--hue") && i + 1 < argc)
             g_hue = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--prev-ship") && i + 1 < argc)
+            g_prev_ship = atoi(argv[++i]);
         // PWR, N frames in. Works over any screen, which is the point: what the
         // pause looks like depends entirely on what is behind it.
         else if (!strcmp(argv[i], "--pause-at") && i + 1 < argc)
@@ -353,6 +357,16 @@ int main(int argc, char** argv) {
         // around the player's, so a hue set afterwards would be one the rest of
         // the field had already been kept clear of a different value for.
         if (g_hue >= 0.0f) vg.trail_hue = (g_hue > 1.0f) ? 1.0f : g_hue;
+        // ANOTHER HULL'S COCKPIT FIRST, which is what quitting a match and starting
+        // one in a different ship does. The screen's own setup selects the real one
+        // straight after, so the frame that comes out must be the same frame either
+        // way -- and it was not: a cockpit carried the last hull's palette and came
+        // out speckled. Anything a drawing leaves behind shows up as a pixel
+        // difference between `--ship N` and `--ship N --prev-ship M`.
+        if (g_prev_ship >= 0 && g_prev_ship < SHIP_CLASSES) {
+            vg_canopy_op_use(vg_canopy_op_for((ShipClass)g_prev_ship));
+            vg_canopy_op_tint(vg.trail_hue);
+        }
 
         if (screen->setup) screen->setup();
 
