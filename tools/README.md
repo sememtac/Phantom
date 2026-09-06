@@ -548,6 +548,11 @@ To check a change that must not alter the picture:
 
     python tools/phantom_regress.py --port COM6 captures/regress.phr --against tools/regress-baseline.json
 
+Use a Python that has numpy. The PlatformIO Python does not. Without numpy the tool
+decodes the picture slowly, its receive thread falls behind, and the port loses
+bytes with no error. The tool refuses to run without numpy and names the Python it
+ran under. Do not build or run other programs while a render runs.
+
 The render takes about four minutes. The deepest frame in the list sets the time,
 because the board must replay every frame before it.
 
@@ -579,14 +584,12 @@ Single bytes, typed at the board while nothing else holds the port.
 | byte | does |
 |---|---|
 | `q` | antialiasing on the instruments, on and off |
-| `o` `O` | `o` flies the opaque drawing of a ship that has one, `O` the plain drawing. The board names the choice back. |
 | `f` `F` `i` `n` | hold the bend of the frame flat, full, or rigid with the lag off. `n` gives the throttle back. |
 | `r` `h` | `r` reads the opaque drawing from PSRAM (the default), `h` from flash |
 | `w` | arms the picture hash for the next timed replay, and turns it off again. The setting survives a reset. |
 | `d` | prints the full breakdown once, on the next telemetry line |
 | `c` | prints the cost of the last timed replay again |
-| `k` | what the canopy costs, rigid and warped, plain and opaque |
-| `v` | the vector blend against the scalar blend: proves the pixels match, then times both |
+| `k` | what each ship's canopy costs, rigid and at full bend, one core |
 | `y` | what the backdrop costs, prep and fill, with a checksum |
 | `g` | the glyph nest, old against new, over fixed text |
 | `l` | the line walk, old against new, over a fan of every slope |

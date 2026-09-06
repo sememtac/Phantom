@@ -11,6 +11,7 @@ the other copy.
 
 import os
 import struct
+import sys
 import wave
 import zlib
 import threading
@@ -194,6 +195,12 @@ class PhantomLink:
             self.ser.set_buffer_size(rx_size=1 << 20, tx_size=1 << 16)
         except Exception:
             pass          # Windows only. Other systems have a large default.
+        # THE REQUEST IS NOT GRANTED. The call returns without an error, and the
+        # driver keeps its own size. Measured on 2026-09-06 with GetCommProperties on
+        # the board's USB serial port: the receive queue is 16,384 bytes, whatever is
+        # asked for. At USB speed that is about 16 ms of data. The receive thread
+        # below is what has to keep it drained, and the switch interval it sets is
+        # what lets it.
 
         time.sleep(0.4)
         self.ser.reset_input_buffer()
@@ -214,6 +221,16 @@ class PhantomLink:
     # reads a buffer in memory, where slow work costs time instead of data.
 
     def _start_reader(self):
+        # LET THE READER RUN OFTEN. Python moves between threads every 5 ms by
+        # default. The parser holds the interpreter for that long while it decodes
+        # a band, and the receive queue of the driver is 16 KB, which is about 16
+        # ms of data. A frame is now about 130 KB, four times what it was when the
+        # cockpit was a light delta, so a frame keeps the port busy for longer and
+        # a 5 ms pause loses bytes more often. Measured: 6 bands in 1,503 frames,
+        # with the device reporting that it wrote every byte.
+        #
+        # 1 ms bounds what can pile up while the parser works to about 1 KB.
+        sys.setswitchinterval(0.001)
         self._rx = bytearray()
         self._rx_lock = threading.Lock()
         self._rx_err = None

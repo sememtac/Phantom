@@ -119,7 +119,56 @@ void vg_link_write(const void* p, int n) {
     // resynchronises on the next frame, and the player gets their game back.
     int spins = 0;
     while (n > 0) {
-        const size_t k = Serial.write(b, (size_t)n);
+        // THE DRIVER THROWS BYTES AWAY WHILE IT THINKS THE HOST IS GONE, AND SAYS
+        // IT WROTE THEM.
+        //
+        // HWCDC::write has two paths. Connected, it blocks on its ring and returns
+        // what it placed, which is what the loop below is written for. NOT
+        // connected, it calls flushTXBuffer, which pushes into the ring "with FIFO
+        // policy" -- the oldest bytes are discarded to make room -- and returns the
+        // full size either way. `connected` is a flag the ISR clears whenever the
+        // core's usb_serial_jtag_is_connected() reads false, and on this desk that
+        // happens for a moment every 25.2 seconds of wall clock, whatever the game
+        // is doing: the host pauses its polling, the flag drops, and every band
+        // written in that moment lands in a ring that is quietly eating its own
+        // tail. Measured 2026-09-06: a band corrupted every 25.2 s in every render,
+        // with `short 0 stall 0` from this loop -- and the link bench, which runs
+        // with a 1 ms timeout, "sending" 2 MB in a third of a second at 16 MB/s
+        // over a full-speed port with the host receiving 6% of it.
+        //
+        // So the driver is asked first, and a write is HELD until it says it is
+        // connected. Asking is what re-arms it: isConnected() enables the IN_EMPTY
+        // interrupt and kicks the FIFO, and the next packet the host picks up sets
+        // the flag again. A held write is counted as a stall, which is what it is
+        // -- bytes that could not be placed because nobody was reading -- and the
+        // same bound on it applies.
+        if (!Serial.isConnected()) {
+            s_wr_stall++;
+            if (++spins > 3000) { s_wr_giveups++; return; }
+            esp_task_wdt_reset();
+            delay(1);
+            continue;
+        }
+        // AND NEVER A WRITE IT HAS TO WAIT ON. The test above was not enough on its
+        // own: 10 bands in 5,202 frames still went, with 49 holds counted. Inside
+        // HWCDC::write, a chunk larger than the ring's free space enters a loop that
+        // waits for room, and that loop runs `while (connected && to_send)` -- so the
+        // same flag dropping MID-WRITE ends the loop with bytes unsent, hands them to
+        // flushTXBuffer to discard, and returns the full size regardless. A staging
+        // buffer is 8 KB against a 16 KB ring, so a write waited often.
+        //
+        // Only what fits is offered, so the driver places it in its first,
+        // non-blocking send and never reaches that loop. Nothing fitting is a stall
+        // like any other.
+        const int avail = Serial.availableForWrite();
+        if (avail <= 0) {
+            s_wr_stall++;
+            if (++spins > 3000) { s_wr_giveups++; return; }
+            esp_task_wdt_reset();
+            delay(1);
+            continue;
+        }
+        const size_t k = Serial.write(b, (size_t)(n < avail ? n : avail));
         if (k < (size_t)n) s_wr_short++;
         if (k == 0) {
             s_wr_stall++;

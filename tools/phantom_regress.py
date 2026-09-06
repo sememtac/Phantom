@@ -32,6 +32,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import phantom_link
 from phantom_link import Desync, PhantomLink, Session, reset_board
 
 # Spread through a session rather than bunched: the cost of a run is set by the
@@ -95,6 +96,15 @@ def device_report(link, wait=8.0):
 
 
 def render(port, path, wanted, out_dir):
+    # NUMPY IS NOT OPTIONAL HERE. phantom_link falls back to plain Python lists
+    # without it, and that path decodes a band slowly enough to starve the receive
+    # thread: measured on 2026-09-06, more than 220 bands lost in 1,200 frames under
+    # a Python with no numpy, against 6 with it. The loss looks like a link fault
+    # and it is not one. Refuse, and say which Python this is.
+    if phantom_link._np is None:
+        sys.exit("phantom_regress: numpy is not installed for " + sys.executable + ".\n"
+                 "  Without it the render loses bands and reports the link as corrupt.\n"
+                 "  Run this with a Python that has numpy (pip install numpy).")
     ses = Session.load(path)
     n = len(ses.frames)
     # SAY WHAT WAS DROPPED. A frame past the end of the session cannot be rendered, and
