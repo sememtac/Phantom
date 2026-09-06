@@ -298,7 +298,18 @@ would move the simulation off the sequence the recording was made from.
 The canopy is the cockpit frame. It replaces the crosshair. Each ship can have its
 own drawing.
 
-### What the file must be
+There are two kinds of drawing, and they are not interchangeable.
+
+| kind | what the firmware does | file |
+|---|---|---|
+| opaque | paints the pixel. Most of a cockpit is metal, and metal hides the stars. | `<ship>.png` |
+| light delta | adds light to the picture behind it, so the frame catches the scene | `<ship>_delta.png` |
+
+**All four ships use the opaque kind.** The art moved over on 2026-09-05, and nothing
+feeds the delta baker now. Read **An opaque drawing** below for the rules. The delta
+baker still works, and the next two sections are its format.
+
+### What a light delta file must be
 
 Use a square PNG, 480 x 480 pixels or larger. Two channels carry the work.
 
@@ -363,8 +374,8 @@ you reject it.
 The file name is the wiring. Name the PNG after the ship that flies it.
 
 1. Put the PNG in `design\canopy\`. Use one of these names:
-   `aegis.png`, `lance.png`, `chariot.png`, `ballista.png`.
-   A ship can also have an opaque drawing. See **An opaque drawing** below.
+   `aegis.png`, `lance.png`, `chariot.png`, `ballista.png` for an opaque drawing,
+   or the same names with `_delta` for a light delta. Put the tint mask beside it.
 2. Run `.\tools\canopy.ps1`. It takes no arguments.
 3. Read the report. It shows the coverage, the cost, and the regions it found.
 
@@ -393,7 +404,7 @@ So you can add the four canopies one at a time and fly the game after each one.
 
 ### An opaque drawing
 
-A ship can have a second drawing of a different kind. The plain drawing adds light to
+This is what `<ship>.png` is, and what all four ships use. A light delta adds light to
 the picture behind it. An opaque drawing paints over it. Most of a cockpit is metal,
 and metal hides the stars behind it. The firmware stores one colour for each metal
 pixel and copies it to the screen. A copy costs less than a blend, so an opaque

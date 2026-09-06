@@ -6,23 +6,22 @@
 #pragma once
 #include "../vg_canopy.h"
 #include "../vg_canopy_op.h"
-#include "canopy_aegis.h"
-#include "canopy_lance.h"
-#include "canopy_chariot.h"
-#include "canopy_ballista.h"
+#include "canopy_op_aegis.h"
+#include "canopy_op_lance.h"
 #include "canopy_op_chariot.h"
+#include "canopy_op_ballista.h"
 
 #define VG_CANOPY_SET_ROWS \
-    /* AEGIS    */ &CANOPY_AEGIS, \
-    /* LANCE    */ &CANOPY_LANCE, \
-    /* CHARIOT  */ &CANOPY_CHARIOT, \
-    /* BALLISTA */ &CANOPY_BALLISTA,
+    /* AEGIS    */ nullptr, \
+    /* LANCE    */ nullptr, \
+    /* CHARIOT  */ nullptr, \
+    /* BALLISTA */ nullptr,
 
 // The opaque drawings, same order. A hull with one flies it; the row
 // above is still needed for the frame's bend and the two-core split.
 #define VG_CANOPY_OP_SET_ROWS \
-    /* AEGIS    */ nullptr, \
-    /* LANCE    */ nullptr, \
+    /* AEGIS    */ &CANOPY_OP_AEGIS, \
+    /* LANCE    */ &CANOPY_OP_LANCE, \
     /* CHARIOT  */ &CANOPY_OP_CHARIOT, \
-    /* BALLISTA */ nullptr,
+    /* BALLISTA */ &CANOPY_OP_BALLISTA,
 

@@ -134,6 +134,22 @@ static int canopy_zones(void) {
     return s_can ? (int)s_can->zones : 0;
 }
 
+// IS THERE A COCKPIT AT ALL, of either kind.
+//
+// This module was written when there was one kind of drawing, so `s_can` meant both
+// "the light delta" and "a cockpit is flying". Once every hull's drawing became an
+// opaque bake the two came apart, and every gate that still asked `!s_can` was
+// answering the wrong question: the frame would not bend, the arrival would not run,
+// and the two-core split fell back to the midpoint -- on a hull that had a perfectly
+// good cockpit on the screen.
+//
+// So the gates ask THIS, and the code that indexes the delta drawing's own tables goes
+// on asking for `s_can`, because that is a different question and it still has to be
+// asked. Both appear below and the difference is deliberate everywhere it appears.
+static bool canopy_any(void) {
+    return s_can != nullptr || vg_canopy_op_current() != nullptr;
+}
+
 // THE WALL WARNING, ON THE COCKPIT INSTEAD OF ON THE VIEW.
 //
 // The ring tint is a per-pixel pass over its own area and costs about 1100 us at the wall,
@@ -694,6 +710,30 @@ static uint8_t  s_coledge[SCR_H];
 static uint16_t s_colend[SCR_H];   // byte offset of the column's last block
 
 static void canopy_colcost(void) {
+    // FROM THE OPAQUE BAKE WHEN THAT IS THE COCKPIT. What this table is for is the
+    // two-core split: how much work each panel row carries, so a band can be cut where
+    // the halves come out even. That is a property of whichever drawing is being drawn.
+    //
+    // Indexed by DRAWING COLUMN, which is what warp_build walks -- and a drawing column
+    // is a panel row read backwards, so the opaque bake's spans land in the same array
+    // and every line below warp_build's call is untouched.
+    //
+    // s_coledge and s_colend stay zero here on purpose: they are the delta renderer's
+    // border extension, and the delta renderer does not run without a delta drawing.
+    const VgCanOp* o = vg_canopy_op_current();
+    if (!s_can && o) {
+        for (int c = 0; c < SCR_H; c++) {
+            const int py = SCR_H - 1 - c;
+            uint32_t cost = 0;
+            for (uint16_t si = o->row[py]; si < o->row[py + 1]; si++)
+                cost += (uint32_t)o->span[si].len + 1u;   // a span header is worth about a pixel
+            s_colcost[c] = (uint16_t)(cost > 0xFFFFu ? 0xFFFFu : cost);
+            s_coledge[c] = 0;
+            s_colend[c]  = 0;
+        }
+        s_colcost_ready = true;
+        return;
+    }
     for (int c = 0; c < SCR_H; c++) {
         uint32_t cost = 0;
         uint8_t  edge = 0;
@@ -758,6 +798,19 @@ void vg_canopy_lag_pin_off(bool off) { s_lag_pin_off = off; }
 // Everything downstream already tolerates it -- canopy_rows, the warp, the bench and the
 // PRIM_CANOPY case all return early on a null drawing -- so what was missing was only the
 // ability to SAY none.
+// A DIFFERENT OPAQUE BAKE IS A DIFFERENT SET OF COLUMN COSTS, and a different centre
+// region. Everything vg_canopy_use invalidates for its own drawing, this invalidates
+// for the other one -- except the delta colour table, which is not derived from it.
+//
+// It matters because the hulls no longer share a drawing: flying a LANCE after a
+// CHARIOT would otherwise balance the LANCE's bands against the CHARIOT's spans.
+void vg_canopy_op_changed(void) {
+    s_centre_z      = -1;
+    s_colcost_ready = false;
+    s_wq            = -1;
+    s_wq_want       = -1;
+}
+
 void vg_canopy_use(const VgCanopy* c) {
     if (c == s_can) return;
     s_can           = c;
@@ -871,7 +924,7 @@ static float s_settle_t = -1.0f;          // < 0 means not settling
 // worst. So the amount is still recorded here, where the throttle is known, and the
 // BUILD moves to the end of the frame -- see vg_canopy_warp_build.
 void vg_canopy_warp(float k) {
-    if (!s_can) return;                    // the maps are built from the drawing
+    if (!canopy_any()) return;             // no cockpit: nothing to bend
     if (s_warp_pin >= 0.0f) k = s_warp_pin;
     if (k < 0.0f) k = 0.0f;
     if (k > 1.0f) k = 1.0f;
@@ -891,7 +944,11 @@ void vg_canopy_warp(float k) {
 // and already lags the ship through a spring and a damper, so a frame is not visible;
 // what it is NOT is free of the pixel record, and the regression baseline moves with it.
 void vg_canopy_warp_build(void) {
-    if (!s_can || s_wq_want == s_wq) return;
+    // EITHER COCKPIT, and this guard read !s_can until every hull went opaque.
+    // Left alone it returned before building anything, so s_w_zbase and s_wcol stayed
+    // zero -- and a zero sphere maps every column of the frame onto the centre line,
+    // which collapses every span to no width. The cockpit did not draw at all.
+    if (!canopy_any() || s_wq_want == s_wq) return;
     const int q = s_wq_want;
     s_wq = q;
 
@@ -1135,6 +1192,10 @@ static uint16_t (*s_ilut)[256] = nullptr;
 // Quantised by the caller, so this runs a couple of dozen times across a region's cool-down
 // rather than once a frame per zone.
 static void canopy_ilut(int z) {
+    // The DELTA drawing's own member colours. An opaque cockpit's arrival is a
+    // different table built somewhere else -- see s_hot in vg_canopy_op.cpp -- so with
+    // no delta drawing selected there is simply nothing here to build.
+    if (!s_can) return;
     if (!s_ilut) {
         s_ilut = (uint16_t (*)[256])heap_caps_malloc(
                      (size_t)VG_CANOPY_MAX_ZONES * 256 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -1303,7 +1364,8 @@ static void canopy_gate_mask(void) {
 #define CANOPY_FAULT_END    0.12f    // ...and at which as many as can be are gone
 
 void vg_canopy_damage(float hull_frac) {
-    if (!s_can || canopy_zones() <= 0) return;
+    // Whichever cockpit is flying -- the regions it fails are its own.
+    if (!canopy_any() || canopy_zones() <= 0) return;
     if (s_centre_z < 0) canopy_find_centre();
 
     // Everything but the middle one may fail.
@@ -1348,13 +1410,15 @@ void vg_canopy_hit_clear(void) {
 }
 
 void vg_canopy_hit(void) {
-    if (!s_can || s_can->zones <= 0) return;
+    // WHICHEVER COCKPIT IS FLYING, and its own region count -- see canopy_zones.
+    const int nz = canopy_zones();
+    if (nz <= 0) return;
     // NOT ALREADY MARKED. Refreshing a panel that is already out would waste the hit and
     // read as nothing happening; spreading it is what makes a second hit cost more view
     // than the first.
     int free_z[VG_CANOPY_MAX_ZONES];
     int n = 0;
-    for (int z = 0; z < s_can->zones; z++)
+    for (int z = 0; z < nz; z++)
         if (s_hit_t[z] <= 0.0f) free_z[n++] = z;
     if (!n) return;
     const int z = free_z[(int)(vg_frand01() * (float)n) % n];
@@ -1682,7 +1746,7 @@ void vg_canopy_intro_begin(void) {
     // -- draw_instruments is vg_cockpit.cued -- so returning early here left a hull with no canopy
     // showing no cockpit AND no instruments, for ever. The chain degrades to what the game did
     // before there were canopies: the panel catches, then the player is ready, then the radio.
-    if (!s_can) {
+    if (!canopy_any()) {
         s_intro_on = false;
         s_gate_on  = false;   // nothing to reveal and nothing broken
         s_gate_mask = 0;
@@ -1699,7 +1763,7 @@ void vg_canopy_intro_begin(void) {
     s_intro_t  = 0.0f;
     s_settle_t = -1.0f;
     s_icued    = false;
-    if (!s_can_ready) canopy_lut();
+    if (s_can && !s_can_ready) canopy_lut();
     // ALL SIXTEEN, NOT THIS DRAWING'S OWN COUNT, and the difference was a bug you
     // could only see the second time you flew.
     //
@@ -1716,8 +1780,9 @@ void vg_canopy_intro_begin(void) {
         s_izon[z] = 0; s_ilive[z] = 0; s_ifill[z] = 0;   // held, and held BLACK
         s_iglow[z] = 255;                                // and white-hot the moment it lights
     }
-    // The colour tables are the DELTA drawing's, so only its own regions have one.
-    for (int z = 0; z < s_can->zones; z++) canopy_ilut(z);
+    // The colour tables are the DELTA drawing's, so only its own regions have one --
+    // and with no delta drawing, none of them do. canopy_ilut answers that itself.
+    for (int z = 0; z < canopy_zones(); z++) canopy_ilut(z);
     // Nothing left over on the spring, or the frame would start the sequence already leaning.
     for (int i = 0; i < 3; i++) { s_lag_q[i] = s_lag_v[i] = s_lag_x[i] = 0.0f; }
     s_lag_px = s_lag_py = 0;
@@ -1757,7 +1822,7 @@ bool vg_canopy_intro_cued(void) { return s_icued; }
 // fell into: a query that answers for a state it is not in. The answer has to be scoped to the
 // sequence, because that is the only thing the question means.
 int vg_canopy_intro_lit(void) {
-    if (!s_can || !s_intro_on) return 0;
+    if (!canopy_any() || !s_intro_on) return 0;
     int n = 0;
     for (int z = 0; z < canopy_zones(); z++) if (s_ilive[z]) n++;
     return n;
@@ -1779,7 +1844,7 @@ void vg_canopy_intro_reset(void) {
     // Guarded here rather than at the call, because the three scalars above are the boot
     // chain's disarm and have to happen for every hull. Only the per-zone arrays need a
     // drawing to be about.
-    if (!s_can) return;
+    if (!canopy_any()) return;
     // All sixteen, for the reason vg_canopy_intro_begin gives at its own loop.
     for (int z = 0; z < VG_CANOPY_MAX_ZONES; z++) { s_izon[z] = 255; s_ilive[z] = 1; s_iglow[z] = 0; }
 }
@@ -1791,7 +1856,7 @@ void vg_canopy_intro_reset(void) {
 // somewhere other than where the panel ends. The ramp afterwards exists because the resting
 // warp is full bulge -- releasing straight into it would pop.
 float vg_canopy_intro_flex(void) {
-    if (!s_can)     return 1.0f;    // nothing to hold flat, and nothing to settle
+    if (!canopy_any()) return 1.0f; // nothing to hold flat, and nothing to settle
     if (s_intro_on) return 0.0f;
     if (s_settle_t < 0.0f) return 1.0f;
     float a = s_settle_t / CANOPY_INTRO_SETTLE;
@@ -1800,7 +1865,7 @@ float vg_canopy_intro_flex(void) {
 }
 
 bool vg_canopy_intro_update(float dt) {
-    if (!s_can) return false;
+    if (!canopy_any()) return false;
     if (!s_intro_on) {
         if (s_settle_t >= 0.0f) {
             s_settle_t += dt;
@@ -1917,9 +1982,14 @@ void vg_canopy_split_nudge(uint32_t half_us, uint32_t wait_us) {
 }
 
 int vg_canopy_split_at(int band_index) {
-    if (!s_can)      return ROW_SPLIT;
+    if (!canopy_any()) return ROW_SPLIT;
     if (s_intro_on)  return ROW_SPLIT;   // the world gate dwarfs the frame; midpoint is right
-    int at = s_warp_on ? (int)s_wsplit[band_index] : (int)s_can->split[band_index];
+    // THE BAKED SPLIT IS THE DELTA DRAWING'S. An opaque bake carries none, so it takes
+    // the warp's own table, which warp_build fills from the column costs above whatever
+    // the bend is -- at zero bend that IS the unwarped balance, so the answer is the
+    // same kind of number by a different route.
+    int at = (s_warp_on || !s_can) ? (int)s_wsplit[band_index]
+                                   : (int)s_can->split[band_index];
     // THE ADAPTIVE TERM IS DROPPED UNDER A REPLAY, and this is what makes a render
     // reproducible at all.
     //
@@ -2181,7 +2251,11 @@ static uint16_t s_bench_row[SCR_W];
 // frame's build call puts back whatever the game wants.
 void vg_canopy_op_bench(uint32_t* rigid_us, uint32_t* full_us) {
     *rigid_us = *full_us = 0;
-    if (!s_can || !vg_canopy_op_current()) return;
+    // ONLY THE OPAQUE BAKE IS NEEDED NOW. This asked for a delta drawing as well,
+    // because the warp maps used to be built from one; canopy_colcost builds them
+    // from whichever cockpit is flying, so the bench runs on a hull that has no
+    // delta drawing -- which is every hull.
+    if (!vg_canopy_op_current()) return;
     const int   save_want = s_wq_want;
     const bool  save_on = s_warp_on, save_in = s_intro_on, save_gate = s_gate_on;
     const int   save_px = s_lag_px, save_py = s_lag_py;

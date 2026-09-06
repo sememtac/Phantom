@@ -114,6 +114,9 @@ void vg_canopy_warp_build(void);
 // The amount held by hand, for measurement only. `k` in 0..1 overrides what
 // vg_canopy_warp is given on every frame; negative gives the throttle back.
 void vg_canopy_warp_pin(float k);
+// Told when a different opaque bake is selected, so the split balance and the centre
+// region are worked out again for it. vg_canopy_use does the same for its own drawing.
+void vg_canopy_op_changed(void);
 // ...and the lag held off. With the bend pinned at zero this is a rigid frame.
 void vg_canopy_lag_pin_off(bool off);
 

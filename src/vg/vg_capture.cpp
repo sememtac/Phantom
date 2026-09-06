@@ -375,20 +375,27 @@ void vg_capture_poll(void) {
                               k.blocks, k.flat_px, k.lit_px,
                               use ? vg_spec(hull)->name : "none");
             }
-            // AND THE OPAQUE PASS, for the hull that has one, on the same terms.
-            // The delta drawing goes back in for it: the warp maps are built from
-            // that drawing, whichever cockpit reads them.
-            if (const VgCanOp* op = vg_canopy_op_for(hull)) {
+            // AND THE OPAQUE PASS, FOR EVERY HULL. They are four different drawings
+            // now and the heaviest paints nearly twice the area of the lightest, so one
+            // number for "the cockpit" is not a number any more. Selecting each in turn
+            // is also what rebuilds its own column costs -- see vg_canopy_op_changed --
+            // so every line is that drawing measured against its own balance.
+            {
                 const VgCanOp* prev_op = vg_canopy_op_current();
-                if (use != prev) vg_canopy_use(use);
-                if (op != prev_op) vg_canopy_op_use(op);
-                uint32_t r = 0, f = 0;
-                vg_canopy_op_bench(&r, &f);
-                if (op != prev_op) vg_canopy_op_use(prev_op);
-                if (use != prev) vg_canopy_use(prev);
-                if (!vg_link_busy())
-                    Serial.printf("canopy_op: %lu us rigid, %lu us full bend, one core, hull %s\n",
-                                  (unsigned long)r, (unsigned long)f, vg_spec(hull)->name);
+                for (int i = 0; i < SHIP_CLASSES; i++) {
+                    const VgCanOp* op = vg_canopy_op_for((ShipClass)i);
+                    if (!op) continue;
+                    vg_canopy_op_use(op);
+                    uint32_t r = 0, f = 0;
+                    vg_canopy_op_bench(&r, &f);
+                    if (!vg_link_busy())
+                        Serial.printf("canopy_op: %-9s %5lu us rigid, %5lu us full bend, "
+                                      "%6lu px, %3u painted entries, one core\n",
+                                      vg_spec((ShipClass)i)->name,
+                                      (unsigned long)r, (unsigned long)f,
+                                      (unsigned long)op->pixels, (unsigned)op->tint_n);
+                }
+                vg_canopy_op_use(prev_op);
             }
         } else if (c == 'y' && !vg_link_busy()) {
             // 'y', NOT 's'. The host sends 's' to stop a capture -- phantom_link.close does

@@ -6,13 +6,14 @@ Each drawing is named after the hull that flies it: chariot.png is the CHARIOT's
 cockpit. A hull with no drawing flies with no cockpit, which the game supports --
 there is no default texture and no substitute.
 
-A hull can have a second drawing, <hull>_opaque.png, which is a different kind of
-thing: painted metal that replaces the pixel, with a thin additive outline, baked
-by tools/canopy_opaque.py. A hull that has one flies it. It still needs its plain
-drawing: the frame's bend and the two-core split are built from that one.
+<hull>.png is an OPAQUE drawing: painted metal that replaces the pixel, with a thin
+additive outline, baked by tools/canopy_opaque.py. It was a light delta until
+2026-09-05 -- a drawing applied as a CHANGE to the finished picture, baked by
+tools/canopy_bake.py -- and every hull's art moved over on that day. The delta baker
+still works and nothing feeds it; a hull that wants one names it <hull>_delta.png.
 
-It can have a third, <hull>_tint.png, a mask saying which of that metal takes the
-player's chosen colour. White is painted and black is bare.
+<hull>_tint.png beside it is a mask saying which of that metal takes the player's
+chosen colour. White is painted and black is bare.
 
 This bakes every drawing that has changed and writes the table that maps a hull to
 its canopy, so no C++ has to be edited to add one. Drop a PNG in, run this, done.
@@ -84,7 +85,7 @@ def main():
     baker = os.path.join(HERE, "canopy_bake.py")
     rows = []
     for hull in HULLS:
-        png = os.path.join(SRC, hull + ".png")
+        png = os.path.join(SRC, hull + "_delta.png")
         if not os.path.isfile(png):
             rows.append((hull, None, None))
             continue
@@ -153,14 +154,11 @@ def main():
     # flies the light delta above.
     op_baker = os.path.join(HERE, "canopy_opaque.py")
     op_rows = []
-    for hull, name, _ in rows:
-        png = os.path.join(SRC, hull + "_opaque.png")
+    for hull in HULLS:
+        png = os.path.join(SRC, hull + ".png")
         if not os.path.isfile(png):
             op_rows.append((hull, None, None))
             continue
-        if not name:
-            sys.exit("%s_opaque.png needs %s.png beside it: the bend and the split are "
-                     "built from the plain drawing." % (hull, hull))
         out = os.path.join(GEN, "canopy_op_%s.h" % hull)
         opname = "CANOPY_OP_%s" % hull.upper()
         # THE TINT MASK, if the hull has one: it says which metal takes the
@@ -237,18 +235,16 @@ def main():
         fh.write("\n")
 
     print("\ncanopy set:")
-    for (hull, name, out), (_, opname, opout) in zip(rows, op_rows):
-        if name:
-            kb = os.path.getsize(out) / 1024.0
-            print("  %-9s %-14s %6.0f KB of generated header" % (hull.upper(),
-                                                                hull + ".png", kb))
-        else:
-            print("  %-9s %-14s no cockpit frame" % (hull.upper(), "--"))
+    for hull, opname, opout in op_rows:
         if opname:
             kb = os.path.getsize(opout) / 1024.0
-            print("  %-9s %-14s %6.0f KB of generated header, flown" % ("",
-                                                                       hull + "_opaque.png", kb))
-    n = sum(1 for _, name, _ in rows if name)
+            tint = os.path.isfile(os.path.join(SRC, hull + "_tint.png"))
+            print("  %-9s %-14s %6.0f KB of generated header%s"
+                  % (hull.upper(), hull + ".png", kb,
+                     ", painted" if tint else ""))
+        else:
+            print("  %-9s %-14s no cockpit frame" % (hull.upper(), "--"))
+    n = sum(1 for _, name, _ in op_rows if name)
     print("\n%d of %d hulls have a canopy. Wrote %s"
           % (n, len(rows), os.path.relpath(path, ROOT)))
 

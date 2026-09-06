@@ -71,6 +71,10 @@ Name it after the ship and put it in `canopy/`: `aegis.png`, `lance.png`,
 `chariot.png`, `ballista.png`. The file name is the wiring, so there is nothing to
 edit afterwards.
 
+`<ship>.png` is an OPAQUE drawing, which is what all four ships use. A light delta,
+the older kind, is named `<ship>_delta.png`. The two are not interchangeable and the
+rules for each are in `tools/README.md`.
+
 A ship can also have an opaque drawing, `<ship>_opaque.png`. Its colours say what
 each pixel is: magenta is a pane, cyan is the lit outline, and any other colour is
 metal that the firmware paints over the picture. The alpha channel holds the
