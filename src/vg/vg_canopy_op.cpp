@@ -133,6 +133,11 @@ static int16_t  s_hot_q[VG_CANOPY_MAX_ZONES];
 // is the one table read on the path of every stored pixel, and it is small enough to
 // stay resident in cache whatever else is moving.
 static uint16_t s_pal[256];
+// THE LADDER, and it is internal for the same reason s_pal is: read once a pixel.
+// Rung 0 IS s_pal, copied, so the span loop can index without a special case.
+static uint16_t s_lit[CANOPY_GLOW_LEVELS][256];
+static uint8_t  s_glow_lv[64];        // background brightness 0..63 -> rung
+static bool     s_glow_ready = false;
 static uint16_t s_edge_col = 0;             // the outline's colour; 0 is "keep amber"
 // THE DRAWING s_pal WAS BUILT FROM, AND IT IS THE SOURCE ONE, NOT THE COPY.
 //
@@ -172,6 +177,8 @@ static void light_pal(float lr, float lg, float lb) {
         s_pal[i] = (uint16_t)((o >> 8) | (o << 8));
     }
 }
+
+static void build_ladder(void);   // defined below, with the rungs it fills
 
 static void build_pal(void) {
     const VgCanOp* c = s_cur;
@@ -221,7 +228,7 @@ static void build_pal(void) {
     memcpy(s_pal, c->pal, sizeof(s_pal));
     // A drawing with no mask, or a player with no colour yet, goes straight to the
     // light: the room shines on bare metal too.
-    if (q < 0 || !c->tint_n) { light_pal(lr, lg, lb); return; }
+    if (q < 0 || !c->tint_n) { light_pal(lr, lg, lb); build_ladder(); return; }
 
     // The hue at full saturation and value, which is what the player picked and what
     // their trail is drawn in. Unpacked once, into NATIVE order.
@@ -287,6 +294,42 @@ static void build_pal(void) {
     // THE PAINT FIRST AND THE LIGHT SECOND, which is the order the world does it in:
     // a ship is painted, and then it is lit by wherever it happens to be.
     light_pal(lr, lg, lb);
+    build_ladder();
+}
+
+// THE LADDER, BUILT FROM THE FINISHED PALETTE. Every rung carries the paint and the
+// venue's light already, so a run picking a rung is choosing brightness and nothing
+// else. Four passes of 256 entries, and only when something moved.
+static void build_ladder(void) {
+    for (int lv = 0; lv < CANOPY_GLOW_LEVELS; lv++) {
+        const float gain = 1.0f + CANOPY_GLOW * (float)lv
+                                / (float)(CANOPY_GLOW_LEVELS - 1);
+        for (int i = 0; i < 256; i++) {
+            const uint16_t v  = s_pal[i];
+            if (lv == 0) { s_lit[0][i] = v; continue; }
+            const uint16_t nv = (uint16_t)((v >> 8) | (v << 8));
+            const float r = (float)((nv >> 11) & 31u) * (1.0f / 31.0f) * gain;
+            const float g = (float)((nv >>  5) & 63u) * (1.0f / 63.0f) * gain;
+            const float b = (float)( nv        & 31u) * (1.0f / 31.0f) * gain;
+            int R = (int)(r * 31.0f + 0.5f), G = (int)(g * 63.0f + 0.5f),
+                B = (int)(b * 31.0f + 0.5f);
+            if (R > 31) R = 31; if (G > 63) G = 63; if (B > 31) B = 31;
+            const uint16_t o = (uint16_t)((R << 11) | (G << 5) | B);
+            s_lit[lv][i] = (uint16_t)((o >> 8) | (o << 8));
+        }
+    }
+    // ...and which rung a background brightness asks for. A table rather than the
+    // arithmetic, because this is read once a RUN and the arithmetic is a divide.
+    for (int l = 0; l < 64; l++) {
+        int lv = 0;
+        if (l > CANOPY_GLOW_AT && CANOPY_GLOW_FULL > CANOPY_GLOW_AT)
+            lv = ((l - CANOPY_GLOW_AT) * (CANOPY_GLOW_LEVELS - 1))
+               / (CANOPY_GLOW_FULL - CANOPY_GLOW_AT);
+        if (lv < 0) lv = 0;
+        if (lv > CANOPY_GLOW_LEVELS - 1) lv = CANOPY_GLOW_LEVELS - 1;
+        s_glow_lv[l] = (uint8_t)lv;
+    }
+    s_glow_ready = true;
 }
 
 void vg_canopy_op_relight(void) { build_pal(); }
@@ -518,6 +561,9 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
     // is 2,001 runs and there is no reason to read it to discover that the cockpit is
     // simply present.
     const bool gate = vg_canopy_gate_on();
+    // IS THE LOCAL LIGHT ON. Off during the arrival, where the gate has just written
+    // its own colour under the frame and a run would read that instead of the sky.
+    const bool glow = (CANOPY_GLOW > 0.0f) && s_glow_ready && !gate;
 
     for (int r = r0; r < r1; r++) {
         const int y = by0 + r;
@@ -621,6 +667,24 @@ void IRAM_ATTR vg_canopy_op_rows(uint16_t* band, int by0, int r0, int r1) {
             const uint8_t*  src  = &data[sp->off];
             const uint16_t* spal = zpal[sp->zone];
             const uint32_t  hz   = heat[sp->zone];
+
+            // WHAT THIS RUN IS COVERING, in one read. The view is already in the band
+            // -- see the note above the gate -- so the pixel about to be replaced IS
+            // the sky, or the ship, or the explosion behind the frame. A run is ten to
+            // eighteen pixels, so this is very nearly per pixel for the price of one
+            // load, three masks and a table lookup. See CANOPY_GLOW.
+            //
+            // r + g + b >> 1 rather than a weighted luminance: this picks a rung off a
+            // four-step ladder, and no weighting survives that quantisation. It does
+            // mean a blue nebula counts for as much as a green one, which is the right
+            // answer here -- what is being asked is "is it bright behind this", not
+            // "how bright would a photometer say".
+            if (!hz && glow) {
+                const uint16_t bg = (uint16_t)((dst[0] >> 8) | (dst[0] << 8));
+                const uint32_t l6 = (((bg >> 11) & 31u) + ((bg >> 5) & 63u)
+                                     + (bg & 31u)) >> 1;
+                spal = s_lit[s_glow_lv[l6 < 64u ? l6 : 63u]];
+            }
 
             // METAL IS LIGHT WHILE IT IS HOT, and that is where the colour went.
             //

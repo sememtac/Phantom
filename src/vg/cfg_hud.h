@@ -512,6 +512,40 @@
 #define CANOPY_AMBIENT        0.75f
 #define CANOPY_AMBIENT_LIFT   0.35f
 #define CANOPY_AMBIENT_REF    0.15f   // the venue brightness that changes nothing
+
+// ...AND THE BRIGHT PART OF THE SKY THE FRAME HAPPENS TO BE IN FRONT OF.
+//
+// The ambient above is one colour for the whole cockpit, which is right for the room
+// and says nothing about a nebula filling one corner of it. This is the local half.
+//
+// TWO THINGS MAKE IT CHEAP. The bake cuts the cockpit into runs of ten to eighteen
+// pixels, so a decision taken per RUN is very nearly per pixel; and the view is drawn
+// into the band before the canopy, so one read at the start of a run says exactly what
+// that run is covering. The run then picks a rung off a small ladder of palettes built
+// in advance, and the inner loop stays a lookup and a store.
+//
+// WHAT IT IS, honestly: a bright thing behind an object does not light its front face.
+// This is scattering and bloom -- light spilling around and through the frame -- and it
+// is what reads as "the cockpit is in a bright place". It answers to anything in the
+// band, so an explosion lights the frame as readily as a nebula does.
+//
+// GLOW is how far the brightest rung is lifted. AT and FULL are where the ladder starts
+// climbing and where it tops out, on the 0..62 scale the run test computes.
+//
+// AND THAT SCALE IS NOT THE ONE TO GUESS AT. Space is dark: measured across seven
+// venues, the picture behind the frame runs a median of 2 to 23 and a p90 of 10 to 24,
+// against a possible 62. The first cut of this put AT at 14 and ran the ladder to 63,
+// which is above almost every pixel of sky there is -- the effect was 23 pixels in a
+// whole frame. 6 to 24 is the range the sky actually occupies.
+//
+// FOUR RUNGS, and the number is memory rather than taste: they are read once a pixel,
+// so they live in internal RAM at 512 bytes each, and internal RAM is the scarce thing
+// on this part. Bands between rungs are broken up by the dither the arrival already
+// carries -- see BAYER4 -- so four is enough to read as a gradient.
+#define CANOPY_GLOW           0.55f
+#define CANOPY_GLOW_AT        6
+#define CANOPY_GLOW_FULL      24
+#define CANOPY_GLOW_LEVELS    4
 #define CANOPY_ALARM_ON_SECS  0.045f  // how long each flash lasts
 #define CANOPY_ALARM_HZ_MIN   2.5f    // flashes a second at the threshold
 #define CANOPY_ALARM_HZ_MAX   9.0f    // ...and hard against the wall
