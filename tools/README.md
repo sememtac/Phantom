@@ -787,6 +787,7 @@ A section that plays once says `plays once. It is on its own.`
 
 | Button | What it does |
 |---|---|
+| `New turn` | adds a turn playing a NEW, empty section. The base parts play in it and its free parts are blank, so there is somewhere to write something that is not a version of anything. |
 | `Duplicate` | copies this section under a new name and plays it next. THE COPY GETS ITS OWN FREE PARTS, so a melody can be rewritten at once. Pattern parts stay shared, so the beats and the lead run on. |
 | `Repeat` | plays the SAME section again. An edit changes both turns. |
 | `Skip` | keeps the turn in its place but does not play it. Use it to hold a section back for later. |
@@ -795,6 +796,11 @@ A section that plays once says `plays once. It is on its own.`
 A skipped turn makes no sound and takes no time. Its box shows the name in
 brackets and the grid leaves it out. In the file its name carries a minus, such
 as `order main -main22 drift`, so it survives a save.
+
+The three that add a turn are three different things, and it is worth keeping
+them apart. `Repeat` plays the SAME section again, so an edit reaches both turns.
+`Duplicate` copies it with its notes, to vary something that already works.
+`New turn` gives a blank one.
 
 DRAG A BOX ALONG THE STRIP to move that turn to another place in the order. The
 boxes move as you drag, so you see the new order before you let go. One drag is

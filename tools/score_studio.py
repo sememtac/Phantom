@@ -27,7 +27,9 @@ and is not written to the file.
 Drag a box along the song strip to move that turn to another place in the order.
 `Skip` keeps a turn in its place but does not play it, for holding a section back.
 
-`Duplicate` copies the section of this turn and plays the copy next. The copy
+`New turn` adds a turn playing a new, empty section: the base parts play in it
+and its free parts are blank. `Duplicate` copies the section of this turn and
+plays the copy next. The copy
 gets its OWN melody, so you can rewrite it without touching the section it came
 from. The beats and the lead stay shared. `Repeat` plays the SAME section again,
 and an edit then changes every turn of it.
@@ -304,6 +306,8 @@ class Studio:
                   width=8).pack(side="right", padx=2)
         tk.Button(arr, text="Duplicate", command=self.on_duplicate_section,
                   width=10).pack(side="right", padx=2)
+        tk.Button(arr, text="New turn", command=self.on_new_turn,
+                  width=9).pack(side="right", padx=2)
 
         body = tk.Frame(self.root, bg=BG)
         body.pack(side="top", fill="both", expand=True, padx=8)
@@ -599,6 +603,48 @@ class Studio:
                         "turn" if len(others) == 1 else "turns", names))
         else:
             self.say("turn %d plays %s, which plays nowhere else." % (i + 1, sec.name))
+
+    def on_new_turn(self):
+        """Add a turn playing a NEW, empty section, after the one selected.
+
+        The three buttons are three different things. `Repeat` plays the same
+        section again, so an edit changes both turns. `Duplicate` copies this
+        section with its notes, to vary something that already works. This makes
+        a section with nothing in it.
+
+        It gets an EMPTY free part for each free part in the base, for the same
+        reason Duplicate gets a full copy of them: a melody is what a section is
+        for, and a section with none of its own would play the base melody and
+        the button would look as though it had done nothing.
+        """
+        self.mark()
+        base, k = "new", 2
+        name = base
+        while score.section(self.score, name):
+            name = "%s%d" % (base, k)
+            k += 1
+        sec = score.Section(name)
+        blank = []
+        for p in self.score.parts:
+            if p.kind == "free":
+                q = copy.deepcopy(p)
+                q.events = []
+                sec.parts.append(q)
+                blank.append(q.name)
+        self.score.sections.append(sec)
+        self.score.order.insert(self.sel_turn + 1, name)
+        self.sel_turn += 1
+        self.show_turns()
+        self.show_parts()
+        self.rebuild()
+        if not blank:
+            note = "there is no free part to write into yet."
+        else:
+            names = (blank[0] if len(blank) == 1
+                     else ", ".join(blank[:-1]) + " and " + blank[-1])
+            note = "%s %s blank and yours to write." % (
+                names, "is" if len(blank) == 1 else "are")
+        self.say("added %s, an empty turn. The base parts play; %s" % (name, note))
 
     def on_duplicate_section(self):
         """Copy the section of this turn under a new name, and play it next.
