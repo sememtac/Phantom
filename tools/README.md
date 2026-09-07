@@ -1099,8 +1099,11 @@ The playhead follows the engine, which reports its position ten times a second.
 | `Pause` | silences the sound and leaves the playhead where it is |
 | `Stop` | silences the sound and puts the playhead back at the start |
 
-The SPACE bar plays, and plays again to pause. It does nothing while a box or a
-list has the keyboard, so it will not type into them.
+The SPACE bar plays, and plays again to pause.
+
+The grid holds the keyboard. A box or a button takes it while you use one, and
+gets it back to the grid as soon as you are done, so space keeps working. If a
+box does still hold it, the status line says so and a click on the grid fixes it.
 
 The MIDDLE mouse button on the grid puts the playhead where you click. Use it to
 play one part of a long song without waiting for the rest. It works while the

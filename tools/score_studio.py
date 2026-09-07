@@ -212,6 +212,8 @@ class Studio:
         # card takes a moment, and doing it here means the first Play is instant.
         # It runs after the window is up, so a build never holds the window back.
         self.root.after(120, self.start_engine)
+        # After the window is mapped, or the window manager takes it back.
+        self.root.after(150, self.canvas.focus_set)
 
     # ---------------------------------------------------------------- the window
 
@@ -364,7 +366,9 @@ class Studio:
         # song, and then there was nothing to aim a note at.
         self.keys = tk.Canvas(wrap, bg=BG, highlightthickness=0, width=LEFT_W)
         self.ruler = tk.Canvas(wrap, bg=BG, highlightthickness=0, height=TOPBAR_H)
-        self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        # takefocus, so the grid can hold the keyboard. Without it the keys went
+        # to whatever was clicked last, and space belonged to a button or a box.
+        self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0, takefocus=1)
         hbar = tk.Scrollbar(wrap, orient="horizontal", command=self.on_xview)
         vbar = tk.Scrollbar(wrap, orient="vertical", command=self.on_yview)
         self.canvas.configure(xscrollcommand=self.on_xscroll,
@@ -382,7 +386,8 @@ class Studio:
             w.bind("<MouseWheel>",
                    lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
         self.ruler.bind("<Button-1>", self.on_set_head)
-        self.canvas.bind("<Button-1>", self.on_click)
+        self.canvas.bind("<Button-1>", self.on_click, add="+")
+        self.canvas.bind("<Button-1>", lambda _e: self.canvas.focus_set(), add="+")
         self.canvas.bind("<B1-Motion>", self.on_move)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
         self.canvas.bind("<Button-3>", self.on_right_press)
@@ -394,6 +399,18 @@ class Studio:
         self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
         self.canvas.bind("<Shift-MouseWheel>", lambda e: self.canvas.xview_scroll(-e.delta // 120, "units"))
 
+        # GIVE THE KEYBOARD BACK TO THE GRID after a click on anything that does
+        # not need it. A combobox keeps focus once used, and then space belonged
+        # to the box for ever: pressing it did nothing and there was no way to
+        # tell why. A button keeps focus too, and Tk's own binding then makes
+        # space press that button again.
+        self.root.bind("<ButtonRelease-1>", self.refocus, add="+")
+        # ONE binding for every combobox, present and future. A virtual event
+        # travels up the bind tags, so the toplevel sees them all; and after_idle,
+        # because ttk puts the focus back on the box during its own handling.
+        self.root.bind("<<ComboboxSelected>>",
+                       lambda _e: self.root.after_idle(self.canvas.focus_set),
+                       add="+")
         self.root.bind("<space>", self.on_space)
         self.root.bind("<BackSpace>", self.on_delete_notes)
         self.root.bind("<Delete>", self.on_delete_notes)
@@ -1164,6 +1181,18 @@ class Studio:
                  + "playing from %s. Edit it while it plays." % self.head_text())
         self.tick()
 
+    def refocus(self, ev=None):
+        """Put the keyboard back on the grid, unless the click wants to type."""
+        w = getattr(ev, "widget", None)
+        cls = ""
+        try:
+            cls = w.winfo_class() if w is not None else ""
+        except Exception:
+            cls = ""
+        if cls in ("Entry", "TEntry", "Text", "Listbox"):
+            return
+        self.canvas.focus_set()
+
     def typing(self):
         """True while a box or a list has the keyboard. A key press then belongs
         to that widget and not to the grid."""
@@ -1272,6 +1301,7 @@ class Studio:
         """Space plays, and plays again to pause. It does nothing while a box or a
         list has the keyboard, or it would type into them."""
         if self.typing():
+            self.say("a box has the keyboard. Click the grid, then space.")
             return None
         if self.playing:
             self.on_pause()
