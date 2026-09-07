@@ -22,6 +22,8 @@
 #include "vg_ui.h"
 #include "vg_draw.h"   // vg_press_set: the live contact, recorded once a frame
 #include "vg_save.h"
+#include "vg_score.h"
+#include "generated/score_motif.h"   // the theme, baked from design/score/
 #include "vg_cine.h"
 #include "vg_bot.h"
 #include "vg_course.h"
@@ -73,6 +75,13 @@ void vg_use_menu_sky(void) {
 // Private, the table is the only thing that can reach it and the compiler enforces
 // what a comment could only ask for. Everything else uses vg_state_cut or
 // vg_state_go, which change the state and then let the table run this.
+static void leave_attract(void) {
+    // The theme belongs to the title screen. Leaving it stops the music; the
+    // voices it has already started are left to finish, because a cut does its
+    // own silencing and a plain change of screen should not clip a note.
+    vg_score_stop();
+}
+
 static void enter_attract(void) {
     vg_use_menu_sky();
     for (int i = 0; i < MAX_ENEMIES;  i++) vg.enemy[i].alive = false;
@@ -384,7 +393,7 @@ struct VgStateDef {
 // aggregate of pointers with constant initialisers, so it can be, and it costs
 // nothing it was not already costing -- the table was in flash either way.
 static constexpr VgStateDef STATES[VG_STATE_COUNT] = {
-    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               enter_attract, nullptr,     vg_upd_attract,   vg_draw_overlays },
+    { "ATTRACT",   VGS_MENU | VGS_DRIFT,               enter_attract, leave_attract, vg_upd_attract, vg_draw_overlays },
     { "ENTRY",     VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_entry,     vg_draw_entry },
     { "SELECT",    VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_select,    vg_draw_select },
     { "REPAIR",    VGS_MENU | VGS_DRIFT,               nullptr,       nullptr,     vg_upd_repair,    vg_draw_repair },
@@ -635,6 +644,20 @@ int vg_last_purse(void) { return s_last_purse; }
 // ---------------------------------------------------------------------------
 
 void vg_upd_attract(float dt, const VgInput* in, const Tap* tap) {
+    // THE THEME, from design/score/song.score, baked by tools/score.py.
+    //
+    // STARTED HERE AND NOT IN enter_attract, because the entry hook does not run
+    // on the way in that matters most. vg_game_init sets vg.state to VG_ATTRACT
+    // by hand rather than calling vg_state_go, so that the menu sky is not built
+    // a second time and the seeded stream is not drawn from; see the note there.
+    // Booting therefore never entered the state, and the music never started.
+    // Asking here covers every way in, and the guard makes it a no-op after the
+    // first frame.
+    if (!vg_score_playing()) {
+        vg_score_play(SCORE_MOTIF_STEPS,
+                      (int)(sizeof(SCORE_MOTIF_STEPS) / sizeof(SCORE_MOTIF_STEPS[0])),
+                      SCORE_MOTIF_NOTES, SCORE_MOTIF_LEN_MS, true);
+    }
 #if VG_BENCH
     // Synthetic worst case: a full complement of fighters, all manoeuvring,
     // trailing and shooting, plus the player's own rack cycling. Reproduces

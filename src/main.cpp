@@ -39,6 +39,7 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include "vg/vg_crumb.h"
 #include "vg/vg_sfx.h"
 #include "vg/vg_synth.h"
+#include "vg/vg_score.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -445,6 +446,9 @@ void loop(void) {
         // wall-clock samples: a slow frame owes MORE audio, so the cost rises
         // exactly when the budget is shortest.
         const uint32_t t_sfx = micros();
+        // The music first: it only queues notes, and they must be in the pool
+        // before this frame's samples are rendered or they start a frame late.
+        vg_score_update(sim_dt);
         vg_sfx_update(sim_dt);
         g_sfx_us = micros() - t_sfx;
     }
@@ -960,12 +964,21 @@ void loop(void) {
         // so `blocked` reads straight off as a percentage: 1700 of 2000 ms waiting
         // for ring space means the queue is full 85% of the time, which is health
         // and not a problem. Near zero is the fault. See vg_prof.h.
+        // THE VOLUMES BELONG ON THIS LINE. `peak` is measured inside
+        // vg_synth_render, which runs at full level so that a capture is not the
+        // player's slider baked into a file. The setting is applied AFTER it, so
+        // a healthy peak here says nothing about what reaches the speaker: with
+        // sfx at zero this line reads 0.90 and the board is silent. Both settings
+        // are loaded from flash at boot, so the defaults in vg_game_init are not
+        // what is running either.
         Serial.printf("        aud = blocked %lu ms/2s short %lu | peak %.2f clip %lu"
+                      " | vol m %.2f s %.2f"
                       " | hud = radar %lu thr %lu rest %lu\n",
                       (unsigned long)(g_audio_blocked_us / 1000u),
                       (unsigned long)g_audio_short,
                       (double)g_synth_peak,
                       (unsigned long)g_synth_knee,
+                      (double)vg_vol.music, (double)vg_vol.sfx,
                       (unsigned long)(acc_hud_radar / frames),
                       (unsigned long)(acc_hud_thr   / frames),
                       // By subtraction, and floored: the two timed pieces are
