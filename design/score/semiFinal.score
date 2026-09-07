@@ -20,6 +20,8 @@ part heart1 square gain 0.5 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18 : G2 . . 
 
 part heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . .
 
+free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+
 section main
 
 section main2
@@ -58,4 +60,22 @@ section new
         at 24       D5    3.75
         at 28       D#5   3.75
 
-order       main main2 new -main22
+section main3
+
+    free bass square gain 0.3 lp 900 gate 1 sus 0.8 atk 0.02
+        at 0        C3    8
+        at 8        B2    8
+        at 16       A#2   8
+        at 24       G#2   8
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4
+        at 4        D5    4
+        at 8        D#5   4
+        at 12       D5    4
+        at 16       C5    4
+        at 20       D5    4
+        at 24       D#5   4
+        at 28       F5    4
+
+order       main main2 new main3
