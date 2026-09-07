@@ -135,6 +135,12 @@ section main223
 
 section main3
 
+    free bass square gain 0.22 lp 800 gate 1 sus 0.85 atk 0.03
+        at 0        G#2   8
+        at 8        G#2   8
+        at 16       G#2   8
+        at 24       G#2   8
+
     free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
         at 0        D#5   9.5
         at 8        A4    10
