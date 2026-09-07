@@ -3,7 +3,7 @@
 # The two notes D4 and D#4 do not move. The root moves down under them, so the
 # harmony changes although no chord is ever played. Keep that shape.
 
-name        motif
+name        motif4x4
 tempo       120
 cell        2                       # beats in one group
 reps        4                       # times each group repeats

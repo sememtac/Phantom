@@ -37,6 +37,10 @@ part arrives empty, and the box beside the preset chooses its SHAPE. A `free`
 part repeats nothing and every note stands on its own. A `pattern` part is a cell
 that repeats in every group. Take `free` unless you want the repeat.
 
+`New` starts a blank song. `Copy this part, to make a variant` copies the part
+you picked, notes and all, so a second lead or a second set of drums can be built
+from one that works. `groups` and `reps` set how long a turn is.
+
 `Stop this part repeating` writes a pattern part out as separate notes, so it can
 be edited one note at a time. A new part goes in the base; `Make this part local
 to the section` narrows it to one. `Remove`, or a right click on a part row,
@@ -194,6 +198,8 @@ class Studio:
         self.audition = tk.BooleanVar(value=True)
         self.slots_var = tk.StringVar(value="4")
         self.kind_var = tk.StringVar(value="free")
+        self.groups_var = tk.StringVar(value="4")
+        self.reps_var = tk.StringVar(value="4")
         self.sel_turn = 0          # which place in the order is being edited
         self.turn_rows = []
         self.turn_drag = None      # a turn being dragged along the strip
@@ -216,8 +222,8 @@ class Studio:
 
         bar = tk.Frame(self.root, bg=BG)
         bar.pack(side="top", fill="x", padx=8, pady=6)
-        for label, cmd in (("Open", self.on_open), ("Save", self.on_save),
-                           ("Save as", self.on_save_as)):
+        for label, cmd in (("New", self.on_new), ("Open", self.on_open),
+                           ("Save", self.on_save), ("Save as", self.on_save_as)):
             tk.Button(bar, text=label, command=cmd, width=8).pack(side="left", padx=2)
         self.undo_btn = tk.Button(bar, text="Undo", command=self.on_undo,
                                   width=6, state="disabled")
@@ -256,7 +262,20 @@ class Studio:
                                     anchor="w")
         self.tempo_label.pack(side="left", padx=(4, 0))
 
-        tk.Label(bar2, text="new note length (beats)", bg=BG, fg=DIM).pack(side="left", padx=(20, 4))
+        tk.Label(bar2, text="groups", bg=BG, fg=DIM).pack(side="left", padx=(18, 2))
+        self.groups_box = ttk.Combobox(bar2, textvariable=self.groups_var, width=3,
+                                       state="readonly",
+                                       values=tuple(str(i) for i in range(1, 13)))
+        self.groups_box.pack(side="left")
+        self.groups_box.bind("<<ComboboxSelected>>", self.on_groups)
+        tk.Label(bar2, text="reps", bg=BG, fg=DIM).pack(side="left", padx=(10, 2))
+        self.reps_box = ttk.Combobox(bar2, textvariable=self.reps_var, width=3,
+                                     state="readonly",
+                                     values=("1", "2", "3", "4", "6", "8"))
+        self.reps_box.pack(side="left")
+        self.reps_box.bind("<<ComboboxSelected>>", self.on_reps)
+
+        tk.Label(bar2, text="new note length (beats)", bg=BG, fg=DIM).pack(side="left", padx=(14, 4))
         ttk.Combobox(bar2, textvariable=self.length, width=5, state="readonly",
                      values=("0.25", "0.5", "1", "2", "4")).pack(side="left")
         for text, colour in (("free", FREE_EDGE), ("fixed", PATTERN_EDGE),
@@ -331,6 +350,8 @@ class Studio:
         self.free_btn = tk.Button(side, text="Stop this part repeating",
                                   command=self.on_make_free)
         self.free_btn.pack(fill="x", pady=(4, 0))
+        tk.Button(side, text="Copy this part, to make a variant",
+                  command=self.on_copy_part).pack(fill="x", pady=(4, 0))
         tk.Label(side, text="REPORT", bg=BG, fg=DIM, anchor="w").pack(fill="x", pady=(10, 2))
         self.info = tk.Text(side, bg=GRID, fg=TEXT, width=32, height=30, bd=0,
                             highlightthickness=0, font=("Consolas", 8), wrap="none")
@@ -547,6 +568,7 @@ class Studio:
         self.sel_note = None
         self.show_turns()
         self.show_parts()
+        self.show_tempo()
         self.draw()
         sec = self.cur_section()
         if sec is None:
@@ -887,6 +909,11 @@ class Studio:
         self.syncing = True
         self.tempo_var.set(self.score.tempo)
         self.tempo_label.configure(text="%g BPM" % self.score.tempo)
+        sec = self.cur_section()
+        self.groups_var.set(str(len(score.sec_roots(self.score, sec)) if sec
+                                else len(self.score.roots)))
+        self.reps_var.set(str(score.sec_reps(self.score, sec) if sec
+                              else self.score.reps))
         self.syncing = False
 
     def on_undo(self, *_):
@@ -964,6 +991,98 @@ class Studio:
         self.root.update_idletasks()
         self.center_on_notes()
         self.say("opened %s" % rel(path))
+
+    def on_new(self):
+        """Start a blank song. Anything not saved is gone, so ask first."""
+        if not messagebox.askokcancel(
+                "Start a new song",
+                "This clears the window. Anything not saved is lost.\n\n"
+                "Carry on?"):
+            return
+        self.path = None
+        self.undo_stack, self.redo_stack = [], []
+        self.sel_part = self.sel_turn = 0
+        self.set_score(score.new_score())
+        self.root.update_idletasks()
+        self.center_on_notes()
+        self.say("a new song. Save it into design/score/ when it is worth keeping.")
+
+    def on_copy_part(self):
+        """Copy the picked part, notes and all, so a variant can be made from it.
+
+        The copy lands beside the original, in the same place: a base part stays
+        base, a part of this section stays in this section.
+        """
+        parts = self.panel_parts()
+        if not parts:
+            return
+        part = parts[min(self.sel_part, len(parts) - 1)]
+        self.mark()
+        made = copy.deepcopy(part)
+        taken = {q.name for q in score.all_parts(self.score)}
+        base, k = part.name, 2
+        while made.name in taken:
+            made.name = "%s%d" % (base, k)
+            k += 1
+        sec = self.cur_section()
+        if sec is not None and any(part is q for q in sec.parts):
+            sec.parts.append(made)
+            where = "in %s" % sec.name
+        else:
+            self.score.parts.append(made)
+            where = "in every section"
+        self.show_parts()
+        self.sel_part = [q.name for q in self.panel_parts()].index(made.name)
+        self.show_parts()
+        self.rebuild()
+        self.say("copied %s to %s, %s. Change the copy and keep the original."
+                 % (part.name, made.name, where))
+
+    def on_groups(self, _=None):
+        """Change how many groups a turn has, which is how many roots it plays."""
+        if self.syncing or not self.score.order:
+            return
+        sec = self.cur_section()
+        want = int(self.groups_var.get())
+        roots = score.sec_roots(self.score, sec)
+        if want == len(roots):
+            return
+        self.mark()
+        out = list(roots)
+        while len(out) < want:
+            out.append(out[-1] - 1)     # one semitone below the last, as a start
+        del out[want:]
+        # A section that sets its own roots keeps them to itself. One that does
+        # not is reading the score's, so the score's are what change.
+        if sec is not None and sec.roots:
+            sec.roots = out
+            where = sec.name
+        else:
+            self.score.roots = out
+            where = "every section that has none of its own"
+        self.show_turns()
+        self.rebuild()
+        self.say("%s now has %s. Drag a green note to move one."
+                 % (where, score.plural(want, "group")))
+
+    def on_reps(self, _=None):
+        """Change how many times each group repeats."""
+        if self.syncing or not self.score.order:
+            return
+        sec = self.cur_section()
+        want = int(self.reps_var.get())
+        if want == score.sec_reps(self.score, sec):
+            return
+        self.mark()
+        if sec is not None and sec.reps:
+            sec.reps = want
+            where = sec.name
+        else:
+            self.score.reps = want
+            where = "every section that has none of its own"
+        self.show_turns()
+        self.rebuild()
+        self.say("%s now plays each group %s." % (where, score.plural(want, "time")))
 
     def on_open(self):
         p = filedialog.askopenfilename(

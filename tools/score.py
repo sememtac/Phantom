@@ -189,6 +189,24 @@ def make_part(preset, name=None, taken=(), kind=None):
     return p
 
 
+def new_score(name="song"):
+    """A blank score with enough in it to be worth opening.
+
+    Four roots and one free part. A score with one root has nowhere for the R
+    slots to go, and a score with no parts will not load at all.
+    """
+    s = Score()
+    s.name = name
+    s.tempo = 120.0
+    s.cell = 2.0
+    s.reps = 4
+    s.roots = [note_num(t) for t in ("C4", "B3", "A#3", "A3")]
+    s.parts = [make_part("melody", kind="free")]
+    s.sections = [Section("main")]
+    s.order = ["main"]
+    return s
+
+
 def all_parts(s):
     """Every distinct part: the base parts, then the parts of each section.
 
@@ -840,6 +858,21 @@ def bake(s, notes, spec_path):
     out.append("")
 
     path = os.path.join(GEN, "score_%s.h" % s.name.lower())
+    # THE FILE NAME COMES FROM `name`, NOT FROM THE SPEC FILE, so two scores with
+    # the same name write to one header and the second silently replaces the
+    # first. That is how a 16 second motif took the place of a 96 second theme
+    # the firmware was already playing. Refuse, and say what to change.
+    if os.path.exists(path):
+        first = ""
+        with open(path, "r", encoding="utf-8") as f:
+            first = f.readline()
+        was = re.search(r"from (\S+) --", first)
+        mine = rel(spec_path)
+        if was and was.group(1) != mine:
+            sys.exit("%s was baked from %s.\n"
+                     "Two scores both named %r would write to one file.\n"
+                     "Change the `name` line in one of them, then bake again."
+                     % (rel(path), was.group(1), s.name))
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out))
     if muted:

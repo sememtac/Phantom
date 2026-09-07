@@ -919,6 +919,33 @@ line the window prints when you add one.
 
 A second part of the same kind gets a number, such as `kick2`.
 
+### Start a new song
+
+`New` clears the window and starts a blank score: four roots, one free part, and
+nothing written. It asks first, because anything not saved is lost. Use `Save as`
+to put it in `design/score/`.
+
+### Make a variant of a part
+
+`Copy this part, to make a variant` copies the part you picked, notes and all,
+under a new name. The copy lands where the original lives: a base part stays base
+and a part of a section stays in that section.
+
+Use it for a second lead or a second set of drums. Copy, make the copy local to
+one section, then change it there. The original keeps playing everywhere else.
+
+### How long a turn is
+
+`groups` sets how many roots a turn plays, and `reps` how many times each group
+repeats. A turn is `groups` times `reps` times `cell` beats long.
+
+A section that sets its own `roots` or `reps` keeps the change to itself. One
+that does not is reading the score's, so the score's are what change, and every
+other section that has none of its own changes with it. The status line says
+which happened.
+
+A new root starts one semitone under the last. Drag a green note to move it.
+
 ### Change the timing grid
 
 `slots in a group` sets how many slots a pattern part has. The slots divide one

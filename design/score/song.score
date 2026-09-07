@@ -19,9 +19,29 @@ part heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . 
 free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
     at 0        D#5   10
 
+free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+    at 1        C1    4
+    at 3        C1    4
+    at 5        C1    4
+    at 7        C1    4
+    at 9        C1    4
+    at 11       C1    4
+    at 13       C1    4
+    at 15       C1    4
+    at 17       C1    4
+    at 19       C1    4
+    at 21       C1    4
+    at 23       C1    4
+    at 25       C1    4
+    at 27       C1    4
+    at 29       C1    4
+    at 31       C1    4
+
 section main
 
     free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
 
 section main2
 
@@ -42,6 +62,8 @@ section main22
         at 27.5     D#5   1
 
     free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
 
 section main222
 
@@ -108,6 +130,8 @@ section main223
         at 28       D5    2.75
 
     free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
 
 section main3
 
@@ -189,4 +213,4 @@ section main2232
         at 23.75    F#4   0.5
         at 24       G4    6.5
 
-order       main main22 main223 main223 main3 main224 main2232 main2232 -drift -title
+order       main main22 main223 main223 main3 main224 main2232 main2232 -drift
