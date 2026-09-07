@@ -46,6 +46,13 @@ void vg_score_play(const VgScoreStep* steps, int n_steps,
 // Stop it. Held voices are left to finish; use vg_sfx_silence to cut them.
 void vg_score_stop(void);
 
+// Hold the music where it is, and let it go on again from there. NOT stop and
+// play: play starts a score from its beginning, and a pause has to give back the
+// bar it took. Notes already sounding are left to finish rather than cut, which
+// is a few hundred milliseconds and reads as the music being held rather than
+// switched off.
+void vg_score_pause(bool held);
+
 bool vg_score_playing(void);
 
 // One frame. Give it the same dt as vg_sfx_update.

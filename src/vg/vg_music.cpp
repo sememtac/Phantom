@@ -16,7 +16,8 @@ static const VgTuneDef TUNES[TUNE_COUNT] = {
     { "semifinal", TUNE(SEMIFINAL) },
 };
 
-static VgTune s_now = TUNE_COUNT;
+static VgTune s_now  = TUNE_COUNT;
+static bool   s_held = false;   // held by the pause screen
 
 const char* vg_music_name(VgTune t) {
     return ((int)t < TUNE_COUNT) ? TUNES[t].name : "none";
@@ -73,18 +74,30 @@ static VgTune want(void) {
     case VG_KILL:
         return vg_music_for_round(vt.round);
 
-    // A pause suspends a screen rather than being one, and the volume sliders
-    // live on it: stopping the music there would take away the thing the music
-    // slider is for. Keep whatever was playing.
-    case VG_PAUSE:
-        return s_now;
-
     default:
         return TUNE_COUNT;
     }
 }
 
 void vg_music_update(void) {
+    // THE PAUSE SCREEN HOLDS THE MUSIC. A pause suspends a screen rather than
+    // being one, so the tune is not changed and not restarted -- it is held, and
+    // it goes on from the same bar when the screen comes down.
+    //
+    // The cost is that the music slider on that screen has nothing to move while
+    // it is being dragged. That is the trade the player asked for.
+    if (vg.state == VG_PAUSE) {
+        if (!s_held) {
+            s_held = true;
+            vg_score_pause(true);
+        }
+        return;
+    }
+    if (s_held) {
+        s_held = false;
+        vg_score_pause(false);
+    }
+
     const VgTune w = want();
     if (w == s_now && (w == TUNE_COUNT || vg_score_playing())) return;
     vg_music_play(w, true);

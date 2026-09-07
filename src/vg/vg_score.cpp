@@ -27,6 +27,12 @@ void vg_score_stop(void) {
     s_on = false;
 }
 
+void vg_score_pause(bool held) {
+    // The position is untouched either way, so letting go carries on from the
+    // bar it was holding.
+    if (s_steps) s_on = !held;
+}
+
 bool vg_score_playing(void) {
     return s_on;
 }
