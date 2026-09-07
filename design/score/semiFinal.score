@@ -1,0 +1,57 @@
+name        semifinal
+tempo       150
+cell        2
+reps        4
+roots       C4 B3 A#3 G#3
+
+part lead square gain 0.26 lp 2800 gate 0.55 sus 0.2 : R D4 D#4 D4
+
+free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+    at 0        C5    4
+    at 4        D5    4
+    at 8        D#5   4
+    at 12       D5    4
+    at 16       C5    4
+    at 20       D5    4
+    at 24       D#5   4
+    at 28       F5    4
+
+section main
+
+section main2
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4
+        at 4        C6    4
+        at 8        B4    4
+        at 12       D5    4
+        at 16       C5    4
+        at 20       D5    4
+        at 24       D#5   4
+        at 28       D5    4
+
+section main22
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4
+        at 4        D5    4
+        at 8        B4    4
+        at 12       D5    4
+        at 16       C5    4
+        at 20       D5    4
+        at 24       D#5   4
+        at 28       F5    4
+
+section new
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        G5    4
+        at 4        F5    3.75
+        at 8        G#5   4
+        at 12       G5    4
+        at 16       F5    4
+        at 20       D#5   4
+        at 24       D5    3.75
+        at 28       D#5   3.75
+
+order       main main2 new -main22

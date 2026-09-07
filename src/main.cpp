@@ -40,6 +40,7 @@ static uint32_t g_sfx_us;   // the synth, also inside the submit phase
 #include "vg/vg_sfx.h"
 #include "vg/vg_synth.h"
 #include "vg/vg_score.h"
+#include "vg/vg_music.h"
 
 // Set to 1 to stream raw accelerometer axes, for working out which way the
 // board should tilt (see TILT_* in vg_config.h).
@@ -446,8 +447,10 @@ void loop(void) {
         // wall-clock samples: a slow frame owes MORE audio, so the cost rises
         // exactly when the budget is shortest.
         const uint32_t t_sfx = micros();
-        // The music first: it only queues notes, and they must be in the pool
-        // before this frame's samples are rendered or they start a frame late.
+        // What should be playing, then the notes it is due. Both before the
+        // cues: the music only queues notes, and they must be in the pool before
+        // this frame's samples are rendered or they start a frame late.
+        vg_music_update();
         vg_score_update(sim_dt);
         vg_sfx_update(sim_dt);
         g_sfx_us = micros() - t_sfx;
