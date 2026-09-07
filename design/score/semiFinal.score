@@ -16,6 +16,18 @@ free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
     at 24       D#5   4
     at 28       F5    4
 
+free heart1 square gain 0.5 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18
+    at 0        G2    0.5
+    at 8        G2    0.5
+    at 16       G2    0.5
+    at 24       G2    0.5
+
+free heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18
+    at 0.5      E2    0.5
+    at 8.5      E2    0.5
+    at 16.5     E2    0.5
+    at 24.5     E2    0.5
+
 section main
 
 section main2
