@@ -1,0 +1,35 @@
+name        example-beats
+tempo       140
+cell        2
+reps        4
+roots       C4 B3 A#3 G#3
+
+part lead square gain 0.26 lp 2800 gate 0.55 sus 0.2 : R R D4 D#4
+
+part bass square gain 0.3 lp 900 gate 0.7 sus 0.3 : R-12 . R-12 .
+
+part kick square gain 0.55 lp 700 gate 0.5 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+part snare noise gain 0.35 lp 2600 gate 0.35 sus 0.05 atk 0.002 : . . X .
+
+part hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001 : . X . X
+
+free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+    at 0        C5    6.25
+    at 8        B4    6.25
+    at 16       A#4   6.25
+    at 24       A4    6.25
+
+section main
+
+section main2
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    6.25
+        at 8        B4    6.25
+        at 16       A#4   6.25
+        at 24       A4    6.25
+
+section main22
+
+order       main main2 main22

@@ -1,0 +1,192 @@
+name        motif
+tempo       159
+cell        2
+reps        4
+roots       C4 B3 A#3 G#3
+
+part lead square gain 0.26 lp 2800 gate 0.55 sus 0.2 : R R D4 D#4
+
+free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+    at 0        C5    6.25
+    at 8        B4    6.25
+    at 16       A#4   6.25
+    at 24       A4    6.25
+
+part heart1 square gain 0.5 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+part heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . .
+
+free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+    at 0        D#5   10
+
+section main
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+section main2
+
+section main22
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    2
+        at 2.5      D5    1
+        at 3.5      D#5   1
+        at 8        B4    2
+        at 10.5     D5    1
+        at 11.5     D#5   1
+        at 16       A#4   2
+        at 18.5     D5    1
+        at 19.5     D#5   1
+        at 24       A4    2
+        at 26.5     D5    1
+        at 27.5     D#5   1
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+section main222
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    2
+        at 2.5      D5    1
+        at 3.5      D#5   1
+        at 5.5      D#5   1
+        at 6.5      F5    0.5
+        at 7        D#5   0.5
+        at 7.5      C5    0.5
+        at 8        D5    2
+        at 10.5     D#5   1.25
+        at 11.5     F5    1.25
+        at 16       A#4   2
+        at 18.5     D5    1
+        at 19.5     D#5   1
+        at 24.0125  A4    2
+        at 26.5125  D5    1
+        at 27.5125  D#5   1
+
+section drift
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        D#5   2
+        at 2.5      F5    1
+        at 3.5      D#5   1
+        at 5.5      F5    2
+        at 8        D5    2
+        at 10.5     D#5   1
+        at 11.5     D5    1
+        at 13.5     D#5   2
+        at 16       D5    2
+        at 18.5     D#5   1
+        at 19.5     D5    1
+        at 21.5     A#4   2.5
+        at 24       A4    2
+        at 26.5     D5    1
+        at 27.5     D#5   1
+
+section title
+
+    free melody square gain 0.16 gate 1 sus 0.6
+        at 0        C5    10
+        at 8        A#4   10
+        at 15       D#5   9
+        at 22       G#4   10
+        at 28       G4    4
+
+    part heart1 square gain 0.26 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+    part heart2 square gain 0.16 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . .
+
+section main223
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4.25
+        at 4        C6    2.75
+        at 8        B4    4.25
+        at 12       A#5   2.75
+        at 16       A#4   4.25
+        at 20       G5    2.75
+        at 24       A4    4.25
+        at 28       D5    2.75
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+section main3
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        D#5   9.5
+        at 8        A4    10
+        at 16       G4    10
+        at 24       G4    0.5
+        at 24.25    F#4   0.25
+        at 24.5     F4    0.25
+        at 24.75    E4    9
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    6.25
+        at 8        B4    6.25
+        at 16       A#4   6.25
+        at 24       A4    6.25
+
+section main224
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    2
+        at 2.5      D5    1
+        at 3.5      D#5   1
+        at 8        B4    2
+        at 10.5     D5    1
+        at 11.5     D#5   1
+        at 16       A#4   2
+        at 18.5     D5    1
+        at 19.5     D#5   1
+        at 24       A4    2
+        at 26.5     D5    1
+        at 27.5     D#5   1
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        D#5   3.25
+        at 2.5      F5    1.5
+        at 3.5      G5    2
+        at 6.5      C5    0.5
+        at 7        C5    0.5
+        at 7.25     D5    0.5
+        at 7.75     D#5   0.5
+        at 8        A4    3.25
+        at 14.5     C5    0.5
+        at 15       C5    0.5
+        at 15.25    D5    0.5
+        at 15.75    D#5   0.5
+        at 16       G4    3.25
+        at 22.5     C5    0.5
+        at 23       C5    0.5
+        at 23.25    D5    0.5
+        at 23.75    D#5   0.5
+
+section main2232
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4.25
+        at 4        C6    2.75
+        at 8        B4    4.25
+        at 12       A#5   2.75
+        at 16       A#4   4.25
+        at 20       G5    2.75
+        at 24       A4    4.25
+        at 28       D5    2.75
+
+    free counter square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        G4    6.5
+        at 7        E4    1
+        at 7.5      F4    0.75
+        at 7.75     F#4   0.5
+        at 8        B3    1
+        at 8        G4    6.5
+        at 15       E4    1
+        at 15.5     F4    0.75
+        at 15.75    F#4   0.5
+        at 16       G4    6.5
+        at 23       E4    1
+        at 23.5     F4    0.75
+        at 23.75    F#4   0.5
+        at 24       G4    6.5
+
+order       main main22 main223 main223 main3 main224 main2232 main2232 -drift -title

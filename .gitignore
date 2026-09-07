@@ -72,6 +72,14 @@ captures/*
 # *.bin rule above disagreeing with itself.
 host/build/
 
+# The score renderer, built by tools/host/build.bat in one command. It carries a
+# .exe and object files, and it is not tracked for the same reason host/build/
+# is not: the source is here and the build takes one command.
+tools/host/score_render.exe
+tools/host/score_live.exe
+tools/host/obj/
+tools/host/objlive/
+
 # Which board play.ps1 last flashed. Two identical boards live on this desk and
 # the port moves between sessions, so the choice is remembered -- but it is a
 # fact about the desk, not about the project.

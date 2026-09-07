@@ -680,3 +680,552 @@ Two things must agree:
 
 The recorded sound is at full level. The volume setting in the game does not
 change it, so a recording is not quiet because somebody moved a slider.
+
+## Music
+
+`tools/score.py` builds the game's music from a score file. The score files are in
+`design/score/`.
+
+    python tools/score.py design/score/motif.score
+    python tools/score.py design/score/motif.score --mid motif.mid
+    python tools/score.py design/score/motif.score --bake
+    python tools/score.py --from-mid some.mid
+
+The tool prints a report. It can also write a MIDI file to listen to, and a table
+for the device to play. `--from-mid` reads a MIDI file and prints a score file, so
+you can bring in music that you wrote somewhere else.
+
+### The score file
+
+A score file holds settings and parts.
+
+| Setting | Meaning |
+|---|---|
+| `name` | the name of the score. `--bake` uses it for the file name. |
+| `tempo` | beats for each minute |
+| `cell` | beats in one group |
+| `reps` | the number of times each group repeats |
+| `roots` | one root note for each group, in order |
+| `transpose` | move every note by this number of semitones |
+
+A part line holds the settings of one voice, then a colon, then the pattern.
+
+    part lead  square gain 0.26 lp 2800 gate 0.55 sus 0.20 : R R D4 D#4
+
+The wave is `square`, `sine` or `noise`. The other settings are columns of
+`SynthLayer` in `src/vg/vg_synth.h`. `gate` is the part of a slot that sounds.
+
+The pattern is a list of slots. The slots divide one group into equal steps. A
+pattern of 8 slots is twice as fast as a pattern of 4 slots.
+
+| Slot | Meaning |
+|---|---|
+| `R` | the root of this group |
+| `R-12` | the root, one octave lower |
+| `D#4` | this exact note, in every group |
+| `.` | a rest |
+| `-` | hold the note before it for one more slot |
+
+`--from-mid` does not find a tie. It reads a held note as one long note, and it
+gives the part a large `gate`. Put the ties back by hand.
+
+### Sections, to build a song
+
+A score with no `section` line is one section, and it repeats. To build a song,
+give it sections and an order.
+
+    part lead  square ... : R R D4 D#4      <- the base. Every section plays it.
+    part kick  square ... : G2 . . .
+
+    section verse
+        free melody square ...
+            at 0  C5 6.25
+
+    section high
+        transpose 12
+        free melody square ...
+            at 0  G4 4
+
+    order       verse verse high verse
+
+Three rules govern it.
+
+- A section plays the BASE parts, which are the parts written before the first
+  `section` line. Put the beats and the lead there and they run through the whole
+  song.
+- A part inside a section REPLACES a base part with the same name. That is how
+  one section gets its own melody over the same beats.
+- `order` is the arrangement. A name may appear as often as you want. Two turns
+  of one section are the same section, so an edit to it changes both.
+
+A section can also set `transpose`, `reps` and `roots` of its own. A section with
+its own roots plays in another key. A field it does not set comes from the score.
+
+### Build a song in the window
+
+The strip under the buttons is the order, one box for each turn. Click a box to
+edit that turn. Clicking the grid picks the turn it lands in.
+
+### Which turns are linked
+
+Two turns of ONE section are the same music. An edit to one changes both, and
+that is the point of the order: write a chorus once and play it four times.
+
+The strip shows this.
+
+- Every turn carries the colour of its section, so two turns of one section look
+  the same.
+- The turns of the section you are editing are bright. The rest are dim.
+- The selected turn has a white border.
+- The grid puts a faint wash over every turn you are about to change, and marks
+  a repeated section `linked`.
+- The line beside the strip says it in words, such as
+  `main2 plays 2 turns. One edit changes them all.`
+- The report names them, such as `LINKED: turns 2, 3`.
+
+A section that plays once says `plays once. It is on its own.`
+
+| Button | What it does |
+|---|---|
+| `Duplicate` | copies this section under a new name and plays it next. THE COPY GETS ITS OWN FREE PARTS, so a melody can be rewritten at once. Pattern parts stay shared, so the beats and the lead run on. |
+| `Repeat` | plays the SAME section again. An edit changes both turns. |
+| `Skip` | keeps the turn in its place but does not play it. Use it to hold a section back for later. |
+| `Remove turn` | takes one turn out of the order. The section itself is kept. |
+
+A skipped turn makes no sound and takes no time. Its box shows the name in
+brackets and the grid leaves it out. In the file its name carries a minus, such
+as `order main -main22 drift`, so it survives a save.
+
+DRAG A BOX ALONG THE STRIP to move that turn to another place in the order. The
+boxes move as you drag, so you see the new order before you let go. One drag is
+one undo step.
+
+Only the order changes. The sections and their notes are untouched, so a turn
+carries its music with it.
+
+The part list shows `base` or `local` for each part. A base part is one object
+that every section plays, so an edit to it reaches the whole song. `Make this
+part local to the section` gives the section its own copy, and after that an edit
+to it changes nothing else.
+
+`Add` follows the same idea. A free part goes in the section you are editing,
+because a melody is what changes. A pattern part goes in the base, because the
+beats run on.
+
+### A free part
+
+A pattern part repeats with the groups. A free part does not repeat. Use a free
+part for a melody.
+
+    free melody square gain 0.20 lp 4200 gate 0.95 sus 0.35
+        at 0        G4    4
+        at 4        F4    4
+
+An `at` line gives a beat from the start of the score, a note, and a length in
+beats. Every `at` line belongs to the `free` line above it.
+
+### The window
+
+`tools/score_studio.py` shows the notes on a grid. `tools\studio.cmd` starts it.
+
+    tools\studio.cmd
+    tools\studio.cmd design\score\motif.score
+
+Double click `tools\studio.cmd`, or run it from PowerShell, from cmd or from
+bash. Run it from any directory. It opens `design/score/motif.score` when you
+give it no file. It uses `pythonw`, so it opens no console window.
+
+To start the studio without the launcher, use Python:
+
+    python tools/score_studio.py
+    python tools/score_studio.py design/score/motif.score
+
+Pick a part in the list, then edit on the grid.
+
+| Mouse | Result |
+|---|---|
+| left click on an empty cell | add a note |
+| left drag on a note | move the note |
+| left drag on the right edge of a note | hold the note longer |
+| RIGHT DRAG across the grid | pick every note in the box |
+| left drag on a picked note | move every picked note together |
+| shift and that drag | move them in time only, and keep their pitches |
+| right click on a note | remove the note |
+| control and the mouse wheel | zoom |
+
+The pointer changes shape over the right edge of a note. Drag that edge to the
+right to hold the note longer. Drag it to the left to make the note shorter.
+
+`Undo` and `Redo` go back and forward through the edits. The keys are control
+and z for undo, and control and y for redo.
+
+One drag is one step. A drag sends many events, and each one changes the score,
+but undo goes back to the state before the drag started. A drag that changes
+nothing adds no step. Undo holds the last 100 steps.
+
+Undo covers the notes and the parts. It does not cover the file. To go back to
+the file on disk, open it again.
+
+### Tempo and volume
+
+The tempo slider is in the row of buttons. It changes the speed of the whole
+score, from 40 to 200 beats for each minute. The notes keep their beats, so
+nothing moves against anything else. Only the length in seconds changes.
+
+The volume slider is under the part list. It changes the volume of the part you
+picked, and no other part. The list shows the volume of each part on its line.
+The volume is the `gain` column of `SynthLayer`, so a change goes to the file
+and to the device.
+
+One drag of a slider is one undo step, in the same way a drag of a note is.
+
+### Add a part from a preset
+
+Pick a kind next to `Add part`, then press it. The preset gives the part settings
+that work, so you do not have to find them again.
+
+A PRESET GIVES THE SOUND AND NOTHING ELSE. Every part arrives empty. The timing
+is yours, and so is the SHAPE: the box beside the preset chooses it.
+
+| Shape | What it does |
+|---|---|
+| `free` | every note stands on its own. Nothing repeats. Use this unless you want a repeat. |
+| `pattern` | a cell of slots that repeats in every group and every rep of the section |
+
+A pattern part is a small machine: one cell, played 16 times in a section of 4
+groups and 4 reps. That is right for a hat and wrong for a bass line that has to
+change. When in doubt, take `free`.
+
+`Stop this part repeating` writes a pattern part out as separate notes. The notes
+are the same and it sounds the same, but nothing repeats afterwards, so each note
+can be moved on its own. There is no way back, other than undo.
+
+A new part goes in the BASE, whatever its shape, so every section plays it. Use
+`Make this part local to the section` to narrow it to one.
+
+| Preset | The sound it gives |
+|---|---|
+| `melody` | a free part, for a tune that does not repeat |
+| `bass` | a square with a low corner, for `R-12` slots |
+| `kick` | a square that falls 18 semitones. NOT a low note |
+| `snare` | noise with a middle corner |
+| `hat` | quiet noise, 8 slots, so one slot is a sixteenth |
+| `chord` | the sound of the motif part |
+| `empty` | a plain square |
+
+`score.PRESETS` in `tools/score.py` holds the settings. The drum numbers come
+from `vg_sfx.cpp`, which was tuned by ear on the device. `score.HINTS` holds the
+line the window prints when you add one.
+
+A second part of the same kind gets a number, such as `kick2`.
+
+### Change the timing grid
+
+`slots in a group` sets how many slots a pattern part has. The slots divide one
+group into equal steps, so 4 slots give eighth notes when the cell is 2 beats,
+and 8 slots give sixteenths.
+
+Each part has its own count. A drum can run in sixteenths while the bass runs in
+quarters. A free part has no slots, so the box is off for one.
+
+To change the count, pick the part and pick a number. The notes already written
+move to the nearest new slot.
+
+### Remove a part
+
+Pick the part and press `Remove`, or right click its row. Undo puts it back.
+
+A score needs one part, so the last one cannot be removed.
+
+### Turn a part off to hear the rest
+
+Every part has a box beside its name. Clear the box and the part stops sounding.
+Use it to hear one part on its own, or to hear what the others do without it.
+
+This is a listening control.
+
+- It changes no note.
+- It makes no undo step, and an undo does not switch parts back on.
+- It is NOT written to the score file. A file you open always sounds in full.
+- The part stays on the grid, in grey, so you can see it and switch it back on.
+
+If the score plays when you press the box, it plays again at once with the
+change.
+
+WARNING: `--bake` leaves out a part that is off. The header says which parts it
+left out, and `tools/score.py` prints a warning. Switch every part back on before
+you bake a score for a build.
+
+### There is no scale
+
+The tool holds no key and no scale. Any of the twelve semitones goes anywhere,
+in any part. Nothing is quantised and nothing is corrected.
+
+A NOISE PART IS DIFFERENT, and it is not a restriction. Noise has no pitch, so
+`SynthLayer` ignores the frequency of a noise layer and every hit sounds the
+same. A noise part gets a strip of its own under the pitched rows, named after
+the part. Click anywhere along that part's strip and the height is ignored.
+
+A part that SWEEPS never follows the root. A kick clicked on the root of a group
+is written as a note name, not as `R`, because a drum that changed pitch with
+each group would be four different drums.
+
+### How high the grid goes
+
+The grid always covers C1 to C7. It is not built from the notes that are already
+there, so you can always write a note higher or lower than anything in the score.
+
+The window scrolls to your notes when it opens a file. Most music uses a small
+part of the range, so the rest is below and above the view.
+
+### Pick a group of notes
+
+Drag with the RIGHT button to draw a box. Every note in the box is picked, and
+picked notes are drawn with a white edge. Drag any one of them with the left
+button and they all move together. Hold SHIFT during that drag and they move in
+time only, keeping the pitch each one has.
+
+A left click on an empty cell clears the pick. A right CLICK, with no drag, still
+removes one note, as before.
+
+| Key | What it does to the picked notes |
+|---|---|
+| backspace, or delete | removes them |
+| control and c | copies them |
+| control and v | pastes them at the playhead |
+
+A paste goes into the section the PLAYHEAD is in, into the free part with the
+same name as the part it came from. The notes keep their spacing and their
+pitches, and the first one lands on the playhead. They are picked after a paste,
+so one drag moves them again.
+
+If that section has no free part of that name, the paste says so and writes
+nothing.
+
+Undo clears the pick. An undo builds the score again, so the notes that were
+picked are new objects and the old pick would point at nothing.
+
+Only the notes of a FREE part can be picked. A slot of a pattern part is shared
+by every group of every turn, so there is no one note to move. The report line
+says how many were left out.
+
+### What a colour on the grid means
+
+A slot of a pattern part is one of two things. Dragging them does two different
+things, so the colour says which one you have.
+
+| Colour | What it is | What a drag does |
+|---|---|---|
+| green | a slot written as `R`, which follows the root of its group | moves the root of THAT group. The other groups stay. |
+| blue | a slot written as a note name, such as `D4` | changes that slot in EVERY group, because the groups share one pattern |
+| orange | a note of a free part | moves that one note |
+| purple | a hit of a noise part, in its own strip | nothing. A hit has no pitch to move |
+
+To move a root, drag a green note. That is the only way to change a root on the
+grid, and it is what you want when a group should start on a different note.
+
+Every part that follows the root moves with it. That is the point of a root.
+
+An edit to a free part changes one note.
+
+The two kinds of part hold a note in different ways.
+
+- A free part keeps a length in beats for each note, so a note can be any length.
+- A pattern part has slots. To hold a note, the tool puts a hyphen in the slots
+  that follow it. A note cannot hold past the end of its group, because the
+  next group starts the pattern again. The status line says so if you try.
+
+The report at the left gives the length, the voice count, the speaker check and
+the harmony. It changes as you edit.
+
+### The engine starts with the window
+
+The window opens the sound engine as soon as it appears, not on the first `Play`.
+Opening the sound card takes a moment, and doing it at the start means the first
+`Play` and the first click on a note are immediate.
+
+The engine opens after the window is drawn, so a build never holds the window
+back. If it cannot start, the status line says so and the window still works.
+`Play` tries again.
+
+### It plays live
+
+The window does not render a file and play it. `tools/host/score_live.exe` runs
+`src/vg/vg_synth.cpp` in real time and takes commands while it plays, so nothing
+below stops the sound.
+
+- Clear the box of a part and the part stops on the next buffer, about a
+  hundredth of a second. The engine holds every note of every part and decides
+  when each note starts, so nothing is worked out again.
+- Edit a note and the change reaches the next turn of the loop. A drag sends
+  nothing until you let go, because the note you drag is sounded on its own.
+- Click a note and you hear it at once. `Hear clicks` turns that off.
+- Move the loop switch or the volume and the sound keeps running.
+
+The playhead follows the engine, which reports its position ten times a second.
+
+### The transport
+
+| Button | What it does |
+|---|---|
+| `Play` | plays from the playhead. After a pause it goes on from there. |
+| `Pause` | silences the sound and leaves the playhead where it is |
+| `Stop` | silences the sound and puts the playhead back at the start |
+
+The SPACE bar plays, and plays again to pause. It does nothing while a box or a
+list has the keyboard, so it will not type into them.
+
+The MIDDLE mouse button on the grid puts the playhead where you click. Use it to
+play one part of a long song without waiting for the rest. It works while the
+song plays and while it is stopped.
+
+The playhead is drawn when the sound is stopped as well, so you can always see
+where `Play` will start. The status line names the turn and the bar.
+
+Only two things start the sound again: `Play`, and a change of tempo.
+
+WARNING: the synthesiser has 10 voices. A note you click takes one, the same as
+a note of the score. The device does the same, so what you hear is honest.
+
+### Hear it as a file
+
+`tools/score_audio.py` renders a WAV file with the same synthesiser. Use it for
+an export. `Play` uses the live engine instead. `tools/score_audio.py` builds
+`tools/host/`, which compiles `src/vg/vg_synth.cpp`, the file the firmware runs.
+
+    python tools/score_audio.py design/score/motif.score
+    python tools/score_audio.py design/score/motif.score --speaker
+
+The build needs the C++ tools of Visual Studio 2022. The build runs once. After
+that it runs again only when a source file changes.
+
+`tools/host/` is not `host/`. `host/build.ps1` builds the whole game for the
+desktop, with a compat layer for the board. `tools/host/` takes one game source
+file, `src/vg/vg_synth.cpp`, and adds a main program that writes a WAV file. The
+music must not touch the simulation, so the renderer does not compile it.
+
+`Loop` plays the score again and again. Windows does the loop itself, so there is
+no gap. The score is music that repeats, so use the loop to judge it.
+
+A loop stops at the end of the last group. Three things follow from that.
+
+- The file carries no tail, because a tail would be a gap in the loop.
+- A note that runs past the end of the last group is cut, because it would
+  sound over the start of the next turn of the loop.
+- The last three milliseconds fade to zero. A note that is cut still sounds at
+  full level, and the step from that level back to silence is a click.
+
+`Stop` ends the loop. On the command line, use `--loop`.
+
+WARNING: `Play as device` and `--speaker` add a filter that APPROXIMATES the
+device driver. Nobody measured the driver to make that filter. Use it to find
+notes that the device loses. Do not judge level or tone from it.
+
+### A bass part and a drum part
+
+A part is a track. One part makes one sound, so a drum kit is three parts. Give
+the kick, the snare and the hat a line each.
+
+For a bass, use a pattern part and put the root an octave down.
+
+    part bass  square gain 0.30 lp 900 gate 0.70 sus 0.30 : R-12 . R-12 .
+
+For a drum that has no pitch, use the noise wave and the slot `X`. `X` is a hit.
+
+    part hat   noise gain 0.12 lp 7000 gate 0.10 sus 0 atk 0.001 : . X . X
+
+A kick drum is different, and the reason matters. Do NOT make a kick from a low
+note. The speaker is one centimetre across and a low note alone gives nothing.
+Weight comes from a tone that FALLS fast. `sweep` gives the number of semitones
+the pitch falls across the note.
+
+    part kick  square gain 0.55 lp 700 gate 0.50 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+That is 98 Hz down to 35 Hz. `vg_sfx.cpp` builds its explosion the same way, at
+90 Hz down to 28 Hz, and says why: "the falling tone is what a small speaker
+turns into weight".
+
+`design/score/example-beats.score` is a working example of all three, with a
+bass and a melody. Open it, play it, and take what you want from it.
+
+WARNING: every part you add costs voices. `vg_synth` has 10 and no priority.
+Read the voice count in the report after you add a drum. In the example, hats on
+every slot made 5 voices, and hats off the beat made 4.
+
+### What a bass can be on this device
+
+The driver is one centimetre across and gives very little under 300 Hz, so a low
+note is never heard as itself. It is heard through its HARMONICS. A square wave
+at f also holds energy at 3f, 5f and so on, and the ear puts the missing
+fundamental back.
+
+These numbers were measured through the game's own synthesiser.
+
+| Sound | Energy above 300 Hz | What survives the driver |
+|---|---|---|
+| square 104 Hz, lp 900 | 12% | 23% |
+| square 104 Hz, lp 250 | 3% | 14% |
+| square 52 Hz, lp 900 | 3% | ... |
+| sine 104 Hz, lp 900 | 0% | 11% |
+
+Three rules follow.
+
+- USE A SQUARE, NEVER A SINE. A sine has no harmonics, so nothing carries it. It
+  measured 0% of its energy in the band the driver can move.
+- KEEP `lp` ABOVE THREE TIMES THE NOTE. At 104 Hz the third harmonic is 312 Hz,
+  and that one partial is the whole sound. `lp 250` cuts it and the note goes.
+- ABOUT 100 Hz IS THE FLOOR. Under it the third harmonic falls under 300 Hz too
+  and there is nothing left to carry the note. G#2 at 103.8 Hz is the lowest
+  note that works, because 3 times 103.8 is 311.5.
+
+| Note | Hz | 3rd harmonic | Usable |
+|---|---|---|---|
+| C2 | 65.4 | 196.2 | no |
+| F2 | 87.3 | 261.9 | no |
+| G#2 | 103.8 | 311.5 | yes, the floor |
+| C3 | 130.8 | 392.4 | yes |
+| G3 | 196.0 | 588.0 | yes |
+
+A DRUM IS DIFFERENT. It gets its weight from a pitch that FALLS fast, not from a
+low pitch held. See the `kick` preset and `sweep`.
+
+### Read the speaker check first
+
+WARNING: the device speaker is one centimetre across. It gives very little under
+300 Hz. The report marks a note that is too low as `thin` or `SILENT`.
+
+A square wave under 300 Hz is still audible, because its harmonics carry it. A sine
+wave under 300 Hz is not audible. For a low square, keep `lp` above three times the
+frequency of the note. Below that the low pass removes the harmonics, and the note
+goes silent.
+
+To lift the whole score, add a `transpose` line.
+
+### Read the voice count
+
+WARNING: `vg_synth` has 10 voices and no priority. It takes the voice with the least
+time left. The music and the missile alert compete for the same 10 voices.
+
+Keep the peak count at 4 or less. Above that the music takes a voice that an alert
+needs.
+
+### The device has no player yet
+
+`--bake` writes `src/vg/generated/score_<name>.h`. The firmware cannot play that
+table. `VgVolume.music` in `src/vg/vg_sfx.h` has no consumer either. Write the
+player before you put a score in a build.
+
+### There is one synthesiser, and it is built twice
+
+There is still no second copy of the synthesiser on this computer. `tools/host/`
+compiles `src/vg/vg_synth.cpp` itself. The preview cannot drift from the firmware,
+because it is the firmware code.
+
+WARNING: do not write a synthesiser in Python here. A second copy drifts from the
+first, and then the preview lies.
+
+The MIDI file is a different thing. It uses a piano, so it gives you the notes and
+not the timbre. Use it to judge the notes on a computer that has no compiler.
+
+The preview cannot give you the speaker. `--speaker` only approximates it. The
+device is the one true test of tone.

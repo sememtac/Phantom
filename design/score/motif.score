@@ -1,0 +1,16 @@
+# The main motif. Four groups, each played four times.
+#
+# The two notes D4 and D#4 do not move. The root moves down under them, so the
+# harmony changes although no chord is ever played. Keep that shape.
+
+name        motif
+tempo       120
+cell        2                       # beats in one group
+reps        4                       # times each group repeats
+roots       C4 B3 A#3 G#3
+
+# One line for each part. The settings come first, then a colon, then the
+# pattern. R is the group's root. R-12 is the root one octave lower. A full
+# stop is a rest. A hyphen holds the note before it.
+
+part lead  square gain 0.26 lp 2800 gate 0.55 sus 0.20 : R R D4 D#4
