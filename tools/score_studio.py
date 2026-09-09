@@ -128,6 +128,7 @@ PLAYHEAD = "#e05a5a"
 WARN = "#e0a54a"
 BAD = "#e05a5a"
 OK = "#6fbf73"
+SEE = "#63a8e0"               # the box that draws a part
 
 LEFT_W = 54            # width of the note names on the left
 ROW_H = 13             # height of one semitone
@@ -206,6 +207,10 @@ class Studio:
         self.turn_rows = []
         self.turn_drag = None      # a turn being dragged along the strip
         self.sel_notes = set()     # keys of the notes picked with a right drag
+        # PART NAMES THAT ARE NOT DRAWN. Sound and sight are separate: a part
+        # that is off still shows where its notes are, and a part that is
+        # hidden still plays. Hide a part to read the one under it.
+        self.hidden = set()
         self.marquee = None
         self.clip = []             # copied notes: (part name, beat, pitch, length)
         self.build_ui()
@@ -386,9 +391,12 @@ class Studio:
         self.canvas.grid(row=1, column=1, sticky="nsew")
         vbar.grid(row=1, column=2, sticky="ns")
         hbar.grid(row=2, column=1, sticky="ew")
-        for w in (self.keys, self.ruler):
-            w.bind("<MouseWheel>",
-                   lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
+        # THE WHEEL DOES WHAT THE AXIS UNDER IT DOES. The note names are the
+        # pitch axis, so the wheel scrolls them. The band of times is the time
+        # axis, and so is the zoom.
+        self.keys.bind("<MouseWheel>",
+                       lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
+        self.ruler.bind("<MouseWheel>", lambda e: self.on_wheel(e))
         self.ruler.bind("<Button-1>", self.on_set_head)
         self.canvas.bind("<Button-1>", self.on_click, add="+")
         self.canvas.bind("<Button-1>", lambda _e: self.canvas.focus_set(), add="+")
@@ -399,9 +407,13 @@ class Studio:
         self.canvas.bind("<ButtonRelease-3>", self.on_right_release)
         self.canvas.bind("<Motion>", self.on_hover)
         self.canvas.bind("<Button-2>", self.on_set_head)
-        self.canvas.bind("<Control-MouseWheel>", lambda e: self.zoom(1.25 if e.delta > 0 else 1 / 1.25))
-        self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
-        self.canvas.bind("<Shift-MouseWheel>", lambda e: self.canvas.xview_scroll(-e.delta // 120, "units"))
+        # The bare wheel zooms, because that is the move you make most. Hold a
+        # key to scroll: control for the pitches, shift for the time.
+        self.canvas.bind("<MouseWheel>", self.on_wheel)
+        self.canvas.bind("<Control-MouseWheel>",
+                         lambda e: self.canvas.yview_scroll(-e.delta // 120, "units"))
+        self.canvas.bind("<Shift-MouseWheel>",
+                         lambda e: self.canvas.xview_scroll(-e.delta // 120, "units"))
 
         # GIVE THE KEYBOARD BACK TO THE GRID after a click on anything that does
         # not need it. A combobox keeps focus once used, and then space belonged
@@ -418,6 +430,7 @@ class Studio:
         self.root.bind("<space>", self.on_space)
         self.root.bind("<BackSpace>", self.on_delete_notes)
         self.root.bind("<Delete>", self.on_delete_notes)
+        self.root.bind("<Control-s>", self.on_save)
         self.root.bind("<Control-c>", self.on_copy)
         self.root.bind("<Control-v>", self.on_paste)
         self.root.bind("<Control-z>", self.on_undo)
@@ -831,7 +844,7 @@ class Studio:
     def show_parts(self):
         """Build the part list. Each part gets a box that turns it on and off."""
         self.syncing = True
-        for row, _, _ in self.part_rows:
+        for row in [r[0] for r in self.part_rows]:
             row.destroy()
         self.part_rows = []
         parts = self.panel_parts()
@@ -847,6 +860,11 @@ class Studio:
                            selectcolor=OK, fg=BG, activeforeground=BG,
                            highlightthickness=0, bd=0,
                            command=lambda k=i: self.on_mute(k)).pack(side="left")
+            see = tk.BooleanVar(value=part.name not in self.hidden)
+            tk.Checkbutton(row, variable=see, bg=GRID, activebackground=GRID,
+                           selectcolor=SEE, fg=BG, activeforeground=BG,
+                           highlightthickness=0, bd=0,
+                           command=lambda k=i: self.on_see(k)).pack(side="left")
             label = tk.Label(row, bg=GRID, anchor="w", font=("Consolas", 8),
                              text="%-8s %-5s %-6s %.2f"
                                   % (part.name[:8],
@@ -856,17 +874,18 @@ class Studio:
             for w in (row, label):
                 w.bind("<Button-1>", lambda _e, k=i: self.pick_part(k))
                 w.bind("<Button-3>", lambda _e, k=i: self.remove_at(k))
-            self.part_rows.append((row, var, label))
+            self.part_rows.append((row, var, see, label))
         self.show_selected()
         self.syncing = False
 
     def show_selected(self):
         """Mark the part you picked, and point the volume slider at it."""
         parts = self.panel_parts()
-        for i, (row, _, label) in enumerate(self.part_rows):
+        for i, (row, _, _, label) in enumerate(self.part_rows):
             bg = ROW_SEL if i == self.sel_part else GRID
             row.configure(bg=bg)
-            label.configure(bg=bg, fg=DIM if parts[i].mute else TEXT)
+            label.configure(bg=bg, fg=DIM if (parts[i].mute or
+                            parts[i].name in self.hidden) else TEXT)
         if parts:
             part = parts[self.sel_part]
             self.gain_var.set(part.gain)
@@ -968,6 +987,33 @@ class Studio:
                     break
         self.say("%s is %s" % (part.name, "off" if part.mute else "on"))
 
+    def on_see(self, i):
+        """Draw one part, or leave it out. This is a drawing control. It changes
+        no note, it makes no sound, it makes no undo step, and it is not written
+        to the file. Use it when two parts sit on the same rows."""
+        if self.syncing:
+            return
+        part = self.panel_parts()[i]
+        if self.part_rows[i][2].get():
+            self.hidden.discard(part.name)
+        else:
+            self.hidden.add(part.name)
+        # A HIDDEN PART CANNOT BE EDITED, so move off it. A note you cannot see
+        # is a note you cannot click, and the pointer would do nothing.
+        panel = self.panel_parts()
+        if part.name in self.hidden and 0 <= self.sel_part < len(panel)                 and panel[self.sel_part] is part:
+            for k, q in enumerate(panel):
+                if q.name not in self.hidden:
+                    self.sel_part = k
+                    break
+        self.sel_notes = {key for key in self.sel_notes
+                          if (self.part_by_id(key[0]) or part).name not in self.hidden}
+        self.show_selected()
+        self.draw()
+        self.say("%s is %s" % (part.name,
+                               "hidden. It still sounds." if part.name in self.hidden
+                               else "in view again"))
+
     def show_tempo(self):
         self.syncing = True
         self.tempo_var.set(self.score.tempo)
@@ -1050,6 +1096,7 @@ class Studio:
         self.path = path
         self.undo_stack, self.redo_stack = [], []
         self.sel_part = 0
+        self.hidden = set()         # another score has other parts
         self.set_score(s)
         self.root.update_idletasks()
         self.center_on_notes()
@@ -1154,11 +1201,13 @@ class Studio:
         if p:
             self.load(p)
 
-    def on_save(self):
+    def on_save(self, _=None):
         if not self.path:
-            return self.on_save_as()
+            self.on_save_as()
+            return "break"
         score.write_score(self.score, self.path)
         self.say("saved %s" % rel(self.path))
+        return "break"
 
     def on_save_as(self):
         p = filedialog.asksaveasfilename(
@@ -1239,12 +1288,25 @@ class Studio:
             return
         self.canvas.focus_set()
 
+    # A widget you cannot type into is not a box that holds the keyboard, even
+    # when it is one of these. THE REPORT IS A DISABLED Text THAT FILLS THE SIDE
+    # OF THE WINDOW. A click on it to read a line took the keyboard and never gave
+    # it back, and every key the grid owns went quiet: copy, paste, backspace and
+    # delete all returned without a word. A copy that does nothing and says
+    # nothing leaves the LAST copy in the clipboard, so the next paste puts back
+    # notes the writer copied minutes ago.
+    KEYS = ("Entry", "TEntry", "Text", "TCombobox", "Listbox")
+
     def typing(self):
         """True while a box or a list has the keyboard. A key press then belongs
-        to that widget and not to the grid."""
+        to that widget and not to the grid. A box that is off does not count."""
         w = self.root.focus_get()
-        return w is not None and w.winfo_class() in ("Entry", "TEntry", "Text",
-                                                     "TCombobox", "Listbox")
+        if w is None or w.winfo_class() not in self.KEYS:
+            return False
+        try:
+            return str(w.cget("state")) != "disabled"
+        except tk.TclError:
+            return True
 
     def picked_notes(self):
         """The picked notes as (part, index, beat, pitch, length), in time order.
@@ -1265,6 +1327,7 @@ class Studio:
     def on_delete_notes(self, _=None):
         """Backspace removes every picked note."""
         if self.typing():
+            self.say("a box has the keyboard. Click the grid, then backspace.")
             return None
         rows = self.picked_notes()
         if not rows:
@@ -1289,6 +1352,10 @@ class Studio:
     def on_copy(self, _=None):
         """Keep the picked notes, measured from the earliest of them."""
         if self.typing():
+            # NOT "break": the box gets its own copy. But say so, or the line
+            # above still reads as the last copy that worked.
+            self.say("a box has the keyboard, so it was copied and the notes "
+                     "were not. Click the grid, then copy.")
             return None
         rows = self.picked_notes()
         if not rows:
@@ -1304,6 +1371,8 @@ class Studio:
     def on_paste(self, _=None):
         """Paste at the playhead, into the section the playhead is in."""
         if self.typing():
+            self.say("a box has the keyboard, so it was pasted into and the grid "
+                     "was not. Click the grid, then paste.")
             return None
         if not self.clip:
             self.say("nothing has been copied.")
@@ -1654,6 +1723,8 @@ class Studio:
         chosen = panel[self.sel_part] if 0 <= self.sel_part < len(panel) else None
 
         for i, n in enumerate(self.notes):
+            if n["part"].name in self.hidden:
+                continue
             beat = n["t"] * s.tempo / 60.0
             length = n["life"] * s.tempo / 60.0
             mine = n["part"] is chosen
@@ -2097,6 +2168,8 @@ class Studio:
         y0, y1 = sorted((c.canvasy(m["y"]), c.canvasy(ev.y)))
         picked, skipped = set(), 0
         for i, n in enumerate(self.notes):
+            if n["part"].name in self.hidden:
+                continue                  # you cannot pick what you cannot see
             key = self.note_key(n)
             nx0, nx1 = self.note_span(i)
             ny0 = self.note_y(n)
@@ -2136,9 +2209,29 @@ class Studio:
         self.drag = None
         self.rebuild()
 
-    def zoom(self, f):
-        self.px_per_beat = max(12.0, min(400.0, self.px_per_beat * f))
+    def on_wheel(self, ev):
+        """The wheel zooms, around the beat under the pointer."""
+        return self.zoom(1.25 if ev.delta > 0 else 1 / 1.25, ev)
+
+    def zoom(self, f, ev=None):
+        """Change how wide one beat is drawn.
+
+        With a mouse event, the beat under the pointer stays under the pointer.
+        Without one, the left edge of the view stays where it is. A zoom that
+        moves the music out from under the pointer is a zoom you must undo by
+        hand every time.
+        """
+        old = self.px_per_beat
+        self.px_per_beat = max(12.0, min(400.0, old * f))
+        if self.px_per_beat == old:
+            return "break"
+        beat = self.canvas.canvasx(ev.x) / old if ev is not None else None
         self.draw()
+        if beat is not None:
+            width = self.x_of(self.total_beats()) + 40
+            self.canvas.xview_moveto(
+                max(0.0, min(1.0, (beat * self.px_per_beat - ev.x) / width)))
+        return "break"
 
 
 def main():

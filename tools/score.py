@@ -539,7 +539,8 @@ def build_one(s, parts, roots, reps, transpose, at, oi, name, notes):
         if part.kind == "free":
             for k, (b, n, length) in enumerate(part.events):
                 notes.append({"t": at + b * beat, "n": n + transpose,
-                              "life": length * beat * part.gate, "part": part,
+                              "life": length * beat * part.gate,
+                              "len": length * beat, "part": part,
                               "src": k, "slot": -1, "group": -1, "tok": "",
                               "sec": oi, "secname": name})
             continue
@@ -560,8 +561,9 @@ def build_one(s, parts, roots, reps, transpose, at, oi, name, notes):
                     if tok == "-":
                         if held is not None:
                             held["life"] += step
+                            held["len"] += step
                         continue
-                    row = {"t": t, "life": life, "part": part, "src": -1,
+                    row = {"t": t, "life": life, "len": step, "part": part, "src": -1,
                            "slot": i, "group": g, "tok": tok,
                            "sec": oi, "secname": name}
                     if tok == "X":
@@ -744,6 +746,334 @@ def report(s, notes):
     if bad:
         print("  %d of %d notes are weak or silent on the device." % (bad, len(seen)))
         print("  To fix this, lift the notes an octave. Add this line: transpose 12")
+
+
+# Note values, for a reader who writes on a staff. A beat is a quarter note.
+VALUES = [(4.0, "whole"), (3.0, "dotted half"), (2.0, "half"), (1.5, "dotted quarter"),
+          (1.0, "quarter"), (0.75, "dotted eighth"), (0.5, "eighth"),
+          (0.375, "dotted 16th"), (0.25, "16th"), (0.125, "32nd")]
+
+
+def note_value(beats):
+    """Name the note value for a length in beats, or say how to tie it."""
+    for b, name in VALUES:
+        if abs(beats - b) < 0.001:
+            return name
+    whole, rest = divmod(beats + 0.001, 4.0)
+    rest -= 0.001
+    if whole and rest < 0.001:
+        return "%d whole notes, tied" % whole
+    return "%g beats, tied" % beats
+
+
+def bar_beat(b, per_bar=4):
+    """Give the bar and the beat in the bar, counted from 1, for a beat."""
+    return int(b // per_bar) + 1, b % per_bar + 1
+
+
+def write_sheet(s, notes, path):
+    """Write a text score of the music.
+
+    Give the file to a person, or to a tool, that writes sheet music. It gives
+    every note as a bar, a beat, a pitch and a length. The device file and the
+    MIDI file both give the SOUNDING length, which is shorter than the written
+    length because each part has a gate. This file gives the written length.
+    """
+    beat = 60.0 / s.tempo
+    out = ["%s -- a text score, to write on a staff" % s.name,
+           "=" * 60,
+           "tempo        %g beats a minute" % s.tempo,
+           "time         4/4. One beat is one quarter note.",
+           "pitch        concert pitch. C4 is middle C, and it is MIDI note 60.",
+           "a section    %g bars" % (sec_beats(s, s.sections[0]) / 4.0 if s.sections
+                                     else s.cell * s.reps * 4 / 4.0),
+           "the song     %d turns, %g bars" % (len(s.order), song_beats(s) / 4.0),
+           "",
+           "HOW THE HARMONY MOVES",
+           "  A section has %d groups. Each group holds one root for %g bars."
+           % (len(s.roots), s.cell * s.reps / 4.0),
+           "  The roots fall, and the parts written on D4 and D#4 do not move.",
+           "  That is the whole idea of the piece.",
+           ""]
+    for i, r in enumerate(s.roots):
+        b0 = i * s.cell * s.reps
+        out.append("    group %d  bars %g-%g   root %s"
+                   % (i + 1, b0 / 4.0 + 1, (b0 + s.cell * s.reps) / 4.0, note_name(r)))
+    out += ["", "THE PARTS", ""]
+    named = []
+    for p in all_parts(s):          # one line for each NAME, not each override
+        if p.name not in [q.name for q in named]:
+            named.append(p)
+    for p in named:
+        if p.sweep:
+            out.append("  %-9s PERCUSSION. Its pitch falls %g semitones across each"
+                       % (p.name, -p.sweep))
+            out.append("            note, so it is a drum. Write it on a percussion")
+            out.append("            staff and ignore the pitch.")
+        elif p.wave == "noise":
+            out.append("  %-9s PERCUSSION. It is noise and has no pitch. Write it on a"
+                       % p.name)
+            out.append("            percussion staff.")
+        else:
+            out.append("  %-9s pitched." % p.name)
+    out += ["", "THE SECTIONS", "",
+            "  Each section is written once below. The order is at the end.", ""]
+    seen = set()
+    for oi, entry in enumerate(s.order):
+        name = turn_name(entry)
+        if name in seen:
+            continue
+        seen.add(name)
+        sec = section(s, name)
+        mine = [n for n in notes if n["sec"] == oi]
+        if not mine:
+            continue
+        at = min(n["t"] for n in mine)
+        out.append("  section %s%s" % (name, "" if turn_on(entry) else "   (not played)"))
+        for p in sec_parts(s, sec):
+            rows = sorted((n for n in mine if n["part"] is p), key=lambda n: n["t"])
+            if not rows:
+                out.append("    %s: silent in this section." % p.name)
+                continue
+            if p.kind == "pattern":
+                out.append("    %s: a cell of %g beats, repeated. The slots are:  %s"
+                           % (p.name, s.cell, "  ".join(p.pattern)))
+                out.append("      A dot is a rest. Each slot is %g beats."
+                           % (s.cell / len(p.pattern)))
+                if any(ROOT_RE.match(tok) for tok in p.pattern):
+                    out.append("      R is the root of the group. The four groups read:"
+                               " %s." % ", ".join(note_name(r + sec_transpose(s, sec))
+                                                  for r in sec_roots(s, sec)))
+                continue
+            out.append("    %s:" % p.name)
+            for n in rows:
+                b = (n["t"] - at) / beat
+                bar, bb = bar_beat(b)
+                out.append("      bar %-3d beat %-6g %-4s %s"
+                           % (bar, bb, note_name(n["n"]), note_value(n["len"] / beat)))
+        out.append("")
+    out += ["THE ORDER", ""]
+    for i, entry in enumerate(s.order):
+        out.append("  %2d. %s%s" % (i + 1, turn_name(entry),
+                                    "" if turn_on(entry) else "   (skip this one)"))
+    with open(path, "w") as f:
+        f.write(chr(10).join(out) + chr(10))
+    print("wrote %s (%d lines)" % (path, len(out)))
+
+
+# ---------------------------------------------------------------------------
+# ABC NOTATION, FOR SHEET MUSIC
+#
+# One tune, the whole arrangement, in playing order. Every part gets a voice and
+# every drum part shares one percussion staff.
+#
+# This is NOT the text score. `--sheet` writes each section one time and leaves
+# the order to the reader. `--abc` writes the piece the way it plays, so a
+# program that reads ABC gets the same 64 bars that the device gets.
+# ---------------------------------------------------------------------------
+
+# The natural pitch class of each letter, C to B.
+LETTER_PC = [0, 2, 4, 5, 7, 9, 11]
+ABC_ACC = {-2: "__", -1: "_", 0: "=", 1: "^", 2: "^^"}
+
+# Where each drum sits on the percussion staff, from the bottom up.
+PERC_SLOTS = ["F", "A", "c", "e", "g"]
+
+
+def minor_key(tonic):
+    """Give the letter and the alteration of each note of a minor key.
+
+    `tonic` is a MIDI note. The result is a map of pitch class to (letter index,
+    alteration), and the key signature that goes with it.
+    """
+    steps = [0, 2, 3, 5, 7, 8, 10]
+    pc = tonic % 12
+    # The letter the tonic is written on. Take the spelling that needs the
+    # fewest accidentals, which for a minor key is the flat one.
+    best = None
+    for li in range(7):
+        alt = ((pc - LETTER_PC[li] + 6) % 12) - 6
+        if abs(alt) <= 1:
+            cost = 0 if alt == 0 else 1
+            if best is None or cost < best[0]:
+                best = (cost, li, alt)
+    _, tli, talt = best
+    sig = {}
+    for i, st in enumerate(steps):
+        li = (tli + i) % 7
+        want = (pc + st) % 12
+        sig[li] = ((want - LETTER_PC[li] + 6) % 12) - 6
+    return tli, talt, sig
+
+
+def abc_pitch(n, sig):
+    """Write one MIDI note in ABC, against a key signature."""
+    pc = n % 12
+    best = None
+    for li in range(7):
+        alt = ((pc - LETTER_PC[li] + 6) % 12) - 6
+        if abs(alt) > 2:
+            continue
+        # Prefer the letter the key signature already alters this way, then the
+        # smallest accidental, then a sharp over a flat.
+        cost = (0 if sig.get(li, 0) == alt else 1, abs(alt), 0 if alt >= 0 else 1)
+        if best is None or cost < best[0]:
+            best = (cost, li, alt)
+    _, li, alt = best
+    acc = "" if sig.get(li, 0) == alt else ABC_ACC[alt]
+    # The octave of the written letter, which is not always the octave of the
+    # MIDI note: B# and Cb cross the line.
+    octv = (n - alt) // 12 - 1
+    letter = "CDEFGAB"[li]
+    if octv >= 5:
+        return acc + letter.lower() + "'" * (octv - 5)
+    return acc + letter + "," * (4 - octv)
+
+
+def abc_units(beats, floor_at=1):
+    """Round a length in beats to sixteenth notes.
+
+    A long note loses its fraction of a beat. Those fractions are the space that
+    keeps one note off the next, and they are not what a player reads.
+    """
+    q = 0.5 if beats >= 2 else 0.25
+    return max(floor_at, int(round(round(beats / q) * q * 4)))
+
+
+def abc_bars(events, total_units, marks=None):
+    """Lay events out in bars of sixteen sixteenths, and write the ABC.
+
+    `events` is a list of (start in units, text, length in units). A gap becomes
+    a rest, and a note that runs past a bar line is tied.
+    """
+    out, bar, at = [], [], 0
+
+    def push(txt, d):
+        nonlocal at, bar
+        while d > 0:
+            room = 16 - (at % 16)
+            take = min(d, room)
+            bar.append(txt + str(take) + ("-" if take < d and txt != "z" else ""))
+            at += take
+            d -= take
+            if at % 16 == 0:
+                out.append(" ".join(bar))
+                bar = []
+
+    for st, txt, d in events:
+        if st > at:
+            push("z", st - at)
+        if st < at:                     # two parts on one staff can overlap
+            continue
+        push(txt, d)
+    if at < total_units:
+        push("z", total_units - at)
+
+    lines = []
+    for i, b in enumerate(out):
+        tag = ""
+        if marks and i in marks:
+            tag = '"^%s"' % marks[i]
+        lines.append(tag + b)
+    return lines
+
+
+def write_abc(s, notes, path, key=None):
+    """Write the whole arrangement as one ABC tune.
+
+    Give the file to a program that makes sheet music. MuseScore reads ABC, and
+    `abc2xml` turns it into MusicXML.
+    """
+    beat = 60.0 / s.tempo
+    notes = [n for n in notes if not n["part"].mute]
+    if not notes:
+        sys.exit("nothing to write: every part is off")
+    total_units = int(round(song_beats(s) * 4))
+
+    # The key. A score has no key line, so take the minor key of the first root,
+    # which is right for both of the scores in this repository.
+    tonic = note_num(key[:-1]) if key and key[-1] in "mM" else s.roots[0]
+    tli, talt, sig = minor_key(tonic)
+    kname = "CDEFGAB"[tli] + {-1: "b", 0: "", 1: "#"}[talt] + "m"
+
+    # Where each turn starts, in bars, so the sections can be named on the staff.
+    starts = {}
+    for n in notes:
+        starts[n["sec"]] = min(starts.get(n["sec"], 1e9), n["t"])
+    marks = {}
+    for oi, t0 in starts.items():
+        marks[int(round(t0 / beat / 4))] = turn_name(s.order[oi])
+
+    # Sort the parts: pitched voices from the top down, then the drums.
+    named, perc = [], []
+    for p in all_parts(s):
+        if any(q.name == p.name for q in named + perc):
+            continue
+        mine = [n for n in notes if n["part"].name == p.name]
+        if not mine:
+            continue
+        (perc if (p.wave == "noise" or p.sweep) else named).append(p)
+    named.sort(key=lambda p: -sorted(n["n"] for n in notes
+                                     if n["part"].name == p.name)[
+                                 len([1 for n in notes
+                                      if n["part"].name == p.name]) // 2])
+
+    out = ["X:1", "T:%s" % s.name, "M:4/4", "L:1/16",
+           "Q:1/4=%d" % int(round(s.tempo)), "K:%s" % kname]
+    bodies = []
+
+    for i, p in enumerate(named):
+        mine = sorted((n for n in notes if n["part"].name == p.name),
+                      key=lambda n: n["t"])
+        mid = sorted(n["n"] for n in mine)[len(mine) // 2]
+        clef = "bass" if mid < 57 else "treble"
+        vid = "V%d" % (i + 1)
+        out.append('V:%s clef=%s name="%s"' % (vid, clef, p.name))
+        by = {}
+        for n in mine:
+            by.setdefault(round((n["t"]) / beat, 4), []).append(n)
+        keys = sorted(by)
+        ev = []
+        for k, st in enumerate(keys):
+            stop = keys[k + 1] if k + 1 < len(keys) else total_units / 4.0
+            rows = by[st]
+            txt = abc_pitch(rows[0]["n"], sig) if len(rows) == 1 else \
+                "[%s]" % "".join(abc_pitch(r["n"], sig) for r in rows)
+            span = min(stop - st, max(r["len"] / beat for r in rows))
+            ev.append((int(round(st * 4)), txt, abc_units(span)))
+        bodies.append((vid, abc_bars(ev, total_units, marks if i == 0 else None)))
+
+    if perc:
+        vid = "VP"
+        out.append('V:%s clef=perc stafflines=5 name="drums"' % vid)
+        slot = {p.name: PERC_SLOTS[min(k, 4)] for k, p in
+                enumerate(sorted(perc, key=lambda p: (
+                    0 if p.sweep else 1,
+                    sorted(n["n"] for n in notes if n["part"].name == p.name)[0])))}
+        mine = sorted((n for n in notes if n["part"] in perc), key=lambda n: n["t"])
+        ev = []
+        for k, n in enumerate(mine):
+            st = int(round(n["t"] / beat * 4))
+            nxt = int(round(mine[k + 1]["t"] / beat * 4)) if k + 1 < len(mine) \
+                else total_units
+            if ev and st <= ev[-1][0]:
+                continue                # two drums on one instant: keep the first
+            ev.append((st, slot[n["part"].name], max(1, min(2, nxt - st))))
+        bodies.append((vid, abc_bars(ev, total_units)))
+
+    for vid, lines in bodies:
+        out.append("V:%s" % vid)
+        for k in range(0, len(lines), 4):
+            chunk = lines[k:k + 4]
+            end = "|]" if k + 4 >= len(lines) else "|"
+            out.append("|".join(chunk) + end)
+
+    with open(path, "w") as f:
+        f.write(chr(10).join(out) + chr(10))
+    legend = ", ".join("%s on %s" % (p.name, slot[p.name]) for p in perc) if perc else "none"
+    print("wrote %s (%d bars, %d voices, key %s)"
+          % (path, total_units // 16, len(bodies), kname))
+    print("  drums: %s" % legend)
 
 
 def write_mid(s, notes, path):
@@ -1013,6 +1343,13 @@ def main():
     ap = argparse.ArgumentParser(description="Build the game's music from a score file.")
     ap.add_argument("spec", nargs="?", help="the score file to read")
     ap.add_argument("--mid", metavar="PATH", help="write a MIDI file to listen to")
+    ap.add_argument("--sheet", metavar="PATH",
+                    help="write a text score, for sheet music")
+    ap.add_argument("--abc", metavar="PATH",
+                    help="write the whole arrangement as one ABC tune")
+    ap.add_argument("--key", metavar="KEY",
+                    help="the key for --abc, such as Cm. The default is the "
+                         "minor key of the first root.")
     ap.add_argument("--bake", action="store_true", help="write the table for the device")
     ap.add_argument("--from-mid", metavar="PATH", help="read a MIDI file and print a score file")
     ap.add_argument("--transpose", type=int, metavar="N", help="move every note N semitones")
@@ -1032,6 +1369,12 @@ def main():
     if a.mid:
         print("")
         write_mid(s, notes, a.mid)
+    if a.sheet:
+        print("")
+        write_sheet(s, notes, a.sheet)
+    if a.abc:
+        print("")
+        write_abc(s, notes, a.abc, a.key)
     if a.bake:
         print("")
         bake(s, notes, a.spec)

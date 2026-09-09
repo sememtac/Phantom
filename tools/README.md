@@ -688,12 +688,25 @@ change it, so a recording is not quiet because somebody moved a slider.
 
     python tools/score.py design/score/motif.score
     python tools/score.py design/score/motif.score --mid motif.mid
+    python tools/score.py design/score/motif.score --sheet motif.txt
+    python tools/score.py design/score/motif.score --abc motif.abc
     python tools/score.py design/score/motif.score --bake
     python tools/score.py --from-mid some.mid
 
 The tool prints a report. It can also write a MIDI file to listen to, and a table
 for the device to play. `--from-mid` reads a MIDI file and prints a score file, so
 you can bring in music that you wrote somewhere else.
+
+`--abc` writes the whole arrangement as one ABC tune. It follows the order, so a
+section that plays twice is written twice, and it holds every part: one voice for
+each pitched part, and one percussion staff for the drums. MuseScore reads ABC, and
+`abc2xml` turns it into MusicXML. Use `--key` to set the key. The default is the
+minor key of the first root.
+
+`--sheet` writes a text score. Give the file to a person, or to a tool, that makes
+sheet music. It writes each section one time, and it gives the order at the end.
+It gives the WRITTEN length of each note. The MIDI file gives the SOUNDING length,
+which is shorter, because each part has a gate.
 
 ### The score file
 
@@ -857,13 +870,20 @@ Pick a part in the list, then edit on the grid.
 | left drag on a picked note | move every picked note together |
 | shift and that drag | move them in time only, and keep their pitches |
 | right click on a note | remove the note |
-| control and the mouse wheel | zoom |
+| the mouse wheel | zoom in and out |
+| control and the wheel | scroll up and down |
+| shift and the wheel | scroll left and right |
+
+The wheel zooms around the beat under the pointer, so the bar you are looking at
+stays where it is. The wheel does what the axis under it does: over the note
+names on the left it scrolls the pitches, and over the band of times at the top
+it zooms.
 
 The pointer changes shape over the right edge of a note. Drag that edge to the
 right to hold the note longer. Drag it to the left to make the note shorter.
 
 `Undo` and `Redo` go back and forward through the edits. The keys are control
-and z for undo, and control and y for redo.
+and z for undo, and control and y for redo. Control and s saves.
 
 One drag is one step. A drag sends many events, and each one changes the score,
 but undo goes back to the state before the drag started. A drag that changes
@@ -972,8 +992,12 @@ A score needs one part, so the last one cannot be removed.
 
 ### Turn a part off to hear the rest
 
-Every part has a box beside its name. Clear the box and the part stops sounding.
-Use it to hear one part on its own, or to hear what the others do without it.
+Every part has TWO boxes beside its name. The first box is the sound. The second
+box is the drawing. They work on their own, so a part that you cannot hear is
+still on the grid, and a part that you cannot see still plays.
+
+Clear the first box and the part stops sounding. Use it to hear one part on its
+own, or to hear what the others do without it.
 
 This is a listening control.
 
@@ -984,6 +1008,22 @@ This is a listening control.
 
 If the score plays when you press the box, it plays again at once with the
 change.
+
+### Hide a part to read the one under it
+
+Clear the SECOND box and the part is left off the grid. Two parts often sit on
+the same rows, and the notes of one hide the notes of the other. Hide the part
+you are not working on.
+
+This is a drawing control.
+
+- It changes no note, and it makes no sound.
+- It makes no undo step, and it is NOT written to the score file.
+- You cannot click a note you cannot see, and a right drag does not pick one.
+- If you hide the part you are editing, the studio moves you to the next part
+  that is in view. A part you cannot see is a part you cannot edit.
+
+The name of a part goes grey when the part is off OR out of view.
 
 WARNING: `--bake` leaves out a part that is off. The header says which parts it
 left out, and `tools/score.py` prints a warning. Switch every part back on before
@@ -1105,11 +1145,20 @@ The playhead follows the engine, which reports its position ten times a second.
 | `Pause` | silences the sound and leaves the playhead where it is |
 | `Stop` | silences the sound and puts the playhead back at the start |
 
-The SPACE bar plays, and plays again to pause.
+The SPACE bar plays, and plays again to pause. Control and s saves, and it saves
+from anywhere, a box included.
 
 The grid holds the keyboard. A box or a button takes it while you use one, and
 gets it back to the grid as soon as you are done, so space keeps working. If a
 box does still hold it, the status line says so and a click on the grid fixes it.
+
+Copy, paste, backspace and delete all say so too. Before, they did nothing and
+said nothing, and the status line still showed the last message. A copy that
+looked like it worked left the EARLIER notes in the clipboard, and the next
+paste put those back.
+
+The REPORT does not hold the keyboard. You cannot type into it, so a click on it
+to read a line no longer stops the keys the grid owns.
 
 The MIDDLE mouse button on the grid puts the playhead where you click. Use it to
 play one part of a long song without waiting for the rest. It works while the
