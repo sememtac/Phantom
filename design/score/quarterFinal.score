@@ -1,0 +1,193 @@
+name        motif4x4
+tempo       161
+cell        2
+reps        4
+roots       B3 A#3 A3 A#3
+
+part lead square gain 0.26 lp 2800 gate 0.55 sus 0.2 : R R C#4 D4
+
+free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+    at 0        B4    6.25
+    at 8        A#4   6.25
+    at 16       D5    8.25
+    at 24       E5    8.5
+
+part heart1 square gain 0.5 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+part heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . .
+
+free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+    at 1        B0    5.75
+    at 3        B0    5.75
+    at 5        B0    5.75
+    at 7        B0    5.75
+    at 9        B0    5.75
+    at 11       B0    5.75
+    at 13       B0    5.75
+    at 15       B0    5.75
+    at 17       B0    5.75
+    at 19       B0    5.75
+    at 21       B0    5.75
+    at 23       B0    5.75
+    at 25       B0    5.75
+    at 27       B0    5.75
+    at 29       B0    5.75
+    at 31       B0    5.75
+
+section main
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+
+section main2
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 4        C#5   2
+        at 8        D5    4.25
+        at 12       C#5   2
+        at 16       B4    4.25
+        at 20       C#5   2
+        at 24       D5    4.25
+        at 28       F#5   2.25
+
+section new
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 4        D6    3.25
+        at 8        E5    4.25
+        at 12       F#5   3.25
+        at 16       B4    4.25
+        at 20       C#6   3.25
+        at 24       E5    4.25
+        at 28       C#5   3.25
+
+section new2
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 3.75     B5    2.75
+
+section main22
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 4        F#5   2
+        at 8        B4    4.25
+        at 12       C#5   2.25
+        at 16       A4    4.25
+        at 20       E5    2.25
+        at 24       F#4   4.25
+        at 28       A#4   2.25
+
+section new3
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 4        F#5   2.25
+        at 8        A4    4.25
+        at 12       E5    2.25
+        at 16       G4    4.25
+        at 20       D5    2.25
+        at 24       F#4   4.25
+        at 28       A#4   2.25
+
+section new4
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        F#5   4.25
+        at 4        G5    2
+        at 8        F#5   4.25
+        at 12       E5    2
+        at 16       C#5   4.25
+        at 20       D5    2.25
+        at 24       B4    4.25
+        at 28       C#5   2.25
+
+section main23
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        D5    4.25
+        at 4        F#5   2.25
+        at 8        B4    4.25
+        at 12       E5    2.25
+        at 16       G4    4.25
+        at 20       D5    2.25
+        at 24       F#4   4.25
+        at 28       F#5   3.25
+
+section main3
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    6.25
+        at 8        A#4   6.25
+        at 16       D5    8.25
+        at 24       E5    8.25
+
+    free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        A4    8.5
+        at 8        G#4   8.5
+        at 16       A4    11.25
+        at 24       C#5   11.5
+
+section main24
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        B4    4.25
+        at 4        C#5   2
+        at 7.5      B4    0.5
+        at 7.75     C#5   0.25
+        at 8        D5    4.25
+        at 12       C#5   2
+        at 16       B4    4.25
+        at 20       C#5   2
+        at 23.5     B4    0.5
+        at 23.75    C#5   0.25
+        at 24       D5    4.25
+        at 28       F#5   2.25
+
+    free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        A4    5.75
+        at 4        A#4   2.75
+        at 8        B4    5.75
+        at 12       A#4   2.75
+        at 16       A4    5.75
+        at 20       A#4   2.75
+        at 24       B4    6
+        at 28       D5    3
+
+section new42
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        F#5   4.25
+        at 3.5      E5    0.5
+        at 3.75     F5    0.25
+        at 4        G5    2
+        at 7.5      F#5   0.25
+        at 8        F#5   4.25
+        at 12       E5    2
+        at 16       C#5   4.25
+        at 19.5     B4    0.5
+        at 19.75    C5    0.25
+        at 20       D5    2.25
+        at 23.5     B4    0.25
+        at 24       B4    4.25
+        at 28       C#5   2.25
+
+    free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+        at 0        D5    5.75
+        at 4        E5    2.75
+        at 8        D5    5.75
+        at 12       C#5   2.75
+        at 16       A4    5.75
+        at 20       B4    3
+        at 24       A4    5.75
+        at 28       B4    3
+
+order       main main2 new4 main3 main24 new42 -main22 -main23 -new3 -new -new2
