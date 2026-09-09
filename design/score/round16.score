@@ -17,10 +17,10 @@ section main
 section new
 
     free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
-        at 0        C5    4.25
-        at 4        G5    3
-        at 8        C5    4.25
-        at 12       F5    3.25
+        at 0        A4    4.25
+        at 4        D#5   3
+        at 8        G#4   4.25
+        at 12       D5    3.25
         at 16       A#4   4.25
         at 20       D#5   3.75
         at 24       A4    4
@@ -29,12 +29,14 @@ section new
 section new2
 
     free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
-        at 0        C5    4.25
-        at 4        G5    4.25
-        at 8        B4    8.5
-        at 16       A#4   4.25
-        at 20       F5    4.25
-        at 24       A4    7.25
+        at 0        C5    3.25
+        at 4        G5    3
+        at 8        F5    3.25
+        at 12       A#4   3.25
+        at 16       A#4   3.25
+        at 20       F5    3.25
+        at 24       D#5   3.25
+        at 28       A4    3.25
 
 section new3
 
@@ -54,4 +56,16 @@ section new22
         at 20       F5    4.25
         at 24       D#5   8.5
 
-order       main new new2 -new22
+section new4
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        C5    4.25
+        at 4        G5    3
+        at 8        C5    4.25
+        at 12       F5    3.25
+        at 16       A#4   4.25
+        at 20       D#5   3.75
+        at 24       A4    4
+        at 28       D5    4.25
+
+order       main -new new4 new2 -new22
