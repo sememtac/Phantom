@@ -1,0 +1,37 @@
+name        tournament
+tempo       120
+cell        2
+reps        4
+roots       C4 B3 A#3 G#3
+
+part lead square gain 0.26 lp 2800 gate 0.55 sus 0.2 : R R D4 D#4
+
+free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+    at 0        F5    7.25
+    at 8        D5    7.25
+    at 16       D#5   7.25
+    at 24       A#4   7.25
+
+part heart1 square gain 0.5 lp 700 gate 0.45 sus 0 atk 0.002 sweep -18 : G2 . . .
+
+part heart2 square gain 0.34 lp 620 gate 0.4 sus 0 atk 0.002 sweep -18 : . E2 . .
+
+free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+
+section main
+
+section new
+
+    free melody square gain 0.2 lp 4200 gate 0.95 sus 0.35
+        at 0        F5    7.5
+        at 8        G5    7.5
+        at 16       D5    7.5
+        at 24       D#5   7.25
+
+    free bass square gain 0.3 lp 900 gate 0.7 sus 0.3
+
+    free hat noise gain 0.12 lp 7000 gate 0.1 sus 0 atk 0.001
+
+order       main new

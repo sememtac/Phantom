@@ -19,8 +19,11 @@
 // ===========================================================================
 
 enum VgTune : unsigned char {
-    TUNE_TITLE = 0,     // the attract screen
-    TUNE_SEMI,          // the semi final, round 2
+    TUNE_TOURNEY = 0,   // the bracket, and the repair bay reached from it
+    TUNE_ROUND16,       // round 0
+    TUNE_QUARTER,       // round 1
+    TUNE_SEMI,          // round 2
+    TUNE_PHANTOM,       // round 3, and the win screen it runs into
     TUNE_COUNT          // also means "nothing should be playing"
 };
 
@@ -34,6 +37,10 @@ struct VgTuneDef {
 
 // The tune a round of the tournament gets, or TUNE_COUNT for a round with none.
 // Rounds are 0..3: last sixteen, quarter final, semi final, final.
+//
+// THE MENUS BEFORE A MATCH ARE SILENT. The title card, the callsign screen and
+// the hangar have no tune: the game opens on the crawl and the engine noise,
+// and the first music a player hears is the tournament table.
 VgTune vg_music_for_round(unsigned char round);
 
 // Start one, looping. Starting the tune already playing does nothing, so this

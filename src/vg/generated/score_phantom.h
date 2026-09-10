@@ -21,7 +21,7 @@ struct VgScoreStep { uint32_t t_ms; uint8_t note; };
 // One row for each different note. f0 and f1 differ when the part sweeps,
 // which is how a drum gets its weight out of a small speaker.
 //              wave        f0      f1     life    atk     sus    gain   lp_hz  delay  mod  depth
-static const SynthLayer SCORE_MOTIF_NOTES[] = {
+static const SynthLayer SCORE_PHANTOM_NOTES[] = {
     { SW_SQUARE,    98.00,   34.65,  0.085f, 0.0020f, 0.00f, 0.50f,    700, 0,    0, 0.00f },  // heart1 G2
     { SW_SQUARE,   261.63,  261.63,  0.104f, 0.0040f, 0.20f, 0.26f,   2800, 0,    0, 0.00f },  // lead C4
     { SW_SQUARE,   523.25,  523.25,  2.241f, 0.0040f, 0.35f, 0.20f,   4200, 0,    0, 0.00f },  // melody C5
@@ -72,7 +72,7 @@ static const SynthLayer SCORE_MOTIF_NOTES[] = {
 };
 
 // One row for each note that plays, in time order.
-static const VgScoreStep SCORE_MOTIF_STEPS[] = {
+static const VgScoreStep SCORE_PHANTOM_STEPS[] = {
     {     0,  0}, {     0,  1}, {     0,  2}, {   189,  3}, {   189,  1}, {   377,  4},
     {   566,  5}, {   755,  0}, {   755,  1}, {   943,  3}, {   943,  1}, {  1132,  4},
     {  1321,  5}, {  1509,  0}, {  1509,  1}, {  1698,  3}, {  1698,  1}, {  1887,  4},
@@ -233,4 +233,4 @@ static const VgScoreStep SCORE_MOTIF_STEPS[] = {
     { 95849, 10}, { 96038,  3}, { 96038, 10}, { 96226, 27}, { 96226,  4}, { 96415,  5},
 };
 
-#define SCORE_MOTIF_LEN_MS 96604
+#define SCORE_PHANTOM_LEN_MS 96604
