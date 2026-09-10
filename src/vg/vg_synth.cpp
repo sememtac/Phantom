@@ -87,7 +87,19 @@ struct Voice {
 #define VOICES 10
 static Voice s_v[VOICES];
 
-static Voice* grab(void) {
+// THE MUSIC'S OWN. Eight, against a measured peak of seven -- the thickest bar in
+// the final's theme -- so no score in the game ever steals from itself, and the
+// cues above cannot steal from it at all. See vg_synth_note in the header for why
+// the pool is split rather than prioritised.
+//
+// The cost is eight more voices the render loop looks at every sample. A voice
+// that is off is one test and a skip; the ones that are on were being paid for
+// before, out of the cue pool. The mixer is on its own core, so the frame does not
+// see any of it.
+#define MUSIC_VOICES 8
+static Voice s_m[MUSIC_VOICES];
+
+static Voice* grab(Voice* pool, int n) {
     // A free voice, or the one with least left to do.
     //
     // THE DELAY COUNTS. It did not, and that is why the broadcast's jingle never
@@ -98,22 +110,24 @@ static Voice* grab(void) {
     // its turn.
     Voice* best = nullptr;
     float  worst = 1e9f;
-    for (int i = 0; i < VOICES; i++) {
-        if (!s_v[i].on) return &s_v[i];
-        const float left = s_v[i].delay + (s_v[i].life - s_v[i].t);
-        if (left < worst) { worst = left; best = &s_v[i]; }
+    for (int i = 0; i < n; i++) {
+        if (!pool[i].on) return &pool[i];
+        const float left = pool[i].delay + (pool[i].life - pool[i].t);
+        if (left < worst) { worst = left; best = &pool[i]; }
     }
     return best;
 }
 
 int vg_synth_live(void) {
     int n = 0;
-    for (int i = 0; i < VOICES; i++) if (s_v[i].on) n++;
+    for (int i = 0; i < VOICES; i++)       if (s_v[i].on) n++;
+    for (int i = 0; i < MUSIC_VOICES; i++) if (s_m[i].on) n++;
     return n;
 }
 
 void vg_synth_reset(void) {
-    for (int i = 0; i < VOICES; i++) s_v[i].on = false;
+    for (int i = 0; i < VOICES; i++)       s_v[i].on = false;
+    for (int i = 0; i < MUSIC_VOICES; i++) s_m[i].on = false;
 }
 
 void vg_synth_silence(void) {
@@ -122,17 +136,16 @@ void vg_synth_silence(void) {
     // flatline ramps, both of which are right when a ship stops flying and wrong
     // when the picture has already gone. Their levels go to zero here rather
     // than their targets.
-    for (int i = 0; i < VOICES; i++) s_v[i].on = false;
+    vg_synth_reset();
     s_eng_want = 0.0f;
     s_eng_lvl  = 0.0f;
     s_flat_want = 0.0f;
     s_flat_lvl  = 0.0f;
 }
 
-void vg_synth_layer(const SynthLayer* l, float pitch) {
-    Voice* v = grab();
-    if (!v) return;
-
+// One body for both pools. `pitch` scales the frequencies and `gain` the level;
+// a cue moves the first and the music the second, and neither moves both.
+static void start(Voice* v, const SynthLayer* l, float pitch, float gain) {
     v->on      = true;
     v->wave    = l->wave;
     v->phase   = 0.0f;
@@ -142,7 +155,7 @@ void vg_synth_layer(const SynthLayer* l, float pitch) {
     v->life    = l->life;
     v->attack  = l->attack;
     v->sustain = l->sustain;
-    v->gain    = l->gain;
+    v->gain    = l->gain * gain;
     v->delay   = l->delay;
     v->mod_hz  = l->mod_hz;
     v->mod_phase = 0.0f;
@@ -151,6 +164,16 @@ void vg_synth_layer(const SynthLayer* l, float pitch) {
 
     const float x = 6.2831853f * l->lp_hz / (float)VG_AUDIO_RATE;
     v->lp_k = (x > 1.0f) ? 1.0f : x;
+}
+
+void vg_synth_layer(const SynthLayer* l, float pitch) {
+    Voice* v = grab(s_v, VOICES);
+    if (v) start(v, l, pitch, 1.0f);
+}
+
+void vg_synth_note(const SynthLayer* l, float gain) {
+    Voice* v = grab(s_m, MUSIC_VOICES);
+    if (v) start(v, l, 1.0f, gain);
 }
 
 // Sine by smoothed parabola, phase in [0,1). Accurate to about a tenth of a
@@ -277,8 +300,10 @@ void vg_synth_render(int16_t* out, int n_out, float mix) {
             acc += s_eng_lp * s_eng_lvl * 0.55f;
         }
 
-        for (int i = 0; i < VOICES; i++) {
-            Voice* v = &s_v[i];
+        // Both pools, the music after the cues. Neither order changes the sum;
+        // the loop is one array after the other only so the body is written once.
+        for (int i = 0; i < VOICES + MUSIC_VOICES; i++) {
+            Voice* v = (i < VOICES) ? &s_v[i] : &s_m[i - VOICES];
             if (!v->on) continue;
 
             // Waiting its turn: the second half of a two-tone.

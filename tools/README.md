@@ -1169,8 +1169,9 @@ where `Play` will start. The status line names the turn and the bar.
 
 Only two things start the sound again: `Play`, and a change of tempo.
 
-WARNING: the synthesiser has 10 voices. A note you click takes one, the same as
-a note of the score. The device does the same, so what you hear is honest.
+WARNING: the music has 8 voices in the synthesiser. A note you click takes one,
+the same as a note of the score. The device does the same, so what you hear is
+honest.
 
 ### Hear it as a file
 
@@ -1233,8 +1234,8 @@ turns into weight".
 `design/score/example-beats.score` is a working example of all three, with a
 bass and a melody. Open it, play it, and take what you want from it.
 
-WARNING: every part you add costs voices. `vg_synth` has 10 and no priority.
-Read the voice count in the report after you add a drum. In the example, hats on
+WARNING: every part you add costs voices. The music has 8 in `vg_synth`. Read
+the voice count in the report after you add a drum. In the example, hats on
 every slot made 5 voices, and hats off the beat made 4.
 
 ### What a bass can be on this device
@@ -1288,17 +1289,18 @@ To lift the whole score, add a `transpose` line.
 
 ### Read the voice count
 
-WARNING: `vg_synth` has 10 voices and no priority. It takes the voice with the least
-time left. The music and the missile alert compete for the same 10 voices.
+`vg_synth` has two pools of voices. The sound effects have 10 and the music has 8.
+Neither pool can take a voice from the other, so an alert cannot stop a note and a
+note cannot stop an alert.
 
-Keep the peak count at 4 or less. Above that the music takes a voice that an alert
-needs.
+Keep the peak count at 8 or less. Above that a new note takes the voice with the
+least time left from another note, and that note stops early.
 
-### The device has no player yet
+### The device plays the table
 
-`--bake` writes `src/vg/generated/score_<name>.h`. The firmware cannot play that
-table. `VgVolume.music` in `src/vg/vg_sfx.h` has no consumer either. Write the
-player before you put a score in a build.
+`--bake` writes `src/vg/generated/score_<name>.h`. `src/vg/vg_music.cpp` holds a
+table of the scores the game plays and the screen each one belongs to. To add a
+score to the build, bake it, include the header there, and add a row.
 
 ### There is one synthesiser, and it is built twice
 

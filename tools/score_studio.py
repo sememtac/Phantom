@@ -1776,10 +1776,10 @@ class Studio:
             out.append("transpose %+d" % s.transpose)
         out.append("")
         peak = score.peak_voices(self.notes)
-        out.append("VOICES  peak %d of 10" % peak)
-        if peak > 4:
-            out.append("  too many. An alert")
-            out.append("  will lose a voice.")
+        out.append("VOICES  peak %d of 8" % peak)
+        if peak > 8:
+            out.append("  too many. A note")
+            out.append("  will stop early.")
         out.append("")
         out.append("SPEAKER  under %.0f Hz" % score.SPEAKER_FLOOR)
         seen = {}

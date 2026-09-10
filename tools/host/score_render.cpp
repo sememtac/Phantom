@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
         const int n = (total - at < BLOCK) ? total - at : BLOCK;
         const int now_ms = (int)((long long)at * 1000 / rate);
         while (next < s_jobs && s_job[next].t_ms <= now_ms) {
-            vg_synth_layer(&s_job[next].layer, 1.0f);
+            vg_synth_note(&s_job[next].layer, 1.0f);
             next++;
         }
         vg_synth_render(pcm + at, n, mix);

@@ -10,12 +10,17 @@
 // clock and hands each one to vg_synth, the same generator every cue uses.
 //
 // IT IS NOT A SECOND SYNTHESISER. A note here is a SynthLayer, exactly as a cue
-// is, so music and sound effects share one voice pool and one mixer. That is
-// also the constraint: there are 10 voices and no priority, and vg_synth takes
-// the voice with the least time left. Music that used every voice would starve
-// the missile alert, so the player STOPS ADDING NOTES near the top of the pool
-// and lets the cues have the rest. A dropped note is a smaller fault than an
-// alert that did not sound.
+// is, and it goes to the same generator and the same mixer. But it goes to the
+// music's OWN voices: vg_synth keeps eight for the score, apart from the ten the
+// cues use, and neither side can take from the other. It used to be one pool of
+// ten with no priority, and this player stopped adding notes near the top of it
+// so that an alert always had a voice. In a fight the pool was near the top most
+// of the time, and the music was what went missing. Now every note is posted,
+// and the eight cover the thickest bar any score has, which is seven.
+//
+// NOTHING HERE TOUCHES THE SYNTH DIRECTLY EITHER. Notes are posted through
+// vg_sfx_note and applied by whichever side is rendering, because on the board
+// the audio task owns the voices and this runs on the game thread.
 //
 // NOTHING HERE TOUCHES THE SIMULATION. It draws no random numbers, reads no
 // game state and sets none. It is stepped with the same dt as vg_sfx_update, so
@@ -33,11 +38,6 @@
 // board has and does not miss.
 struct VgScoreStep { uint32_t t_ms; uint8_t note; };
 #endif
-
-// Above this many live voices the player adds nothing, and the cues keep what is
-// left. Seven of ten is the whole music at its thickest, so the guard is a floor
-// under the alerts rather than a limit the music normally meets.
-#define VG_SCORE_VOICES 8
 
 // Start a score. `steps` must be sorted by t_ms, which the baker guarantees.
 void vg_score_play(const VgScoreStep* steps, int n_steps,

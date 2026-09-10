@@ -1,5 +1,5 @@
 #include "vg_score.h"
-#include "vg_sfx.h"     // vg_vol
+#include "vg_sfx.h"     // vg_vol, vg_sfx_note
 
 static const VgScoreStep* s_steps = nullptr;
 static const SynthLayer*  s_notes = nullptr;
@@ -43,28 +43,26 @@ void vg_score_update(float dt) {
     s_t += dt * 1000.0f;
 
     while (s_next < s_n && (float)s_steps[s_next].t_ms <= s_t) {
-        // THE POOL IS SHARED WITH THE CUES. Near the top of it the music stops
-        // adding notes, so an alert always has somewhere to sound. See vg_score.h.
-        if (vg_synth_live() < VG_SCORE_VOICES) {
-            // A COPY, so the player's music setting can scale it. The table in
-            // flash is const and the same row is used again every loop.
-            //
-            // The sfx setting scales the whole bus afterwards in vg_sfx.cpp, so
-            // it moves the music as well. That is the mixer this game has: one
-            // bus, one pool. `music` is the balance between the two, not an
-            // independent output.
-            SynthLayer l = s_notes[s_steps[s_next].note];
-            // SQUARED, like the sfx setting in vg_sfx.cpp. A slider that moves a
-            // level has to be squared to feel even to the ear, and both settings
-            // must do the same thing or the balance between them moves as they
-            // are dragged. It also matters off the board: tools/score_audio.py
-            // previews at music squared, and the preview has to be the truth.
-            //
-            // It was not squared, and the theme clipped the mixer sixty times a
-            // second on the device while the preview measured a peak of 0.58.
-            l.gain *= vg_vol.music * vg_vol.music;
-            vg_synth_layer(&l, 1.0f);
-        }
+        // EVERY NOTE IS POSTED. There used to be a guard here that stopped adding
+        // notes when the shared pool was nearly full, so that an alert always had
+        // somewhere to sound; in a fight the pool was nearly full most of the
+        // time, and the music was the thing with holes in it. The music has its
+        // own voices in the synth now (vg_synth_note), so there is nothing here
+        // to give way to.
+        //
+        // The sfx setting scales the whole bus afterwards in vg_sfx.cpp, so it
+        // moves the music as well. That is the mixer this game has: one bus.
+        // `music` is the balance between the two, not an independent output.
+        //
+        // SQUARED, like the sfx setting in vg_sfx.cpp. A slider that moves a
+        // level has to be squared to feel even to the ear, and both settings
+        // must do the same thing or the balance between them moves as they are
+        // dragged. It also matters off the board: tools/score_audio.py previews
+        // at music squared, and the preview has to be the truth.
+        //
+        // It was not squared, and the theme clipped the mixer sixty times a
+        // second on the device while the preview measured a peak of 0.58.
+        vg_sfx_note(&s_notes[s_steps[s_next].note], vg_vol.music * vg_vol.music);
         s_next++;
     }
 

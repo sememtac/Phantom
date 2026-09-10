@@ -57,6 +57,13 @@ void vg_sfx_engine(bool on, float throttle);
 // player taps away.
 void vg_sfx_flatline(bool on);
 
+struct SynthLayer;   // vg_synth.h; not included here, because nothing else needs it
+// One note of the music, for vg_score. `l` must point into a static table and
+// `gain` is the level to play it at, 1.0 as written. It goes into the synth's own
+// music pool, not the cue pool, so it can neither take an alert's voice nor lose
+// its own to one. Posted like a cue, so the audio task applies it.
+void vg_sfx_note(const SynthLayer* l, float gain);
+
 // Cut every sound the ship is making, immediately.
 //
 // For the set going off. The transition is the end of a session, and a session
@@ -85,9 +92,9 @@ void vg_sfx_update(float dt);
 // speaker; having the settings saved and adjustable first means sound arrives as a
 // mix rather than as a feature that then needs a menu built around it.
 //
-// `music` HAS NO CONSUMER YET, and that is worth saying plainly rather than leaving
-// to be discovered: it is set at boot, moved by the pause slider, drawn on that
-// screen and written to flash, and nothing in the mixer reads it. `sfx` is live.
+// `music` is read by vg_score, squared, as the gain on every note it posts; `sfx`
+// scales the whole bus after the mix, music included. `music` is the balance
+// between the two, not an independent output.
 //
 // NOT ZEROED BY ANY CLEAR, unlike the course and the transition. vg_game_init
 // assigns both outright a few lines after its memset, so these never depended on

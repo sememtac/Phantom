@@ -256,13 +256,13 @@ static const SfxDef SFX[SFX_COUNT] = {
 // thread only ever posts events.
 // ===========================================================================
 
-enum SfxEvKind : uint8_t { EV_LAYER, EV_ENGINE, EV_FLATLINE, EV_SILENCE, EV_RESET };
+enum SfxEvKind : uint8_t { EV_LAYER, EV_NOTE, EV_ENGINE, EV_FLATLINE, EV_SILENCE, EV_RESET };
 
 struct SfxEv {
     uint8_t           kind;
     bool              on;
-    float             a;       // pitch for a layer, throttle for the engine
-    const SynthLayer* layer;   // into static const SFX[], so it outlives the queue
+    float             a;       // pitch for a layer, gain for a note, throttle for the engine
+    const SynthLayer* layer;   // into a static const table, so it outlives the queue
 };
 
 // Single producer (the game thread), single consumer (the audio task). Power of
@@ -294,6 +294,7 @@ static void q_drain(void) {
         const SfxEv& e = s_q[t & (SFX_Q - 1)];
         switch (e.kind) {
         case EV_LAYER:    vg_synth_layer(e.layer, e.a);   break;
+        case EV_NOTE:     vg_synth_note(e.layer, e.a);    break;
         case EV_ENGINE:   vg_synth_engine(e.on, e.a);     break;
         case EV_FLATLINE: vg_synth_flatline(e.on);        break;
         case EV_SILENCE:  vg_synth_silence();             break;
@@ -411,6 +412,20 @@ void vg_sfx_play(SfxId id, float pitch) {
     // what keeps one code path instead of two that have to agree.
     const SfxDef* d = &SFX[id];
     for (int i = 0; i < d->n; i++) q_push(EV_LAYER, false, pitch, &d->layers[i]);
+}
+
+// THE MUSIC COMES THROUGH THE SAME DOOR. The score player used to call the synth
+// itself, from the game thread, while the task on the other core owned the
+// voices -- which the seam above says nobody but the task may touch. A note
+// written into a voice the task was reading mid-sample could come up with a
+// stale life or a stale filter and die the same instant, and that is a note the
+// player never heard. Posted, it lands between two chunks like every cue.
+//
+// The layer is a row of a baked score table in flash, so the pointer is good for
+// as long as the queue could hold it. The gain rides in `a`, where a cue carries
+// its pitch: the music setting is applied there rather than by copying the row.
+void vg_sfx_note(const SynthLayer* l, float gain) {
+    q_push(EV_NOTE, false, gain, l);
 }
 
 void vg_sfx_engine(bool on, float throttle) {

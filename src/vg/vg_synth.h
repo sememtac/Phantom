@@ -44,7 +44,7 @@ struct SynthLayer {
     float mod_hz, mod_depth;
 };
 
-// Voices currently sounding, for the profiler.
+// Voices currently sounding in both pools, for the profiler.
 int vg_synth_live(void);
 
 void vg_synth_reset(void);
@@ -52,8 +52,23 @@ void vg_synth_reset(void);
 // Stop everything now, held sounds included, with no ramp and no tail.
 void vg_synth_silence(void);
 
-// Start one layer. `pitch` scales its frequencies; 1.0 is as written.
+// Start one layer of a CUE. `pitch` scales its frequencies; 1.0 is as written.
+// Takes a voice from the cue pool, and only from there.
 void vg_synth_layer(const SynthLayer* l, float pitch);
+
+// Start one NOTE of the music. `gain` scales its level; 1.0 is as written, and
+// the score player passes the music setting through it.
+//
+// TWO POOLS, AND NEITHER CAN TOUCH THE OTHER. The music used to share the ten cue
+// voices with no priority, and it lost twice over: a hull hit is seven layers and
+// took the notes that were sounding, and the score player stopped adding notes
+// whenever the pool was near full, which in a fight is most of the time. Either
+// way the composition had holes in it. A note now comes from the music's own
+// eight voices, sized to the thickest bar any score has (seven, in the final's
+// theme), so an alert can never take a note and a note can never take an alert.
+// When a score does ask for more than eight, the note with least left to play
+// gives way -- the same rule the cues use, applied within the music alone.
+void vg_synth_note(const SynthLayer* l, float gain);
 
 // The continuous drive. Not a layer and not in the voice pool: it is on for as
 // long as the ship is flying, and a one-shot retriggered forever would either

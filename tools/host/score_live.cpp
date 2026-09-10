@@ -26,9 +26,9 @@
 // It prints `pos <ms> <playing>` about ten times a second, so the window can draw
 // a playhead that stays with the sound, and can tell when the end was reached.
 //
-// WARNING: the synthesiser has 10 voices. A preview note takes one of them, the
-// same as any other note. That is true on the device too, so what you hear here
-// is what the device would do.
+// WARNING: the music has 8 voices of its own in the synthesiser. A preview note
+// takes one of them, the same as any other note. That is true on the device too,
+// so what you hear here is what the device would do.
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <mmsystem.h>
@@ -86,7 +86,7 @@ static void reseek(void) {
 static void fill(short* out, int n) {
     std::lock_guard<std::mutex> hold(s_lock);
 
-    for (size_t i = 0; i < s_hits.size(); i++) vg_synth_layer(&s_hits[i], 1.0f);
+    for (size_t i = 0; i < s_hits.size(); i++) vg_synth_note(&s_hits[i], 1.0f);
     s_hits.clear();
 
     if (!s_play || s_len <= 0) {
@@ -123,7 +123,7 @@ static void fill(short* out, int n) {
         // An event falls on this sample. Sound it unless its part is off.
         const Ev& e = s_ev[s_next];
         if (e.part < 0 || e.part >= 128 || !s_mute[e.part]) {
-            vg_synth_layer(&e.layer, 1.0f);
+            vg_synth_note(&e.layer, 1.0f);
         }
         s_next++;
     }
