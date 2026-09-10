@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "cfg_display.h"   // SCR_W, SCR_H -- the panel this window stands in for
+#include "host_present_d3d.h"   // a flip-model swap chain, when the machine gives one
 
 static HWND      s_hwnd    = nullptr;
 static int       s_scale   = 2;
@@ -273,6 +274,12 @@ bool host_window_open(int scale, const char* title) {
     s_bgra = (uint32_t*)malloc((size_t)SCR_W * SCR_H * 4);
     if (!s_bgra) return false;
 
+    // A FLIP-MODEL SWAP CHAIN IF THE MACHINE WILL GIVE ONE. Not required: the GDI
+    // path below still works and is used whenever this is not ready. It is about
+    // a frame less latency between the render and the glass -- which the message
+    // pump's win32k stalls can still swamp, but when they are quiet it helps.
+    host_d3d_init(s_hwnd, SCR_W, SCR_H);
+
     // Top-down: negative height, so row 0 is the top row and the panel's own
     // ordering survives the blit untouched.
     ZeroMemory(&s_bmi, sizeof(s_bmi));
@@ -314,6 +321,7 @@ bool host_window_open(int scale, const char* title) {
 
 void host_window_close(void) {
     ClipCursor(nullptr);   // never leave the desktop's pointer fenced to a dead window
+    host_d3d_shutdown();
     if (s_bgra) { free(s_bgra); s_bgra = nullptr; }
     if (s_hwnd) { DestroyWindow(s_hwnd); s_hwnd = nullptr; }
 }
@@ -327,8 +335,17 @@ bool host_window_focused(void) {
 }
 
 bool host_window_pump(void) {
+    // BOUNDED. A while(PeekMessage) loop cannot exit while messages arrive faster
+    // than it handles them. On this desk mouse messages dispatch at ~0.5 ms each
+    // (an injected hook, or the virtualised input stack -- measured the same with
+    // raw input off), so a moving mouse builds a backlog this loop would chase for
+    // over a second in one pass, freezing the frame and the audio together. 256 a
+    // frame is past the steady arrival rate, so the bound only bites under that
+    // backlog, and then it drops a frame instead of freezing. It does not cure the
+    // per-message cost itself -- that is the environment, not this loop.
     MSG msg;
-    while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
+    for (int drained = 0; drained < 256; drained++) {
+        if (!PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) break;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
@@ -493,9 +510,19 @@ void host_window_present(const uint16_t* panel) {
         s_bgra[i] = (R << 16) | (G << 8) | B;
     }
 
+    const HostView v = view_of(s_hwnd);
+
+    // THE SWAP CHAIN FIRST. It paints its own letterbox and blocks until the
+    // display takes the frame, so when it works there is no GDI blit and the
+    // spin-pace at the bottom of this function never runs. Falls through to GDI
+    // if the chain is not ready or the device was lost.
+    if (host_d3d_ready() &&
+        host_d3d_present(s_bgra, SCR_W, SCR_H, v.x, v.y, v.w, v.h)) {
+        return;
+    }
+
     HDC dc = GetDC(s_hwnd);
     RECT cr; GetClientRect(s_hwnd, &cr);
-    const HostView v = view_of(s_hwnd);
 
     // The bars, and only the bars. Painting the whole client and then drawing
     // over it would flash the picture off and on again every frame.

@@ -79,7 +79,7 @@ $args += $inc
 # quotes escapes the quote, which cl reports as one enormous invalid argument.
 $args += '/Fo"obj/"'
 $args += ($src | ForEach-Object { "`"$_`"" })
-$args += "/link", "user32.lib", "gdi32.lib", "winmm.lib"
+$args += "/link", "user32.lib", "gdi32.lib", "winmm.lib", "dwmapi.lib", "d3d11.lib", "dxgi.lib", "d3dcompiler.lib"
 $args += "/OUT:`"$build\phantom.exe`""
 
 $cmdline = "cl " + ($args -join " ")

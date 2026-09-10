@@ -135,9 +135,12 @@ static const HostScreen* screen_by_name(const char* n) {
 }
 
 int main(int argc, char** argv) {
-    // UNBUFFERED. The game narrates its own start-up over the serial port, and
-    // if that narration is sitting in a buffer when something goes wrong it is
-    // lost exactly when it was about to be useful.
+    // UNBUFFERED, UNTIL THE FRAME LOOP STARTS. The game narrates its own
+    // start-up over the serial port, and if that narration is sitting in a
+    // buffer when something goes wrong it is lost exactly when it was about to
+    // be useful. Nothing here is on a clock, so the cost does not matter.
+    //
+    // It matters very much once frames begin. See the setvbuf below.
     setvbuf(stdout, nullptr, _IONBF, 0);
 
     int scale = 2;
@@ -384,8 +387,28 @@ int main(int argc, char** argv) {
     }
 
     int n = 0;
+    // BUFFERED FROM HERE, and flushed at the end of every frame.
+    //
+    // stdout was unbuffered for the start-up narration above, which made every
+    // Serial.printf its own write. The telemetry block writes about a kilobyte
+    // across EIGHT of them every two seconds, and on Windows a write costs 16 to
+    // 38 ms whether it lands in a console, a pipe or a file -- the price is per
+    // call, not per byte. So one frame in every two seconds took 130 to 300 ms
+    // against a 16 ms budget, the audio queue ran dry, and the sound stuttered
+    // on a two second clock.
+    //
+    // Nothing in the profile showed it. `blocked` and `short` both read zero
+    // throughout, because a queue that is empty never refuses a sample and never
+    // makes anybody wait. Those counters can only see the ring being too FULL.
+    //
+    // Buffering collapses the batch into one write. The flush keeps the crash
+    // guarantee the unbuffered mode was there for: at most one frame of output
+    // is lost, rather than everything since the last 64 KB.
+    setvbuf(stdout, nullptr, _IOFBF, 1 << 16);
+
     while (host_window_pump()) {
         loop();
+        fflush(stdout);
         // PWR, pressed from here rather than set up before the first frame. See
         // screen_pause: a pause suspends a match, and a match that has never
         // drawn a frame is not one.

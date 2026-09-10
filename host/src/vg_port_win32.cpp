@@ -493,17 +493,46 @@ int vg_audio_write(const int16_t* samples, int n) {
 // CAPPED, because the first call after a stall would otherwise ask for every
 // sample since the world began. A quarter of a second of catch-up is plenty and
 // the rest is better dropped than rendered into a ring nobody is waiting on.
+// HOW DEEP THE QUEUE IS KEPT, in samples: 1536 is 70 ms at 22050. This is
+// latency, bought not free -- every sound arrives this long after its frame --
+// but it is what lets the audio survive a dropped frame without a click.
+#define AU_TARGET 4096
+
+static int audio_queued(void) {
+    int q = 0;
+    for (int b = 0; b < AU_BUFS; b++) {
+        const WAVEHDR* h = &s_hdr[b];
+        if ((h->dwFlags & WHDR_PREPARED) && !(h->dwFlags & WHDR_DONE))
+            q += (int)(h->dwBufferLength / sizeof(int16_t));
+    }
+    return q;
+}
+
+// Ask for the DEFICIT against a target depth, not the elapsed time. The elapsed
+// version handed the driver exactly what it had just played, so the ring stayed
+// one frame deep and a single late frame emptied it. A deficit refills after a
+// hitch; in the steady state the two agree.
 int vg_audio_due(void) {
-    static uint32_t prev = 0;
-    const uint32_t now = micros();
-    if (!prev) { prev = now; return 0; }
-    const uint32_t dt = now - prev;
-    int n = (int)(((uint64_t)dt * VG_AUDIO_RATE) / 1000000ull);
-    if (n <= 0) return 0;
-    prev = now;
-    const int cap = VG_AUDIO_RATE / 4;
-    if (n > cap) n = cap;
-    return n;
+    if (!s_audio_ok) return 0;
+    const int q = audio_queued();
+
+    // AN EMPTY QUEUE IS A DROPOUT, AND NOTHING ELSE REPORTS IT. `blocked` and
+    // `short` on the telemetry line only see the ring too FULL; a dry queue
+    // refuses nothing and waits for nobody. Silent while healthy.
+    {
+        static uint32_t t0 = 0;
+        static int dry = 0, frames = 0;
+        const uint32_t now = micros();
+        if (!t0) t0 = now;
+        frames++;
+        if (q == 0) dry++;
+        if (now - t0 > 2000000u) {
+            if (dry) Serial.printf("        AUDIO RAN DRY on %d of %d frames"
+                                   " -- the sound broke up\n", dry, frames);
+            dry = 0; frames = 0; t0 = now;
+        }
+    }
+    return (q < AU_TARGET) ? (AU_TARGET - q) : 0;
 }
 
 // The device lets this one wait, because on the board it runs on the audio task

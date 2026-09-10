@@ -55,6 +55,14 @@ struct HostSerial {
     int  available(void)         { return 0; }
     int  read(void)              { return -1; }
     int  availableForWrite(void) { return 0x7FFFFFFF; }
+    // ALWAYS CONNECTED, because this end is stdout and stdout is always there.
+    //
+    // On the device this asks the USB CDC driver whether the host is actually
+    // reading, and vg_capture HOLDS a write until it says yes -- HWCDC::write
+    // discards bytes while nobody is listening and reports that it wrote them.
+    // A pipe has no such state. Returning false here would make every write
+    // spin three thousand times and give up.
+    bool isConnected(void)       { return true; }
     void flush(void)             { fflush(stdout); }
 
     int printf(const char* f, ...) {
