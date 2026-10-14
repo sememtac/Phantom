@@ -62,8 +62,10 @@ $ErrorActionPreference = "Stop"
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
 
-# PlatformIO is not on the PATH.
-$pio = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
+# PlatformIO is not on the PATH. It is in the user profile, unless PLATFORMIO_CORE_DIR
+# gives a different folder. pio reads the same variable.
+$pioHome = if ($env:PLATFORMIO_CORE_DIR) { $env:PLATFORMIO_CORE_DIR } else { Join-Path $env:USERPROFILE ".platformio" }
+$pio = Join-Path $pioHome "penv\Scripts\pio.exe"
 if (-not (Test-Path $pio)) { throw "no PlatformIO at $pio" }
 
 # The uploader hangs forever without this. Do not leave it out.

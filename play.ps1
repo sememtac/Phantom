@@ -34,6 +34,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# PlatformIO is not on the PATH. It lives in the user profile unless
+# PLATFORMIO_CORE_DIR moves it, and pio itself reads that variable, so this
+# does too. On this desk it was moved to E:\Dev\platformio when the PC was
+# rebuilt, and a path written out in full here stopped every firmware build.
+$pioHome = if ($env:PLATFORMIO_CORE_DIR) { $env:PLATFORMIO_CORE_DIR } else { Join-Path $env:USERPROFILE '.platformio' }
+$pio = Join-Path $pioHome 'penv\Scripts\pio.exe'
+
 function Build-Pc {
     Write-Host "building the PC version..." -ForegroundColor Cyan
     & powershell -ExecutionPolicy Bypass -File (Join-Path $root 'host\build.ps1')
@@ -42,7 +49,6 @@ function Build-Pc {
 
 function Build-Firmware {
     Write-Host "building the firmware..." -ForegroundColor Cyan
-    $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
     if (-not (Test-Path $pio)) { throw "PlatformIO is not installed at $pio" }
     # UTF-8 OR IT HANGS. PlatformIO writes a character the default Windows code
     # page cannot encode, and the upload stops for ever rather than reporting it.
@@ -110,7 +116,7 @@ function Flash-Board {
     $p = Find-Port
     Warn-Daemon
     Write-Host "flashing $p..." -ForegroundColor Cyan
-    $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
+    if (-not (Test-Path $pio)) { throw "PlatformIO is not installed at $pio" }
     $env:PYTHONIOENCODING = 'utf-8'
     & $pio run -t upload --upload-port $p
     if ($LASTEXITCODE -ne 0) { throw "the upload failed" }
