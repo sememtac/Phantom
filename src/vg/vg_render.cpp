@@ -549,10 +549,6 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
         return;
     }
 
-    { const uint32_t t = micros(); vg_draw_lock_circle(); vg_draw_lock_box(cam);
-      g_sub_lock = micros() - t; }
-
-
     // Instruments are drawn onto the virtual canopy. The bend tracks speed, so
     // the canopy visibly flexes as you open the throttle -- but QUANTISED,
     // because a continuously varying warp shifts every HUD line by a fraction of
@@ -748,6 +744,20 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     //
     // Submitted first, so every instrument still draws on top of it.
     { const uint32_t t = micros(); vg_canopy_prim(); g_sub_canopy = micros() - t; }
+
+    // THE LOCK RING AND THE BRACKETS, AFTER THE FRAME. They were submitted at the top of this
+    // half, above it, and that was harmless for as long as the cockpit was a light DELTA: a
+    // member lit what was under it, so a bracket behind a rib still showed through the rib.
+    // The opaque bake REPLACES the pixel. From the day every hull went over to it, any part of
+    // the ring or the brackets that crossed metal was simply gone -- and BALLISTA's guide
+    // circle is centred on the panel, so on that hull the posts cut it the moment it opened
+    // wider than the pane between them.
+    //
+    // Only the side of the frame they are on has moved. Flat and outside the warp, as they
+    // were, and still ahead of vg_draw_hud, so where a panel's well meets a bracket the panel
+    // still wins.
+    { const uint32_t t = micros(); vg_draw_lock_circle(); vg_draw_lock_box(cam);
+      g_sub_lock = micros() - t; }
 
     if (draw_instruments) {
         vg_hud_jitter(jx, jy);
