@@ -1,0 +1,225 @@
+# Build, sign and publish the Windows executables of Phantom.
+#
+# To make a release, push a tag that starts with "v" on a commit that is on main:
+#
+#     git tag v0.9.0
+#     git push origin v0.9.0
+#
+# The workflow has two jobs:
+#
+#   build             Builds the executables from source on a clean runner. It has no
+#                     access to Azure.
+#   sign-and-release  Signs the executables with Azure Artifact Signing, checks each
+#                     signature, records build provenance and publishes a GitHub release.
+#                     It runs in the "Release" environment. Only that environment can get
+#                     an Azure token, and only for a tag that starts with "v".
+#
+# No secret is stored anywhere. azure/login gets a short-lived token through OIDC, and the
+# app registration it logs in as is the only identity that can use the signing profile.
+#
+# Every action is pinned to a full commit SHA. The comment after the SHA gives its tag.
+# The Python build tools are pinned with hashes in tools/requirements-release.txt.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Make sure the tag is on main
+        run: |
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "The tag $env:GITHUB_REF_NAME is not on main. Make a release from main only."
+          }
+
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11.9"
+
+      - name: Install the pinned build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r tools/requirements-release.txt
+          if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
+
+      - name: Show the tool versions
+        run: |
+          python --version
+          python -m PyInstaller --version
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          "Visual Studio " + (& $vswhere -latest -products * -property installationVersion)
+          "Runner image $env:ImageOS $env:ImageVersion"
+
+      # build.ps1 stops with an error if the compiler fails.
+      - name: Build phantom.exe
+        run: ./host/build.ps1
+
+      # tools/dist/PhantomRecorder.exe is in git. Remove it first, so that a build that
+      # writes nothing cannot leave the old file to be signed.
+      - name: Build PhantomRecorder.exe and PilotConsole.exe
+        run: |
+          Remove-Item tools\dist\*.exe -ErrorAction SilentlyContinue
+
+          Push-Location tools
+          python -m PyInstaller --noconfirm --onefile --windowed --name PhantomRecorder `
+            --add-data "phantom_link.py;." phantom_recorder.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed for PhantomRecorder" }
+          Pop-Location
+
+          python -m PyInstaller --noconfirm --onefile --windowed --name PilotConsole `
+            --hidden-import numpy --distpath tools\dist --workpath .pyi-build `
+            --specpath .pyi-build tools\pilot_console.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed for PilotConsole" }
+
+      - name: Collect the unsigned executables
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item host\build\phantom.exe, tools\dist\PhantomRecorder.exe, tools\dist\PilotConsole.exe out\
+          Get-ChildItem out | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          }
+
+      - name: Upload the unsigned executables
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned
+          path: out/
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-and-release:
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 30
+    # The Azure federated credential trusts this environment by name. The subject must match
+    # character for character, so keep the name and its case as they are on GitHub.
+    environment: Release
+    permissions:
+      contents: write     # publish the release
+      id-token: write     # the OIDC token for azure/login and for the attestation
+      attestations: write # store the build provenance
+    steps:
+      # This job does not check out the repository. No code from the repository runs
+      # while the job can get an Azure token.
+      - name: Download the unsigned executables
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned
+          path: dist
+
+      - name: Log in to Azure with OIDC
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The signing certificates last 3 days, so every signature must have a timestamp.
+      # cache-dependencies is off: the action downloads its signing tools again, at the
+      # versions it pins, and a cache entry from another run cannot replace them.
+      - name: Sign the executables
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: https://wus2.codesigning.azure.net/
+          signing-account-name: Catmemes
+          certificate-profile-name: CatmemesPublic
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Phantom
+          description-url: https://github.com/sememtac/Phantom
+          cache-dependencies: false
+          exclude-environment-credential: true
+
+      - name: Check every signature
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem dist -Filter *.exe) {
+            $s  = Get-AuthenticodeSignature $f.FullName
+            $by = $s.SignerCertificate.Subject
+            $ts = $s.TimeStamperCertificate
+            "{0}: {1} | signer {2} | issuer {3} | timestamp {4}" -f $f.Name, $s.Status, $by,
+              $s.SignerCertificate.Issuer, $(if ($ts) { $ts.Subject } else { "NONE" })
+            if ($s.Status -ne "Valid") { $bad++; "  The signature is not valid: $($s.StatusMessage)" }
+            if ($by -notmatch "(^|, )CN=Andy Xiao(,|$)") { $bad++; "  The signer is not CN=Andy Xiao." }
+            if (-not $ts) { $bad++; "  The signature has no timestamp." }
+          }
+          if ($bad -gt 0) { throw "$bad signature check(s) failed." }
+
+      # --airframes prints the ship table and stops before it opens a window, so the signed
+      # game can run on the runner.
+      - name: Run the signed game once
+        run: |
+          $out = & .\dist\phantom.exe --airframes
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0 -or -not ($out -like "airframe *")) {
+            throw "The signed phantom.exe did not run."
+          }
+
+      - name: Record the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.exe
+
+      # LF line ends, so that "sha256sum -c SHA256SUMS" also works.
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          $lines = Get-ChildItem -Filter *.exe | Sort-Object Name | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.Name -Algorithm SHA256).Hash.ToLower(), $_.Name
+          }
+          [IO.File]::WriteAllText("$PWD\SHA256SUMS", ($lines -join "`n") + "`n")
+          Get-Content SHA256SUMS
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $run = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $notes = @(
+            "Built from commit $env:GITHUB_SHA by [this workflow run]($run).",
+            "",
+            "Windows executables, signed by Andy Xiao through Azure Artifact Signing:",
+            "",
+            "- **phantom.exe**: the game. There is nothing to install. It writes phantom_save.bin beside itself, so keep it in a folder you can write to.",
+            "- **PhantomRecorder.exe**: records sessions from the board and renders them to video. Put ffmpeg on the PATH to get mp4 files.",
+            "- **PilotConsole.exe**: the window for the pilot network. It works only from tools\dist in a clone of this repository.",
+            "",
+            "To check a file before you run it:",
+            "",
+            "- PowerShell: ``Get-AuthenticodeSignature .\phantom.exe``. The status must be Valid and the signer CN=Andy Xiao.",
+            "- GitHub CLI: ``gh attestation verify phantom.exe --repo $env:GITHUB_REPOSITORY``",
+            "- Compare its SHA-256 with the line in SHA256SUMS."
+          ) -join "`n"
+          Set-Content -Path notes.md -Value $notes -Encoding utf8
+
+          gh release create $env:GITHUB_REF_NAME `
+            dist\phantom.exe dist\PhantomRecorder.exe dist\PilotConsole.exe dist\SHA256SUMS `
+            --repo $env:GITHUB_REPOSITORY --title "Phantom $env:GITHUB_REF_NAME" `
+            --notes-file notes.md --verify-tag
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
