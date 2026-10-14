@@ -218,8 +218,13 @@ jobs:
           ) -join "`n"
           Set-Content -Path notes.md -Value $notes -Encoding utf8
 
+          # A tag with a hyphen, such as v1.0.0-rc1 or v0.0.1-test, makes a pre-release.
+          # GitHub does not show a pre-release as the latest release.
+          $pre = @()
+          if ($env:GITHUB_REF_NAME -match "-") { $pre = @("--prerelease") }
+
           gh release create $env:GITHUB_REF_NAME `
             dist\phantom.exe dist\PhantomRecorder.exe dist\PilotConsole.exe dist\SHA256SUMS `
             --repo $env:GITHUB_REPOSITORY --title "Phantom $env:GITHUB_REF_NAME" `
-            --notes-file notes.md --verify-tag
+            --notes-file notes.md --verify-tag @pre
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
