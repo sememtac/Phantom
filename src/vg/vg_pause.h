@@ -22,12 +22,17 @@
 
 // The config page. It was the audio page, and it grew a display toggle, which is
 // why the button that opens it no longer says AUDIO.
+//
+// AND THEN A SECOND ONE, the frame counter. Everything above BACK moved up to make
+// the row: the sliders by 10 and 18, the scanline box by 28. BACK stayed where the
+// thumb already knows it is.
 #define PAU_SLD_X       100
 #define PAU_SLD_W       280
 #define PAU_SLD_H       22
-#define PAU_SLD_MUSIC_Y 210
-#define PAU_SLD_SFX_Y   290
-#define PAU_CHK_Y       348      // the scanline box
+#define PAU_SLD_MUSIC_Y 200
+#define PAU_SLD_SFX_Y   272
+#define PAU_CHK_Y       320      // the scanline box
+#define PAU_CHK_FPS_Y   358      // the frame counter's box
 #define PAU_CHK_SIZE    26
 #define PAU_BACK_Y      404
 
@@ -53,6 +58,7 @@ bool  vg_pause_music_at(float x, float y);
 bool  vg_pause_sfx_at(float x, float y);
 bool  vg_pause_back_at(float x, float y);
 bool  vg_pause_scanline_at(float x, float y);
+bool  vg_pause_fps_at(float x, float y);
 float vg_pause_slider_value(float x);
 
 void vg_draw_pause(void);

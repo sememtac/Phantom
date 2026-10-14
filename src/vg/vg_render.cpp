@@ -19,6 +19,7 @@
 #include "vg_canopy_draw.h"
 #include "vg_canopy_op.h"   // vg_canopy_op_relight: the venue lights the cockpit
 #include "vg_bezel.h"
+#include "vg_sfx.h"     // vg_disp: the frame counter is the player's to switch on
 
 // THE SUBMIT COUNTERS, defined here because this file writes every one of them.
 // Declared in vg_prof.h, which says what each measures and what it may not be read
@@ -38,6 +39,10 @@ uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over; // group B, named
 // 60 and have nothing to report; the number is there to be read while something
 // is actually costing frame time. Held clear of the rounded corner by SCR_SAFE
 // and drawn last so nothing can cover it.
+//
+// AND ONLY WHEN ASKED FOR, from the CONFIG page. It is debug information rather
+// than an instrument, so it is off by default and, once on, it is NOT held back
+// with the instruments while the cockpit arrives -- see vg_disp.fps.
 static void draw_fps(float fps) {
     char buf[24];
     // Primitive count rides alongside it. When the rate dips, the single most
@@ -463,7 +468,11 @@ void vg_render_frame(const VgInput* in, float fps) {
     // Into group B's SLICE, so it still lands last in draw order exactly where it
     // was. And gated on the same condition as group B's early return, so a menu
     // frame still does not get one.
-    if (!vg_state_is_menu(vg.state)) {
+    //
+    // NEVER IN A REPLAY. The switch is saved on the board, so a replay that obeyed it
+    // would render differently depending on whose board it ran on -- and the harness
+    // would call that a rendering change.
+    if (!vg_state_is_menu(vg.state) && vg_disp.fps && vg_replay_mode() != VG_RP_PLAY) {
         vg_prim_select(3);
         draw_fps(fps);
     }

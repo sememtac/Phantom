@@ -112,6 +112,10 @@ struct VgVolume {
 // page it lives on is not called AUDIO any more.
 struct VgDisplay {
     bool scanlines;
+    // The frame counter, OFF unless asked for. It is debug information, not an
+    // instrument, so it is the player's to switch on -- and once on it stays on,
+    // through the cockpit arriving and across a restart, like any other setting.
+    bool fps;
 };
 extern VgDisplay vg_disp;
 

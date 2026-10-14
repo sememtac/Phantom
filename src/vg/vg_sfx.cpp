@@ -8,7 +8,8 @@
 #include "vg_replay.h"
 
 VgVolume  vg_vol;
-VgDisplay vg_disp = { true };   // scanlines on, which is how the game has always looked
+VgDisplay vg_disp = { true, false };   // scanlines on, which is how the game has always looked;
+                                       // the frame counter off until someone asks for it
 
 // Just the mixer, to tell it from the I2S write. Defined here because this is the
 // file that stops the clock on it.

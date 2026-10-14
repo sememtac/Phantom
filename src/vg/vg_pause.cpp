@@ -61,6 +61,11 @@ bool vg_pause_back_at(float x, float y) {
 bool vg_pause_scanline_at(float x, float y) {
     return vg_in_rect(x, y, PAU_SLD_X, PAU_CHK_Y - 6, PAU_SLD_W, PAU_CHK_SIZE + 12);
 }
+// The same row, one down. The two hit areas meet and do not overlap: the rows are
+// PAU_CHK_SIZE + 12 apart, which is exactly what each one claims.
+bool vg_pause_fps_at(float x, float y) {
+    return vg_in_rect(x, y, PAU_SLD_X, PAU_CHK_FPS_Y - 6, PAU_SLD_W, PAU_CHK_SIZE + 12);
+}
 float vg_pause_slider_value(float x) {
     float v = (x - (float)PAU_SLD_X) / (float)PAU_SLD_W;
     if (v < 0.0f) v = 0.0f;
@@ -158,6 +163,7 @@ void vg_draw_pause(void) {
         volume_slider(PAU_SLD_MUSIC_Y, "MUSIC", vg_vol.music);
         volume_slider(PAU_SLD_SFX_Y,   "SFX",   vg_vol.sfx);
         check_row(PAU_CHK_Y, "SCANLINES", vg_disp.scanlines);
+        check_row(PAU_CHK_FPS_Y, "FPS COUNTER", vg_disp.fps);
         vg_button(PAU_BTN_X, PAU_BACK_Y, PAU_BTN_W, PAU_BTN_H, "BACK", true, true);
         return;
     }

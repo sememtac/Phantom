@@ -934,6 +934,11 @@ void vg_upd_pause(float dt, const VgInput* in, const Tap* tap) {
             vg_save_store();
             return;
         }
+        if (tap->up && vg_pause_fps_at(tap->x, tap->y)) {
+            vg_disp.fps = !vg_disp.fps;
+            vg_save_store();
+            return;
+        }
         if (tap->up && vg_pause_back_at(tap->x, tap->y)) {
             vg.pause_page = 0;
             vg_save_store();        // settings outlive the session
