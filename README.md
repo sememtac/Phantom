@@ -38,6 +38,15 @@ because that daemon restarts the board while you play.
 If two boards are attached, name one once with `-Port COM6`. The script remembers
 it.
 
+To start the script from Explorer, double-click `play.cmd`. Windows does not run a
+`.ps1` file when you double-click it. It opens the file in Notepad. `play.cmd`
+starts PowerShell for the script with `-ExecutionPolicy Bypass`, which changes no
+setting. It takes the same arguments, for example `play.cmd check`. If the script
+stops with an error, the window stays open so that you can read the message.
+
+To type `.\play.ps1` in a PowerShell window on a new machine, see "Windows blocks
+the PowerShell scripts at first" in `tools/README.md`.
+
 See `host/README.md` for the PC version on its own.
 
 ## How to put the game on the board
