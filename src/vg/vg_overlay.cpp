@@ -100,7 +100,11 @@ static void draw_glitch_title(const char* s, int y, int scale, float a) {
 // a detonation off the target's wing looks identical whether it took a third of
 // their hull or nothing at all, and with damage now scaling by how close it went
 // off, "nothing at all" is a real outcome the player needs to see.
-static void draw_missile_banner(void) {
+//
+// CALLED FROM vg_render NOW, and still written here. It is an instrument reading -- the ship
+// telling its pilot how a shot resolved -- so it waits for the instruments like the markers do,
+// and only the renderer knows whether they are being projected this frame.
+void vg_draw_missile_banner(void) {
     if (vg_cockpit.banner.ev == MSL_NONE || vg_cockpit.banner.t <= 0.0f) return;
 
     const char* s;
@@ -317,8 +321,9 @@ void vg_draw_overlays(void) {
 
     draw_blast_flash();
     draw_damage_vignette();
-    // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
-    if (vg_state_flags(vg.state) & VGS_COMBAT) draw_missile_banner();
+    // THE SHOT BANNER WAS DRAWN HERE. It is vg_draw_missile_banner now, called from vg_render
+    // inside the instruments' gate -- this function also draws the cutscene and the cards, and
+    // has no business knowing whether the panel is lit.
 
     // WHO IS FLYING THE OPPONENT. Bottom right, small and on the faint ramp, and
     // it must never compete with an instrument for attention.

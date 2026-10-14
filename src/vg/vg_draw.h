@@ -167,6 +167,11 @@ void vg_draw_threat_indicator(const VgCam& cam);
 // has neither the room nor the centre for it.
 void vg_draw_missile_bearings(const VgCam& cam);
 
+// What the player's last missile did -- MISSED, HIT, DESTROYED. Written in
+// vg_overlay.cpp, called by the render layer: it is an instrument reading, so it
+// waits for the instruments, and only the render layer knows when they are lit.
+void vg_draw_missile_banner(void);
+
 // The broadcast caption. Drawn by the render layer rather than by the HUD,
 // because the IFT speaks over the INTRO -- which has no instruments at all -- as
 // well as over a finished match.

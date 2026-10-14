@@ -652,6 +652,12 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // comes off vg.state_t, which RESETS on every state change and then runs. So pausing mid-boot
     // left the instruments strobing through a fresh pattern over a stopped world, forever. Held
     // solid instead: a paused picture should be a still.
+    //
+    // AND IT GATES EVERYTHING THE PANEL PROJECTS, not only vg_draw_hud. The lock ring, the
+    // brackets, the markers, the steering ring, the shot banner and the panel glitches were all
+    // drawn from the first frame of the cockpit arriving -- over a view the canopy is holding
+    // black because the system is not on yet. Author's call: nothing is projected until the
+    // cockpit calls for the instruments, and when it does, all of it catches together.
     bool draw_instruments = vg_cockpit.cued;
     if (vg_cockpit.cued && vg_cockpit.boot > 0.0f && live) {
         const float p = 1.0f - vg_cockpit.boot / HUD_BOOT_TIME;   // 0..1 settled
@@ -753,13 +759,15 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // circle is centred on the panel, so on that hull the posts cut it the moment it opened
     // wider than the pane between them.
     //
-    // Only the side of the frame they are on has moved. Flat and outside the warp, as they
-    // were, and still ahead of vg_draw_hud, so where a panel's well meets a bracket the panel
-    // still wins.
-    { const uint32_t t = micros(); vg_draw_lock_circle(); vg_draw_lock_box(cam);
-      g_sub_lock = micros() - t; }
-
+    // Flat and outside the warp, as they were, and still ahead of vg_draw_hud, so where a
+    // panel's well meets a bracket the panel still wins. Inside the instruments' gate, because
+    // after the frame they would otherwise sit on top of the arrival: LOCK and a target's name
+    // over a view the cockpit is still holding black.
+    g_sub_lock = 0;
     if (draw_instruments) {
+        { const uint32_t t = micros(); vg_draw_lock_circle(); vg_draw_lock_box(cam);
+          g_sub_lock = micros() - t; }
+
         vg_hud_jitter(jx, jy);
         vg_hud_warp(true, warp);
         t_sub = micros();
@@ -794,9 +802,13 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // this coefficient was chosen back when it could not. Without the cap a
     // CHARIOT would sit at a glitch level its hull never earned, just for going
     // fast -- which would say "damaged" using the vocabulary that means damaged.
+    //
+    // A readout cannot struggle before it is on, so this waits for the instruments too. A hit
+    // during the arrival is still reported: the canopy takes a panel back, and the red edge is an
+    // overlay, not the panel.
     const float sev_strain = (strain > 1.0f ? 1.0f : strain) * 0.12f;
     const float sev = (hurt > sev_strain) ? hurt : sev_strain;
-    if (sev > 0.0f) {
+    if (sev > 0.0f && draw_instruments) {
         vg_glitch_patches(vg.state_t, sev);
         // Tears only once it is genuinely bad. They displace the whole width of
         // the screen, so they are the loudest thing in the vocabulary and have
@@ -819,13 +831,22 @@ static void submit_instruments(const VgCam& cam, const VgInput* in, float fps) {
     // the finger, and the markers have to line up with what they point at. A
     // curved control that does not match where you are touching feels broken
     // rather than physical.
+    //
+    // The steering ring waits for the instruments with the rest, by the author's decision: it is
+    // projected by the same panel, so a thumb that goes down during the arrival still steers the
+    // ship but gets no ring until the panel is up. The shot banner is here for the same gate --
+    // see the note where vg_draw_overlays used to call it.
     const uint32_t t_marks = micros();
-    vg_draw_steer_indicator(in);
-    vg_draw_target_markers(cam);
-    vg_draw_missile_markers(cam, 26.0f, 26.0f, SCR_W - 26.0f, SCR_H - 26.0f,
-                            7.0f, 22.0f);
-    vg_draw_missile_bearings(cam);
-    vg_draw_threat_indicator(cam);
+    if (draw_instruments) {
+        vg_draw_steer_indicator(in);
+        vg_draw_target_markers(cam);
+        vg_draw_missile_markers(cam, 26.0f, 26.0f, SCR_W - 26.0f, SCR_H - 26.0f,
+                                7.0f, 22.0f);
+        vg_draw_missile_bearings(cam);
+        vg_draw_threat_indicator(cam);
+        // VGS_COMBAT: a fight, so not the course, where there is nothing to shoot.
+        if (vg_state_flags(vg.state) & VGS_COMBAT) vg_draw_missile_banner();
+    }
     g_sub_marks = micros() - t_marks;
 
     { const uint32_t t = micros(); vg_draw_overlays(); g_sub_over = micros() - t; }
