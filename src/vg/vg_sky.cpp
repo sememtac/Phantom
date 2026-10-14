@@ -1014,10 +1014,17 @@ static void sky_chart(float lx, float ly, int li, float sign,
                       float* out_u, float* out_v) {
     // Screen -> projection plane, undoing the cosmetic bank the projection
     // applies, then screen-down y becomes view-up y.
+    //
+    // UNDOING it, which this did not. vg_project turns (x, y) by the bank on the way
+    // to the screen; the inverse is the opposite turn, and the signs here were the
+    // SAME turn -- so instead of being taken off, the lean was put on again, and the
+    // backdrop leaned the other way to everything drawn over it. Twice the bank
+    // apart: at BANK_MAX that is 0.9 of a radian of sky swinging against the stars
+    // in every hard turn, ahead and astern. The patch's fill had it right all along.
     const float sx = lx - (float)SCR_CX, sy = ly - (float)SCR_CY;
     const float cb = s_cb, sb = s_sb;
-    const float px = sx * cb + sy * sb;
-    const float py = -sx * sb + sy * cb;
+    const float px = sx * cb - sy * sb;
+    const float py = sx * sb + sy * cb;
     float vx = px / FOCAL, vy = -py / FOCAL, vz = 1.0f;
     const float inv = 1.0f / sqrtf(vx * vx + vy * vy + vz * vz);
     vx *= inv; vy *= inv; vz *= inv;
