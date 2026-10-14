@@ -1022,11 +1022,24 @@ static void sky_chart(float lx, float ly, int li, float sign,
     const float inv = 1.0f / sqrtf(vx * vx + vy * vy + vz * vz);
     vx *= inv; vy *= inv; vz *= inv;
 
-    // View ray -> sky direction, through the accumulated orientation; the rear
-    // view looks along the negated ray.
-    float dx = (s_ori.m[0] * vx + s_ori.m[3] * vy + s_ori.m[6] * vz) * sign;
-    float dy = (s_ori.m[1] * vx + s_ori.m[4] * vy + s_ori.m[7] * vz) * sign;
-    float dz = (s_ori.m[2] * vx + s_ori.m[5] * vy + s_ori.m[8] * vz) * sign;
+    // View ray -> sky direction, through the accumulated orientation.
+    //
+    // THE REAR VIEW IS HALF A TURN ABOUT THE VERTICAL: x and z negated, y KEPT. That
+    // is vg_view's convention, so it is what the stars, the arena and the ships are
+    // drawn with -- and it is what the rear-view patch's fill already did.
+    //
+    // This negated the WHOLE ray, which is a point reflection rather than a turn of
+    // the head: the centre and left-right came out right and up-down came out
+    // mirrored. Aft in the main window the backdrop was upside down against
+    // everything drawn in front of it, and it pitched and rolled the opposite way
+    // to the stars. On a nebula that is noise moving through noise; a galaxy core
+    // or a cluster knot is a landmark, and it showed. The patch was always right,
+    // so holding it to fill the screen flipped the sky as it grew.
+    vx *= sign;
+    vz *= sign;
+    float dx = s_ori.m[0] * vx + s_ori.m[3] * vy + s_ori.m[6] * vz;
+    float dy = s_ori.m[1] * vx + s_ori.m[4] * vy + s_ori.m[7] * vz;
+    float dz = s_ori.m[2] * vx + s_ori.m[5] * vy + s_ori.m[8] * vz;
 
     float lon = fatan2(dx, dz);
     float lat = fasin(dy);
