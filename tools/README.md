@@ -279,6 +279,37 @@ The device refuses both during a record and during a render. The effects draw
 from the seeded random number generator, so a shot in the middle of a render
 would move the simulation off the sequence the recording was made from.
 
+## PilotConsole (the pilot network)
+
+This window does the work on the pilot network in one place. It shows the state
+of the network, and it runs `inspect_pilot.py`, `train_pilot.py` and the PC build.
+
+Start `tools/dist/PilotConsole.exe`, or `tools\pilot.cmd`. To start the program
+from the source instead:
+
+```
+python tools/pilot_console.py
+```
+
+Keep the exe in the repository. The exe looks for `platformio.ini` in its own
+folder and in each folder above it, and that folder is the repository.
+
+The exe runs the trainer and the inspector with the `python` on the PATH. That
+Python needs `numpy` for the inspector, and `torch` for the trainer.
+
+To build the program again, run this command from the top of the repository:
+
+```
+python -m PyInstaller --noconfirm --onefile --windowed --name PilotConsole ^
+    --hidden-import numpy --distpath tools\dist --workpath .pyi-build ^
+    --specpath .pyi-build tools\pilot_console.py
+```
+
+The window reads the network with `inspect_pilot.py`, and that file needs
+`numpy`. PyInstaller cannot see this import, because the window loads
+`inspect_pilot.py` from the repository while it runs. `--hidden-import numpy`
+puts `numpy` in the exe.
+
 ## Files
 
 | file | contents |
@@ -291,6 +322,7 @@ would move the simulation off the sequence the recording was made from.
 | `canopy_set.py` | bakes every drawing in `design/canopy/` and writes the table that gives each ship its canopy |
 | `canopy_cost.py` | asks the board what the canopy costs to draw |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
+| `pilot_console.py` | the window for the pilot network |
 
 ## Canopy drawings
 

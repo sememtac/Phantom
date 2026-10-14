@@ -12,9 +12,14 @@ Run it with tools\\pilot.cmd, or with:
 It runs the other scripts rather than repeating them. train_pilot.py stays the
 trainer and inspect_pilot.py stays the inspector; this window only calls them, so
 there is one copy of each job.
+
+The exe is tools/dist/PilotConsole.exe. Keep it in the repository, because it
+finds the repository from its own folder. To build the exe again, see
+tools/README.md.
 """
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -23,7 +28,47 @@ import webbrowser
 import tkinter as tk
 from tkinter import filedialog, ttk
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def frozen():
+    """True in the exe that PyInstaller makes. False when this file runs as a script."""
+    return getattr(sys, "frozen", False)
+
+
+def find_root():
+    """Find the top folder of the repository.
+
+    When this file runs as a script, the top folder is the folder above tools/.
+    The exe has no source file. PyInstaller unpacks the program into a temporary
+    folder, and __file__ points to that folder. So in the exe, this function
+    starts in the folder of the exe. It goes up one folder at a time until it
+    finds platformio.ini.
+    """
+    if not frozen():
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.abspath(sys.executable))
+    while True:
+        if os.path.isfile(os.path.join(here, "platformio.ini")):
+            return here
+        up = os.path.dirname(here)
+        if up == here:
+            return os.getcwd()
+        here = up
+
+
+def find_python():
+    """Find the Python that runs the trainer and the inspector.
+
+    When this file runs as a script, use the same Python. In the exe,
+    sys.executable is the exe itself, so use the python on the PATH. That Python
+    needs numpy for the inspector, and torch for the trainer.
+    """
+    if not frozen():
+        return sys.executable
+    return shutil.which("python")
+
+
+ROOT = find_root()
+PYTHON = find_python()
 NET = os.path.join(ROOT, "src", "vg", "generated", "pilot_net.h")
 EXE = os.path.join(ROOT, "host", "build", "phantom.exe")
 CAPTURES = os.path.join(ROOT, "captures")
@@ -173,10 +218,14 @@ class Console(tk.Tk):
 
         def worker():
             env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+            # python.exe and powershell.exe are console programs, and this window
+            # has no console. Without CREATE_NO_WINDOW, each job opens an empty
+            # console window. The output comes to the log through the pipe.
             try:
                 p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True,
-                                     encoding="utf-8", errors="replace", env=env)
+                                     encoding="utf-8", errors="replace", env=env,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 for line in p.stdout:
                     self.q.put(("line", line))
                 p.wait()
@@ -189,6 +238,12 @@ class Console(tk.Tk):
     def chosen(self):
         return [os.path.join("captures", self.files.get(i))
                 for i in self.files.curselection()]
+
+    def have_python(self):
+        if PYTHON:
+            return True
+        self.say("Cannot find Python. Install Python 3 and put it on the PATH.", "bad")
+        return False
 
     # ---- the state panel -------------------------------------------------
     def refresh(self):
@@ -237,13 +292,17 @@ class Console(tk.Tk):
 
     # ---- the buttons -----------------------------------------------------
     def do_inspect(self):
-        cmd = [sys.executable, tools_path("inspect_pilot.py"), "--net", self.net_path]
+        if not self.have_python():
+            return
+        cmd = [PYTHON, tools_path("inspect_pilot.py"), "--net", self.net_path]
         cmd += self.chosen()
         cmd += ["--mode-smooth", self.smooth.get(), "--horizon", self.horizon.get()]
         self.run(cmd, "inspected")
         self.after(1500, lambda: webbrowser.open("file:///" + REPORT.replace("\\", "/")))
 
     def do_train(self):
+        if not self.have_python():
+            return
         data = self.chosen()
         if not data:
             self.say("choose some recordings first", "bad")
@@ -254,7 +313,7 @@ class Console(tk.Tk):
             initialfile="pilot_net.h")
         if not out:
             return
-        cmd = [sys.executable, tools_path("train_pilot.py")] + data + [
+        cmd = [PYTHON, tools_path("train_pilot.py")] + data + [
             "--epochs", self.epochs.get(), "--horizon", self.horizon.get(),
             "--hidden", self.hidden.get(), "--layers", self.layers.get(),
             "--mode-smooth", self.smooth.get(), "--out", out]
@@ -274,7 +333,10 @@ class Console(tk.Tk):
         self.do_build()
 
     def do_build(self):
-        self.run(["powershell", "-NoProfile", "-File",
+        # Windows does not run PowerShell scripts by default. "-ExecutionPolicy
+        # Bypass" runs build.ps1 one time and changes no setting. See "Windows
+        # blocks the PowerShell scripts at first" in tools/README.md.
+        self.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                   os.path.join(ROOT, "host", "build.ps1")], "built")
 
     def do_fly(self):
