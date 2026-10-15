@@ -740,6 +740,7 @@ void vg_gym_start(void);
 void vg_gym_spawn_opponent(void);
 // Drop straight into a gym match, skipping the title, the chord and both select
 // screens. For a harness: a matchup that runs without anybody choosing it.
+// Set vg.gym_pilot and vg.gym_rotate FIRST: the first opponent spawns inside this.
 void vg_gym_enter(ShipClass mine, ShipClass theirs);
 
 // The title screen's demo. begin picks a matchup and hands both seats to the

@@ -333,3 +333,33 @@ extern float    g_ai_range[];
 
 extern uint32_t g_msl_dark[2];
 extern uint32_t g_msl_relit[2];
+
+// THE BOUT CENSUS: who won each fight, how, and how long it took.
+//
+// Everything above counts what happened DURING a fight, and none of it says who
+// won one. That was the question every pilot comparison was really asking, and it
+// was being answered by dividing damage by hull and hoping. A bout is one fight
+// from the opponent arriving to somebody dying, scored from the SEAT's side.
+//
+// A TAP, NOT A TABLE, because the useful answer is a distribution -- the median
+// bout, the share that ended in a ram -- and keeping one on the board would cost
+// RAM it does not have. The desktop sets the tap and prints a line per bout; on
+// the board it stays null and this costs a compare.
+enum { BOUT_WON = 0, BOUT_LOST, BOUT_DRAW };
+enum { BOUT_BY_MISSILE = 0, BOUT_BY_RAM, BOUT_BY_WALL, BOUT_BY_OTHER, BOUT_BY_TIME };
+struct VgBout {
+    uint8_t outcome;   // BOUT_WON, BOUT_LOST or BOUT_DRAW, for the seat
+    uint8_t cause;     // what killed the loser; BOUT_BY_TIME for a draw
+    float   seconds;   // flown, from the first frame of flight to the kill
+    // The seat's hull at the start, 0..1. A gym win keeps its damage into the next
+    // bout, so a loss straight after a win is not the same fight as a fresh one.
+    float   hull0;
+};
+typedef void (*VgBoutTap)(const VgBout* b);
+extern VgBoutTap vg_bout_tap;
+// A new bout. Called wherever an opponent is put into the world.
+void  vg_bout_begin(void);
+// How long the running bout has been flown, in seconds.
+float vg_bout_time(void);
+// End the running bout as a draw. For a harness that puts a time limit on them.
+void  vg_bout_draw(void);

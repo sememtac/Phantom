@@ -416,8 +416,18 @@ int vg_bot_enemy_fire(int index) {
 
 // Every seat starts with no opinion. Zero would be PRESS, and a ship that
 // pressed until the network first spoke would be a bug that looked like nerve.
+//
+// AND WITH ITS HAND CENTRED. The held stick and the trigger opinion used to
+// survive from one match into the next, so a new opponent's first second was
+// flown by the last one's hand. Harmless while nothing flew the network, and a
+// replay hazard the moment something does: a replay that does not start from
+// boot would inherit whatever the previous fight left in these.
 void vg_bot_modes_reset(void) {
-    for (int i = 0; i < MAX_ENEMIES; i++) { s_enemy_mode[i] = -1; s_mode_t[i] = 0.0f; }
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        s_enemy_mode[i] = -1; s_mode_t[i] = 0.0f;
+        s_enp[i] = 0.0f; s_eny[i] = 0.0f; s_ent[i] = 0.0f;
+        s_enf[i] = false; s_enf_ok[i] = false;
+    }
 }
 
 bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,

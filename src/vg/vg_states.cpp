@@ -542,6 +542,37 @@ void vg_tv_update(float dt) {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
+// The bout census. See VgBout in vg_prof.h.
+// ---------------------------------------------------------------------------
+
+VgBoutTap vg_bout_tap = nullptr;
+static float   s_bout_t      = 0.0f;
+static float   s_bout_hull0  = 1.0f;
+// What the player's hit THIS FRAME was. Set to a missile before the collisions
+// run and overwritten by them, because a missile is the only damage that lands
+// before collide_player in the frame.
+static uint8_t s_bout_hit_by = BOUT_BY_MISSILE;
+// Whether this bout's opponent died against the player rather than to a round.
+static bool    s_bout_rammed = false;
+
+void vg_bout_begin(void) {
+    s_bout_t      = 0.0f;
+    s_bout_rammed = false;
+}
+
+float vg_bout_time(void) { return s_bout_t; }
+
+static void bout_end(uint8_t outcome, uint8_t cause) {
+    if (vg_bout_tap) {
+        VgBout b = { outcome, cause, s_bout_t, s_bout_hull0 };
+        vg_bout_tap(&b);
+    }
+    s_bout_t = 0.0f;
+}
+
+void vg_bout_draw(void) { bout_end(BOUT_DRAW, BOUT_BY_TIME); }
+
+// ---------------------------------------------------------------------------
 // Collisions
 // ---------------------------------------------------------------------------
 
@@ -549,6 +580,7 @@ static void collide_player(void) {
     // Boundary contact is fatal, so there is no bouncing the player back inside
     // any more -- the run is simply over.
     if (vg_wall.clearance < SHIP_RADIUS) {
+        s_bout_hit_by = BOUT_BY_WALL;
         // The player's own airframe against the boundary. Right on top of the
         // cockpit, so the flash vg_spawn_blast raises off the range is the
         // brightest one in the game -- which is correct for hitting a wall.
@@ -564,6 +596,7 @@ static void collide_player(void) {
         if (vlen2(a->pos) < r * r) {
             vg_spawn_debris(a->pos, a->radius, 8);
             a->alive = false;
+            s_bout_hit_by = BOUT_BY_OTHER;
             vg_kill_player();
         }
     }
@@ -585,6 +618,8 @@ static void collide_player(void) {
             vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
             vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
             s->alive = false;
+            s_bout_rammed = true;
+            s_bout_hit_by = BOUT_BY_RAM;
             // DAMAGE, NOT AN OUTCOME. See SHIP_COLLIDE_DAMAGE: a ram is meant to
             // be a desperate trade, and it stopped being one when it killed
             // whatever it touched regardless of the hull it hit.
@@ -1043,6 +1078,13 @@ void vg_upd_won(float dt, const VgInput* in, const Tap* tap) {
 void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
     const bool playing = (vg.state == VG_PLAYING);
 
+    // The bout's clock, through VG_HIT as well: the fight does not stop for a
+    // flinch. The hull is taken on the FIRST frame of flight rather than at the
+    // spawn, because the gym heals the seat after it puts the opponent in.
+    if (s_bout_t == 0.0f)
+        s_bout_hull0 = (vg.health_max > 0.0f) ? vg.health / vg.health_max : 0.0f;
+    s_bout_t += dt;
+
     vg_clear_player_hit();
 
     vg_world_step(dt, in->pitch, in->yaw, vg_roll_angle(in, dt), in->throttle);
@@ -1114,6 +1156,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
 #endif
 
     if (playing) {
+        s_bout_hit_by = BOUT_BY_MISSILE;
         collide_player();
 
         // Player death is resolved FIRST, which is what makes a mutual kill
@@ -1121,6 +1164,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
         // opponent went down in the same frame.
         if (vg_player_was_hit()) {
             vg_state_go((vg.health > 0.0f) ? VG_HIT : VG_OVER);
+            if (vg.state == VG_OVER) bout_end(BOUT_LOST, s_bout_hit_by);
             // THE TITLE CHANGES HANDS, and the player stops being anybody.
             //
             // Dying as the champion is not a lost round, it is the end of a legend.
@@ -1194,6 +1238,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
         }
 
         if (!opponent_alive) {
+            bout_end(BOUT_WON, s_bout_rammed ? BOUT_BY_RAM : BOUT_BY_MISSILE);
             // Not straight to the scorecard. They are still talking, and
             // cutting to a purse over the top of a dying pilot is the whole
             // difference between a tournament and a spreadsheet.

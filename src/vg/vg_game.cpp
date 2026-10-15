@@ -69,6 +69,7 @@ void vg_spawn_opponent(void) {
     // through here. Answering it once means the gym cannot be handed a stale
     // entrant by a path somebody adds later.
     if (vg.gym) { vg_gym_spawn_opponent(); return; }
+    vg_bout_begin();
 
     const Entrant* opp = vg_tourney_opponent();
     if (opp) {
@@ -298,6 +299,7 @@ void vg_title_lost(void) {
 // empty string is a small blank box beside every line. Naming the class instead
 // of inventing a pilot also keeps the caption honest about what is talking.
 void vg_gym_spawn_opponent(void) {
+    vg_bout_begin();
     // A new class each rep when the gym is rotating. Rolled here rather than at
     // selection, so it changes on every respawn and not once per session.
     if (vg.gym_rotate)
@@ -388,7 +390,12 @@ void vg_demo_end(void) {
 
 void vg_gym_enter(ShipClass mine, ShipClass theirs) {
     vg_game_select_ship(mine);
-    vg.gym_pilot = -1;
+    // NOT gym_pilot, and NOT gym_rotate: the caller sets both BEFORE this. The
+    // vg_state_go at the bottom runs PLAYING's entry hook on the spot, and that is
+    // what spawns the first opponent -- so anything set after this returns only
+    // reaches the respawns. It did: --pilot was clobbered to -1 here and then set
+    // too late, every level flew the first fight as PRO, and a run in which nobody
+    // died measured five identical pilots.
     vg.gym     = true;
     vg.sel_opp = false;
     vg.gym_opp = (uint8_t)((theirs < SHIP_CLASSES) ? theirs : SHIP_AEGIS);
@@ -415,7 +422,6 @@ void vg_gym_start(void) {
     // silent radio, reported as the ship not being initialised.
     //
     // There is no cutscene here to put between them, which is the point of a gym.
-    vg_bot_modes_reset();   // nobody has an opinion until the network speaks
     vg_match_start();
     vg_begin_flight();
 
@@ -445,6 +451,10 @@ void vg_gym_start(void) {
 }
 
 void vg_match_start(void) {
+    // Nobody has an opinion until the network speaks. HERE rather than in the gym's
+    // start, where it used to be: a tournament match never went through that, so
+    // its opponents inherited whatever the network last held.
+    vg_bot_modes_reset();
     for (int i = 0; i < MAX_ENEMIES;   i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
     for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;

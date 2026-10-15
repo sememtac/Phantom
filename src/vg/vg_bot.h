@@ -273,7 +273,8 @@ extern bool vg_bot_modes_on;
 
 int vg_bot_enemy_mode(int index);
 
-// Clears every held mode. Call when a match starts.
+// Clears every held mode, held stick and trigger opinion. vg_match_start calls
+// it, so every match -- gym or tournament -- starts from the same state.
 void vg_bot_modes_reset(void);
 
 // Does the policy want THIS enemy to shoot, on the frame it last flew them?

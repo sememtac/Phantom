@@ -26,10 +26,30 @@ void host_dataset_close(void);
 #include "vg_tv.h"
 #include "vg_canopy_op.h"
 #include "vg_canopy_set.h"
+#include "vg_cine.h"
+#include "vg_pilot.h"
 
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
 extern void loop(void);
+
+// ONE LINE PER BOUT, as it ends, so a run that is cut short still holds every
+// bout it finished. key=value, so a reader does not depend on the column order.
+// Read by tools/pilot_eval.py.
+static void bout_print(const VgBout* b) {
+    static const char* OUT[] = { "won", "lost", "draw" };
+    static const char* BY[]  = { "missile", "ram", "wall", "other", "time" };
+    const Ship* e = &vg.enemy[0];
+    const float eh = (e->spec && e->spec->hull > 0.0f)
+                   ? (e->alive ? e->hull / e->spec->hull : 0.0f) : 0.0f;
+    printf("bout %s t=%.2f by=%s seat=%s hull0=%.3f hull=%.3f enemy=%s pilot=%s ehull=%.3f\n",
+           OUT[b->outcome < 3 ? b->outcome : 2], (double)b->seconds,
+           BY[b->cause < 5 ? b->cause : 3],
+           vg.spec ? vg.spec->name : "-", (double)b->hull0,
+           (double)((vg.health_max > 0.0f) ? vg.health / vg.health_max : 0.0f),
+           e->spec ? e->spec->name : "-",
+           e->pilot ? e->pilot->name : "-", (double)eh);
+}
 
 // ===========================================================================
 // WHERE TO START, AND WHAT HAS TO BE TRUE FOR IT TO MEAN ANYTHING
@@ -151,6 +171,7 @@ int main(int argc, char** argv) {
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
     int  pilot  = -1;      // which of the five characters the gym sends
+    float bouts = 0.0f;    // --bouts S: score the gym as separate bouts; 0 = off
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -180,6 +201,12 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--scripted")) vg_bot_net = false;
         else if (!strcmp(argv[i], "--rotate")) rotate = true;
         else if (!strcmp(argv[i], "--pilot") && i + 1 < argc) pilot = atoi(argv[++i]);
+        // EVERY BOUT A FRESH ONE, for measuring. The gym on its own keeps the
+        // seat's damage after a win and waits out the wreck after a loss, which is
+        // right for a player and wrong for a count: a loss straight after a win is
+        // a different fight. This restarts the match the moment a bout ends, both
+        // ships whole, and calls a bout that runs S seconds a draw.
+        else if (!strcmp(argv[i], "--bouts") && i + 1 < argc) bouts = (float)atof(argv[++i]);
         // The opponent is flown by the network. This is the one you fight.
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
         else if (!strcmp(argv[i], "--no-enemy-net")) vg_enemy_net = false;
@@ -277,6 +304,10 @@ int main(int argc, char** argv) {
                    "               gym as usual and you are fighting it.\n"
                    "  --pilot N    which character the gym sends: 0 RAW, 1 JRN,\n"
                    "               2 PRO, 3 VET, 4 ACE. Default 2.\n"
+                   "  --bouts S    score the gym as separate bouts. Each bout\n"
+                   "               starts with both ships whole; one that lasts\n"
+                   "               S seconds is a draw. A 'bout' line is printed\n"
+                   "               as each one ends, whether or not this is set.\n"
                    "  --rotate     send a different opponent class each respawn.\n"
                    "               Use it when you record: one sitting then\n"
                    "               covers all four instead of one.\n"
@@ -330,11 +361,16 @@ int main(int argc, char** argv) {
 
     // AFTER setup(), which builds the world and lands on the title screen. Doing
     // it before would be setting up a match the boot sequence then replaces.
+    //
+    // THE PILOT AND THE ROTATION GO IN FIRST. vg_gym_enter spawns the first
+    // opponent before it returns, so set afterwards they reached only the
+    // respawns -- and every --pilot measurement in which nobody died was five
+    // runs of the same PRO.
     if (gym_mine >= 0 && gym_theirs >= 0) {
-        vg_gym_enter((ShipClass)(gym_mine   % SHIP_CLASSES),
-                     (ShipClass)(gym_theirs % SHIP_CLASSES));
         vg.gym_rotate = rotate;
         vg.gym_pilot  = (int8_t)pilot;
+        vg_gym_enter((ShipClass)(gym_mine   % SHIP_CLASSES),
+                     (ShipClass)(gym_theirs % SHIP_CLASSES));
     }
 
     // STRAIGHT TO A PAGE. After setup() for the same reason the gym is: the boot
@@ -406,8 +442,31 @@ int main(int argc, char** argv) {
     // is lost, rather than everything since the last 64 KB.
     setvbuf(stdout, nullptr, _IOFBF, 1 << 16);
 
+    vg_bout_tap = bout_print;
+    // Counted whether or not --frames was given, and printed on the way out, so a
+    // run that stopped early says so instead of passing for a short one.
+    unsigned long flown = 0;
+
     while (host_window_pump()) {
         loop();
+        flown++;
+        // THE NEXT BOUT, AT ONCE AND WHOLE. See --bouts. Between frames, so the
+        // frame that decided the bout has finished and printed it already. A
+        // gym_arm plus a state change is exactly what the gym does itself after
+        // a death, only without the wreck and with nothing carried over.
+        if (bouts > 0.0f && vg.gym) {
+            bool next = (vg.state == VG_KILL || vg.state == VG_OVER);
+            if ((vg.state == VG_PLAYING || vg.state == VG_HIT)
+                && vg_bout_time() >= bouts) {
+                vg_bout_draw();
+                next = true;
+            }
+            if (next) {
+                vg_cine_clear();
+                vg.gym_arm = true;
+                vg_state_go(VG_PLAYING);
+            }
+        }
         fflush(stdout);
         // PWR, pressed from here rather than set up before the first frame. See
         // screen_pause: a pause suspends a match, and a match that has never
@@ -427,6 +486,13 @@ int main(int argc, char** argv) {
     }
 
     host_dataset_close();
+
+    // HOW FAR IT GOT. The bout still running when the run ended is printed as
+    // open rather than dropped, so a long stalemate shows up as one instead of as
+    // nothing at all.
+    printf("frames %lu\n", flown);
+    if ((vg.state == VG_PLAYING || vg.state == VG_HIT) && vg_bout_time() > 0.0f)
+        printf("bout open t=%.2f\n", (double)vg_bout_time());
 
     // WHAT THE PILOTS DID, for the same reason the missile counters print here:
     // a headless run returns from the frame before the telemetry block, so

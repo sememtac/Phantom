@@ -121,7 +121,13 @@ uint32_t esp_random(void) {
     // Not the hardware RNG, and it does not need to be: a replay carries its own
     // numbers, so this only ever seeds a fresh session.
     static uint32_t s = 0;
-    if (!s) s = s_seed_request ? (s_seed_request | 1u)
+    // THE SEED AS GIVEN, not `| 1`. xorshift needs a state that is not zero, and
+    // that is all -- and a requested seed is never zero, because zero is the
+    // request for the clock. The `| 1` made 2 and 3 the same fight, 4 and 5, and
+    // so on, so "four fixed seeds" 1-4 was three fights with one counted twice.
+    // Odd seeds are unchanged by this. Even ones are new fights: anything recorded
+    // against an even --seed before 2026-10-14 was really the odd seed above it.
+    if (!s) s = s_seed_request ? s_seed_request
                                : (uint32_t)(ticks_since_base() | 1ull);
     s ^= s << 13; s ^= s >> 17; s ^= s << 5;
     return s;
