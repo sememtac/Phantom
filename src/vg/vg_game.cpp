@@ -151,6 +151,11 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
 
 void vg_game_init(void) {
     memset(&vg, 0, sizeof(vg));
+    // THE GYM'S DEFAULT PILOT IS -1, NOT THE ZERO THE MEMSET LEAVES. -1 is "the
+    // middle of the table", PRO; zero is RAW. Nothing else on the board ever sets
+    // it -- only the desktop's --pilot does -- so every gym entered from the menu
+    // was sending the weakest pilot in the game while the header promised PRO.
+    vg.gym_pilot = -1;
     vg_rng_seed(vg_replay_rand());
 
     vg_build_models();
