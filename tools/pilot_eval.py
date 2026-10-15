@@ -252,7 +252,7 @@ def cmd_run(args):
                     jobs.append({"exe": exe, "seat": s, "enemy": e, "level": lv,
                                  "seed": sd, "frames": frames, "bout": args.bout,
                                  "flags": flags, "file": f, "reuse": args.reuse})
-    print("%d fights, %.0f simulated minutes each, %d at a time. Output: %s"
+    print("%d fights, %g simulated minutes each, %d at a time. Output: %s"
           % (len(jobs), args.minutes, args.workers, out))
     t0 = time.time()
     done = []
@@ -277,7 +277,7 @@ def cmd_run(args):
                 c["jobs"] = js
                 cells[(s, e, lv)] = c
     print("")
-    print("seat %s, opponent %s, %s, bout limit %.0f s, seeds %s, %.0f min each"
+    print("seat %s, opponent %s, %s, bout limit %.0f s, seeds %s, %g min each"
           % (args.seat, args.enemy, " ".join(flags), args.bout, args.seeds, args.minutes))
     summary = report(cells, args)
 

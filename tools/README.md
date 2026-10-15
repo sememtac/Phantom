@@ -282,7 +282,31 @@ would move the simulation off the sequence the recording was made from.
 ## PilotConsole (the pilot network)
 
 This window does the work on the pilot network in one place. It shows the state
-of the network, and it runs `inspect_pilot.py`, `train_pilot.py` and the PC build.
+of the network, and it runs `inspect_pilot.py`, `train_pilot.py`, `pilot_eval.py`,
+the PC build and the game.
+
+| button | what it does |
+|---|---|
+| Inspect | writes `pilot_report.html` for the weights in the state panel, and opens it |
+| Train | trains on the selected recordings. It writes `pilot_net_next.h` by default, never `pilot_net.h` |
+| Evaluate | runs `pilot_eval.py run` in the background and shows the table at the end |
+| Deploy | copies a weights file over `pilot_net.h`, then builds. It asks first |
+| Build | builds `host\build\phantom.exe` |
+| Fly | starts a gym fight against an opponent that the network flies, with `--enemy-net --show-ai` |
+| Record | starts one sitting of the M1 recording plan, with its command line and file names |
+
+The game flies only `pilot_net.h`, because the weights are compiled in. A file
+from Train has no effect on the game until you deploy it and build.
+
+Fly and Record write the output of the game to a log. Fly writes it in
+`captures\ai_eval\fly\`. Record writes it next to the recording, with the same
+name and `.log`. When the game window closes, the log of the console shows the
+bouts that were won and lost.
+
+The recordings list shows who flew each recording. `you` is the author (`a_*`,
+`m1_*`). `bot` is a dump of the bot (`d_*`). `old` marks a recording that was made
+before the weapon rules of 2026-09-04. The last column is the number of bouts in
+the matching `.log`, or `-` if there is no log.
 
 Start `tools/dist/PilotConsole.exe`, or `tools\pilot.cmd`. To start the program
 from the source instead:
@@ -291,8 +315,12 @@ from the source instead:
 python tools/pilot_console.py
 ```
 
-Keep the exe in the repository. The exe looks for `platformio.ini` in its own
-folder and in each folder above it, and that folder is the repository.
+Keep the exe in a folder of the repository, for example `tools\dist`. The exe
+looks for `platformio.ini` in its own folder and in each folder above it, and
+that folder is the repository.
+
+Git does not keep this exe. `.gitignore` ignores it, and the command below builds
+it again.
 
 The exe runs the trainer and the inspector with the `python` on the PATH. That
 Python needs `numpy` for the inspector, and `torch` for the trainer.
@@ -323,6 +351,7 @@ puts `numpy` in the exe.
 | `canopy_cost.py` | asks the board what the canopy costs to draw |
 | `canopy.ps1` | bake, build and flash a new canopy in one command |
 | `pilot_console.py` | the window for the pilot network |
+| `pilot_eval.py` | measures the opponents as bouts won and lost, and counts a person's bouts |
 
 ## Canopy drawings
 

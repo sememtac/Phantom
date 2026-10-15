@@ -1,32 +1,47 @@
 """One window for the work on the pilot network.
 
 The weights are made on the PC in a loop: record some flying, train, look at what
-came out, put it in the tree, fly it. Each step was its own command line with its
-own arguments. This puts them in one place and shows the state of the network
-between them.
+came out, measure it, put it in the tree, fly against it. Each step was its own
+command line with its own arguments. This window puts them in one place and shows
+the state of the network between them.
 
 Run it with tools\\pilot.cmd, or with:
 
     python tools/pilot_console.py
 
-It runs the other scripts rather than repeating them. train_pilot.py stays the
-trainer and inspect_pilot.py stays the inspector; this window only calls them, so
-there is one copy of each job.
+It runs the other scripts. It does not repeat them. train_pilot.py stays the
+trainer, inspect_pilot.py stays the inspector and pilot_eval.py stays the
+measurement. This window only calls them, so there is one copy of each job.
+
+THE GAME FLIES pilot_net.h, AND NOTHING ELSE. The weights are compiled into the
+game. Train writes pilot_net_next.h, and the game does not see that file until
+Deploy copies it over pilot_net.h and Build compiles it.
 
 The exe is tools/dist/PilotConsole.exe. Keep it in the repository, because it
 finds the repository from its own folder. To build the exe again, see
 tools/README.md.
 """
+import datetime
 import os
 import queue
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
+
+# pilot_eval.py loads from the repository while the window runs, so PyInstaller
+# cannot see what it imports. These lines put those modules in the exe.
+import concurrent.futures  # noqa: F401
+import json  # noqa: F401
+import math  # noqa: F401
+import re  # noqa: F401
+import statistics  # noqa: F401
+import struct  # noqa: F401
 
 
 def frozen():
@@ -56,7 +71,7 @@ def find_root():
 
 
 def find_python():
-    """Find the Python that runs the trainer and the inspector.
+    """Find the Python that runs the trainer, the inspector and the measurement.
 
     When this file runs as a script, use the same Python. In the exe,
     sys.executable is the exe itself, so use the python on the PATH. That Python
@@ -69,10 +84,31 @@ def find_python():
 
 ROOT = find_root()
 PYTHON = find_python()
-NET = os.path.join(ROOT, "src", "vg", "generated", "pilot_net.h")
+GENERATED = os.path.join(ROOT, "src", "vg", "generated")
+NET = os.path.join(GENERATED, "pilot_net.h")
+NEXT = os.path.join(GENERATED, "pilot_net_next.h")
 EXE = os.path.join(ROOT, "host", "build", "phantom.exe")
 CAPTURES = os.path.join(ROOT, "captures")
+FLY_LOGS = os.path.join(CAPTURES, "ai_eval", "fly")
 REPORT = os.path.join(ROOT, "pilot_report.html")
+
+CLASSES = ["AEGIS", "LANCE", "CHARIOT", "BALLISTA"]
+LEVELS = ["RAW", "JRN", "PRO", "VET", "ACE"]
+
+# THE M1 RECORDING PLAN. See captures/ai_eval/PLAN.md. The presets below make the
+# same command lines and the same file names as the plan. Change them together.
+#
+# Session A is the flying the network copies. LANCE flies against RAW, because a
+# LANCE lock needs room: against stronger pilots the recorded pilot spends the
+# session without a lock, and the network copies that.
+M1_A_LEVEL = {0: 1, 1: 0, 2: 1, 3: 1}     # hull -> level: JRN, but RAW for LANCE
+# Session B is the human baseline: PRO, and a fresh bout each time.
+M1_B_LEVEL = 2
+M1_B_BOUT = 180
+
+# The weapon rules changed until 2026-09-04 and are frozen since then. A recording
+# made before that date shows flying under other rules.
+RULES_FROZEN = datetime.datetime(2026, 9, 4).timestamp()
 
 BG = "#111113"
 PANEL = "#18181b"
@@ -83,9 +119,47 @@ BAD = "#ff6a4d"
 OK = "#8fd07a"
 MONO = ("Consolas", 10)
 
+# A console program started from this window opens an empty console window,
+# because this window has no console. This flag stops that. The output still
+# comes through the pipe or goes to the file.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 def tools_path(name):
     return os.path.join(ROOT, "tools", name)
+
+
+def load_tool(name):
+    """Load a script from tools/ as a module, from the repository on disk."""
+    import importlib.util
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    spec = importlib.util.spec_from_file_location(name[:-3], tools_path(name))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def who_flew(name):
+    """Who flew a recording, from its name: the author or the bot."""
+    if name.startswith(("a_", "m1_")):
+        return "you"
+    if name.startswith("d_"):
+        return "bot"
+    return "?"
+
+
+def bout_count(log):
+    """How many 'bout' lines a log holds. None if there is no log."""
+    if not os.path.exists(log):
+        return None
+    with open(log, "rb") as f:
+        raw = f.read()
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        text = raw.decode("utf-16", errors="replace")
+    else:
+        text = raw.decode("utf-8", errors="replace")
+    return sum(1 for line in text.splitlines() if line.startswith("bout ")
+               and not line.startswith("bout open"))
 
 
 class Console(tk.Tk):
@@ -93,10 +167,12 @@ class Console(tk.Tk):
         super().__init__()
         self.title("Phantom - pilot network")
         self.configure(bg=BG)
-        self.geometry("980x680")
+        self.geometry("1180x760")
         self.q = queue.Queue()
         self.busy = False
         self.net_path = NET
+        self.names = []      # the file name for each row of the recordings list
+        self.gate = {}       # class name -> True if the network flies that class
         self._build()
         self.after(120, self._drain)
         self.refresh()
@@ -119,20 +195,18 @@ class Console(tk.Tk):
 
         tk.Label(left, text="STATE", bg=PANEL, fg=DIM, font=MONO).pack(
             anchor="w", padx=10, pady=(8, 2))
-        self.state = tk.Text(left, width=44, height=12, bg=PANEL, fg=INK,
+        self.state = tk.Text(left, width=56, height=12, bg=PANEL, fg=INK,
                              font=MONO, relief="flat", wrap="none",
                              highlightthickness=0)
         self.state.pack(padx=10, pady=(0, 8))
-        self.state.tag_config("bad", foreground=BAD)
-        self.state.tag_config("ok", foreground=OK)
-        self.state.tag_config("amber", foreground=AMBER)
-        self.state.tag_config("dim", foreground=DIM)
+        for tag, colour in (("bad", BAD), ("ok", OK), ("amber", AMBER), ("dim", DIM)):
+            self.state.tag_config(tag, foreground=colour)
 
-        tk.Label(left, text="RECORDINGS", bg=PANEL, fg=DIM, font=MONO).pack(
-            anchor="w", padx=10, pady=(4, 2))
+        tk.Label(left, text="RECORDINGS   who  rules  name  bouts in the log",
+                 bg=PANEL, fg=DIM, font=MONO).pack(anchor="w", padx=10, pady=(4, 2))
         wrap = tk.Frame(left, bg=PANEL)
         wrap.pack(padx=10, pady=(0, 8), fill="both", expand=True)
-        self.files = tk.Listbox(wrap, selectmode="extended", height=13, width=44,
+        self.files = tk.Listbox(wrap, selectmode="extended", height=14, width=56,
                                 bg="#0f0f11", fg=INK, font=MONO, relief="flat",
                                 selectbackground="#3a3320", highlightthickness=0,
                                 exportselection=False)
@@ -140,33 +214,59 @@ class Console(tk.Tk):
         sb = ttk.Scrollbar(wrap, command=self.files.yview)
         sb.pack(side="right", fill="y")
         self.files.config(yscrollcommand=sb.set)
+        tk.Label(left, text="you = the author's flying. bot = a dump of the bot.\n"
+                            "old = made before the weapon rules of 2026-09-04.",
+                 bg=PANEL, fg=DIM, font=MONO, justify="left").pack(
+            anchor="w", padx=10, pady=(0, 6))
 
         right = tk.Frame(body, bg=BG)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
 
+        # The jobs. One runs at a time, and these buttons wait for it.
         row = tk.Frame(right, bg=BG)
         row.pack(fill="x")
         self.buttons = []
         for text, fn in (("Inspect", self.do_inspect),
                          ("Train", self.do_train),
+                         ("Evaluate", self.do_evaluate),
                          ("Deploy", self.do_deploy),
-                         ("Fly", self.do_fly),
-                         ("Record", self.do_record),
                          ("Build", self.do_build)):
-            b = tk.Button(row, text=text, command=fn, bg="#26262b", fg=INK,
-                          activebackground="#3a3320", activeforeground=AMBER,
-                          font=MONO, relief="flat", padx=14, pady=6,
-                          highlightthickness=0, borderwidth=0)
-            b.pack(side="left", padx=(0, 6))
-            self.buttons.append(b)
+            self.buttons.append(self._button(row, text, fn))
 
         opts = tk.Frame(right, bg=BG)
-        opts.pack(fill="x", pady=(8, 6))
+        opts.pack(fill="x", pady=(8, 2))
         self.epochs = self._field(opts, "epochs", "300", 6)
         self.horizon = self._field(opts, "horizon", "60", 5)
         self.hidden = self._field(opts, "hidden", "64", 5)
         self.layers = self._field(opts, "layers", "2", 4)
         self.smooth = self._field(opts, "mode smooth", "91", 5)
+
+        ev = tk.Frame(right, bg=BG)
+        ev.pack(fill="x", pady=(2, 8))
+        tk.Label(ev, text="evaluate:", bg=BG, fg=DIM, font=MONO).pack(side="left")
+        self.ev_enemy = self._choice(ev, "opponent", ["net", "tactics"], "net")
+        self.ev_seeds = self._field(ev, "seeds", "1-4", 6)
+        self.ev_minutes = self._field(ev, "minutes", "5", 4)
+
+        # The game. These start the game in its own window and do not wait for
+        # it, so they stay usable while a job runs.
+        fly = tk.Frame(right, bg=BG)
+        fly.pack(fill="x", pady=(4, 2))
+        self._button(fly, "Fly", self.do_fly)
+        self.fly_seat = self._choice(fly, "you", CLASSES, CLASSES[0])
+        self.fly_opp = self._choice(fly, "against", CLASSES, CLASSES[2])
+        self.fly_level = self._choice(fly, "level", LEVELS, "PRO")
+
+        rec = tk.Frame(right, bg=BG)
+        rec.pack(fill="x", pady=(2, 2))
+        self._button(rec, "Record", self.do_record)
+        self.rec_session = self._choice(
+            rec, "M1 session", ["A imitation", "B baseline"], "A imitation",
+            self.show_plan)
+        self.rec_hull = self._choice(rec, "hull", CLASSES, CLASSES[0], self.show_plan)
+        self.lbl_plan = tk.Label(right, text="", bg=BG, fg=DIM, font=MONO,
+                                 anchor="w", justify="left")
+        self.lbl_plan.pack(fill="x", pady=(0, 8))
 
         tk.Label(right, text="LOG", bg=BG, fg=DIM, font=MONO).pack(anchor="w")
         self.log = tk.Text(right, bg="#0f0f11", fg=INK, font=MONO, relief="flat",
@@ -174,6 +274,16 @@ class Console(tk.Tk):
         self.log.pack(fill="both", expand=True, pady=(2, 14))
         self.log.tag_config("bad", foreground=BAD)
         self.log.tag_config("amber", foreground=AMBER)
+        self.log.tag_config("ok", foreground=OK)
+        self.show_plan()
+
+    def _button(self, parent, text, fn):
+        b = tk.Button(parent, text=text, command=fn, bg="#26262b", fg=INK,
+                      activebackground="#3a3320", activeforeground=AMBER,
+                      font=MONO, relief="flat", padx=14, pady=6,
+                      highlightthickness=0, borderwidth=0)
+        b.pack(side="left", padx=(0, 6))
+        return b
 
     def _field(self, parent, label, default, width):
         tk.Label(parent, text=label, bg=BG, fg=DIM, font=MONO).pack(side="left")
@@ -183,6 +293,21 @@ class Console(tk.Tk):
         v.insert(0, default)
         v.pack(side="left", padx=(4, 14))
         return v
+
+    def _choice(self, parent, label, values, default, changed=None):
+        """A drop-down list. Give its variable."""
+        tk.Label(parent, text=label, bg=BG, fg=DIM, font=MONO).pack(
+            side="left", padx=(8, 0))
+        var = tk.StringVar(value=default)
+        m = tk.OptionMenu(parent, var, *values,
+                          command=(lambda _v: changed()) if changed else None)
+        m.config(bg="#26262b", fg=INK, activebackground="#3a3320",
+                 activeforeground=AMBER, font=MONO, relief="flat",
+                 highlightthickness=0, borderwidth=0)
+        m["menu"].config(bg="#26262b", fg=INK, font=MONO,
+                         activebackground="#3a3320", activeforeground=AMBER)
+        m.pack(side="left", padx=(4, 4))
+        return var
 
     # ---- running things --------------------------------------------------
     def say(self, text, tag=None):
@@ -198,18 +323,29 @@ class Console(tk.Tk):
             if kind == "line":
                 tag = "bad" if payload.lower().startswith(("error", "warning")) else None
                 self.say(payload.rstrip(), tag)
+            elif kind == "say":
+                self.say(*payload)
+            elif kind == "refresh":
+                self.refresh()
+                self.show_plan()
             elif kind == "done":
+                label, then, lines = payload
                 self.busy = False
                 for b in self.buttons:
                     b.config(state="normal")
-                self.say("-- %s --" % payload, "amber")
+                self.say("-- %s --" % label, "amber")
+                if then:
+                    then(lines)
                 self.refresh()
         self.after(120, self._drain)
 
-    def run(self, cmd, done, cwd=ROOT):
-        """Run a command and put its output in the log. One at a time."""
+    def run(self, cmd, done, cwd=ROOT, then=None):
+        """Run a command and put its output in the log. One at a time.
+
+        `then` gets the lines of output when the command stops.
+        """
         if self.busy:
-            self.say("busy", "bad")
+            self.say("A job runs now. Wait for it to stop.", "bad")
             return
         self.busy = True
         for b in self.buttons:
@@ -218,25 +354,66 @@ class Console(tk.Tk):
 
         def worker():
             env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-            # python.exe and powershell.exe are console programs, and this window
-            # has no console. Without CREATE_NO_WINDOW, each job opens an empty
-            # console window. The output comes to the log through the pipe.
+            lines = []
             try:
                 p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True,
                                      encoding="utf-8", errors="replace", env=env,
-                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                     creationflags=NO_WINDOW)
                 for line in p.stdout:
+                    lines.append(line)
                     self.q.put(("line", line))
                 p.wait()
             except Exception as exc:
                 self.q.put(("line", "error: %s" % exc))
-            self.q.put(("done", done))
+            self.q.put(("done", (done, then, lines)))
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def play(self, args, log, what):
+        """Start the game in its own window. Write its output to `log`.
+
+        This does not wait for the game. When the window closes, the log shows
+        the bouts that were flown.
+        """
+        if not os.path.exists(EXE):
+            self.say("There is no phantom.exe. Push Build first.", "bad")
+            return
+        if self.busy:
+            self.say("A job runs now. The game can run slowly until it stops.", "bad")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        cmd = [EXE] + args
+        self.say("$ phantom.exe " + " ".join(args), "amber")
+        self.say("output to %s" % os.path.relpath(log, ROOT))
+        try:
+            f = open(log, "wb")
+            p = subprocess.Popen(cmd, cwd=ROOT, stdout=f, stderr=subprocess.STDOUT,
+                                 creationflags=NO_WINDOW)
+        except OSError as exc:
+            self.say("error: %s" % exc, "bad")
+            return
+
+        def watch():
+            p.wait()
+            f.close()
+            self.q.put(("say", ("-- %s stopped --" % what, "amber")))
+            try:
+                r = load_tool("pilot_eval.py").score_log(log)
+                dec = r["kills"] + r["deaths"]
+                self.q.put(("say", (
+                    "%.1f min: you won %d, the opponent won %d, %d draws%s"
+                    % (r["minutes"], r["kills"], r["deaths"], r.get("draws", 0),
+                       ("  (opponent %.0f%%)" % (100.0 * r["deaths"] / dec)) if dec else ""),
+                    "ok")))
+            except Exception as exc:
+                self.q.put(("say", ("no bouts to count: %s" % exc, None)))
+            # Tk is not safe from a second thread, so the main loop does this.
+            self.q.put(("refresh", None))
+
+        threading.Thread(target=watch, daemon=True).start()
+
     def chosen(self):
-        return [os.path.join("captures", self.files.get(i))
+        return [os.path.join("captures", self.names[i])
                 for i in self.files.curselection()]
 
     def have_python(self):
@@ -247,16 +424,21 @@ class Console(tk.Tk):
 
     # ---- the state panel -------------------------------------------------
     def refresh(self):
-        self.lbl_net.config(text=os.path.relpath(self.net_path, ROOT))
+        shown = os.path.relpath(self.net_path, ROOT)
+        if os.path.abspath(self.net_path) == os.path.abspath(NET):
+            self.lbl_net.config(text="%s  (the game flies this file)" % shown)
+        else:
+            self.lbl_net.config(text="%s  (the game flies pilot_net.h, not this file)"
+                                % shown)
         self.state.config(state="normal")
         self.state.delete("1.0", "end")
+        self.state.insert("end", "python  ", "dim")
+        self.state.insert("end", "%s\n" % (PYTHON or "NOT FOUND"),
+                          None if PYTHON else "bad")
+        self.state.insert("end", "repo    ", "dim")
+        self.state.insert("end", "%s\n" % ROOT)
         try:
-            sys.path.insert(0, os.path.join(ROOT, "tools"))
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "ip", tools_path("inspect_pilot.py"))
-            ip = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(ip)
+            ip = load_tool("inspect_pilot.py")
             text = ip.read_text(self.net_path)
             d, a = ip.defines(text), ip.arrays(text)
             n_mode = d.get("PILOT_MODE_N", 0)
@@ -270,6 +452,8 @@ class Console(tk.Tk):
             gate = ip.gate_check(a.get("PILOT_SHIP_SEEN"), d.get("PILOT_SHIP_TOL", 0),
                                  ip.live_airframes(), d.get("PILOT_SHIP_N", 11))
             self.state.insert("end", "gate\n", "dim")
+            if os.path.abspath(self.net_path) == os.path.abspath(NET):
+                self.gate = {r["name"]: r["ok"] for r in gate}
             for r in gate:
                 self.state.insert("end", "  %-9s " % r["name"])
                 self.state.insert("end", "%s  %.4f\n"
@@ -281,14 +465,29 @@ class Console(tk.Tk):
             self.state.insert("end", "cannot read the network:\n%s\n" % exc, "bad")
         self.state.config(state="disabled")
 
-        keep = set(self.files.get(i) for i in self.files.curselection())
+        keep = set(self.names[i] for i in self.files.curselection()
+                   if i < len(self.names))
         self.files.delete(0, "end")
+        self.names = []
         if os.path.isdir(CAPTURES):
-            names = sorted(f for f in os.listdir(CAPTURES) if f.endswith(".obs"))
-            for i, f in enumerate(names):
-                self.files.insert("end", f)
+            for f in sorted(x for x in os.listdir(CAPTURES) if x.endswith(".obs")):
+                path = os.path.join(CAPTURES, f)
+                old = os.path.getmtime(path) < RULES_FROZEN
+                n = bout_count(path[:-4] + ".log")
+                logtxt = "-" if n is None else "%d" % n
+                self.files.insert("end", "%-3s  %-3s  %-34s %s"
+                                  % (who_flew(f), "old" if old else "", f[:34], logtxt))
+                self.names.append(f)
+                if who_flew(f) == "bot":
+                    self.files.itemconfig(len(self.names) - 1, fg=DIM)
                 if f in keep:
-                    self.files.selection_set(i)
+                    self.files.selection_set(len(self.names) - 1)
+
+    def show_plan(self):
+        """Show the command line that Record will use, before it runs."""
+        args, obs, log = self.m1_plan(peek=True)
+        self.lbl_plan.config(text="Record: phantom.exe %s\n        output to %s"
+                             % (" ".join(args), os.path.relpath(log, ROOT)))
 
     # ---- the buttons -----------------------------------------------------
     def do_inspect(self):
@@ -305,30 +504,94 @@ class Console(tk.Tk):
             return
         data = self.chosen()
         if not data:
-            self.say("choose some recordings first", "bad")
+            self.say("Select some recordings first.", "bad")
+            return
+        names = [os.path.basename(p) for p in data]
+        bots = [n for n in names if who_flew(n) == "bot"]
+        if bots and not messagebox.askyesno(
+                "Bot recordings selected",
+                "These recordings are the bot's flying, not yours:\n\n%s\n\n"
+                "The network copies the flying it is trained on. "
+                "Train on them anyway?" % "\n".join(bots), default="no"):
+            return
+        old = [n for n in names
+               if os.path.getmtime(os.path.join(CAPTURES, n)) < RULES_FROZEN]
+        if old and not messagebox.askyesno(
+                "Old recordings selected",
+                "These recordings were made before the weapon rules of 2026-09-04:"
+                "\n\n%s\n\nTrain on them anyway?" % "\n".join(old), default="no"):
             return
         out = filedialog.asksaveasfilename(
-            title="where to write the weights", defaultextension=".h",
-            initialdir=os.path.join(ROOT, "src", "vg", "generated"),
-            initialfile="pilot_net.h")
+            title="Where to write the weights", defaultextension=".h",
+            initialdir=GENERATED, initialfile=os.path.basename(NEXT))
         if not out:
+            return
+        if os.path.abspath(out) == os.path.abspath(NET):
+            self.say("Train does not write pilot_net.h. Write another file, "
+                     "then use Deploy.", "bad")
             return
         cmd = [PYTHON, tools_path("train_pilot.py")] + data + [
             "--epochs", self.epochs.get(), "--horizon", self.horizon.get(),
             "--hidden", self.hidden.get(), "--layers", self.layers.get(),
             "--mode-smooth", self.smooth.get(), "--out", out]
-        self.run(cmd, "trained")
+
+        def shown(_lines):
+            if os.path.exists(out):
+                self.net_path = out
+                self.say("The state panel shows %s. The game still flies "
+                         "pilot_net.h." % os.path.basename(out))
+
+        self.run(cmd, "trained", then=shown)
+
+    def do_evaluate(self):
+        """Measure the opponents with pilot_eval.py, and show the table."""
+        if not self.have_python():
+            return
+        if not os.path.exists(EXE):
+            self.say("There is no phantom.exe. Push Build first.", "bad")
+            return
+        name = time.strftime("console-%Y%m%d-%H%M%S")
+        cmd = [PYTHON, tools_path("pilot_eval.py"), "run", "--name", name,
+               "--enemy", self.ev_enemy.get(), "--seeds", self.ev_seeds.get(),
+               "--minutes", self.ev_minutes.get()]
+        self.say("The evaluation flies the weights that are compiled into "
+                 "phantom.exe. At the default settings it takes about 2 minutes.")
+        self.run(cmd, "evaluated", then=self.show_table)
+
+    def show_table(self, lines):
+        """Show the table of an evaluation in its own window."""
+        start = next((i for i, l in enumerate(lines)
+                      if l.startswith("seat ")), None)
+        if start is None:
+            self.say("The evaluation gave no table. Look at the log.", "bad")
+            return
+        win = tk.Toplevel(self)
+        win.title("Evaluation")
+        win.configure(bg=BG)
+        t = tk.Text(win, bg="#0f0f11", fg=INK, font=MONO, relief="flat",
+                    wrap="none", width=118, height=min(48, len(lines) - start + 2))
+        t.pack(fill="both", expand=True, padx=10, pady=10)
+        t.insert("end", "".join(lines[start:]))
+        t.config(state="disabled")
 
     def do_deploy(self):
         src = filedialog.askopenfilename(
-            title="which weights to put in the tree", filetypes=[("header", "*.h")],
-            initialdir=os.path.join(ROOT, "src", "vg", "generated"))
+            title="Which weights to put in the game", filetypes=[("header", "*.h")],
+            initialdir=GENERATED, initialfile=os.path.basename(NEXT))
         if not src:
             return
         if os.path.abspath(src) != os.path.abspath(NET):
-            import shutil
+            if not messagebox.askyesno(
+                    "Replace the live weights?",
+                    "This REPLACES\n\n    %s\n\nwith\n\n    %s\n\n"
+                    "The game flies the new weights after the build. "
+                    "git keeps the old file.\n\nReplace pilot_net.h?"
+                    % (os.path.relpath(NET, ROOT), os.path.relpath(src, ROOT)),
+                    icon="warning", default="no"):
+                self.say("Deploy stopped. pilot_net.h did not change.")
+                return
             shutil.copyfile(src, NET)
-            self.say("copied %s into the tree" % os.path.basename(src))
+            self.say("copied %s over pilot_net.h" % os.path.basename(src))
         self.net_path = NET
         self.do_build()
 
@@ -340,23 +603,72 @@ class Console(tk.Tk):
                   os.path.join(ROOT, "host", "build.ps1")], "built")
 
     def do_fly(self):
-        if not os.path.exists(EXE):
-            self.say("no phantom.exe. Press Build first.", "bad")
-            return
-        subprocess.Popen([EXE, "--scale", "3"], cwd=ROOT)
-        self.say("flying")
+        """Fly against an opponent that the network flies."""
+        seat = CLASSES.index(self.fly_seat.get())
+        opp = CLASSES.index(self.fly_opp.get())
+        level = LEVELS.index(self.fly_level.get())
+        name = self.fly_opp.get()
+        if self.gate and not self.gate.get(name, False):
+            self.say("The network refuses %s, so the hand-written AI flies it. "
+                     "This fight does not show the network." % name, "bad")
+        else:
+            self.say("The network flies %s for part of each fight. The panel "
+                     "names the layer that flies it: NET is the network." % name)
+        args = ["--scale", "3", "--gym", str(seat), str(opp), "--pilot", str(level),
+                "--enemy-net", "--show-ai"]
+        log = os.path.join(FLY_LOGS, time.strftime("fly-%Y%m%d-%H%M%S.log"))
+        self.play(args, log, "the fight")
+
+    def m1_plan(self, peek=False):
+        """The command line, recording and log for the M1 session that is selected.
+
+        With peek, give the next free name and ask nothing.
+        """
+        hull = CLASSES.index(self.rec_hull.get())
+        lower = CLASSES[hull].lower()
+        if self.rec_session.get().startswith("A"):
+            level = M1_A_LEVEL[hull]
+            n = 1
+            while (os.path.exists(os.path.join(CAPTURES, "m1_%s_%s_%d.obs"
+                                               % (lower, LEVELS[level].lower(), n)))
+                   or os.path.exists(os.path.join(CAPTURES, "m1_%s_%s_%d.log"
+                                                  % (lower, LEVELS[level].lower(), n)))):
+                n += 1
+            stem = "m1_%s_%s_%d" % (lower, LEVELS[level].lower(), n)
+            args = ["--scale", "3", "--gym", str(hull), "0", "--rotate",
+                    "--pilot", str(level), "--dump", "captures\\%s.obs" % stem]
+        else:
+            stem = "m1_%s_pro" % lower
+            if not peek and (os.path.exists(os.path.join(CAPTURES, stem + ".obs"))
+                             or os.path.exists(os.path.join(CAPTURES, stem + ".log"))):
+                ans = messagebox.askyesnocancel(
+                    "The baseline exists",
+                    "%s.obs or %s.log exists.\n\n"
+                    "Yes: replace it.\nNo: keep it and record a second sitting "
+                    "as %s_2.\nCancel: record nothing." % (stem, stem, stem))
+                if ans is None:
+                    return None
+                if ans is False:
+                    stem += "_2"
+            args = ["--scale", "3", "--gym", str(hull), "0", "--rotate",
+                    "--pilot", str(M1_B_LEVEL), "--bouts", str(M1_B_BOUT),
+                    "--dump", "captures\\%s.obs" % stem]
+        return args, os.path.join(CAPTURES, stem + ".obs"), \
+            os.path.join(CAPTURES, stem + ".log")
 
     def do_record(self):
-        if not os.path.exists(EXE):
-            self.say("no phantom.exe. Press Build first.", "bad")
+        """Record one M1 sitting, with the command line from the plan."""
+        plan = self.m1_plan()
+        if plan is None:
             return
-        out = filedialog.asksaveasfilename(
-            title="where to write the recording", defaultextension=".obs",
-            initialdir=CAPTURES, initialfile="a_new.obs")
-        if not out:
-            return
-        subprocess.Popen([EXE, "--scale", "3", "--dump", out], cwd=ROOT)
-        self.say("recording to %s" % os.path.basename(out))
+        args, obs, log = plan
+        if self.rec_session.get().startswith("B"):
+            self.say("Session B: each bout restarts the moment it ends. You do not "
+                     "see the kill or your wreck. Count it from the .log only.")
+        self.say("Stay in the fight. Do not go to the menus or the course. "
+                 "Close the game window to stop.")
+        self.play(args, log, "the recording")
+        self.after(500, self.show_plan)
 
 
 if __name__ == "__main__":
