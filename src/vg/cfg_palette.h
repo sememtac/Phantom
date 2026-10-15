@@ -66,7 +66,6 @@
 // of a hue rather than another one, so it can never be mistaken for an entrant and
 // costs nothing from the wheel.
 #define COL_IFT              VGC(0xFFFF)
-#define COL_AST              VGC(0x5FFF)       // pale cyan
 #define COL_DEBRIS           VGC(0xFD20)       // orange
 #define COL_EXHAUST          VGC(0xFF60)       // amber
 #define COL_MOTE             VGC(0xBDF7)

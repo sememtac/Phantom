@@ -5,8 +5,6 @@
 // Procedural geometry and the shared maths the rest of the simulation is built
 // on. Nothing here touches game state except the fields it fills at startup.
 
-AstModel vg_models[NUM_MODELS];
-
 // ---------------------------------------------------------------------------
 // Fighter hull
 //
@@ -105,7 +103,7 @@ Mat3 vg_ship_basis(const Ship* s) {
 // ---------------------------------------------------------------------------
 
 // Point every face's normal away from the hull's centroid, so the renderer can
-// cull with one dot product -- the same contract the asteroid models use.
+// cull with one dot product.
 static void build_ship_model(void) {
     Vec3 c = v3(0, 0, 0);
     for (int i = 0; i < 5; i++) c = vadd(c, vg_ship_verts[i]);
@@ -124,60 +122,12 @@ static void build_ship_model(void) {
     }
 }
 
+// The fighter hull is the only model left. The five jittered icosahedra the
+// asteroids were drawn from went with them, and so did the sixty random draws
+// that built them at boot.
 void vg_build_models(void) {
-    const float P = 1.6180339887f;
-    Vec3 base[AST_VERTS] = {
-        { 0,  1,  P}, { 0, -1,  P}, { 0,  1, -P}, { 0, -1, -P},
-        { 1,  P,  0}, {-1,  P,  0}, { 1, -P,  0}, {-1, -P,  0},
-        { P,  0,  1}, {-P,  0,  1}, { P,  0, -1}, {-P,  0, -1},
-    };
-    for (int i = 0; i < AST_VERTS; i++) base[i] = vnorm(base[i]);
-
-    // ADJACENCY, which is all the face builder below needs. On the unit sphere an
-    // icosahedron's adjacent vertices sit 1.0515 apart and the next-nearest
-    // 1.7013, so any threshold between them recovers the 30 edges without a
-    // table. An explicit edge LIST was built here and stored on every model too;
-    // nothing has read it since the renderer moved to hidden-line faces.
-    bool    adj[AST_VERTS][AST_VERTS] = {};
-    for (int i = 0; i < AST_VERTS; i++)
-        for (int j = i + 1; j < AST_VERTS; j++)
-            if (vlen(vsub(base[i], base[j])) < 1.3f) {
-                adj[i][j] = adj[j][i] = true;
-            }
-    // Any three mutually adjacent vertices form a face -- that recovers all 20
-    // without a table too. Wind each so the normal points away from the origin,
-    // so the renderer can cull with a single dot product.
-    uint8_t fa[32][3];
-    int fcount = 0;
-    for (int i = 0; i < AST_VERTS; i++)
-        for (int j = i + 1; j < AST_VERTS; j++) {
-            if (!adj[i][j]) continue;
-            for (int k = j + 1; k < AST_VERTS && fcount < 32; k++) {
-                if (!adj[j][k] || !adj[i][k]) continue;
-                uint8_t a = (uint8_t)i, b = (uint8_t)j, c = (uint8_t)k;
-                Vec3 n = vcross(vsub(base[b], base[a]), vsub(base[c], base[a]));
-                if (vdot(n, base[a]) < 0.0f) { uint8_t t = b; b = c; c = t; }
-                fa[fcount][0] = a; fa[fcount][1] = b; fa[fcount][2] = c;
-                fcount++;
-            }
-        }
-    if (fcount > AST_FACES) fcount = AST_FACES;
-
-    for (int m = 0; m < NUM_MODELS; m++) {
-        AstModel* M = &vg_models[m];
-        // Radial jitter only, and kept mild: scaling a vertex along its own
-        // direction cannot flip a face's winding, and staying near-convex means
-        // back-face culling alone gets hidden-line right without sorting faces
-        // within the model.
-        for (int i = 0; i < AST_VERTS; i++) M->v[i] = vmul(base[i], vg_frand(0.80f, 1.22f));
-        for (int f = 0; f < fcount; f++) {
-            M->f[f][0] = fa[f][0]; M->f[f][1] = fa[f][1]; M->f[f][2] = fa[f][2];
-        }
-        M->face_count = (uint8_t)fcount;
-    }
-
     build_ship_model();
-    Serial.printf("vg_models: %d models, %d faces\n", NUM_MODELS, fcount);
+    Serial.printf("vg_models: fighter hull, %d faces\n", SHIP_FACES);
 }
 
 // ---------------------------------------------------------------------------

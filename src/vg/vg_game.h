@@ -16,24 +16,6 @@
 // stationary, so an enemy missile pursuing the player needs no lead prediction
 // at all -- pure pursuit toward the origin is already a correct intercept.
 
-struct AstModel {
-    Vec3    v[AST_VERTS];
-    // Triangles, wound so the cross product of the first two edges points
-    // outward. That lets the renderer decide facing with one dot product.
-    uint8_t f[AST_FACES][3];
-    uint8_t face_count;
-};
-
-struct Asteroid {
-    bool     alive;
-    Vec3     pos;
-    Vec3     vel;
-    float    radius;
-    float    spin[3];
-    float    spin_rate[3];
-    uint8_t  model;
-};
-
 // An enemy fighter. Orientation is carried as forward+up rather than a matrix
 // so that repeatedly folding in the world rotation cannot accumulate shear --
 // the pair is re-orthonormalised every frame, which a matrix would not be.
@@ -664,11 +646,8 @@ struct VgGame {
 
     // The missile threat moved to vg_weapons.h as Threat.
 
-    float    spawn_t;
-
     Ship     enemy[MAX_ENEMIES];
     Missile  msl[MAX_MISSILES];
-    Asteroid ast[MAX_ASTEROIDS];
     Debris   deb[MAX_DEBRIS];
     Fireball fire[MAX_FIREBALLS];
     Vec3     star[NUM_STARS];
@@ -677,7 +656,6 @@ struct VgGame {
 };
 
 extern VgGame   vg;
-extern AstModel vg_models[NUM_MODELS];
 
 // Enemy fighter, in local space (+x right, +y up, +z forward).
 //

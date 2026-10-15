@@ -46,7 +46,7 @@ static uint32_t s_upd_mark;
 //
 // Everything lives in VIEW SPACE: the player is nailed to the origin looking
 // down +z, and the world rotates and translates around it. One counter-rotation
-// per frame is applied to every star, mote, rock, ship, missile, trail point and
+// per frame is applied to every star, mote, ship, missile, trail point and
 // fragment -- plus the arena and the backdrop.
 // ---------------------------------------------------------------------------
 
@@ -194,19 +194,6 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
         if (m.z < MOTE_CULL_Z || vlen2(m) > 1700.0f * 1700.0f)
             m = vg_mote_spawn(MOTE_Z_MIN, MOTE_Z_MAX);
         vg.mote[i] = m;
-    }
-
-    for (int i = 0; i < MAX_ASTEROIDS; i++) {
-        Asteroid* a = &vg.ast[i];
-        if (!a->alive) continue;
-        a->pos = mat3_apply(R, a->pos);
-        a->vel = mat3_apply(R, a->vel);
-        a->pos = vadd(a->pos, vmul(a->vel, dt));
-        a->pos.z -= dz;
-        for (int s = 0; s < 3; s++) a->spin[s] += a->spin_rate[s] * dt;
-        if (a->pos.z < CULL_Z_BEHIND || vlen2(a->pos) > CULL_RADIUS * CULL_RADIUS ||
-            vg_arena_clearance(vg_arena_local_of(a->pos)) < -40.0f)
-            a->alive = false;
     }
 
     UPD_MARK(g_upd_field);

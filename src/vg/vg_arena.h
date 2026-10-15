@@ -15,7 +15,7 @@
 //
 // Like everything else, the arena lives in VIEW SPACE -- it carries a centre
 // and an orthonormal basis that ride the same per-frame world transform as
-// ships and asteroids.
+// ships and missiles.
 
 // ARENA_SPHERE IS BUILT AND NOT USED. Every vg_arena_init call in the game passes
 // ARENA_TORUS. The sphere has its surface, nearest-point, inward and patch-extent

@@ -6,12 +6,12 @@
 #include <Arduino.h>
 #include <math.h>
 
-// Everything with a position in the world: stars, dust, rocks, fighters,
-// missiles, wreckage.
+// Everything with a position in the world: stars, dust, fighters, missiles,
+// wreckage.
 
-// `world`'s five parts plus the fireballs, defined beside the loops that time them.
+// `world`'s four parts plus the fireballs, defined beside the loops that time them.
 // Read the RANGE of these rather than any one -- see g_w_motes in vg_prof.h.
-uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
+uint32_t g_w_motes, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
 
 void vg_draw_starfield(const VgCam& cam) {
     static const uint16_t shades[3] = { COL_STAR_DIM, COL_STAR_MID, COL_STAR_BRIGHT };
@@ -36,8 +36,8 @@ void vg_draw_starfield(const VgCam& cam) {
 #define MOTE_FADE_IN         0.18f    // speed fraction below which they hide
 
 // Near-field dust streaking past. Stars sit at infinity and only rotate, so they
-// convey no sense of speed whatsoever, and the asteroid field is far too sparse
-// to. These are what make the throttle *feel* like a throttle.
+// convey no sense of speed whatsoever. These are what make the throttle *feel*
+// like a throttle.
 //
 // Each mote trails along +z: in view space the world slides toward -z, so a
 // mote's tail lies further away than its head, and the streaks therefore splay
@@ -211,7 +211,7 @@ static void draw_fireballs(const VgCam& cam) {
         const uint16_t col = fire_col(t, f->fall);
         if (!col) continue;               // collapsed early, or fully out
 
-        // Same ladder the rocks use: a ring nobody can resolve is a pixel, and
+        // The ladder in vg_draw.h: a ring nobody can resolve is a pixel, and
         // paying sixteen primitives to draw a pixel is how a prim budget goes.
         if (rpx < VG_LOD_DOT)  { vg_point((int)cx, (int)cy, col); continue; }
         if (rpx < VG_LOD_BLOB) { vg_diamond(cx, cy, rpx, col, 1); continue; }
@@ -240,105 +240,6 @@ static void draw_fireballs(const VgCam& cam) {
 // All fills must precede all edges, or a neighbouring face's fill erases the
 // shared edge just drawn.
 // ---------------------------------------------------------------------------
-
-static void draw_asteroid(const VgCam& cam, const Asteroid* a) {
-    // vg_screen_size does the turn, the reject, the clamp and the divide, in
-    // that order and in this camera's terms. It matters here for both of the
-    // reasons that function states: rocks astern are the whole job of the
-    // mirror, and the mirror's focal length is a third of the window's, so its
-    // rocks should drop to the cheap forms sooner -- which is exactly right for
-    // a 145 pixel instrument.
-    VgSpan sp;
-    if (!vg_screen_size(cam, a->pos, a->radius, a->radius, &sp)) return;
-
-    const float z   = sp.z;
-    const float rpx = sp.rpx;
-
-    const float fade = vg_fade(z, 1.25f, 420.0f, 0.22f);
-
-    // Within ~200 units: close enough to be an immediate hazard at any throttle.
-    uint16_t col = (vlen2(a->pos) < 40000.0f) ? COL_WARN : vg_dim(COL_AST, fade);
-    const float cx = sp.cx, cy = sp.cy;
-
-    if (rpx < VG_LOD_DOT) {
-        if (sp.vis) vg_point((int)cx, (int)cy, col);
-        return;
-    }
-    if (rpx < VG_LOD_BLOB) {
-        // Too small for the wireframe to resolve; a diamond stays readable and
-        // costs 4 lines instead of 30.
-        if (!sp.vis) return;
-        vg_diamond(cx, cy, rpx, col, 1);
-        return;
-    }
-
-    const AstModel* M = &vg_models[a->model];
-    Mat3 S = mat3_euler(a->spin[0], a->spin[1], a->spin[2]);
-
-    Vec3 wv[AST_VERTS];
-    for (int i = 0; i < AST_VERTS; i++)
-        wv[i] = vadd(a->pos, vmul(mat3_apply(S, M->v[i]), a->radius));
-
-    bool front[AST_FACES];
-    for (int f = 0; f < M->face_count; f++) {
-        Vec3 A = vg_view(cam, wv[M->f[f][0]]),
-             B = vg_view(cam, wv[M->f[f][1]]),
-             C = vg_view(cam, wv[M->f[f][2]]);
-        // Eye is the origin, so the view vector to the face is just A.
-        front[f] = (vdot(vcross(vsub(B, A), vsub(C, A)), A) < 0.0f);
-    }
-
-    // The fills exist to occlude -- the rock's own back edges, and the grid
-    // behind it. Below ~16 pixels there is nothing left to occlude that the eye
-    // can resolve, and the fills are where the triangles come from: sixteen
-    // rocks were submitting up to 285 triangles a frame, 1.9ms of band time, of
-    // which the readable near ones were a handful. Measured before touched.
-    // 28, NOT 16. The first threshold was chosen from what seemed small and
-    // the validation flight showed it excluded almost nothing: rocks in this
-    // game live close, and nearly all of them sat above 16px. T and the fill
-    // time did not move. At 28 the far half of the field goes wireframe.
-    // 40: the second revision. 28 still left T near 240, because the course's
-    // rocks genuinely live close -- the spawner aims them at the player.
-    const bool fills = (rpx >= 40.0f);
-
-    for (int f = 0; fills && f < M->face_count; f++) {
-        if (!front[f]) continue;
-        Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
-        // Faces straddling the near plane would need polygon clipping; skip their
-        // fill instead. Only happens when the rock is on top of you, which is
-        // already a collision. The edges still clip properly.
-        if (A.z < NEAR_Z || B.z < NEAR_Z || C.z < NEAR_Z) continue;
-        float ax, ay, bx, by, cx2, cy2;
-        if (!vg_project(cam, A, &ax, &ay))   continue;
-        if (!vg_project(cam, B, &bx, &by))   continue;
-        if (!vg_project(cam, C, &cx2, &cy2)) continue;
-        vg_tri(ax, ay, bx, by, cx2, cy2, COL_BLACK);
-    }
-
-    // Shared edges get submitted twice (once per adjoining front face); a
-    // duplicate line is invisible and costs less than building an edge-face map.
-    //
-    // Antialiased only when the rock is big enough to hold still in the eye.
-    // The same argument that stripped AA from the arena grid: below ~30px a
-    // rock is moving structure at distance, no step survives long enough to
-    // see, and an AA span costs an order of magnitude per pixel. The sixteen
-    // rocks' 480 edges were most of the frame's AA bill.
-    // No antialiasing at ANY size, and this is the third revision of this
-    // line: 30px excluded nothing, 48px still left the frame's aa cost at
-    // 1.2ms, because the rocks that survive a gate are exactly the close ones
-    // whose edges are long -- and an AA span bills by the pixel, so the gate
-    // keeps the expensive members and discards the cheap ones. The arena
-    // grid's argument applies at every size here: a rock tumbles continuously,
-    // no stair-step survives long enough to see.
-    vg_line_aa_mode(false);
-    for (int f = 0; f < M->face_count; f++) {
-        if (!front[f]) continue;
-        Vec3 A = wv[M->f[f][0]], B = wv[M->f[f][1]], C = wv[M->f[f][2]];
-        vg_edge(cam, A, B, col);
-        vg_edge(cam, B, C, col);
-        vg_edge(cam, C, A, col);
-    }
-}
 
 // THE HULL, AND ONLY THE HULL.
 //
@@ -678,30 +579,6 @@ void vg_draw_world(const VgCam& cam) {
     draw_debris(cam);
     if (bill) { g_w_motes = micros() - t_w; } t_w = micros();
 
-    // Painter order: farthest rock first, so a nearer one's black fills occlude
-    // it. Within a single rock, back-face culling already sorts things out.
-    // NO ROCKS ON A MENU, for the same reason the grid is gone from one: a rock
-    // tumbling behind a terminal's glass says the panel is a window. The field
-    // still exists and still moves -- nothing here touches the simulation -- it
-    // is simply not drawn while nobody is flying through it.
-    int order[MAX_ASTEROIDS];
-    int nast = 0;
-    if (!vg_state_is_menu(vg.state))
-        for (int i = 0; i < MAX_ASTEROIDS; i++)
-            if (vg.ast[i].alive) order[nast++] = i;
-
-    for (int i = 1; i < nast; i++) {              // insertion sort, descending z
-        int   key = order[i];
-        float kz  = vg.ast[key].pos.z;
-        int   j   = i - 1;
-        while (j >= 0 && vg.ast[order[j]].pos.z < kz) { order[j + 1] = order[j]; j--; }
-        order[j + 1] = key;
-    }
-    for (int i = 0; i < nast; i++) draw_asteroid(cam, &vg.ast[order[i]]);
-    if (bill) { g_w_rocks = micros() - t_w; } t_w = micros();
-
-    // Ships after the rocks and never occluded by them: losing the bandit behind
-    // scenery in a dogfight is worse than the small inconsistency.
     // Trails go down before the hulls so a ribbon passing in front of its own
     // ship does not draw over the thing it belongs to.
     if (!cam.lite) {

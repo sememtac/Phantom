@@ -285,7 +285,7 @@ The radar is a half ellipse across the bottom of the screen. It shows a flat cir
 steep perspective. Ahead is the top. Your own left-right line is the flat edge. A
 contact behind you sits just under that edge, on the correct side, instead of leaving
 the display. Where a contact is behind you is the most useful thing the radar shows.
-The radar shows fighters and missiles. It does not show asteroids, which are terrain.
+The radar shows fighters and missiles.
 
 A rear-view window sits in the panel. Hold it like a button. It moves with the panel
 but stays flat, because a bent window would bend the picture inside it.
@@ -564,7 +564,7 @@ missile balance does not mean reading past the colours.
 | `cfg_palette.h` | every colour, and the byte order they use |
 | `cfg_flight.h` | speed, steering, turn rate, hull strength, damage |
 | `cfg_combat.h` | missiles, player weapons, enemy behaviour |
-| `cfg_world.h` | arena, asteroids, stars, motes, spawning, culling |
+| `cfg_world.h` | arena, stars, motes, spawning, culling |
 | `cfg_hud.h` | instrument layout, radar shape, touch areas, the canopy sequence |
 | `cfg_econ.h` | purses, repair prices, the credit limit |
 

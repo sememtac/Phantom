@@ -103,8 +103,8 @@ struct VgSpan {
 
 // `reach` is how far the body extends from its centre, and is used only to
 // decide whether it is worth considering at all. `radius` is the length the
-// caller wants measured on screen. They are the same number for a rock or a
-// fireball and they are not for a ship, whose hull reaches three scale units
+// caller wants measured on screen. They are the same number for a fireball and
+// they are not for a ship, whose hull reaches three scale units
 // while every size gate is written against one.
 //
 // Returns false when the whole body is behind the near plane. Anything else is

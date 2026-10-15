@@ -37,28 +37,6 @@ VgGame vg;
 // Spawning
 // ---------------------------------------------------------------------------
 
-void vg_spawn_asteroid(void) {
-    Asteroid* a = nullptr;
-    for (int i = 0; i < MAX_ASTEROIDS; i++) if (!vg.ast[i].alive) { a = &vg.ast[i]; break; }
-    if (!a) return;
-
-    float z   = vg_frand(SPAWN_Z_MIN, SPAWN_Z_MAX);
-    float ang = vg_frand(0.0f, 6.2831853f);
-    float rad = sqrtf(vg_frand(0.02f, 1.0f)) * z * SPAWN_CONE;
-
-    a->alive  = true;
-    a->pos    = vg_arena_clamp_inside(v3(cosf(ang) * rad, sinf(ang) * rad, z),
-                                      ARENA_SPAWN_MARGIN);
-    a->vel    = v3(vg_frand(-4, 4), vg_frand(-4, 4), 0);
-    a->radius = vg_frand(AST_R_MIN, AST_R_MAX);
-    a->model  = (uint8_t)((uint32_t)(vg_frand01() * NUM_MODELS) % NUM_MODELS);
-    for (int k = 0; k < 3; k++) {
-        a->spin[k]      = vg_frand(0.0f, 6.2831853f);
-        a->spin_rate[k] = vg_frand(-1.1f, 1.1f);
-    }
-}
-
-
 // Put the bracket's opponent into the world. Called twice: once at match setup
 // so the cutscene has a ship to introduce, and again when the cutscene ends, by
 // which point the viewpoint has drifted for twelve seconds and their position
@@ -462,7 +440,6 @@ void vg_match_start(void) {
     vg_bot_modes_reset();
     for (int i = 0; i < MAX_ENEMIES;   i++) vg.enemy[i].alive = false;
     for (int i = 0; i < MAX_MISSILES;  i++) vg.msl[i].alive   = false;
-    for (int i = 0; i < MAX_ASTEROIDS; i++) vg.ast[i].alive   = false;
     for (int i = 0; i < MAX_DEBRIS;    i++) vg.deb[i].alive   = false;
     for (int i = 0; i < MAX_FIREBALLS; i++) vg.fire[i].alive  = false;
 
@@ -529,7 +506,6 @@ void vg_match_start(void) {
     vg_wpn.target = -1;
     vg_wpn.lock_t      = 0;
     vg_wpn.locked      = false;
-    vg.spawn_t     = 0;
 
     // Torus only for now. A tunnel gives depth, a sense of place, and a line to
     // fly along; the inside of a sphere is uniform in every direction. The sphere
@@ -562,8 +538,6 @@ void vg_match_start(void) {
     vg_bcast.ch[BC_PILOT].t    = 0;
     vg_bcast.ch[BC_PILOT].pri  = 0;
     vg.taunt_t    = BOOT_FIRST_TAUNT;
-
-    for (int i = 0; i < AST_TARGET_COUNT; i++) vg_spawn_asteroid();
 
     vg_input_calibrate();
 }

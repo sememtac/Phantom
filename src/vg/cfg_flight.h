@@ -76,8 +76,8 @@
 // scales with how close the fuse went off (ShipSpec::msl_damage / graze_floor).
 //
 // COLLISION IS ALWAYS FATAL, so there is no collision damage number any more.
-// See vg_kill_player() in vg_game.cpp -- one rule for the wall, an asteroid and
-// another ship, on any hull, at any speed.
+// See vg_kill_player() in vg_game.cpp -- one rule for the wall and another
+// ship, on any hull, at any speed.
 //
 // There used to be three numbers here: 26 for an asteroid, 42 for a ram, fatal
 // for the wall. Touching a rock was therefore a setback on a full hull and death

@@ -360,7 +360,7 @@ static void radar_contact(Vec3 pos, uint16_t col, int half, bool box, uint16_t b
 
 // Half-ellipse plan view: a circular radar seen in steep perspective. Forward is
 // the top of the dome, the flat chord is the player's own 3-9 line. Fighters and
-// incoming missiles only -- asteroids are terrain, not contacts.
+// incoming missiles only.
 static void draw_radar(void) {
     // The rim and the chord are the instrument's border, so they carry a heavier
     // stroke; the inner range rings stay hairlines so they read as graduations

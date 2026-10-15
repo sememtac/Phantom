@@ -15,7 +15,7 @@
 // --- radar -----------------------------------------------------------------
 // A half-ellipse dome across the bottom: a circular plan view seen in steep
 // perspective. Forward is the top of the dome, the flat chord is the player's
-// own 3-9 line. Fighters and incoming missiles only -- asteroids are terrain.
+// own 3-9 line. Fighters and incoming missiles only.
 #define RADAR_CX             240.0f
 #define RADAR_CY             452.0f
 #define RADAR_RX             152.0f

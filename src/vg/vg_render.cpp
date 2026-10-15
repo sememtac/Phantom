@@ -417,10 +417,6 @@ void vg_render_frame(const VgInput* in, float fps) {
     // saying otherwise. Step through it and you are INSIDE the torus -- the
     // registration desk, the ship bay and the bracket are all in there -- so the
     // ring is what is out of the window from then on, and it comes back.
-    //
-    // The rocks do not. They are out in the field where a fight happens, not in
-    // the concourse, and one tumbling behind a readout says the panel is a window
-    // onto open space rather than a screen in a room.
     if (vg.state != VG_ATTRACT) vg_draw_arena_grid(cam);
     g_sub_arena = micros() - t_sub; t_sub = micros();
     // AND THE OBJECTS INTO SLICE 2, which is what leaves room for core 0's rails to

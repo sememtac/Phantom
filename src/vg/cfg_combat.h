@@ -32,8 +32,7 @@
 // LEVEL OF DETAIL ALONG THE ARC, and this was the one thing in the world with none.
 //
 // Everything else already steps down with distance or size: the ship ribbon walks 1, 2 then
-// 3 points at a time, asteroids drop through a wireframe to a diamond to a dot, and
-// fireballs shed ring segments. The missile trail walked all thirty points at full
+// 3 points at a time, and fireballs shed ring segments. The missile trail walked all thirty points at full
 // resolution, and the head is stroked two pixels wide, which is two primitives a segment.
 // Fourteen missiles of that is the densest geometry in the frame at exactly the moment the
 // most is happening.

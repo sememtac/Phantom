@@ -84,7 +84,7 @@ TYPES = re.compile(
 TKEYS = ["aa", "ln", "tri", "gl", "fl"]
 
 WORLD = re.compile(
-    r"vg_replay: WORLD motes (\d+)/(\d+) \| rocks (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
+    r"vg_replay: WORLD motes (\d+)/(\d+) \| trails (\d+)/(\d+) \| "
     r"ships (\d+)/(\d+) \| msl (\d+)/(\d+) \| fire (\d+)/(\d+) \| TOTAL (\d+)/(\d+)")
 
 KEYS = ["can", "rast", "prim", "sub", "upd"]
@@ -107,7 +107,7 @@ CAN = re.compile(r"vg_replay: CAN c0 (\d+) \| c1 (\d+) \| at (\d+)")
 # report asked for again still carries it. A device built before this existed does
 # not print it, and a run against one reads as unknown rather than as zero.
 FLEW = re.compile(r"vg_replay: COST .*\| flew (\d+)")
-WKEYS = ["motes", "rocks", "trails", "ships", "msl", "fire", "TOTAL"]
+WKEYS = ["motes", "trails", "ships", "msl", "fire", "TOTAL"]
 WIRE_US = 11520          # 460,800 bytes at 80 MHz quad. See cfg_display.h.
 
 

@@ -43,7 +43,7 @@ Vec3  vg_rand_unit(void);
 // makes evasion possible at all.
 Vec3  vg_turn_toward(Vec3 from, Vec3 to, float max_ang);
 
-void  vg_build_models(void);       // asteroid icosahedra + fighter hull winding
+void  vg_build_models(void);       // fighter hull winding
 void  vg_build_starfield(void);
 void  vg_build_motes(void);
 Vec3  vg_mote_spawn(float zmin, float zmax);
@@ -63,11 +63,6 @@ void vg_attract_autopilot(float t, float* pitch_in, float* yaw_in);
 
 // Put the bracket's current opponent into the world.
 void vg_spawn_opponent(void);
-
-// One rock into the field, somewhere down the cone. Public because three
-// different things populate the field: the lifecycle fills it at once, the
-// dispatch tops it up while flying, and the menus keep it drifting.
-void vg_spawn_asteroid(void);
 
 // THE CHAMPION DIED. Hand the name to whoever did it and wipe the profile.
 //

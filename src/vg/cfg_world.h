@@ -1,29 +1,17 @@
 ﻿#pragma once
 
 // ===========================================================================
-// The world: arena boundary, asteroids, stars, speed motes, spawning.
+// The world: arena boundary, stars, speed motes, spawning.
 // ===========================================================================
 
-// --- spawning and culling --------------------------------------------------
-#define SPAWN_Z_MIN          800.0f
-#define SPAWN_Z_MAX          1400.0f
-#define SPAWN_CONE           0.70f    // lateral spread as a fraction of z
-#define CULL_Z_BEHIND        (-150.0f)
+// --- culling ---------------------------------------------------------------
 #define CULL_RADIUS          4200.0f  // dogfight ranges are long; cull well out
 
-// --- asteroids -------------------------------------------------------------
-// Deliberately sparse -- they are not the game any more. But stars sit at
-// infinity and give no parallax whatsoever, so without some near geometry there
-// is no way to perceive speed or closure. These are the speed cue, and a hazard
-// to stay aware of while your attention is on the enemy.
-#define ENABLE_ASTEROIDS     1
-#define AST_TARGET_COUNT     10
-#define MAX_ASTEROIDS        16
-#define AST_R_MIN            10.0f
-#define AST_R_MAX            32.0f
-#define AST_VERTS            12
-#define AST_FACES            20
-#define NUM_MODELS           5
+// THE ASTEROIDS ARE GONE, by the author's decision. They only ever cost the
+// player: a rock killed the seat on contact, while nothing tested an opponent
+// against one at all -- they flew straight through -- and the trained pilot
+// could not see them. Measured in the gym, 182 of 2,079 seat deaths were rocks.
+// The speed cue they were also kept for is the motes' job, below.
 
 // RAISED FROM 64. A ship coming apart now throws 36 shards on its own, and at
 // 64 a single death plus the missile that caused it very nearly emptied the pool

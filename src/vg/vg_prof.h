@@ -202,7 +202,7 @@ extern uint32_t g_sub_course;   // the course rings, bracketed 2026-08-20
 //           spans, because the arena and the backdrop sit between its halves.
 //   arena   vg_arena_step and the clearance test
 //   sky     vg_sky_orient -- the backdrop rides the rotation only
-//   field   the scenery that is only points: stars, motes, asteroids
+//   field   the scenery that is only points: stars and motes
 //   trail   the player's ribbon, and the cutscene ship with its own
 //   enemy    every live opponent's transform and ribbon, inside the world step
 //   ord     missiles, debris and fireballs -- the same transform, three more pools
@@ -279,7 +279,6 @@ extern uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over;
 // of these but which one GROWS when the fight gets busy. Read the range, not the average.
 //
 //   motes   the speed cue and the debris shards: many points, no structure
-//   rocks   the asteroid sort and the asteroids
 //   trails  every ship's ribbon. The comment on draw_ship_trail calls these the single
 //           largest primitive source in a fight, which this is here to confirm or deny.
 //   ships   the hulls, the entry gate, and the cutscene ship's own ribbon -- which sits
@@ -287,7 +286,7 @@ extern uint32_t g_sub_lock, g_sub_canopy, g_sub_marks, g_sub_over;
 //           counter is how a rendering bug gets made, and the cutscene is not a fight.
 //   msl     the missiles: a body, a head and a trail each
 //   fire     the fireballs: concentric rings, and the most of them at once
-extern uint32_t g_w_motes, g_w_rocks, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
+extern uint32_t g_w_motes, g_w_trails, g_w_ships, g_w_msl, g_w_fire;
 
 // THE FRAME'S LAST I2C, split three ways.
 //

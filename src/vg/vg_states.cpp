@@ -112,9 +112,6 @@ void vg_menu_world(float dt) {
     const float roll_rate = 0.052f + 0.020f * sinf(vg.state_t * 0.023f);
 
     vg_world_step(dt, pitch_in, yaw_in, roll_rate * dt, 0.30f);
-
-    vg.spawn_t -= dt;
-    if (vg.spawn_t <= 0) { vg_spawn_asteroid(); vg.spawn_t = vg_frand(0.8f, 1.6f); }
     vg_update_missiles(dt);
 }
 
@@ -135,27 +132,6 @@ static void enter_course(void) {
     // rule -- one rand, so the replay sequence keeps its length.
     const uint32_t sky_seed = vg_replay_rand();
     vg_sky_generate((SkyKind)(sky_seed % (uint32_t)SKY_KINDS), sky_seed);
-    // Trim the field to the number a match flies with. The menu spawner has no
-    // cap -- it tops up every second or so until all sixteen slots are full,
-    // because nothing in a menu cares -- and the course inherited that field
-    // wholesale. Sixteen close rocks was never a design decision; it was the
-    // attract loop's housekeeping leaking into the one place that pays frame
-    // time for it. The farthest go first, so what the player sees stays.
-    {
-        int alive = 0;
-        for (int i = 0; i < MAX_ASTEROIDS; i++) if (vg.ast[i].alive) alive++;
-        while (alive > AST_TARGET_COUNT) {
-            int   far = -1;
-            float d2  = -1.0f;
-            for (int i = 0; i < MAX_ASTEROIDS; i++) {
-                if (!vg.ast[i].alive) continue;
-                const float d = vlen2(vg.ast[i].pos);
-                if (d > d2) { d2 = d; far = i; }
-            }
-            vg.ast[far].alive = false;
-            alive--;
-        }
-    }
     vg_course_begin();
 
     // AND THE RACK, WHICH THIS DID NOT TOUCH. Everything else the course inherits
@@ -587,18 +563,6 @@ static void collide_player(void) {
         vg_spawn_blast(v3(0, 0, 14), 34.0f, 7, 0, 1.7f);
         vg_spawn_shrapnel(v3(0, 0, 14), 26.0f, 40.0f, 30, 4.0f, 1.7f);
         vg_kill_player();
-    }
-
-    for (int i = 0; i < MAX_ASTEROIDS; i++) {
-        Asteroid* a = &vg.ast[i];
-        if (!a->alive) continue;
-        float r = a->radius + SHIP_RADIUS;
-        if (vlen2(a->pos) < r * r) {
-            vg_spawn_debris(a->pos, a->radius, 8);
-            a->alive = false;
-            s_bout_hit_by = BOUT_BY_OTHER;
-            vg_kill_player();
-        }
     }
 
     // Merging head-on has to cost something, or flying straight through them
@@ -1143,17 +1107,6 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
             }
         }
     }
-
-#if ENABLE_ASTEROIDS
-    // Keep the field topped up as a speed cue.
-    int alive_ast = 0;
-    for (int i = 0; i < MAX_ASTEROIDS; i++) if (vg.ast[i].alive) alive_ast++;
-    vg.spawn_t -= dt;
-    if (alive_ast < AST_TARGET_COUNT && vg.spawn_t <= 0) {
-        vg_spawn_asteroid();
-        vg.spawn_t = vg_frand(0.5f, 1.4f);
-    }
-#endif
 
     if (playing) {
         s_bout_hit_by = BOUT_BY_MISSILE;

@@ -25,8 +25,8 @@
 // ---------------------------------------------------------------------------
 
 // Triangles are counted apart from everything else because their cost has
-// nothing to do with how many there are -- one face of a close asteroid can
-// cover more pixels than the entire rest of the frame.
+// nothing to do with how many there are -- one close face can cover more
+// pixels than the entire rest of the frame.
 
 static Prim* s_prims    = nullptr;
 static int   s_count    = 0;          // the JOINED total, set by vg_prim_join

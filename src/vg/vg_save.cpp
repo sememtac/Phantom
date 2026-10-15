@@ -7,7 +7,7 @@
 #include <string.h>
 
 // The stored record. Packed by hand rather than by dumping VgGame: that struct
-// holds asteroid arrays and trail buffers and changes every other commit, and
+// holds missile arrays and trail buffers and changes every other commit, and
 // writing it wholesale would both waste flash and invalidate every save on any
 // unrelated edit.
 //

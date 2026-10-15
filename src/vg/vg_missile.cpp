@@ -430,8 +430,8 @@ void vg_update_missiles(float dt) {
         // expires -- especially a BALLISTA's, which burns for eighteen seconds --
         // and this path just switched it off without ever telling the player
         // what happened to it.
-        // THE ENVELOPE FOLLOWS THE CLASS THAT FIRED IT. A flat 4200 is right for
-        // asteroids, which are scenery, and wrong for a round whose whole identity
+        // THE ENVELOPE FOLLOWS THE CLASS THAT FIRED IT. A flat 4200 was right for
+        // asteroids, which were scenery, and is wrong for a round whose whole identity
         // is reach: BALLISTA locks at 4200, so a flat cull deleted its shot at the
         // moment it arrived. 1.4x is the pursuit-curve allowance -- a seeker flies
         // an arc, not a chord -- and the floor keeps every other class exactly
