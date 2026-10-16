@@ -269,6 +269,9 @@ void vg_kill_player(void) {
     s_player_hit     = true;
 }
 
+// The grace window opened by the last hit that landed, in VG_HIT's own clock.
+static float s_grace_from = 0.0f, s_grace_len = 0.0f;
+
 void vg_damage_player(float amount) {
     // Brief post-hit invulnerability, so one bad moment cannot cascade into three
     // hits before you have had a chance to react.
@@ -276,11 +279,35 @@ void vg_damage_player(float amount) {
     // VG_KILL is the same idea stretched: the round is decided and the loser is
     // mid-sentence, so a stray round still in the air must not be able to take
     // the win back after the fact.
-    if (vg.state == VG_HIT || vg.state == VG_KILL) return;
+    if (vg.state == VG_KILL) return;
+    // AS LONG AS THE HIT WAS HARD, and it was 1.2 s whatever hit you. That is the
+    // right answer to a 50-point round and the wrong one to a CHARIOT's nine: its
+    // whole rack is twelve of those in under two seconds, so the first round to land
+    // opened a window that swallowed most of the rest: 74-79% of what a CHARIOT
+    // delivered never reached the hull, and it could not finish a fight at any level.
+    //
+    // Scaled on the hit that OPENED the window: the full 1.2 s for 50 points or more,
+    // so a full-strength AEGIS or BALLISTA round keeps the protection it always had (a
+    // grazing one, under 50, now buys a shorter window), and a fifth of a second for
+    // a CHARIOT round. A hit that lands after the window, still inside VG_HIT, opens
+    // a window of its own.
+    if (vg.state == VG_HIT && vg.state_t >= s_grace_from
+        && vg.state_t < s_grace_from + s_grace_len) return;
+    // Still flinching from the last one: the hull takes it and the hit is heard, but
+    // the cockpit does not come apart again. Without this, one CHARIOT pass that
+    // landed took three canopy panels in under a second, and the player was left
+    // flying behind static.
+    const bool again = (vg.state == VG_HIT);
+    s_grace_len  = 1.2f * fminf(1.0f, amount / 50.0f);
+    s_grace_from = again ? vg.state_t : 0.0f;
     vg.health -= amount;
     if (vg.health < 0.0f) vg.health = 0.0f;
     vg_sfx_play(SFX_HIT, 1.0f);
     vg_cockpit.flash.hit     = 0.6f;
+    if (again) {
+        s_player_hit = true;
+        return;
+    }
     // AMPED AND LINGERING, because the tearing is what carries the hit after the flash has
     // gone. DAMAGE_GLITCH alone was a blink; the panel going out lasts over a second and
     // the screen artifact used to be finished long before it.

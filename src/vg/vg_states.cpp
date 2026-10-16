@@ -1115,7 +1115,10 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
         // Player death is resolved FIRST, which is what makes a mutual kill
         // a loss: you died, so you do not advance, regardless of whether the
         // opponent went down in the same frame.
-        if (vg_player_was_hit()) {
+        // OR THE HULL RAN OUT DURING THE FLINCH. A hit can land inside VG_HIT now --
+        // see the grace in vg_damage_player -- and the flag it raised was cleared at
+        // the top of the next frame, so an empty hull has to be asked about directly.
+        if (vg_player_was_hit() || vg.health <= 0.0f) {
             vg_state_go((vg.health > 0.0f) ? VG_HIT : VG_OVER);
             if (vg.state == VG_OVER) bout_end(BOUT_LOST, s_bout_hit_by);
             // THE TITLE CHANGES HANDS, and the player stops being anybody.
@@ -1197,7 +1200,8 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
             // difference between a tournament and a spreadsheet.
             vg_state_go(VG_KILL);
         }
-    } else if (vg.state_t > 1.2f) {
+    } else if (vg.state_t > 1.2f || vg.health <= 0.0f) {
+        // An empty hull ends the flinch at once, so the test above can end the round.
         vg_state_go(VG_PLAYING);
     }
 }
