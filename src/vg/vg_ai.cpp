@@ -333,7 +333,32 @@ static void enemy_update_lock(Ship* s, const ShipSpec* sp, Vec3 to, float range,
 // Across and away, flat out, and no cleverness: this is not a manoeuvre, it is
 // leaving. The reload runs on its own clock down in the firing code, so coming
 // back to the fight is simply this test going false.
-static void tactic_dry(Ship* s, Vec3 to, float smax, Vec3* desired) {
+//
+// EXCEPT FOR AN AR-AAM RACK, WHOSE CLOCK DOES NOT RUN WHILE IT IS LEAVING. That
+// weapon rearms only with the contact in the forward half -- vg_wpn_reload_step,
+// the player's rule as well -- and across-and-away puts the player behind it. So
+// an empty AEGIS flew off to wait for a reload that had stopped: 43-47% of its
+// frames were spent here, and more than half its bouts ran to the time limit.
+//
+// So that rack CROSSES instead of leaving: the contact is held about 72 degrees
+// off the nose, nearly on the beam, which is a hard shot for the player and still
+// in front. The side is kept for break_t, like any break; the angle is aimed off
+// the current line of sight every frame, or the ship would drift onto its own six.
+static void tactic_dry(Ship* s, Vec3 to, float smax, Vec3* desired,
+                       bool keep_contact = false) {
+    if (keep_contact) {
+        if (s->break_t <= 0) {
+            s->break_dir = break_across(vnorm(to), s->up, 0.0f);
+            s->break_t   = vg_frand(0.8f, 1.4f);
+        }
+        const Vec3 los = vnorm(to);
+        Vec3 side = vsub(s->break_dir, vmul(los, vdot(s->break_dir, los)));
+        if (vlen2(side) < 1e-4f) side = vcross(los, s->up);
+        side = vnorm(side);
+        *desired = vadd(vmul(los, 0.31f), vmul(side, 0.95f));   // cos 72, sin 72
+        s->target_speed = smax * ENEMY_DRY_SPEED_K;
+        return;
+    }
     if (s->break_t <= 0) {
         s->break_dir = break_across(vnorm(to), s->up, -0.85f);
         s->break_t   = vg_frand(0.8f, 1.4f);
@@ -709,7 +734,8 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                           range < ENEMY_DRY_RANGE);
         if (dry) {
             s->steer_by = STEER_DRY;
-            tactic_dry(s, to, smax, &desired);
+            // An AR-AAM rack only refills with the contact in front -- see tactic_dry.
+            tactic_dry(s, to, smax, &desired, sp->wpn == WPN_ARAAM);
         } else
         // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
         //
