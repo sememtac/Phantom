@@ -166,6 +166,8 @@ def cell_stats(jobs):
         "kills_by": by,
         "net_pct": statistics.mean(j["net"] for j in jobs) if jobs else 0,
         "minutes": sum(j["flown"] for j in jobs) / 3600.0,
+        # The two sums behind the exchange, so that cells can be added up later.
+        "took": took, "gave": gave,
     }
 
 
@@ -414,6 +416,76 @@ def cmd_score(args):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# compare
+# ---------------------------------------------------------------------------
+
+def pool(cells):
+    """Add up cells. Give the win share, its interval, the draws, the exchange and
+    the network share."""
+    win = sum(c["win"] for c in cells)
+    loss = sum(c["loss"] for c in cells)
+    draw = sum(c["draw"] for c in cells)
+    n = win + loss + draw
+    lo, hi = wilson(win, win + loss)
+    if all("took" in c for c in cells):
+        gave = sum(c["gave"] for c in cells)
+        exch = sum(c["took"] for c in cells) / gave if gave > 0 else None
+    else:
+        # An older result.json has no sums. Then the exchange is a mean of cells.
+        ex = [c["exchange"] for c in cells if c.get("exchange") is not None]
+        exch = sum(ex) / len(ex) if ex else None
+    return {"win": 100.0 * win / (win + loss) if win + loss else None,
+            "lo": lo, "hi": hi, "draw": 100.0 * draw / n if n else None,
+            "exch": exch, "net": (sum(c.get("net_pct", 0) for c in cells) / len(cells))
+            if cells else 0.0, "bouts": n}
+
+
+def cmd_compare(args):
+    """Print the runs side by side: by opponent class, and by pilot level."""
+    seats = [CLASSES[i] for i in span(args.seats, 4)]
+    runs = []
+    for name in args.names:
+        path = os.path.join(OUT_ROOT, name, "result.json")
+        if not os.path.exists(path):
+            print("error: %s does not exist" % path)
+            return 1
+        with open(path, "r", encoding="utf-8") as f:
+            cells = [c for c in json.load(f)["cells"] if c["seat"] in seats]
+        runs.append((name, cells))
+
+    def table(title, key, values):
+        print("")
+        print(title)
+        print("%-10s" % "" + "".join("%-30s" % n[:29] for n, _ in runs))
+        print("%-10s" % "" + "win   95%     exch  draw net   " * len(runs))
+        for v in values:
+            row = "%-10s" % v
+            ref = None
+            for i, (_, cells) in enumerate(runs):
+                p = pool([c for c in cells if c[key] == v])
+                if p["win"] is None:
+                    row += "%-30s" % "-"
+                    continue
+                cell = "%3.0f %3.0f-%-3.0f %4.2f %3.0f %3.0f%%" % (
+                    p["win"], p["lo"], p["hi"], p["exch"] or 0.0, p["draw"], p["net"])
+                if i == 0:
+                    ref = p
+                elif ref and ref["win"] is not None:
+                    cell += "%+4.0f" % (p["win"] - ref["win"])
+                row += "%-30s" % cell
+            print(row)
+
+    print("Seats: %s. 'win' is the opponent's share of the decided bouts, with its 95%%"
+          % ", ".join(seats))
+    print("interval. 'exch' is seat hull lost / opponent hull lost. 'net' is the share")
+    print("of the opponent's frames that the network flew. The last number in a column")
+    print("is the change in 'win' from the first run.")
+    table("By opponent class, all levels:", "enemy", CLASSES)
+    table("By pilot level, all opponents:", "level", LEVELS)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Measure how hard the opponents are, as bouts won and lost.")
@@ -447,9 +519,17 @@ def main():
     s.add_argument("files", nargs="+",
                    help=".obs recordings from --dump, or logs of --bouts sessions")
 
+    c = sub.add_parser("compare", help="put the results of some runs side by side")
+    c.add_argument("names", nargs="+",
+                   help="run folders under captures/ai_eval. The first is the reference")
+    c.add_argument("--seats", default="0-3",
+                   help="seat classes to include (default 0-3)")
+
     args = ap.parse_args()
     if args.cmd == "run":
         return cmd_run(args)
+    if args.cmd == "compare":
+        return cmd_compare(args)
     return cmd_score(args)
 
 

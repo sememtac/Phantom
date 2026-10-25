@@ -74,6 +74,15 @@ AN EARLIER SWEEP OF THIS RAN ONE SAMPLE PER HORIZON and reported 2.0s as much
 the worst. That was noise. Pick the horizon by flying, not by the loss, and by
 more than one flight.
 
+THE SAVED NETWORK IS PICKED BY THE STICK SCORE, not by the whole loss. Measured
+on the M1 recordings (2026-10-20): the whole loss was best at epoch 0 or 1 of 400
+on every set of files, and then rose 3 to 5 times. The trigger and mode parts are
+log losses, so they grow fast when the network is sure and wrong. The stick score
+also starts to rise early, because two rows 1/60 s apart are almost the same row
+and the network learns a sitting by heart. So the default is --select hand, with
+--noise 0.5 and --lr 3e-4 as the recipe that was used. Other recipes moved the best
+stick score by less than 4%.
+
 Run this script from the root of the repository:
 
     python tools/train_pilot.py captures/ballista.obs
@@ -267,7 +276,7 @@ def emit_static(name, values, add, per_line=8):
 
 
 def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5,
-                 ship_tol=0.005):
+                 ship_tol=0.005, fire_ship=None):
     """Write the weights as a C header that the firmware can compile."""
     import torch
 
@@ -299,6 +308,13 @@ def write_header(path, model, mean, std, obs_n, meta, ships=None, fire_t=0.5,
         add("#define PILOT_SHIPS    %d" % len(ships))
         add("#define PILOT_SHIP_N   %d" % SHIP_FIELDS)
         emit_static("PILOT_SHIP_SEEN", ships, add)
+        if fire_ship is not None and len(fire_ship) == len(ships):
+            add("// THE TRIGGER CUT FOR EACH SHIP, in the order of PILOT_SHIP_SEEN. One")
+            add("// cut for all four made the LANCE network almost never fire (1% of")
+            add("// rows against the pilot's 7%) and the CHARIOT fire too often. Each")
+            add("// ship's cut makes it fire as often as the pilot did in that ship.")
+            add("#define PILOT_FIRE_PER_SHIP 1")
+            emit_static("PILOT_FIRE_T_SHIP", fire_ship, add)
         add("")
     add("// The cut for the trigger output, calibrated so the network fires about")
     add("// as often as the pilot it was fitted to. Not 0.5: the trigger is")
@@ -376,6 +392,19 @@ def main():
                          "frames (default 91, about 1.5 seconds)")
     ap.add_argument("--horizon", type=int, default=60,
                     help="frames to look ahead for the target (default 60)")
+    ap.add_argument("--select", choices=["total", "hand"], default="hand",
+                    help="the test score that picks the saved network: the stick "
+                         "alone, or the whole loss (default hand)")
+    ap.add_argument("--weight-decay", type=float, default=0.0,
+                    help="weight decay for the optimiser (AdamW). Default 0")
+    ap.add_argument("--int8", action="store_true",
+                    help="also write the int8 network that the board runs, and "
+                         "score it on the test rows")
+    ap.add_argument("--noise", type=float, default=0.0,
+                    help="Gaussian noise on every input while training, in units "
+                         "of the input's spread. Default 0")
+    ap.add_argument("--log-every", type=int, default=25,
+                    help="print the test scores every N epochs (default 25)")
     args = ap.parse_args()
 
     try:
@@ -551,7 +580,11 @@ def main():
     yv = torch.tensor(Y[va], device=dev)
 
     model = build(obs_n, args.hidden, args.layers).to(dev)
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.weight_decay > 0.0:
+        opt = torch.optim.AdamW(model.parameters(), lr=args.lr,
+                                weight_decay=args.weight_decay)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     mse = nn.MSELoss()
 
     # THE TRIGGER IS WEIGHTED UP. Even asked about a whole second it is the
@@ -575,7 +608,8 @@ def main():
         for k in range(len(MODE_NAMES))))
     mode_w = torch.tensor(mw, dtype=torch.float32, device=dev)
 
-    def lossf(pred, truth):
+    def parts(pred, truth):
+        """The three parts of the loss, apart: the hand, the trigger, the mode."""
         axes = mse(pred[:, :3], truth[:, :3])
         w = 1.0 + (w_pos - 1.0) * truth[:, 3]
         trig = (bce(pred[:, 3].clamp(1e-6, 1 - 1e-6), truth[:, 3]) * w).mean()
@@ -585,6 +619,10 @@ def main():
         idx = truth[:, 4].long()
         mloss = -(torch.log(mp[torch.arange(len(idx), device=mp.device), idx])
                   * mode_w[idx]).mean()
+        return axes, trig, mloss
+
+    def lossf(pred, truth):
+        axes, trig, mloss = parts(pred, truth)
         # Scaled so neither half drowns the other. The axes loss runs around
         # 0.03 and a balanced BCE around 0.7, so the trigger is divided down to
         # sit in the same range rather than dominating the gradient.
@@ -598,6 +636,7 @@ def main():
 
     n = xt.shape[0]
     best = float("inf")
+    best_epoch = -1
     best_state = None
     for epoch in range(args.epochs):
         model.train()
@@ -623,6 +662,13 @@ def main():
                                * 2.0 - 1.0) * args.jitter
                 nz[:, k:] = xb[:, k:] * noise
                 xb = nz
+            if args.noise > 0.0:
+                # NOISE ON EVERY INPUT, in units of its own spread (the inputs are
+                # scaled to unit spread already). Two frames 1/60 s apart are almost
+                # the same frame, so the network can learn a sitting by heart. Noise
+                # makes neighbouring frames different on purpose, so it must learn
+                # the shape of the answer instead.
+                xb = xb + torch.randn_like(xb) * args.noise
             opt.zero_grad()
             loss = lossf(squash(model(xb)), yt[idx])
             loss.backward()
@@ -630,12 +676,21 @@ def main():
 
         model.eval()
         with torch.no_grad():
-            vl = float(lossf(squash(model(xv)), yv))
-        if vl < best:
-            best = vl
+            pa, pt, pm = parts(squash(model(xv)), yv)
+            vl = float(pa + 0.05 * pt + 0.05 * pm)
+        # WHICH SCORE PICKS THE NETWORK. "total" is the whole loss. "hand" is the
+        # stick alone. They can disagree a lot: the trigger and the mode are scored
+        # by a log loss, which grows without limit when the network is sure and
+        # wrong, so the total can rise from the first epochs while the stick still
+        # improves. See --select.
+        score = vl if args.select == "total" else float(pa)
+        if score < best:
+            best = score
+            best_epoch = epoch
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
-        if epoch % 25 == 0 or epoch == args.epochs - 1:
-            print("epoch %4d  test loss %.5f  best %.5f" % (epoch, vl, best))
+        if epoch % args.log_every == 0 or epoch == args.epochs - 1:
+            print("epoch %4d  test loss %.5f  hand %.5f  trigger %.4f  mode %.4f  best %.5f"
+                  % (epoch, vl, float(pa), float(pt), float(pm), best))
 
     model.load_state_dict(best_state)
     model.eval()
@@ -675,6 +730,33 @@ def main():
           % (100.0 * p.mean(), 100.0 * t.mean()))
     print("              caught %.0f%% of the shots, %.0f%% of its calls were right"
           % (100.0 * tp / max(tp + fn, 1), 100.0 * tp / max(tp + fp, 1)))
+
+    # ONE CUT FOR EACH SHIP. The ships fire at very different rates: a CHARIOT
+    # empties its rack, a LANCE banks locks and lets go of a salvo now and then.
+    # Measured with one cut for all four (M2, 2026-10-24): the LANCE network said
+    # yes on 1% of rows against the pilot's 7% and never fired in a fight, and the
+    # CHARIOT said yes on 31% against 24%. So each ship gets the cut that makes it
+    # fire as often as the pilot did in that ship. A ship with too few test rows
+    # keeps the shared cut.
+    ships = seen_ships(X, obs_n)
+    vkey = np.round(X[va][:, obs_n - SHIP_FIELDS:], 4)
+    fire_ship = []
+    for srow in ships:
+        m = np.abs(vkey - srow).max(axis=1) < 1e-6
+        if m.sum() < 200:
+            fire_ship.append(fire_t)
+            continue
+        want_k = float(t[m].mean())
+        cut, gap_k = fire_t, 1e9
+        for cand in np.linspace(0.05, 0.95, 91):
+            g = abs(float((pred[m, 3] >= cand).mean()) - want_k)
+            if g < gap_k:
+                gap_k, cut = g, float(cand)
+        fire_ship.append(cut)
+        pk = pred[m, 3] >= cut
+        print("  trigger     ship %d: cut %.2f, says yes on %.1f%%, truth %.1f%%, caught %.0f%%"
+              % (len(fire_ship) - 1, cut, 100.0 * pk.mean(), 100.0 * want_k,
+                 100.0 * float((pk & t[m]).sum()) / max(float(t[m].sum()), 1.0)))
     # THE HAND AND THE PLAN ARE SCORED APART.
     #
     # `best` is the whole loss, and it now holds a mode term as well as the hand.
@@ -707,7 +789,12 @@ def main():
                  100.0 * (want[picked] == k).mean() if picked.any() else 0.0))
     print("  a guess that always said the commonest mode would be right on %.0f%%"
           % (100.0 * np.bincount(want, minlength=len(MODE_NAMES)).max() / len(want)))
-    print("best test loss %.5f  (hand and plan together)" % best)
+    print("best test score %.5f  (%s)" % (best, "hand and plan together"
+                                            if args.select == "total" else "hand only"))
+    # WHERE THE BEST TEST LOSS CAME. If it is in the first few epochs, the test rows
+    # are not like the training rows: the network got worse at them while it got
+    # better at the rest. Then the score above is not from a fitted network.
+    print("best test loss at epoch %d of %d" % (best_epoch, args.epochs))
 
     params = sum(p.numel() for p in model.parameters())
     meta = [
@@ -717,11 +804,31 @@ def main():
         "The output is a target: the mean stick over the next %d frames," % h,
         "and whether the pilot fires within that window.",
     ]
-    write_header(args.out, model, mean, std, obs_n, meta, seen_ships(X, obs_n), fire_t,
-                 max(0.005, args.jitter))
+    write_header(args.out, model, mean, std, obs_n, meta, ships, fire_t,
+                 max(0.005, args.jitter), fire_ship)
     print("")
     print("wrote %s" % args.out)
     print("%d weights, %d bytes as float32" % (params, params * 4))
+
+    # THE INT8 NETWORK, made and scored here, so the number on the screen is the
+    # number the board flies. tools/quantize_pilot.py is the reference of the
+    # board's integer arithmetic; see there. The header keeps the float arrays.
+    if args.int8:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import quantize_pilot as qp
+        text, d, a = qp.read_header(args.out)
+        q = qp.quantize(d, a)
+        size = qp.write(args.out, text, q)
+        out_q = qp.forward_q(q, X[va])
+        stick_q = float(((qp.to_float(out_q) - truth[:, :3]) ** 2).mean())
+        stick_f = float(((pred[:, :3] - truth[:, :3]) ** 2).mean())
+        print("int8: stick test error %.5f against %.5f as float (%+.1f%%), "
+              "%d bytes of internal RAM"
+              % (stick_q, stick_f, 100.0 * (stick_q / stick_f - 1.0), size))
+        fire_q = out_q[:, 3] == 1
+        t = truth[:, 3] >= 0.5
+        print("int8: trigger says yes on %.1f%% of rows, truth %.1f%%"
+              % (100.0 * fire_q.mean(), 100.0 * t.mean()))
     return 0
 
 
