@@ -315,6 +315,50 @@
 // since it started flying; the tactics never did.
 #define ENEMY_MERGE_FLOOR    150.0f
 
+// THE SAME FLOOR AS A TIME, because a collision is a time problem and the floor
+// above is a distance.
+//
+// At 150 units the floor above fired 0.25-0.4 s before contact in every
+// accidental collision measured, and at 300-500 units a second of closing that
+// is not long enough to turn out of. It had always fired; it had always been
+// too late. The rams it was there to stop were 95% of all of them: a player who
+// flies slowly with the nose on the fight -- which is how the M1 recordings say
+// people do fly -- meets the slow-target press and the won-angle press, which
+// point straight at them and have no break of their own, and the floor was the
+// only thing left to call the pass off. Measured, an opponent died ramming the
+// player in 8 of the author's 46 M1 wins and the player died to a ram in 3 of 12
+// losses; the suicide run, which is what the rams looked like, was by the best
+// estimate about one of the eleven.
+//
+// So this asks the question a pilot asks: if neither of us turns, how close do
+// we pass, and how soon? Under ENEMY_AVOID_MISS within ENEMY_AVOID_LOOK and it
+// turns toward the side it is already missing on -- the shortest way out -- and
+// holds that for ENEMY_AVOID_HOLD. Something coming up from behind is outrun
+// rather than turned from, because a slow ship turning aside is still a slow
+// ship in the way.
+//
+// THE HOLD IS WHAT MAKES IT A TURN AND NOT A WOBBLE. Without one the test flips
+// on and off as the geometry changes, and a first version that had none, asked
+// 80 units and 1.2 s, left more collisions than no floor at all. Swept: at
+// 0.25 s, 13% of turns started again within 0.3 s of letting go; at 0.6 s, 0.1%.
+// The longer hold also took being run down from behind from 13 contacts to 5
+// across the sweep. 75 units and
+// a second ahead sit in the one corner of the sweep with no accidents at all on
+// either test seat.
+//
+// It changes nothing about how they fight until the last second of a merge, and
+// the fight is no softer for it. Against a seat that flies the way the author
+// does, collisions went from 19.4 to 1.2 a fight-hour and every one left was a
+// suicide run; the opponents killed the seat with missiles more often, 20.2 to
+// 25.0 an hour, because they lived through the merge to do it; and a bout ran
+// 31 s to 38 s at the median. The same on seeds the sweep never saw.
+//
+// UNDER THE SUICIDE RUN, which is a decision and not an accident, and under the
+// wall. What it leaves behind is that decision.
+#define ENEMY_AVOID_MISS     75.0f   // closest approach it will accept, world units
+#define ENEMY_AVOID_LOOK     1.0f    // ...this many seconds ahead
+#define ENEMY_AVOID_HOLD     0.6f    // committed to the turn this long once it starts
+
 #define ENEMY_DEFEND_MIN     1.3f     // seconds committed to the answer, so it is
 #define ENEMY_DEFEND_MAX     2.2f     // a manoeuvre and not a twitch
 

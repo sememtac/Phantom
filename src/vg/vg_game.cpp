@@ -97,6 +97,7 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->evade_t      = 0;
     s->break_t      = 0;
     s->defend_t     = 0;
+    s->avoid_t      = 0;
     s->defend_run   = false;
     s->press_t      = 0;
     s->press_run    = 0;

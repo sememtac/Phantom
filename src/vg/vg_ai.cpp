@@ -53,6 +53,47 @@ static Vec3 break_across(Vec3 along, Vec3 up, float toward_bias) {
     return vnorm(vadd(side, vmul(along, toward_bias)));
 }
 
+// ARE WE ABOUT TO HIT THEM? See ENEMY_AVOID_LOOK.
+//
+// Straight lines for both ships, in the player's frame: the player is the origin
+// flying down +z, so the closing motion is this ship's velocity less theirs.
+// Neither is going to fly straight, and that is the point of asking a second
+// ahead rather than a second too late -- a turn started now is cheap.
+//
+// The way out is toward the side it is already passing on: the miss vector, with
+// the part along our own nose taken off so it is a turn and not a reversal. Dead
+// on, there is no side, and any one will do.
+static bool on_collision_course(const Ship* s, Vec3* away) {
+    const Vec3  v  = vsub(vmul(s->fwd, s->speed), v3(0, 0, vg.speed));
+    const float vv = vdot(v, v);
+    if (vv < 1.0f) return false;
+    const float t = -vdot(s->pos, v) / vv;       // seconds to the closest approach
+    if (t <= 0.0f || t > ENEMY_AVOID_LOOK) return false;
+    const Vec3  miss = vadd(s->pos, vmul(v, t));
+    const float d    = vlen(miss);
+    if (d > ENEMY_AVOID_MISS) return false;
+    Vec3 side = (d > 1.0f) ? vmul(miss, 1.0f / d) : vcross(s->fwd, s->up);
+    side = vsub(side, vmul(s->fwd, vdot(side, s->fwd)));
+    if (vlen2(side) < 1e-4f) side = vcross(s->fwd, s->up);
+    *away = vnorm(vadd(vnorm(side), vmul(s->fwd, 0.25f)));
+    return true;
+}
+
+// ...and once it has decided to get out of the way, it stays out of the way for
+// ENEMY_AVOID_HOLD. Re-aimed every frame the course is still bad, released when
+// the hold runs down with the course clear.
+static bool avoiding(Ship* s, float dt) {
+    Vec3 dir;
+    if (on_collision_course(s, &dir)) {
+        s->avoid_dir = dir;
+        s->avoid_t   = ENEMY_AVOID_HOLD;
+    } else if (s->avoid_t <= 0.0f) {
+        return false;
+    }
+    s->avoid_t -= dt;
+    return true;
+}
+
 // HOW FAST THE PLAYER IS GOING, 0 at their own minimum and 1 at their maximum.
 //
 // Normalised against THEIR envelope rather than an absolute, because the question
@@ -617,6 +658,16 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->target_speed = smax;
         s->evade_t = 0;
         s->break_t = 0;
+
+    // ABOUT TO HIT THEM, a second ahead. See ENEMY_AVOID_LOOK: the floor below is
+    // the same rule as a distance, and as a distance it fires too late to work.
+    // Same rank and the same label, because it is the same decision made in time.
+    } else if (avoiding(s, dt)) {
+        s->steer_by = STEER_EVADE;
+        desired     = s->avoid_dir;
+        if (vdot(s->fwd, vsub(v3(0, 0, 0), s->pos)) < 0.0f) s->target_speed = smax;
+        s->attack_t = 0.0f;
+        s->break_t  = 0.0f;
 
     // TOO CLOSE, AND CONTACT KILLS THE PLAYER OUTRIGHT. See ENEMY_MERGE_FLOOR:
     // this is the floor the network has always had and the tactics never did,

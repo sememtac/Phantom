@@ -128,6 +128,9 @@ struct Ship {
     // the pass has gone wrong and the fight is now about getting away.
     float defend_t;
     Vec3  defend_dir;
+    // >0 while turning out of a collision course. See ENEMY_AVOID_LOOK.
+    float avoid_t;
+    Vec3  avoid_dir;
     bool  defend_run;     // running from the attacker, rather than turning on them
     // >0 while holding a winning position instead of breaking off it. See
     // has_the_angle: a pass that ends up behind the player is the one pass worth
