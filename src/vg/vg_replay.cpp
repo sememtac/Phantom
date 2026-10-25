@@ -4,7 +4,6 @@
 #include "vg_raster.h"   // NUM_BANDS via cfg_display.h, and the band window
 #include "vg_ship.h"
 #include "vg_capture.h"
-#include "vg_canopy_op.h"   // vg_canopy_op_current: did this run ever reach the seat
 #include <Arduino.h>
 #include "esp_attr.h"   // RTC_NOINIT_ATTR, for the arm that outlives a reset
 #include "soc/extmem_reg.h"   // the cache miss counters
@@ -56,10 +55,10 @@ static uint32_t s_resync = 0;
 // and a guess at which of the six it is would be a guess. This says.
 static const char* s_why = "not started";
 static uint32_t s_t_n   = 0;
-// FRAMES ON WHICH A COCKPIT WAS ON THE SCREEN. A replay reaches the game by the taps
-// the recording holds, and a tap is a screen coordinate: move a menu and every
-// recording made before the move stops at that menu and stays there, for its whole
-// length, with nothing to say. On 2026-09-06 four baselines were taken of the
+// FRAMES SPENT OUT OF THE MENUS -- flying, fighting, or paused over either. A replay
+// reaches the game by the taps the recording holds, and a tap is a screen coordinate:
+// move a menu and every recording made before the move stops at that menu and stays
+// there, for its whole length, with nothing to say. On 2026-09-06 four baselines were taken of the
 // callsign screen that way and believed for a day. This is the number that would
 // have said so, and the tools refuse a run where it is zero.
 static uint32_t s_flew  = 0;
@@ -571,6 +570,18 @@ static void begin_record(void) {
 }
 
 void vg_replay_note_frame(float dt, const VgInput* in) {
+    // COUNTED ON PLAYBACK, which is the only time anybody reads it. From 2026-09-06 this sat
+    // below the record-only return, so it counted while recording and read 0 on every replay
+    // -- and the tools refused every replay as one that never left the menus, including
+    // regress.phr, which flies the ring course.
+    //
+    // AND PER FRAME. vg_canopy_op_current() was the old witness, and it is set on the way
+    // into a match and never cleared, so it would have gone on counting the menus after the
+    // first flight. The state is what this frame was.
+    //
+    // A read and a counter, nothing else: the simulation never sees this number, so a session
+    // replays the same with it as without it.
+    if (s_mode != VG_RP_OFF && !vg_state_is_menu(vg.state)) s_flew++;
     if (s_mode != VG_RP_RECORD) return;
     const uint8_t nr = (uint8_t)s_rand_n;
     vg_link_write("PHRC", 4);
@@ -580,7 +591,6 @@ void vg_replay_note_frame(float dt, const VgInput* in) {
     vg_link_write(s_rand, (int)nr * 4);
     vg_link_write(in, (int)sizeof(VgInput));
     s_index++;
-    if (vg_canopy_op_current()) s_flew++;
     s_rand_n = 0;
 }
 
