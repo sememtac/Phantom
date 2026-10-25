@@ -44,6 +44,8 @@ output.
 | `--scale N` | Sets the window size to N times the 480x480 panel. N is 1 to 4. The default is 2. |
 | `--frames N` | Runs N frames and then stops. Use this to test the build. |
 | `--sens F` | Sets the mouse scale. The default is 0.10. A lower number is slower. |
+| `--pad-invert` | Changes the pitch of the controller's right stick. Then forward points the nose down, like the stick of an aeroplane. |
+| `--pad-expo F` | Sets how soft the middle of the controller's right stick is, from 0 to 1. 0 is linear. The default is 0.6. |
 | `--help` | Shows the options. |
 
 The game keeps its progress in `phantom_save.bin`. The game writes the file
@@ -88,6 +90,62 @@ the finger lift when you let go. The game reads the position where the button
 went down. If you move the mouse more than 16 pixels before you let go, the game
 reads a drag and not a tap.
 
+### Xbox 360 controller
+
+A wired Xbox 360 controller works together with the mouse and the keyboard. You
+can connect it before the game starts or while it runs. When the game finds the
+controller, it prints a line such as
+`input: xinput pad 0 connected, layout fps, invert 0, expo 0.60`. The line also
+gives the layout, the `--pad-invert` setting and the `--pad-expo` setting. When you
+disconnect the controller, it prints `input: xinput pad 0 disconnected`.
+
+The layout is like an FPS game or a drone: the right stick aims the ship.
+
+| Control | Controller |
+|---|---|
+| Pitch up and down | Right stick, up and down |
+| Turn left and right | Right stick, left and right |
+| Open the throttle | Right trigger |
+| Close the throttle | Left trigger |
+| Fire a missile | B |
+| Roll left | Hold the left bumper (LB) |
+| Roll right | Hold the right bumper (RB) |
+| Look behind | Hold Y |
+| Menu key | Start |
+| Move the pointer in a menu | Right stick |
+| Select a menu item | A |
+| Go back one step in a menu | B |
+
+Push the right stick up to point the nose up. Pull it down to point the nose
+down. This is the same as the mouse. To change it, add `--pad-invert`. Then
+forward points the nose down, like the stick of an aeroplane.
+
+A small movement of the stick turns the ship slowly. A full push turns it at the
+full rate. Between the two, the turn increases faster near the end of the travel
+than near the middle, so small corrections are easy. To change how soft the middle
+is, add `--pad-expo F`. 0 makes the response linear, and 1 makes the middle
+softest. The default is 0.6.
+
+The right stick sets the steering directly, the same as a thumb on the glass. When
+you release the stick, it goes back to the middle and the ship flies straight. The
+left stick does nothing in flight.
+
+The triggers change the throttle. They do not set the throttle. The further you
+pull, the faster the throttle moves. At a full pull the throttle moves as fast as
+it does with `W` and `S`. When you release the trigger, the throttle stays where
+it is. If you pull both triggers, the throttle does not move.
+
+B fires only in flight. In a menu, B goes back one step. If you hold B when a
+fight ends, release it first: the menu ignores a B that was held in flight.
+
+A bumper rolls the ship at the full rate. Pitch still works on the right stick
+while you roll. If you hold both bumpers, the ship does not roll.
+
+The right stick ignores a small area around its middle, so a stick that does not
+centre exactly does not move the ship.
+
+The controller works only when the game window has the focus.
+
 ### Mouse scale
 
 The mouse scale is the number of game pixels for each count that the mouse
@@ -98,8 +156,8 @@ full turn needs about 1150 counts. That is about 3 cm of hand movement on a
 Mouse hardware differs by a factor of ten, so change the number to suit your
 mouse:
 
-    hostuild\phantom.exe --sens 0.05     slower
-    hostuild\phantom.exe --sens 0.20     faster
+    host\build\phantom.exe --sens 0.05     slower
+    host\build\phantom.exe --sens 0.20     faster
 
 The game prints the scale and the count for a full turn when it starts.
 
@@ -161,9 +219,9 @@ The build leaves out two game files, because both talk to the board:
 
 Run this command:
 
-    powershell -ExecutionPolicy Bypass -File hostuild.ps1 -Package
+    powershell -ExecutionPolicy Bypass -File host\build.ps1 -Package
 
-It writes `hostuild\phantom-pc.zip`. The zip holds the executable and a text
+It writes `host\build\phantom-pc.zip`. The zip holds the executable and a text
 file with the controls. Send the zip. The other person unpacks it and runs
 `phantom.exe`.
 

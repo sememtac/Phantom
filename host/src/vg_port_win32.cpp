@@ -32,6 +32,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>   // waveOut: the sound output, and winmm is already linked
+#include <xinput.h>     // the pad's structures only: the DLL is loaded at run time
+#include "vg_sim.h"     // vg_headless: a measurement run never reads the pad
 
 // Counters the device port owns and the telemetry reads.
 uint32_t g_panel_wedges     = 0;
@@ -179,11 +181,165 @@ float g_host_stick_sens = 0.10f;
 // rolling with it would not have transferred to the device. This build exists to
 // mirror the board, which means declining to improve on it.
 
+// ---------------------------------------------------------------------------
+// The Xbox 360 pad -- a second hand on the same glass
+// ---------------------------------------------------------------------------
+//
+// THE PAD IS DRESSED AS FINGERS TOO, for the reason the mouse is: vg_input.cpp stays
+// the one steering model. The right stick puts the steering thumb somewhere inside its
+// disc, the left stick drags the throttle thumb the way W and S do, and the triggers
+// and shoulders press the same buttons and the same rear-view patch that the mouse,
+// Space and R press. Nothing here reaches the simulation by any other road, so a
+// sitting flown on the pad and one flown on the mouse are the same game, recorded the
+// same way.
+//
+// XINPUT, LOADED AT RUN TIME. xinput1_4.dll is in every Windows since 8, and
+// xinput9_1_0.dll is the fallback older systems carry. Loading it rather than linking
+// xinput.lib keeps the build line exactly as it was, and a machine with neither simply
+// has no pad.
+//
+// ONE PAD, the first one found, read once a frame. Asking about an empty slot is the
+// slow XInput call, so with no pad the four slots are searched once a second, and
+// with one only its own slot is read. Pulling the cable is a failed read and nothing
+// worse: the pad is forgotten, the controls it was holding let go, and the search
+// starts again.
+//
+// IGNORED UNLESS THE WINDOW HAS FOCUS, exactly as the keys are -- host_key_down asks
+// the same question. And not read at all in a headless run, whose window never has
+// focus anyway, because those runs are the measurements.
+//
+// THE PRINTED LINE IS FOR THE RECORDINGS. "input: xinput pad N connected" and
+// "...disconnected" land in a sitting's log, so whoever reads the dataset later can
+// tell which sittings were flown on the pad.
+
+typedef DWORD (WINAPI *XInputGetStateFn)(DWORD, XINPUT_STATE*);
+
+// The stick deadzone is XInput's own recommended figure for this pad's right stick,
+// which is what a worn 360 stick needs to stop drifting: about 27% of travel. Past it
+// the travel is rescaled to start from zero, so there is no step at the edge. The
+// left stick is not read at all.
+#define PAD_RSTICK_DEAD   XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE   // 8689 of 32767
+// THE TRIGGERS ARE THE THROTTLE, the Ace Combat way: right opens it, left closes it,
+// and the further the pull the faster it moves. A finger resting on a trigger is not
+// a request, so the first eighth of the pull does nothing.
+#define PAD_TRIG_DEAD     30          // of 255
+// How fast the right stick moves the pointer in a menu, in logical pixels a second at
+// full deflection. Squared, so a small push is fine enough to land on a button.
+#define PAD_POINTER_PX_PER_SEC 700.0f
+
+// THE FPS WAY BY DEFAULT: push the right stick up and the nose comes up, the same as
+// the mouse. The pad has been both ways round and split across both sticks the Ace
+// Combat way, and the author's verdict was that Phantom "plays more like a fps/drone
+// game rather than a plane game". --pad-invert is the flight-stick way, pull back
+// to climb, for anybody who flies like that.
+bool g_host_pad_invert = false;
+// HOW SOFT THE MIDDLE OF THE STICK IS, 0..1. 0 is linear. Above it, the response is
+// e*a^3 + (1-e)*a: a full push is still a full push, but the first part of the
+// travel asks for much less. A pad stick has about a centimetre of throw for the whole
+// turn rate, which reads as twitchy when it is linear -- the author's word was
+// "really sensitive". At 0.6 a third of the travel asks for about a sixth of the turn.
+float g_host_pad_expo = 0.6f;
+
+static float pad_curve(float a) {
+    float e = g_host_pad_expo;
+    if (e < 0.0f) e = 0.0f;
+    if (e > 1.0f) e = 1.0f;
+    return a * ((1.0f - e) + e * a * a);
+}
+
+static XInputGetStateFn s_xget       = nullptr;
+static int              s_pad        = -1;      // the slot in use, or -1
+static uint32_t         s_pad_search = 0;       // millis() of the last search
+static bool             s_pad_looked = false;
+static XINPUT_GAMEPAD   s_gp         = {};      // this frame's reading; zero if none
+static bool             s_pad_menu   = false;   // the frame is not flying: B is a key
+
+static void pad_poll(void) {
+    memset(&s_gp, 0, sizeof(s_gp));
+    if (vg_headless) return;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        // FROM SYSTEM32 AND NOWHERE ELSE. A bare name is searched for in the exe's own
+        // folder first, and phantom.exe is a signed download that lands in Downloads
+        // beside whatever else is there -- so a DLL with this name dropped next to it
+        // would be loaded and run inside our signed binary. Both XInputs ship in
+        // System32 on every Windows this runs on, so nothing legitimate is lost. If
+        // neither loads, the game runs with no pad, exactly as before.
+        HMODULE m = LoadLibraryExA("xinput1_4.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!m) m = LoadLibraryExA("xinput9_1_0.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (m) s_xget = (XInputGetStateFn)(void*)GetProcAddress(m, "XInputGetState");
+    }
+    if (!s_xget) return;
+
+    XINPUT_STATE st;
+    memset(&st, 0, sizeof(st));
+    if (s_pad < 0) {
+        if (s_pad_looked && millis() - s_pad_search < 1000u) return;
+        s_pad_looked = true;
+        s_pad_search = millis();
+        for (DWORD i = 0; i < XUSER_MAX_COUNT; i++) {
+            if (s_xget(i, &st) == ERROR_SUCCESS) {
+                s_pad = (int)i;
+                // THE LAYOUT RIDES ON THE CONNECT LINE. It changed three times during
+                // one M1 session, and a recording's log is the only record of how it
+                // was flown -- so a sitting says which layout it was, and the training
+                // can tell them apart if the flying differs. The expo is printed as the
+                // curve uses it, clamped to 0..1.
+                const float e = g_host_pad_expo < 0.0f ? 0.0f
+                              : (g_host_pad_expo > 1.0f ? 1.0f : g_host_pad_expo);
+                printf("input: xinput pad %d connected, layout fps, invert %d, expo %.2f\n",
+                       s_pad, g_host_pad_invert ? 1 : 0, (double)e);
+                fflush(stdout);
+                break;
+            }
+        }
+        if (s_pad < 0) return;
+    } else if (s_xget((DWORD)s_pad, &st) != ERROR_SUCCESS) {
+        printf("input: xinput pad %d disconnected\n", s_pad);
+        fflush(stdout);
+        s_pad = -1;
+        s_pad_search = millis();
+        return;
+    }
+
+    if (!host_window_focused()) return;
+    s_gp = st.Gamepad;
+}
+
+static bool pad_btn(WORD b) { return (s_gp.wButtons & b) != 0; }
+
+// A trigger past its deadzone, 0..1.
+static float pad_trigger(BYTE v) {
+    if (v <= PAD_TRIG_DEAD) return 0.0f;
+    return (float)(v - PAD_TRIG_DEAD) / (255.0f - (float)PAD_TRIG_DEAD);
+}
+
+// The right stick past its deadzone, as a direction and an amount: `t` is 0 at the
+// edge of the deadzone and 1 at the rim, and (ux, uy) is the unit direction with +y UP
+// the stick. Returns false inside the deadzone. A radial deadzone, so a diagonal push
+// is neither favoured nor cut.
+static bool pad_rstick(float* ux, float* uy, float* t) {
+    const float x = (float)s_gp.sThumbRX, y = (float)s_gp.sThumbRY;
+    const float mag = sqrtf(x * x + y * y);
+    if (mag <= (float)PAD_RSTICK_DEAD) return false;
+    float k = (mag - (float)PAD_RSTICK_DEAD) / (32767.0f - (float)PAD_RSTICK_DEAD);
+    if (k > 1.0f) k = 1.0f;     // a 360 stick reaches past 32767 on the diagonals
+    *ux = x / mag;
+    *uy = y / mag;
+    *t  = k;
+    return true;
+}
+
 bool vg_touch_init(void) { return true; }
 
 int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     if (!xs || !ys) return 0;
     int n = 0;
+
+    // FIRST, and once: vg_input reads the buttons and the menu key after this in the
+    // same frame, and they answer from this reading.
+    pad_poll();
 
     // CAPTURE THE POINTER ONLY WHILE THE SHIP IS BEING FLOWN.
     //
@@ -203,8 +359,42 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     const uint8_t sf = vg_state_flags(vg.state);
     const bool flying = (sf & (VGS_LIVE | VGS_ENGINE)) != 0u;
     host_window_set_capture(flying);
+    s_pad_menu = !flying;
+
+    // How long since the last frame, for everything here that moves at a rate.
+    static uint32_t s_prev_us = 0;
+    const uint32_t now = micros();
+    float dt = s_prev_us ? (float)(now - s_prev_us) * 1e-6f : 0.0f;
+    s_prev_us = now;
+    if (dt < 0.0f || dt > 0.1f) dt = 0.0f;   // a stall must not fling the thumb
 
     if (!flying) {
+        // THE PAD IN A MENU IS A MOUSE. The menus are taps and nothing else, so the
+        // right stick moves the pointer and A is the button; a tap is then built from
+        // it exactly as from a click. The pointer is put where the stick says and read
+        // back as the click position, so the mouse and the pad can share it.
+        //
+        // A sub-pixel remainder is carried, or a gentle push would never move at all.
+        static float s_menu_x = -1.0f, s_menu_y = -1.0f;
+        float ux, uy, t;
+        if (pad_rstick(&ux, &uy, &t)) {
+            float px, py;
+            if (!host_mouse_logical(&px, &py)) { px = SCR_W * 0.5f; py = SCR_H * 0.5f; }
+            // Follow the real pointer unless it is still where the stick left it,
+            // which keeps the fraction and lets the mouse take over at any moment.
+            if (s_menu_x < 0.0f || fabsf(px - s_menu_x) > 1.5f || fabsf(py - s_menu_y) > 1.5f) {
+                s_menu_x = px; s_menu_y = py;
+            }
+            const float v = PAD_POINTER_PX_PER_SEC * t * t * dt;
+            s_menu_x += ux * v;
+            s_menu_y -= uy * v;     // stick up is pointer up
+            if (s_menu_x < 0.0f) s_menu_x = 0.0f;
+            if (s_menu_y < 0.0f) s_menu_y = 0.0f;
+            if (s_menu_x > SCR_W - 1.0f) s_menu_x = SCR_W - 1.0f;
+            if (s_menu_y > SCR_H - 1.0f) s_menu_y = SCR_H - 1.0f;
+            host_mouse_place(s_menu_x, s_menu_y);
+        }
+
         // A TAP IS A CONTACT THAT ARRIVES, STAYS STILL AND LIFTS. vg_game.cpp
         // builds one that way: menu_edge records where it went down, every frame
         // it is held adds to a travel total, and the tap only counts if the
@@ -226,8 +416,8 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         s_ox = s_oy = 0.0f;
 
         float mx = 0, my = 0;
-        if (host_key_down(VK_LBUTTON) && host_window_focused()
-            && host_mouse_logical(&mx, &my)) {
+        if ((host_key_down(VK_LBUTTON) || pad_btn(XINPUT_GAMEPAD_A))
+            && host_window_focused() && host_mouse_logical(&mx, &my)) {
             xs[n] = (uint16_t)mx;
             ys[n] = (uint16_t)my;
             n++;
@@ -235,12 +425,6 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         g_in_touch = (uint32_t)n;
         return n;
     }
-
-    static uint32_t s_prev_us = 0;
-    const uint32_t now = micros();
-    float dt = s_prev_us ? (float)(now - s_prev_us) * 1e-6f : 0.0f;
-    s_prev_us = now;
-    if (dt < 0.0f || dt > 0.1f) dt = 0.0f;   // a stall must not fling the thumb
 
     // ---- the steering finger ----
     // THE THUMB IS A RUNNING TOTAL OF RAW COUNTS, held and never decayed: hold
@@ -250,6 +434,71 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     host_mouse_take_delta(&mdx, &mdy);
     s_ox += mdx * g_host_stick_sens;
     s_oy += mdy * g_host_stick_sens;
+
+    // THE RIGHT STICK IS THE THUMB'S POSITION, both axes, and it wins while it is pushed.
+    //
+    // ONE STICK FOR THE WHOLE AIM, the way a shooter or a drone is flown: up is nose
+    // up, sideways is the turn. Splitting pitch onto the left stick the Ace Combat way
+    // was tried and the author found it "too confusing" -- the aim is one thing, so it
+    // belongs under one thumb. The left stick does nothing in flight, because the
+    // triggers are already the throttle.
+    //
+    // A stick is positional by nature and springs back, which is exactly the thumb on
+    // glass that STEER_MODE 0 models -- so its deflection is the thumb's offset from
+    // the centre, read fresh every frame. When it springs back the thumb is centred
+    // once, and from there the mouse can move it again: the two share one thumb.
+    //
+    // A ROUND DEADZONE AND A ROUND CURVE, taken on how far the stick is pushed and
+    // not on each axis. Per axis, a push that is nearly but not quite sideways would
+    // lose its small pitch to the deadzone and the curve, and fine corrections on a
+    // diagonal would be dead. The direction is kept exactly; only the distance is
+    // shaped.
+    //
+    // STARTING AT THE EDGE OF THE GAME'S OWN DEADZONE. vg_input already has an 8 px
+    // deadzone and its v*v*0.45 + v*0.55 curve, and those are the board's feel. So the
+    // first movement past the stick's deadzone lands just past the game's, and mapping
+    // the rim to 0 px would have stacked a second dead band on the first.
+    //
+    // TWO CURVES, ON PURPOSE. pad_curve (--pad-expo) shapes the stick first, and then
+    // vg_input's curve runs on top of it, the same as for a finger. The pad's own curve
+    // is there because a centimetre of stick throw is far less travel than a thumb on
+    // glass, and with only the game's curve the middle of the stick read as twitchy.
+    // --pad-expo 0 takes the pad's curve out and leaves the game's alone.
+    //
+    // PITCH, BY DEFAULT, THE FPS WAY: push up and the nose comes up, the same as the
+    // mouse. The flight-stick way -- pull back to climb -- is --pad-invert. See
+    // g_host_pad_invert.
+    //
+    // A finger dragged UP the glass is nose up, so up the stick is -y on the panel.
+    static bool s_pad_steer = false;
+    const float pad_lim = (float)STEER_RANGE - 1.0f;
+    {
+        float ux = 0.0f, uy = 0.0f, t = 0.0f;
+        const bool stick = pad_rstick(&ux, &uy, &t);
+        // ROLL IS THE SHOULDERS. The board rolls by holding a button and pushing the
+        // thumb sideways, so a shoulder presses that button (see vg_buttons_read) and
+        // puts the thumb at the side stop -- the board's own control with the thumb at
+        // full deflection. Pitch stays on its stick, because a roll you cannot pull
+        // through is only a rotation of the view; see vg_input.cpp. Both together
+        // cancel.
+        const int roll = (pad_btn(XINPUT_GAMEPAD_RIGHT_SHOULDER) ? 1 : 0)
+                       - (pad_btn(XINPUT_GAMEPAD_LEFT_SHOULDER)  ? 1 : 0);
+        if (stick || roll != 0) {
+            // How far, through the curve, from the edge of the game's deadzone to the
+            // stop; then in the stick's own direction.
+            const float r  = stick ? (float)STEER_DEADZONE
+                                   + (pad_lim - (float)STEER_DEADZONE) * pad_curve(t)
+                                   : 0.0f;
+            const float px = ux * r;
+            const float py = uy * r;
+            s_ox = (roll != 0) ? (float)roll * pad_lim : px;
+            s_oy = py * (g_host_pad_invert ? 1.0f : -1.0f);
+            s_pad_steer = true;
+        } else if (s_pad_steer) {
+            s_ox = s_oy = 0.0f;
+            s_pad_steer = false;
+        }
+    }
 
     // CLAMPED BY LENGTH, not per axis, and just inside the distance that would
     // make vg_input's origin start sliding. Clamping each axis on its own would
@@ -302,10 +551,20 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // a keyboard work here at all: with no contact in the strip the game leaves
     // the throttle exactly where it was, so tapping sets a cruise and holding
     // sweeps it -- the same behaviour as a thumb that arrives, drags and leaves.
+    //
+    // THE PAD'S TRIGGERS ARE W AND S WITH A DIAL ON THEM: right opens the throttle,
+    // left closes it. A trigger springs back, so it cannot be a throttle position --
+    // letting go would cut the engine. It drives the thumb at a rate instead, the
+    // keys' rate at a full pull and proportionally less below it, and released leaves
+    // the throttle where it is. Both pulled together cancel.
     const bool up   = host_key_down('W') || host_key_down(VK_UP);
     const bool down = host_key_down('S') || host_key_down(VK_DOWN);
-    if (up != down) {
-        s_ty += (up ? -1.0f : 1.0f) * HOST_THROTTLE_PX_PER_SEC * dt;
+    float rate = (up ? 1.0f : 0.0f) - (down ? 1.0f : 0.0f)
+               + pad_trigger(s_gp.bRightTrigger) - pad_trigger(s_gp.bLeftTrigger);
+    if (rate >  1.0f) rate =  1.0f;
+    if (rate < -1.0f) rate = -1.0f;
+    if (rate != 0.0f) {
+        s_ty -= rate * HOST_THROTTLE_PX_PER_SEC * dt;
         if (s_ty < (float)THROTTLE_TOP) s_ty = (float)THROTTLE_TOP;
         if (s_ty > (float)THROTTLE_BOT) s_ty = (float)THROTTLE_BOT;
         if (n < VG_MAX_TOUCH) {
@@ -318,7 +577,8 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     // ---- the rear-view patch ----
     // Held like a button on the device, and the patch only claims a contact that
     // ARRIVED inside it -- which a fresh one always has.
-    if (host_key_down('R') && n < VG_MAX_TOUCH) {
+    // The pad's Y is the same held contact.
+    if ((host_key_down('R') || pad_btn(XINPUT_GAMEPAD_Y)) && n < VG_MAX_TOUCH) {
         xs[n] = (uint16_t)((REAR_ZONE_X0 + REAR_ZONE_X1) / 2);
         ys[n] = (uint16_t)((REAR_ZONE_Y0 + REAR_ZONE_Y1) / 2);
         n++;
@@ -342,7 +602,10 @@ uint8_t vg_buttons_read(void) {
     // here: the mouse is already the aiming hand, so putting the trigger under
     // it is the arrangement a PC player expects and it changes nothing the game
     // can see.
-    if (host_key_down(VK_SPACE) || host_key_down(VK_LBUTTON)) m |= VG_BTN_A;
+    // On the pad it is B, the Ace Combat missile button -- in flight only, because B
+    // in a menu is "back" (see vg_pmu_pwr_pressed).
+    if (host_key_down(VK_SPACE) || host_key_down(VK_LBUTTON)
+        || (!s_pad_menu && pad_btn(XINPUT_GAMEPAD_B))) m |= VG_BTN_A;
     // The roll button, held on the right mouse button. Both hands are already
     // where they need to be -- the roll is a thing you do WITH the steering, not
     // instead of it, and reaching for a key to modify the hand that is already
@@ -351,6 +614,10 @@ uint8_t vg_buttons_read(void) {
     // Held, the mouse stops steering and starts rolling. That is the board's
     // control, not an approximation of it.
     if (host_key_down(VK_RBUTTON)) m |= VG_BTN_B;
+    // A shoulder on the pad, which also puts the thumb at the side stop -- see the
+    // roll note in vg_touch_read. Both together cancel there, so they cancel here.
+    if (pad_btn(XINPUT_GAMEPAD_LEFT_SHOULDER) != pad_btn(XINPUT_GAMEPAD_RIGHT_SHOULDER))
+        m |= VG_BTN_B;
     return m;
 }
 
@@ -363,8 +630,20 @@ bool vg_pmu_init(void) { return true; }
 bool vg_pmu_pwr_pressed(void) {
     // An EDGE, like the device's interrupt register: the game asks whether the
     // key has been pressed since it last asked, not whether it is down.
+    // On the pad: Start, anywhere. And B as well while the frame is not flying, as
+    // "back one step" in a menu -- but not in flight, where one stray press would
+    // pause the fight.
+    //
+    // B IS ALSO THE MISSILE BUTTON, so a B that is still held when the fight ends must
+    // not arrive in the menu as "back". A B held in flight is blocked until it is let
+    // go, and only a fresh press in the menu counts.
     static bool prev = false;
-    const bool now = host_key_down(VK_ESCAPE) || host_key_down(VK_RETURN);
+    static bool b_block = false;
+    if (!s_pad_menu)                         b_block = pad_btn(XINPUT_GAMEPAD_B);
+    else if (!pad_btn(XINPUT_GAMEPAD_B))     b_block = false;
+    const bool now = host_key_down(VK_ESCAPE) || host_key_down(VK_RETURN)
+                  || pad_btn(XINPUT_GAMEPAD_START)
+                  || (s_pad_menu && !b_block && pad_btn(XINPUT_GAMEPAD_B));
     const bool hit = now && !prev;
     prev = now;
     return hit;

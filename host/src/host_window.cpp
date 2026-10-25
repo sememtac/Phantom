@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "cfg_display.h"   // SCR_W, SCR_H -- the panel this window stands in for
 #include "host_present_d3d.h"   // a flip-model swap chain, when the machine gives one
@@ -439,6 +440,72 @@ bool host_key_down(int vk) {
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
+// THE RECORDING CLOCK, drawn by the desktop and nobody else.
+//
+// A 5x7 font of the dozen glyphs it needs, rather than the game's own type: the
+// game draws into the panel, and anything drawn there is part of the frame that a
+// replay reproduces and a shot captures. This is a note to the person at the
+// keyboard about the FILE being written, so it belongs to the window.
+static char s_overlay[40] = "";
+
+void host_window_set_overlay(const char* text) {
+    if (!text) text = "";
+    strncpy(s_overlay, text, sizeof(s_overlay) - 1);
+    s_overlay[sizeof(s_overlay) - 1] = 0;
+}
+
+static const uint8_t* glyph(char c) {
+    static const uint8_t G[][7] = {
+        {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E}, {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
+        {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F}, {0x1F,0x02,0x04,0x02,0x01,0x11,0x0E},
+        {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02}, {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},
+        {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E}, {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
+        {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E}, {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},
+        {0x00,0x0C,0x0C,0x00,0x0C,0x0C,0x00},   // :
+        {0x00,0x01,0x02,0x04,0x08,0x10,0x00},   // /
+        {0x1E,0x11,0x11,0x1E,0x14,0x12,0x11},   // R
+        {0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F},   // E
+        {0x0E,0x11,0x10,0x10,0x10,0x11,0x0E},   // C
+    };
+    if (c >= '0' && c <= '9') return G[c - '0'];
+    switch (c) {
+        case ':': return G[10];
+        case '/': return G[11];
+        case 'R': return G[12];
+        case 'E': return G[13];
+        case 'C': return G[14];
+        default:  return nullptr;           // a space, or anything it cannot draw
+    }
+}
+
+// Top right, on a black plate so it reads over a lit canopy. Two panel pixels to a
+// font pixel: at the default window scale that is about the size of the HUD's
+// own small type.
+static void stamp_overlay(uint32_t* px) {
+    const int n = (int)strlen(s_overlay);
+    if (!n || !px) return;
+    const int k = 2, adv = 6 * k;
+    const int w = n * adv - k, h = 7 * k;
+    const int x0 = SCR_W - w - 10, y0 = 10;
+    for (int y = y0 - 4; y < y0 + h + 4; y++)
+        for (int x = x0 - 5; x < x0 + w + 5; x++)
+            if (x >= 0 && x < SCR_W && y >= 0 && y < SCR_H) px[y * SCR_W + x] = 0;
+    for (int i = 0; i < n; i++) {
+        const uint8_t* g = glyph(s_overlay[i]);
+        if (!g) continue;
+        for (int r = 0; r < 7; r++)
+            for (int c = 0; c < 5; c++) {
+                if (!(g[r] & (0x10 >> c))) continue;
+                for (int dy = 0; dy < k; dy++)
+                    for (int dx = 0; dx < k; dx++) {
+                        const int x = x0 + i * adv + c * k + dx, y = y0 + r * k + dy;
+                        if (x >= 0 && x < SCR_W && y >= 0 && y < SCR_H)
+                            px[y * SCR_W + x] = 0xFFB000;   // amber, as the panel
+                    }
+            }
+    }
+}
+
 void host_window_present(const uint16_t* panel) {
     // ONE FRAME TO A FILE, when --shot asks for it.
     //
@@ -509,6 +576,7 @@ void host_window_present(const uint16_t* panel) {
         const uint32_t B = (b << 3) | (b >> 2);
         s_bgra[i] = (R << 16) | (G << 8) | B;
     }
+    stamp_overlay(s_bgra);
 
     const HostView v = view_of(s_hwnd);
 

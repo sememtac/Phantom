@@ -303,6 +303,18 @@ Fly and Record write the output of the game to a log. Fly writes it in
 name and `.log`. When the game window closes, the log of the console shows the
 bouts that were won and lost.
 
+Record has a target in minutes for the hull: 20 for session A and 10 for session B
+by default. The target is a total for all the sittings of that hull. The console
+adds up the earlier sittings and gives the game the two numbers. "count earlier
+sittings" selects which sittings to add: only the controller sittings, or all of
+them. A sitting is a controller sitting if its log says that a controller was
+connected.
+
+While the game records, the top-right corner shows the total, for example
+`REC 12:31 / 20:00`. Only live flight counts: pauses, menus and the wreck do not.
+When the total gets to the target, the game stops by itself. If the hull already
+has its minutes, Record tells you and does not start the game.
+
 The recordings list shows who flew each recording. `you` is the author (`a_*`,
 `m1_*`). `bot` is a dump of the bot (`d_*`). `old` marks a recording that was made
 before the weapon rules of 2026-09-04. The last column is the number of bouts in

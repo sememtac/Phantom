@@ -33,3 +33,11 @@
 // Mouse DPI varies by a factor of ten between devices, so no single number is
 // right for everybody. --sens overrides it.
 extern float g_host_stick_sens;
+
+// WHICH WAY THE PAD'S RIGHT STICK PITCHES. Off, the default, is the FPS way and the
+// mouse's: push up and the nose comes up. On is the flight-stick convention: push
+// forward for nose down, pull back to climb. --pad-invert turns it on. See the pad
+// note in vg_port_win32.cpp.
+extern bool g_host_pad_invert;
+// How soft the middle of the pad's right stick is, 0..1. --pad-expo sets it.
+extern float g_host_pad_expo;

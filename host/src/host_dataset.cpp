@@ -32,6 +32,12 @@ static const char MAGIC[4] = { 'P', 'H', 'O', 'B' };
 
 bool host_dataset_open(const char* path);
 void host_dataset_close(void);
+uint32_t host_dataset_rows(void);
+
+// Rows written so far. One row is one live frame with somebody to fight, so this
+// over 60 is the recorded time in seconds -- the same count the trainer reads.
+// Pauses, menus and the wreck write nothing, so they do not count.
+uint32_t host_dataset_rows(void) { return s_rows; }
 
 static void tap(const VgObs* o, const VgInput* in) {
     if (!s_f || !o || !in) return;

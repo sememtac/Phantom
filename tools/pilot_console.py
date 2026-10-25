@@ -105,6 +105,8 @@ M1_A_LEVEL = {0: 1, 1: 0, 2: 1, 3: 1}     # hull -> level: JRN, but RAW for LANC
 # Session B is the human baseline: PRO, and a fresh bout each time.
 M1_B_LEVEL = 2
 M1_B_BOUT = 180
+# Minutes of live flight to record for each hull: the default of the target field.
+M1_TARGET = {"A": "20", "B": "10"}
 
 # The weapon rules changed until 2026-09-04 and are frozen since then. A recording
 # made before that date shows flying under other rules.
@@ -146,6 +148,33 @@ def who_flew(name):
     if name.startswith("d_"):
         return "bot"
     return "?"
+
+
+def obs_minutes(path):
+    """Minutes of live flight in a recording. One row is one frame at 60 a second."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+        if len(head) < 12:
+            return 0.0
+        packed = int.from_bytes(head[4:8], "little")
+        act_n = int.from_bytes(head[8:12], "little")
+        row = 4 * ((packed & 0xFFFF) + act_n)
+        return (os.path.getsize(path) - 12) / row / 3600.0 if row else 0.0
+    except OSError:
+        return 0.0
+
+
+def on_controller(log):
+    """True if the log of a sitting says that a game controller was connected."""
+    try:
+        with open(log, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return False
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        raw = raw.decode("utf-16", errors="replace").encode("utf-8")
+    return b"xinput" in raw and b"connected" in raw
 
 
 def bout_count(log):
@@ -262,8 +291,18 @@ class Console(tk.Tk):
         self._button(rec, "Record", self.do_record)
         self.rec_session = self._choice(
             rec, "M1 session", ["A imitation", "B baseline"], "A imitation",
-            self.show_plan)
+            self.session_changed)
         self.rec_hull = self._choice(rec, "hull", CLASSES, CLASSES[0], self.show_plan)
+        # THE TARGET IS FOR THE HULL, not for the sitting. The game shows the
+        # running total in the corner and stops when the total gets there.
+        rec2 = tk.Frame(right, bg=BG)
+        rec2.pack(fill="x", pady=(2, 2))
+        tk.Label(rec2, text="        ", bg=BG, font=MONO).pack(side="left")
+        self.rec_target = self._field(rec2, "target minutes", M1_TARGET["A"], 5)
+        self.rec_target.bind("<KeyRelease>", lambda _e: self.show_plan())
+        self.rec_count = self._choice(rec2, "count earlier sittings",
+                                      ["controller", "all"], "controller",
+                                      self.show_plan)
         self.lbl_plan = tk.Label(right, text="", bg=BG, fg=DIM, font=MONO,
                                  anchor="w", justify="left")
         self.lbl_plan.pack(fill="x", pady=(0, 8))
@@ -486,8 +525,50 @@ class Console(tk.Tk):
     def show_plan(self):
         """Show the command line that Record will use, before it runs."""
         args, obs, log = self.m1_plan(peek=True)
-        self.lbl_plan.config(text="Record: phantom.exe %s\n        output to %s"
-                             % (" ".join(args), os.path.relpath(log, ROOT)))
+        ctrl, every = self.recorded()
+        self.lbl_plan.config(
+            text="Record: phantom.exe %s\n        output to %s\n"
+                 "        %s, session %s: %.1f min recorded on the controller, "
+                 "%.1f min in all"
+                 % (" ".join(args), os.path.relpath(log, ROOT), self.rec_hull.get(),
+                    self.rec_session.get()[0], ctrl, every))
+
+    def session_changed(self):
+        """Put the default target of the session in the target field."""
+        self.rec_target.delete(0, "end")
+        self.rec_target.insert(0, M1_TARGET[self.rec_session.get()[0]])
+        self.show_plan()
+
+    def recorded(self):
+        """Minutes already recorded for the hull and session that are selected.
+
+        Give (on the controller, in all). A sitting is on the controller if its log
+        says that a controller was connected.
+        """
+        import re
+        lower = self.rec_hull.get().lower()
+        if self.rec_session.get().startswith("A"):
+            level = LEVELS[M1_A_LEVEL[CLASSES.index(self.rec_hull.get())]].lower()
+            pat = re.compile(r"^m1_%s_%s_\d+\.obs$" % (lower, level))
+        else:
+            pat = re.compile(r"^m1_%s_pro(_\d+)?\.obs$" % lower)
+        ctrl = every = 0.0
+        if os.path.isdir(CAPTURES):
+            for f in os.listdir(CAPTURES):
+                if not pat.match(f):
+                    continue
+                m = obs_minutes(os.path.join(CAPTURES, f))
+                every += m
+                if on_controller(os.path.join(CAPTURES, f[:-4] + ".log")):
+                    ctrl += m
+        return ctrl, every
+
+    def target(self):
+        """The target in minutes from the field, or 0 if the field is not a number."""
+        try:
+            return max(0.0, float(self.rec_target.get()))
+        except ValueError:
+            return 0.0
 
     # ---- the buttons -----------------------------------------------------
     def do_inspect(self):
@@ -653,6 +734,13 @@ class Console(tk.Tk):
             args = ["--scale", "3", "--gym", str(hull), "0", "--rotate",
                     "--pilot", str(M1_B_LEVEL), "--bouts", str(M1_B_BOUT),
                     "--dump", "captures\\%s.obs" % stem]
+        # THE CLOCK. Added at the end, so the flags of the plan come first and stay
+        # the same. The game counts its own rows on top of what is already done.
+        goal = self.target()
+        if goal > 0.0:
+            ctrl, every = self.recorded()
+            done = ctrl if self.rec_count.get() == "controller" else every
+            args += ["--record-minutes", "%g" % goal, "--record-done", "%.3f" % done]
         return args, os.path.join(CAPTURES, stem + ".obs"), \
             os.path.join(CAPTURES, stem + ".log")
 
@@ -662,11 +750,22 @@ class Console(tk.Tk):
         if plan is None:
             return
         args, obs, log = plan
+        goal = self.target()
+        if goal > 0.0:
+            ctrl, every = self.recorded()
+            done = ctrl if self.rec_count.get() == "controller" else every
+            if done >= goal:
+                self.say("%s session %s has %.1f of %.0f minutes already. To record "
+                         "more, set a larger target." % (self.rec_hull.get(),
+                         self.rec_session.get()[0], done, goal), "ok")
+                return
+            self.say("The game stops by itself at %.0f minutes. The clock in the top "
+                     "right shows the total. Pauses and menus do not count." % goal)
         if self.rec_session.get().startswith("B"):
             self.say("Session B: each bout restarts the moment it ends. You do not "
                      "see the kill or your wreck. Count it from the .log only.")
         self.say("Stay in the fight. Do not go to the menus or the course. "
-                 "Close the game window to stop.")
+                 "You can close the game window to stop early.")
         self.play(args, log, "the recording")
         self.after(500, self.show_plan)
 

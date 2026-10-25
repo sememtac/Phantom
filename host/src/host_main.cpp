@@ -16,6 +16,7 @@ int g_host_shot = 0;   // --shot N: write frame N to shot.ppm, then carry on
 void host_random_seed(uint32_t seed);
 #include "vg_prof.h"
 void host_dataset_close(void);
+uint32_t host_dataset_rows(void);
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -172,6 +173,8 @@ int main(int argc, char** argv) {
     bool rotate = false;   // a different opponent class on every respawn
     int  pilot  = -1;      // which of the five characters the gym sends
     float bouts = 0.0f;    // --bouts S: score the gym as separate bouts; 0 = off
+    float rec_target = 0.0f;   // --record-minutes M: stop the recording at M minutes
+    float rec_done   = 0.0f;   // --record-done D: minutes recorded in earlier sittings
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -179,6 +182,11 @@ int main(int argc, char** argv) {
             const float v = (float)atof(argv[++i]);
             if (v > 0.0f) g_host_stick_sens = v;
         }
+        // The pad's pitch the flight-stick way: pull back to climb. See host_opts.h.
+        else if (!strcmp(argv[i], "--pad-invert")) g_host_pad_invert = true;
+        // The softness of the middle of the pad's right stick. See host_opts.h.
+        else if (!strcmp(argv[i], "--pad-expo") && i + 1 < argc)
+            g_host_pad_expo = (float)atof(argv[++i]);
         // THE SEAT, FLOWN BY THE GAME. Enter the gym as usual and watch the two
         // of them fight -- which is the point: a matchup nobody is holding can be
         // run for as long as it takes to mean something.
@@ -207,6 +215,15 @@ int main(int argc, char** argv) {
         // a different fight. This restarts the match the moment a bout ends, both
         // ships whole, and calls a bout that runs S seconds a draw.
         else if (!strcmp(argv[i], "--bouts") && i + 1 < argc) bouts = (float)atof(argv[++i]);
+        // A RECORDING THAT KNOWS WHEN IT IS DONE. The target is the TOTAL for the
+        // hull across sittings, and --record-done says how much of it is already in
+        // earlier files, so the clock in the corner is the hull's running total and
+        // the sitting ends itself when the total is reached. The pilot console works
+        // both numbers out from captures/ and passes them.
+        else if (!strcmp(argv[i], "--record-minutes") && i + 1 < argc)
+            rec_target = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--record-done") && i + 1 < argc)
+            rec_done = (float)atof(argv[++i]);
         // The opponent is flown by the network. This is the one you fight.
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
         else if (!strcmp(argv[i], "--no-enemy-net")) vg_enemy_net = false;
@@ -287,9 +304,21 @@ int main(int argc, char** argv) {
                    "               deflection costs 115/F counts of hand\n"
                    "               movement, about 3 cm at 1000 DPI by default.\n"
                    "               Raw counts, so it is never accelerated.\n"
+                   "  --pad-invert Xbox pad: pull the right stick back to pitch\n"
+                   "               the nose UP, like a flight stick. The default\n"
+                   "               is the FPS way: push up to point the nose up.\n"
+                   "  --pad-expo F Xbox pad: how soft the middle of the right\n"
+                   "               stick is, 0 to 1. 0 is linear. Default 0.6. A\n"
+                   "               full push always gives the full turn.\n"
                    "  --headless   no window drawn, fixed 1/60 step. Runs as fast\n"
                    "               as the machine allows.\n"
                    "  --dump F     write (observation, action) pairs to F.\n"
+                   "               The recorded time shows in the top right.\n"
+                   "  --record-minutes M  with --dump: stop when the total\n"
+                   "               reaches M minutes. Only live flight counts:\n"
+                   "               not pauses, menus or the wreck.\n"
+                   "  --record-done D  minutes already recorded in earlier\n"
+                   "               sittings, counted toward M. Default 0.\n"
                    "  --scripted   fly the hand-written policy, not the network.\n"
                    "  --seed N     fix the random seed. Two runs with the same seed\n"
                    "               are the same fight, which is what a measured\n"
@@ -450,6 +479,26 @@ int main(int argc, char** argv) {
     while (host_window_pump()) {
         loop();
         flown++;
+        // THE RECORDING CLOCK, and the cut-off. Rows over 60 is seconds of live
+        // flight, which is exactly what the trainer will read.
+        if (dump) {
+            const float mins = rec_done + (float)host_dataset_rows() / 3600.0f;
+            const int   secs = (int)(mins * 60.0f);
+            char clock[40];
+            if (rec_target > 0.0f) {
+                const int ts = (int)(rec_target * 60.0f + 0.5f);
+                snprintf(clock, sizeof(clock), "REC %d:%02d / %d:%02d",
+                         secs / 60, secs % 60, ts / 60, ts % 60);
+            } else {
+                snprintf(clock, sizeof(clock), "REC %d:%02d", secs / 60, secs % 60);
+            }
+            host_window_set_overlay(clock);
+            if (rec_target > 0.0f && mins >= rec_target) {
+                printf("record: %.2f of %.2f minutes, so the sitting ends here\n",
+                       (double)mins, (double)rec_target);
+                break;
+            }
+        }
         // THE NEXT BOUT, AT ONCE AND WHOLE. See --bouts. Between frames, so the
         // frame that decided the bout has finished and printed it already. A
         // gym_arm plus a state change is exactly what the gym does itself after

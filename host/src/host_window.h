@@ -20,6 +20,11 @@ bool host_window_quit_requested(void);
 // One frame, in PANEL bytes: 480x480 of the same byte-swapped RGB565 the device
 // puts on the wire. Converts, blits, and paces to the device's frame rate.
 void host_window_present(const uint16_t* panel);
+// A line of text in the top-right corner of the picture, or "" for none. Stamped
+// into the WINDOW's copy of the frame on its way to the screen, so the game never
+// sees it: the panel buffer, --shot and every replay are untouched. Digits, ':',
+// '/', ' ' and the letters of "REC" only.
+void host_window_set_overlay(const char* text);
 
 // ---- raw input -------------------------------------------------------------
 

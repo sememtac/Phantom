@@ -80,6 +80,12 @@ $args += $inc
 $args += '/Fo"obj/"'
 $args += ($src | ForEach-Object { "`"$_`"" })
 $args += "/link", "user32.lib", "gdi32.lib", "winmm.lib", "dwmapi.lib", "d3d11.lib", "dxgi.lib", "d3dcompiler.lib"
+# Load the DLLs above from System32 only. Without this flag, Windows looks for
+# winmm.dll, d3d11.dll and d3dcompiler_47.dll in the folder of the exe first.
+# Then a DLL with one of those names, put beside a downloaded phantom.exe, runs
+# inside the signed program. Windows 10 1607 and later obey the flag. Earlier
+# versions ignore it.
+$args += "/DEPENDENTLOADFLAG:0x800"
 $args += "/OUT:`"$build\phantom.exe`""
 
 $cmdline = "cl " + ($args -join " ")
@@ -136,7 +142,7 @@ CONTROLS
 
   Mouse                 Steer
   Left mouse button     Fire a missile
-  Hold Shift            Roll. The mouse rolls the ship instead of turning it.
+  Hold right button     Roll. The mouse rolls the ship instead of turning it.
   W and S               Throttle up and down
   Hold C                Centre the steering. Let go to steer again.
   Hold R                Look behind
@@ -145,6 +151,24 @@ CONTROLS
 
 The window takes the mouse pointer while you fly. You get it back when you
 pause, when you open a menu, and when you move to another window.
+
+XBOX 360 CONTROLLER
+
+  Right stick           Aim. Push up to point the nose up.
+  Right trigger         Open the throttle. Let go to keep the setting.
+  Left trigger          Close the throttle
+  B                     Fire a missile
+  Hold LB or RB         Roll left or roll right
+  Hold Y                Look behind
+  Start                 Menu, and pause during a fight
+  In a menu             Right stick moves the pointer. A selects. B goes back.
+
+The controller works together with the mouse and the keyboard. If you hold B
+when a fight ends, release it before you press B in the menu. The left stick
+does nothing in flight. To make forward on the right stick point the nose down,
+as on the stick of an aeroplane, run:
+
+    phantom.exe --pad-invert
 
 The window is 960x960. For a larger window, run it from a command prompt:
 
