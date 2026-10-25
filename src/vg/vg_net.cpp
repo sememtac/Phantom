@@ -23,6 +23,7 @@
 // fast_tanh below.
 // ===========================================================================
 
+#if !(defined(PILOT_NET_INT8) && PILOT_NET_INT8)   // the float network's pieces
 // A rational approximation of tanh, accurate to about 1e-3 over the range that
 // matters, which is far inside the noise of a policy that was fitted to a human
 // hand.
@@ -51,6 +52,44 @@ static void layer(const float* w, const float* b, const float* in, float* out,
         out[j] = activate ? fast_tanh(a) : a;
     }
 }
+#endif
+
+#if defined(PILOT_NET_INT8) && PILOT_NET_INT8
+// ---- THE INT8 PIECES. See tools/quantize_pilot.py, which is their reference. ----
+//
+// WHY INT8, MEASURED: the float network cost about 1 ms a call in a live fight on
+// the board against 233 us warm, because its 28 KB of weights live in flash and the
+// canopy pushes them out of the shared data cache every frame. The int8 arrays are
+// DRAM_ATTR, in internal RAM, so the cache never sees them -- 4 KB for a 32-wide
+// network -- and an int8 multiply is cheaper than a float one besides.
+
+// A sum to a tanh-table index: round(acc * m / 2^SHIFT), held inside the table. The
+// product needs 64 bits. The shift of a negative number rounds down, the same as
+// the reference's.
+static inline int q_index(int32_t acc, int32_t m) {
+    int64_t v = ((int64_t)acc * (int64_t)m + ((int64_t)1 << (PILOT_Q_SHIFT - 1)))
+                >> PILOT_Q_SHIFT;
+    if (v < -PILOT_Q_LUT_HALF) v = -PILOT_Q_LUT_HALF;
+    if (v >  PILOT_Q_LUT_HALF) v =  PILOT_Q_LUT_HALF;
+    return (int)v + PILOT_Q_LUT_HALF;
+}
+
+// One layer's sums: acc = W * in + b, all integer. Row by row, as the float layer.
+static void qlayer(const int8_t* w, const int32_t* b, const int8_t* in, int32_t* acc,
+                   int n_in, int n_out) {
+    for (int j = 0; j < n_out; j++) {
+        const int8_t* row = w + (size_t)j * n_in;
+        int32_t a = b[j];
+        for (int i = 0; i < n_in; i++) a += (int32_t)row[i] * (int32_t)in[i];
+        acc[j] = a;
+    }
+}
+
+// The activation: each sum through its own scale into the tanh table.
+static void qact(const int32_t* acc, const int32_t* m, int8_t* out, int n) {
+    for (int j = 0; j < n; j++) out[j] = PILOT_Q_TANH[q_index(acc[j], m[j])];
+}
+#endif
 
 bool vg_net_available(void) { return true; }
 
@@ -91,6 +130,27 @@ bool vg_net_knows_ship(const float* obs, int n) {
 #endif
 }
 
+#if defined(PILOT_FIRE_PER_SHIP) && PILOT_FIRE_PER_SHIP && defined(PILOT_SHIPS) && PILOT_SHIPS > 0
+// WHICH SHIP THIS IS, as a row of PILOT_SHIP_SEEN: the first within the tolerance
+// on every field, which is the gate's own rule, or -1. It chooses the trigger cut.
+// One cut for all four ships made the LANCE network almost never fire and the
+// CHARIOT fire too often; see PILOT_FIRE_T_SHIP in the header.
+static int ship_row(const float* obs, int n) {
+    const float* mine = obs + (n - PILOT_SHIP_N);
+    for (int k = 0; k < PILOT_SHIPS; k++) {
+        const float* row = PILOT_SHIP_SEEN + (size_t)k * PILOT_SHIP_N;
+        bool same = true;
+        for (int i = 0; i < PILOT_SHIP_N && same; i++) {
+            float d = mine[i] - row[i];
+            if (d < 0.0f) d = -d;
+            if (d > PILOT_SHIP_TOL) same = false;
+        }
+        if (same) return k;
+    }
+    return -1;
+}
+#endif
+
 void vg_net_run(const float* obs, int n, VgNetOut* out) {
     if (!obs || !out) return;
 
@@ -121,6 +181,75 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
         return;
     }
 
+#if defined(PILOT_NET_INT8) && PILOT_NET_INT8
+    // ---- THE INT8 NETWORK ------------------------------------------------
+    //
+    // Integer from the observation to the outputs, and it has to be: the same
+    // arithmetic runs in tools/quantize_pilot.py, and the PC's --net-check holds
+    // the two to the same bits. A float anywhere in the middle would let the
+    // compiler fuse or reorder it differently on each platform.
+    //
+    // THE INPUT FIRST BECOMES AN INTEGER BY A POWER OF TWO, which is exact in
+    // float and truncates the same way everywhere. Everything after it is integer.
+    int8_t x[PILOT_NET_IN];
+    for (int i = 0; i < PILOT_NET_IN; i++) {
+        const int32_t xi = (int32_t)(obs[i] * (float)PILOT_Q_IN_FIX);
+        int64_t v = (int64_t)(xi - PILOT_Q_IN_MEAN[i]) * (int64_t)PILOT_Q_IN_MUL[i];
+        v = (v + ((int64_t)1 << (PILOT_Q_IN_SHIFT - 1))) >> PILOT_Q_IN_SHIFT;
+        if (v < -127) v = -127;
+        if (v >  127) v =  127;
+        x[i] = (int8_t)v;
+    }
+
+    int8_t  qh0[PILOT_NET_H];
+    int8_t  qh1[PILOT_NET_H];
+    int32_t acc[PILOT_NET_H > PILOT_NET_OUT ? PILOT_NET_H : PILOT_NET_OUT];
+    qlayer(PILOT_QW0, PILOT_QB0, x,   acc, PILOT_NET_IN, PILOT_NET_H);
+    qact(acc, PILOT_QM0, qh0, PILOT_NET_H);
+    qlayer(PILOT_QW1, PILOT_QB1, qh0, acc, PILOT_NET_H, PILOT_NET_H);
+    qact(acc, PILOT_QM1, qh1, PILOT_NET_H);
+#  if defined(PILOT_NET_L) && PILOT_NET_L >= 3
+    qlayer(PILOT_QW2, PILOT_QB2, qh1, acc, PILOT_NET_H, PILOT_NET_H);
+    qact(acc, PILOT_QM2, qh0, PILOT_NET_H);
+    qlayer(PILOT_QW3, PILOT_QB3, qh0, acc, PILOT_NET_H, PILOT_NET_OUT);
+    const int32_t* m_out = PILOT_QM3;
+#  else
+    qlayer(PILOT_QW2, PILOT_QB2, qh1, acc, PILOT_NET_H, PILOT_NET_OUT);
+    const int32_t* m_out = PILOT_QM2;
+#  endif
+
+    // The same squashes as the float network, read off the same table: pitch and
+    // yaw are tanh, the throttle is tanh of half the value. The conversion to
+    // float is one multiply by a constant, which rounds the same everywhere.
+    const float k127 = 1.0f / 127.0f;
+    out->pitch    = (float)PILOT_Q_TANH[q_index(acc[0], m_out[0])] * k127;
+    out->yaw      = (float)PILOT_Q_TANH[q_index(acc[1], m_out[1])] * k127;
+    out->throttle = 0.5f * ((float)PILOT_Q_TANH[q_index(acc[2], PILOT_Q_M_HALF)] * k127 + 1.0f);
+    // The trigger cut, moved onto the sum: sigmoid(z) >= T is z >= logit(T).
+    int32_t cut = PILOT_Q_FIRE_ACC;
+#  if defined(PILOT_FIRE_PER_SHIP) && PILOT_FIRE_PER_SHIP && defined(PILOT_SHIPS) && PILOT_SHIPS > 0
+    {
+        const int k = ship_row(obs, n);
+        if (k >= 0) cut = PILOT_Q_FIRE_ACC_SHIP[k];
+    }
+#  endif
+    out->fire = (acc[3] >= cut);
+    out->mode = -1;
+#  if defined(PILOT_MODE_N) && PILOT_MODE_N > 0
+    if (PILOT_MODE_N == VG_MODE_N && PILOT_NET_OUT >= 4 + PILOT_MODE_N) {
+        // Each sum has its own scale, so the comparison is of sum * scale. The
+        // first of two equal scores wins, as in the reference.
+        int best = 0;
+        int64_t bs = (int64_t)acc[4] * (int64_t)PILOT_Q_M_MODE[0];
+        for (int i = 1; i < PILOT_MODE_N; i++) {
+            const int64_t s = (int64_t)acc[4 + i] * (int64_t)PILOT_Q_M_MODE[i];
+            if (s > bs) { bs = s; best = i; }
+        }
+        out->mode = best;
+    }
+#  endif
+    out->valid = true;
+#else
     float x[PILOT_NET_IN];
     for (int i = 0; i < PILOT_NET_IN; i++)
         x[i] = (obs[i] - PILOT_IN_MEAN[i]) / PILOT_IN_STD[i];
@@ -147,7 +276,14 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     out->throttle = 0.5f * (fast_tanh(0.5f * y[2]) + 1.0f);   // = sigmoid(y)
 #if PILOT_NET_OUT > 3
     const float pfire = 0.5f * (fast_tanh(0.5f * y[3]) + 1.0f);
-    out->fire = (pfire >= PILOT_FIRE_T);
+    float cut = PILOT_FIRE_T;
+#  if defined(PILOT_FIRE_PER_SHIP) && PILOT_FIRE_PER_SHIP && defined(PILOT_SHIPS) && PILOT_SHIPS > 0
+    {
+        const int k = ship_row(obs, n);
+        if (k >= 0) cut = PILOT_FIRE_T_SHIP[k];
+    }
+#  endif
+    out->fire = (pfire >= cut);
 #else
     out->fire = false;
 #endif
@@ -172,4 +308,5 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
     }
 #endif
     out->valid    = true;
+#endif   // PILOT_NET_INT8
 }

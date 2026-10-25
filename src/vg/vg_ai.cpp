@@ -303,6 +303,12 @@ static void update_aim(Ship* s, float dt) {
 // This is not a tuning constant -- it is which of the two has the memory the
 // class needs, and the tactic enum already says which class is which.
 static bool net_owns_phase(ShipTactic t) {
+    // UNLESS THE NETWORK IS TOLD IT OWNS THEM ALL. The table above was measured on
+    // a network with no plan; the author's direction since is that every hull is
+    // flown by the network inside its class's style, so this is the switch that
+    // asks whether a network with a plan can fly the two classes it was kept out
+    // of. Off unless a harness turns it on: see vg_net_all_phases.
+    if (vg_net_all_phases) return true;
     switch (t) {
         case TACTIC_SLASH:      // CHARIOT -- the pass has to be set up
         case TACTIC_STANDOFF:   // BALLISTA -- the whole class is holding a range

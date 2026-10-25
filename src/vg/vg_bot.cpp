@@ -230,6 +230,8 @@ bool vg_enemy_net = false;
 // second and a half. What the recordings hold is a person actually getting out
 // of the way, and the network had seen all of it and was never once asked.
 bool vg_net_owns_survival = true;
+// See vg_bot.h. Off: the shipped behaviour.
+bool vg_net_all_phases = false;
 // HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
 //
 // A dial rather than a constant because the first attempt to settle this compared
@@ -408,8 +410,12 @@ static float s_ent[MAX_ENEMIES] = { 0 };
 static bool  s_enf[MAX_ENEMIES] = { false };
 static bool  s_enf_ok[MAX_ENEMIES] = { false };
 
+// See vg_bot.h. Off: the network's trigger decides, the shipped behaviour.
+bool vg_net_rules_trigger = false;
+
 int vg_bot_enemy_fire(int index) {
     if (index < 0 || index >= MAX_ENEMIES) return -1;
+    if (vg_net_rules_trigger) return -1;   // no opinion: the class discipline fires
     if (!s_enf_ok[index]) return -1;
     return s_enf[index] ? 1 : 0;
 }

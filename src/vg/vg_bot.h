@@ -244,6 +244,16 @@ extern bool vg_enemy_net;
 // is a decision already taken and not a steering problem.
 extern bool vg_net_owns_survival;
 
+// THE NETWORK ASKED EARLY FOR EVERY CLASS, CHARIOT AND BALLISTA INCLUDED.
+//
+// net_owns_phase in vg_ai.cpp keeps the network out of the early slot for the two
+// classes whose tactic carries a shape (the slash, the standoff), so those two only
+// meet it inside the tactic phase -- where a network with a mode head mostly picks
+// which hand-written behaviour flies, and its own stick flies only in PRESS. True
+// lifts that, so all four hulls are flown the same way. False, the shipped default,
+// until a measurement says otherwise.
+extern bool vg_net_all_phases;
+
 // See vg_bot.cpp. 0 disables the heading bias; 0.45 was the first guess.
 extern float vg_agg_bias;
 
@@ -280,6 +290,13 @@ void vg_bot_modes_reset(void);
 // Does the policy want THIS enemy to shoot, on the frame it last flew them?
 // 1 yes, 0 no, -1 nothing has an opinion and the class discipline stands.
 int vg_bot_enemy_fire(int index);
+
+// THE NETWORK FLIES, THE RULES SHOOT. True makes vg_bot_enemy_fire say -1 always,
+// so the class's own firing discipline decides, with the network still flying.
+// Measured (M2, 2026-10-24): the imitation network's trigger fired a LANCE about a
+// tenth as often as the rules on the same lock time, because its "yes" frames
+// rarely fall on a held lock. False, the shipped default.
+extern bool vg_net_rules_trigger;
 
 // ...and decide. Reads nothing but the observation.
 //

@@ -6,6 +6,8 @@
 #include "host_window.h"
 #include "host_opts.h"
 #include "vg_bot.h"
+#include "vg_net.h"
+#include <math.h>
 #include "vg_game.h"
 #include "vg_ship.h"
 #include "vg_tourney.h"
@@ -169,6 +171,7 @@ int main(int argc, char** argv) {
     int gym_mine = -1, gym_theirs = -1;   // <0 = do not skip the menus
     const HostScreen* screen = nullptr;    // --screen NAME: where to start
     const char* dump = nullptr;           // where to write (obs, action) pairs
+    const char* net_check = nullptr;      // --net-check F: run the network on F and stop
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
     int  pilot  = -1;      // which of the five characters the gym sends
@@ -232,6 +235,10 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--net-survival")) vg_net_owns_survival = true;
         else if (!strcmp(argv[i], "--no-net-survival")) vg_net_owns_survival = false;
         else if (!strcmp(argv[i], "--no-modes")) vg_bot_modes_on = false;
+        // The network asked early for every class. See vg_net_all_phases.
+        else if (!strcmp(argv[i], "--net-all-phases")) vg_net_all_phases = true;
+        // The network flies, the class's own rules decide when to fire.
+        else if (!strcmp(argv[i], "--net-rules-trigger")) vg_net_rules_trigger = true;
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
@@ -291,6 +298,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
             vg_agg_bias = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--net-check") && i + 1 < argc) net_check = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
             gym_mine   = atoi(argv[++i]);
@@ -325,6 +333,14 @@ int main(int argc, char** argv) {
                    "               comparison needs.\n"
                    "  --no-net-survival  hand missiles and tails back to the\n"
                    "               hand-written rules.\n"
+                   "  --net-rules-trigger  with --enemy-net: the network flies,\n"
+                   "               and the class's own rules decide when to fire.\n"
+                   "  --net-check F  run the network on each row of the --dump\n"
+                   "               file F, print its outputs as integers, and\n"
+                   "               stop. For tools/quantize_pilot.py --check.\n"
+                   "  --net-all-phases  with --enemy-net: the network is asked\n"
+                   "               first for every class. Without it, CHARIOT\n"
+                   "               and BALLISTA meet it only inside their tactic.\n"
                    "  --show-ai    name the layer flying the nearest opponent, on\n"
                    "               the panel. NET is the trained pilot.\n"
                    "  --demo       let the title screen play the game to itself.\n"
@@ -367,6 +383,34 @@ int main(int argc, char** argv) {
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
+    }
+
+    // THE NETWORK AND NOTHING ELSE, on recorded observations. Each row of a --dump
+    // file goes through vg_net_run, the firmware's own forward pass, and the outputs
+    // are printed as the integers they were made from. tools/quantize_pilot.py
+    // --check compares them with its reference, which must agree to the bit. No
+    // window and no game: the network is a pure function of the observation.
+    if (net_check) {
+        FILE* f = fopen(net_check, "rb");
+        if (!f) { fprintf(stderr, "could not open %s\n", net_check); return 1; }
+        uint32_t hdr[3] = { 0, 0, 0 };
+        if (fread(hdr, sizeof(uint32_t), 3, f) != 3) { fclose(f); return 1; }
+        const int obs_n = (int)(hdr[1] & 0xFFFF), act_n = (int)hdr[2];
+        float row[256];
+        if (obs_n + act_n > 256) { fclose(f); return 1; }
+        long done = 0;
+        while ((!frames || done < frames) &&
+               fread(row, sizeof(float), (size_t)(obs_n + act_n), f) == (size_t)(obs_n + act_n)) {
+            VgNetOut o;
+            o.valid = false;
+            vg_net_run(row, obs_n, &o);
+            if (!o.valid) { printf("invalid\n"); break; }
+            printf("q %ld %ld %ld %d %d\n", lroundf(o.pitch * 127.0f), lroundf(o.yaw * 127.0f),
+                   lroundf((o.throttle * 2.0f - 1.0f) * 127.0f), o.fire ? 1 : 0, o.mode);
+            done++;
+        }
+        fclose(f);
+        return 0;
     }
 
     vg_headless = headless;
