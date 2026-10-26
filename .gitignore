@@ -26,11 +26,17 @@ tools/*.spec
 # Tracking one would conflict on every open and reveal nothing.
 *~lock~
 
+# Affinity Designer documents stay on disk too, at the author's request. They are the
+# sources the art is drawn in, not build inputs -- the build reads the PNGs -- and each
+# one is several megabytes. HUD.af was tracked until 2026-10-26; its old copy is still
+# in the history, and the current one is not in the repo.
+*.af
+
 # The design document is ours, not the public repo's. It stays on disk.
 #
 # It is a directory now, not one file -- DESIGN.md is the index and the parts live under
-# design/notes/. Both lines are needed: design/ IS tracked (the canopy drawings and HUD.af
-# are build inputs), so the notes have to be excluded by name or they would ride in with it.
+# design/notes/. Both lines are needed: design/ IS tracked (the canopy drawings are build
+# inputs), so the notes have to be excluded by name or they would ride in with it.
 DESIGN.md
 design/notes/
 # THE REGRESSION HARNESS HAS TO SURVIVE, and it did not.

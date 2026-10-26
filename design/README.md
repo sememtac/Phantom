@@ -9,10 +9,13 @@ images. `tools/canopy_set.py` reads the PNGs here and writes tables into
 | `canopy/<ship>.png` | a cockpit. Magenta marks a pane, cyan marks the lit outline, alpha holds the activation regions. |
 | `canopy/<ship>_tint.png` | which metal of that cockpit takes the player's colour |
 | `hudSrc.psd` | the editable source for the HUD layout |
-| `HUD.af` | Affinity Designer source |
 | `HUD.png` | HUD layout reference |
 | `selection/SelectionConcept2.png` | the console chassis. Colour marks the holes the game draws in. |
 | `selection/SelectionConcept1.png` | the layout it was drawn to. Reference only. |
+
+The Affinity Designer documents (`.af` files) are not in the repository. The build
+does not use them, and each one is several megabytes. They stay on the author's
+computer, and git ignores them.
 
 ## Console chassis drawings
 

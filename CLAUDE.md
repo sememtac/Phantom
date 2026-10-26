@@ -21,8 +21,9 @@ game changes; do not add it back to the repository.
 It is a DIRECTORY now. `DESIGN.md` is a short index and the document itself lives in
 five parts under `design/notes/` -- `design.md`, `performance.md`, `features.md`,
 `systems.md` and `refactor.md`. Both paths are in `.gitignore`, and both lines are
-needed, because `design/` itself IS tracked: the canopy drawings and `HUD.af` are
-build inputs and they ride in that directory.
+needed, because `design/` itself IS tracked: the canopy drawings are build inputs
+and they ride in that directory. The Affinity Designer documents (`*.af`) do not:
+since 2026-10-26 they stay on the author's disk, ignored, at the author's request.
 
 The index says which part takes what. The short version: a measured number goes to
 `performance.md`, a session log goes to `refactor.md` with a date on it, and a
