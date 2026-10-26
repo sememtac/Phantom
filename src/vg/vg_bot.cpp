@@ -232,6 +232,8 @@ bool vg_enemy_net = false;
 bool vg_net_owns_survival = true;
 // See vg_bot.h. Off: the shipped behaviour.
 bool vg_net_all_phases = false;
+// See vg_bot.h. Off: the shipped behaviour.
+bool vg_net_corner_exempt = false;
 // HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
 //
 // A dial rather than a constant because the first attempt to settle this compared
@@ -646,11 +648,12 @@ static void trigger(const VgObs* o, VgInput* in, bool may_fire, int judged) {
 static bool net_act(const VgObs* o, VgInput* in, float dt) {
     if (!vg_bot_net || !vg_net_available()) return false;
     if (o->v[OBS_WALL] < BOT_WALL_TURN || !o->has_target) return false;
-    if (!vg_net_knows_ship(o->v, VG_OBS_N)) return false;
+    // The SEAT's network: in self-play it is not the opponents' (see vg_net_use).
+    if (!vg_net_knows_ship_seat(o->v, VG_OBS_N)) return false;
 
     const uint32_t t0 = micros();
     VgNetOut n;
-    vg_net_run(o->v, VG_OBS_N, &n);
+    vg_net_run_seat(o->v, VG_OBS_N, &n);
     vg_bot_net_us = micros() - t0;
     // Billed to `ai` in the telemetry, which is the counter for the only
     // THINKING in the frame and read 0 before a network existed.

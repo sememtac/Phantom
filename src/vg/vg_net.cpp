@@ -54,6 +54,21 @@ static void layer(const float* w, const float* b, const float* in, float* out,
 }
 #endif
 
+#if (defined(PILOT_NET_INT8) && PILOT_NET_INT8) || defined(_MSC_VER)
+// One int8 layer's sums: acc = W * in + b, all integer. Row by row, as the float
+// layer. Used by the compiled int8 network and by a loaded one alike -- so it is
+// built where either of them is.
+static void qlayer(const int8_t* w, const int32_t* b, const int8_t* in, int32_t* acc,
+                   int n_in, int n_out) {
+    for (int j = 0; j < n_out; j++) {
+        const int8_t* row = w + (size_t)j * n_in;
+        int32_t a = b[j];
+        for (int i = 0; i < n_in; i++) a += (int32_t)row[i] * (int32_t)in[i];
+        acc[j] = a;
+    }
+}
+#endif
+
 #if defined(PILOT_NET_INT8) && PILOT_NET_INT8
 // ---- THE INT8 PIECES. See tools/quantize_pilot.py, which is their reference. ----
 //
@@ -74,17 +89,6 @@ static inline int q_index(int32_t acc, int32_t m) {
     return (int)v + PILOT_Q_LUT_HALF;
 }
 
-// One layer's sums: acc = W * in + b, all integer. Row by row, as the float layer.
-static void qlayer(const int8_t* w, const int32_t* b, const int8_t* in, int32_t* acc,
-                   int n_in, int n_out) {
-    for (int j = 0; j < n_out; j++) {
-        const int8_t* row = w + (size_t)j * n_in;
-        int32_t a = b[j];
-        for (int i = 0; i < n_in; i++) a += (int32_t)row[i] * (int32_t)in[i];
-        acc[j] = a;
-    }
-}
-
 // The activation: each sum through its own scale into the tanh table.
 static void qact(const int32_t* acc, const int32_t* m, int8_t* out, int n) {
     for (int j = 0; j < n; j++) out[j] = PILOT_Q_TANH[q_index(acc[j], m[j])];
@@ -93,7 +97,113 @@ static void qact(const int32_t* acc, const int32_t* m, int8_t* out, int n) {
 
 bool vg_net_available(void) { return true; }
 
-bool vg_net_knows_ship(const float* obs, int n) {
+// ---- A LOADED INT8 NETWORK. See VgNetQ in vg_net.h. ------------------------
+//
+// The compiled int8 network's arithmetic, step for step, over a struct instead of
+// the header's macros. Kept apart from the compiled code on purpose: the compiled
+// path is what the board runs and has been checked bit for bit, and a loaded one
+// only ever runs on the desktop. --net-check holds this one to the same reference.
+//
+// DESKTOP ONLY, and compiled out of the firmware the same way vg_raster.cpp keeps
+// its overflow report out: the board never loads a network from a file, so code
+// that cannot run there is not carried there.
+#if defined(_MSC_VER)
+#include "vg_bot.h"   // VG_OBS_N, for the bound below
+
+static const VgNetQ* s_use[2] = { nullptr, nullptr };   // [0] opponents, [1] the seat
+
+void vg_net_use(int seat, const VgNetQ* q) {
+    if (seat == 0 || seat == 1) s_use[seat] = q;
+}
+
+static inline int gq_index(const VgNetQ* q, int32_t acc, int32_t m) {
+    int64_t v = ((int64_t)acc * (int64_t)m + ((int64_t)1 << (q->shift - 1))) >> q->shift;
+    if (v < -q->lut_half) v = -q->lut_half;
+    if (v >  q->lut_half) v =  q->lut_half;
+    return (int)v + q->lut_half;
+}
+
+// The first ship within the tolerance on every field, or -1: the gate's rule.
+static int gq_ship_row(const VgNetQ* q, const float* obs, int n) {
+    const float* mine = obs + (n - q->ship_n);
+    for (int k = 0; k < q->n_ships; k++) {
+        const float* row = q->ships + (size_t)k * q->ship_n;
+        bool same = true;
+        for (int i = 0; i < q->ship_n && same; i++) {
+            float d = mine[i] - row[i];
+            if (d < 0.0f) d = -d;
+            if (d > q->ship_tol) same = false;
+        }
+        if (same) return k;
+    }
+    return -1;
+}
+
+static bool gq_knows(const VgNetQ* q, const float* obs, int n) {
+    if (!obs || n < q->n_in) return false;
+    if (q->n_ships <= 0) return true;
+    return gq_ship_row(q, obs, n) >= 0;
+}
+
+// The stack arrays below are VG_NET_Q_MAX long and the loader holds n_in to the
+// observation's width, so this is what keeps x[] in bounds. Checked here rather than
+// trusted, because the observation is the thing that grows.
+static_assert(VG_OBS_N <= VG_NET_Q_MAX, "the observation is wider than a loaded network may be");
+
+static void gq_run(const VgNetQ* q, const float* obs, int n, VgNetOut* out) {
+    if (n != q->n_in) { out->valid = false; return; }
+    int8_t  x[VG_NET_Q_MAX], ha[VG_NET_Q_MAX], hb[VG_NET_Q_MAX];
+    int32_t acc[VG_NET_Q_MAX];
+    for (int i = 0; i < q->n_in; i++) {
+        const int32_t xi = (int32_t)(obs[i] * (float)q->in_fix);
+        // In 64 bits: in_mean comes from a file, and an int32 difference of two
+        // values from different places could overflow. The same numbers as the
+        // compiled path whenever it does not.
+        int64_t v = ((int64_t)xi - (int64_t)q->in_mean[i]) * (int64_t)q->in_mul[i];
+        v = (v + ((int64_t)1 << (q->in_shift - 1))) >> q->in_shift;
+        if (v < -127) v = -127;
+        if (v >  127) v =  127;
+        x[i] = (int8_t)v;
+    }
+    const int8_t* in = x;
+    int in_n = q->n_in;
+    for (int l = 0; l < q->n_l; l++) {
+        int8_t* h = (l & 1) ? hb : ha;
+        qlayer(q->w[l], q->b[l], in, acc, in_n, q->nh);
+        for (int j = 0; j < q->nh; j++) h[j] = q->lut[gq_index(q, acc[j], q->m[l][j])];
+        in = h;
+        in_n = q->nh;
+    }
+    qlayer(q->w[q->n_l], q->b[q->n_l], in, acc, in_n, q->n_out);
+    const int32_t* m_out = q->m[q->n_l];
+
+    const float k127 = 1.0f / 127.0f;
+    out->pitch    = (float)q->lut[gq_index(q, acc[0], m_out[0])] * k127;
+    out->yaw      = (float)q->lut[gq_index(q, acc[1], m_out[1])] * k127;
+    out->throttle = 0.5f * ((float)q->lut[gq_index(q, acc[2], q->m_half)] * k127 + 1.0f);
+    int32_t cut = q->fire_acc;
+    if (q->fire_acc_ship) {
+        const int k = gq_ship_row(q, obs, n);
+        if (k >= 0) cut = q->fire_acc_ship[k];
+    }
+    out->fire = (acc[3] >= cut);
+    out->mode = -1;
+    if (q->m_mode && q->n_mode == VG_MODE_N && q->n_out >= 4 + q->n_mode) {
+        int best = 0;
+        int64_t bs = (int64_t)acc[4] * (int64_t)q->m_mode[0];
+        for (int i = 1; i < q->n_mode; i++) {
+            const int64_t s = (int64_t)acc[4 + i] * (int64_t)q->m_mode[i];
+            if (s > bs) { bs = s; best = i; }
+        }
+        out->mode = best;
+    }
+    out->valid = true;
+}
+#endif   // _MSC_VER: the loaded network
+
+// ---- THE COMPILED NETWORK ---------------------------------------------------
+
+static bool compiled_knows_ship(const float* obs, int n) {
 #if defined(PILOT_SHIPS) && PILOT_SHIPS > 0
 #  ifndef PILOT_SHIP_TOL
 #    define PILOT_SHIP_TOL 0.005f   // an older header that did not record one
@@ -151,7 +261,7 @@ static int ship_row(const float* obs, int n) {
 }
 #endif
 
-void vg_net_run(const float* obs, int n, VgNetOut* out) {
+static void compiled_run(const float* obs, int n, VgNetOut* out) {
     if (!obs || !out) return;
 
     // A LAYOUT MISMATCH IS SILENT, so it is checked. The observation and the
@@ -309,4 +419,41 @@ void vg_net_run(const float* obs, int n, VgNetOut* out) {
 #endif
     out->valid    = true;
 #endif   // PILOT_NET_INT8
+}
+
+// ---- WHICH NETWORK FLIES ----------------------------------------------------
+//
+// A loaded network for that seat if the desktop gave one, and the compiled one
+// otherwise. The seat never borrows the opponents' loaded network: in self-play
+// the two sides are two different networks, and silently sharing one would make
+// every such measurement a mirror match.
+
+bool vg_net_knows_ship(const float* obs, int n) {
+#if defined(_MSC_VER)
+    if (s_use[0]) return gq_knows(s_use[0], obs, n);
+#endif
+    return compiled_knows_ship(obs, n);
+}
+
+void vg_net_run(const float* obs, int n, VgNetOut* out) {
+    if (!obs || !out) return;
+#if defined(_MSC_VER)
+    if (s_use[0]) { gq_run(s_use[0], obs, n, out); return; }
+#endif
+    compiled_run(obs, n, out);
+}
+
+bool vg_net_knows_ship_seat(const float* obs, int n) {
+#if defined(_MSC_VER)
+    if (s_use[1]) return gq_knows(s_use[1], obs, n);
+#endif
+    return compiled_knows_ship(obs, n);
+}
+
+void vg_net_run_seat(const float* obs, int n, VgNetOut* out) {
+    if (!obs || !out) return;
+#if defined(_MSC_VER)
+    if (s_use[1]) { gq_run(s_use[1], obs, n, out); return; }
+#endif
+    compiled_run(obs, n, out);
 }

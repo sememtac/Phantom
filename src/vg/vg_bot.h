@@ -254,6 +254,11 @@ extern bool vg_net_owns_survival;
 // until a measurement says otherwise.
 extern bool vg_net_all_phases;
 
+// THE CORNERED PULL LEAVES THE NETWORK ALONE. Below half hull, vg_ai.cpp bends the
+// heading of whatever flew the frame toward the player. True exempts frames the
+// network flew. False, the shipped default, until the training says which is right.
+extern bool vg_net_corner_exempt;
+
 // See vg_bot.cpp. 0 disables the heading bias; 0.45 was the first guess.
 extern float vg_agg_bias;
 

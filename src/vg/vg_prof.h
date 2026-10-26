@@ -326,6 +326,8 @@ extern uint32_t g_ai_steer[];   // [class * STEER_KINDS + kind]
 extern uint32_t g_ai_frames[];
 extern uint32_t g_ai_locked[];
 extern uint32_t g_ai_armed[];
+extern uint32_t g_ai_lockon[];  // new passes: a lock taken after 2 s or more without one
+extern uint32_t g_ai_dead[];    // frames after more than 4 s without a lock
 extern float    g_ai_aim[];
 extern float    g_ai_aimk[];  // [class * STEER_KINDS + kind]
 extern float    g_ai_range[];

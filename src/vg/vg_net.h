@@ -83,3 +83,50 @@ bool vg_net_knows_ship(const float* obs, int n);
 
 // Run it. `n` is the caller's observation width and is checked, not trusted.
 void vg_net_run(const float* obs, int n, VgNetOut* out);
+
+// ===========================================================================
+// AN INT8 NETWORK IN MEMORY, FOR THE DESKTOP'S HARNESS.
+//
+// Training by evolution flies hundreds of candidate networks, and rebuilding the
+// game for each one is out of the question. So the desktop can load an int8
+// network from a file (tools/quantize_pilot.py --blob) and fly it in place of the
+// compiled one -- for the opponents, for the player's seat, or for both with two
+// different networks, which is what self-play needs.
+//
+// THE SAME ARITHMETIC AS THE COMPILED INT8 NETWORK, written over this struct
+// instead of over the header's macros, and held to the same reference.
+//
+// DESKTOP ONLY. The firmware never loads a network from a file, so the loaded
+// path is compiled out of it (the _MSC_VER guard in vg_net.cpp, as for the
+// raster's overflow report), and on the board vg_net_use has no definition at
+// all: a call to it from board code fails at link time instead of doing nothing.
+// ===========================================================================
+#include <stdint.h>
+
+#define VG_NET_Q_MAX 128   // the widest layer a loaded network may have
+
+struct VgNetQ {
+    int     n_in, nh, n_l, n_out, n_mode;   // n_l hidden layers, then the output
+    int     in_fix, in_shift, shift, lut_half;
+    int32_t m_half, fire_acc;
+    const int32_t* in_mean;                 // n_in
+    const int32_t* in_mul;                  // n_in
+    const int8_t*  w[4];                    // layer l: rows x cols, row by row
+    const int32_t* b[4];
+    const int32_t* m[4];
+    const int32_t* m_mode;                  // n_mode, or null
+    const int8_t*  lut;                     // 2 * lut_half + 1
+    int            n_ships, ship_n;
+    float          ship_tol;
+    const float*   ships;                   // n_ships * ship_n
+    const int32_t* fire_acc_ship;           // n_ships, or null for the one cut
+};
+
+// Fly the opponents (seat 0) or the player's seat (seat 1) with this network.
+// Null goes back to the compiled one. The caller keeps `q` alive. Desktop only.
+void vg_net_use(int seat, const VgNetQ* q);
+
+// The player's seat's own gate and forward pass: the seat's loaded network if it
+// has one, otherwise the compiled one -- never the opponents' loaded network.
+bool vg_net_knows_ship_seat(const float* obs, int n);
+void vg_net_run_seat(const float* obs, int n, VgNetOut* out);

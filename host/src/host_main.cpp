@@ -19,6 +19,7 @@ void host_random_seed(uint32_t seed);
 #include "vg_prof.h"
 void host_dataset_close(void);
 uint32_t host_dataset_rows(void);
+const VgNetQ* host_net_load(const char* path);   // host_netfile.cpp
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -172,6 +173,8 @@ int main(int argc, char** argv) {
     const HostScreen* screen = nullptr;    // --screen NAME: where to start
     const char* dump = nullptr;           // where to write (obs, action) pairs
     const char* net_check = nullptr;      // --net-check F: run the network on F and stop
+    const char* net_file = nullptr;       // --net-file F: the opponents fly this network
+    const char* seat_net_file = nullptr;  // --seat-net-file F: the player's seat flies this one
     bool headless = false;
     bool rotate = false;   // a different opponent class on every respawn
     int  pilot  = -1;      // which of the five characters the gym sends
@@ -239,6 +242,11 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--net-all-phases")) vg_net_all_phases = true;
         // The network flies, the class's own rules decide when to fire.
         else if (!strcmp(argv[i], "--net-rules-trigger")) vg_net_rules_trigger = true;
+        // The cornered pull leaves frames the network flew alone. See vg_net_corner_exempt.
+        else if (!strcmp(argv[i], "--net-corner-exempt")) vg_net_corner_exempt = true;
+        // NETWORKS FROM FILES, for the training harness: see host_netfile.cpp.
+        else if (!strcmp(argv[i], "--net-file") && i + 1 < argc) net_file = argv[++i];
+        else if (!strcmp(argv[i], "--seat-net-file") && i + 1 < argc) seat_net_file = argv[++i];
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
@@ -335,6 +343,13 @@ int main(int argc, char** argv) {
                    "               hand-written rules.\n"
                    "  --net-rules-trigger  with --enemy-net: the network flies,\n"
                    "               and the class's own rules decide when to fire.\n"
+                   "  --net-corner-exempt  with --enemy-net: the cornered pull\n"
+                   "               does not bend frames the network flew.\n"
+                   "  --net-file F  the opponents fly the int8 network in F\n"
+                   "               (tools/quantize_pilot.py --blob) instead of\n"
+                   "               the one built into the game.\n"
+                   "  --seat-net-file F  the same for the player's seat, with\n"
+                   "               --bot and without --scripted.\n"
                    "  --net-check F  run the network on each row of the --dump\n"
                    "               file F, print its outputs as integers, and\n"
                    "               stop. For tools/quantize_pilot.py --check.\n"
@@ -390,6 +405,21 @@ int main(int argc, char** argv) {
     // are printed as the integers they were made from. tools/quantize_pilot.py
     // --check compares them with its reference, which must agree to the bit. No
     // window and no game: the network is a pure function of the observation.
+    // THE LOADED NETWORKS, before anything flies -- --net-check included, so the
+    // check can test a file as well as the compiled network. A file that does not
+    // load stops the run: a harness that silently flew the compiled network instead
+    // would score the wrong candidate.
+    if (net_file) {
+        const VgNetQ* q = host_net_load(net_file);
+        if (!q) return 1;
+        vg_net_use(0, q);
+    }
+    if (seat_net_file) {
+        const VgNetQ* q = host_net_load(seat_net_file);
+        if (!q) return 1;
+        vg_net_use(1, q);
+    }
+
     if (net_check) {
         FILE* f = fopen(net_check, "rb");
         if (!f) { fprintf(stderr, "could not open %s\n", net_check); return 1; }
@@ -606,6 +636,11 @@ int main(int argc, char** argv) {
                     printf(" %s=%.0f%%/%.2f", K[k], g_ai_steer[c * STEER_KINDS + k] * f,
                            g_ai_aimk[c * STEER_KINDS + k]
                            / (float)g_ai_steer[c * STEER_KINDS + k]);
+            // At the END of the line, so the readers of the fields before it do
+            // not move: new passes (a lock after 2 s without one), and the share of
+            // frames more than 4 s past the last lock.
+            printf(" | reengage %lu dead %.0f%%", (unsigned long)g_ai_lockon[c],
+                   g_ai_dead[c] * f);
             printf("\n");
         }
     }

@@ -547,6 +547,18 @@ uint32_t g_ai_steer[(int)SHIP_CLASSES * STEER_KINDS] = { 0 };
 uint32_t g_ai_frames[SHIP_CLASSES]  = { 0 };
 uint32_t g_ai_locked[SHIP_CLASSES]  = { 0 };
 uint32_t g_ai_armed[SHIP_CLASSES]   = { 0 };   // lock + round + cool trigger at once
+// RE-ENGAGEMENT, counted for the training harness. A pilot who pulls out of a dead
+// circle and turns back in earns a NEW lock; one who keeps circling earns none and
+// sits without a lock for a long time. So: how many locks were taken after at least
+// AI_REENGAGE_GAP without one -- a new pass, not a lock flickering at the edge of
+// the cone, which measured 8 to 25 a minute -- and how many frames came after more
+// than AI_DEAD_TIME without one. Counting only: nothing here changes a decision.
+uint32_t g_ai_lockon[SHIP_CLASSES]  = { 0 };
+uint32_t g_ai_dead[SHIP_CLASSES]    = { 0 };
+#define AI_DEAD_TIME     4.0f
+#define AI_REENGAGE_GAP  2.0f
+static bool  s_census_locked[MAX_ENEMIES] = { false };
+static float s_census_nolock[MAX_ENEMIES] = { 0.0f };
 float    g_ai_aim[SHIP_CLASSES]     = { 0 };   // summed cos(aim, target)
 float    g_ai_range[SHIP_CLASSES]   = { 0 };   // summed range, world units
 // ...and the same aim, split by what the pilot was DOING at the time. A mean over
@@ -1012,6 +1024,17 @@ void vg_update_enemy(Ship* s, int index, float dt) {
             if (s->steer_by < STEER_KINDS) g_ai_steer[c * STEER_KINDS + s->steer_by]++;
             if (s->locked) g_ai_locked[c]++;
             if (s->locked && s->rounds > 0 && s->fire_cd <= 0.0f) g_ai_armed[c]++;
+            if (index >= 0 && index < MAX_ENEMIES) {
+                if (s->locked) {
+                    if (!s_census_locked[index] && s_census_nolock[index] >= AI_REENGAGE_GAP)
+                        g_ai_lockon[c]++;
+                    s_census_nolock[index] = 0.0f;
+                } else {
+                    s_census_nolock[index] += dt;
+                }
+                if (s_census_nolock[index] > AI_DEAD_TIME) g_ai_dead[c]++;
+                s_census_locked[index] = s->locked;
+            }
             const float rr = vlen(s->pos);
             g_ai_range[c] += rr;
             if (rr > 1.0f) {
@@ -1043,9 +1066,15 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // SKIPPED FOR THE THINGS THAT OUTRANK A FIGHT. Not into a wall, not while
     // breaking from a missile, and not during a suicide run, which is already
     // this taken to its end.
+    // AND NOT THE NETWORK, WHEN A HARNESS SAYS SO. The pull bends whatever flew this
+    // frame 55% toward the player -- the network's heading included, which is the
+    // opposite of the "manoeuvre to stay alive" the author asked of it. Whether the
+    // network should be exempt is a measurement, so it is a switch first: see
+    // vg_net_corner_exempt.
     if (s->hull < sp->hull * ENEMY_CORNERED_HULL &&
         s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE &&
-        s->steer_by != STEER_RAM) {
+        s->steer_by != STEER_RAM &&
+        !(vg_net_corner_exempt && s->steer_by == STEER_NET)) {
         const Vec3  to = vsub(v3(0, 0, 0), s->pos);
         const float r  = vlen(to);
         if (r > 1.0f) {

@@ -223,14 +223,57 @@ def read_obs(path):
     return raw[: raw.size // (n + act_n) * (n + act_n)].reshape(-1, n + act_n)[:, :n]
 
 
-def check(header, obs_path, exe, rows):
-    """Run the game's own forward pass on recorded observations and compare."""
+def write_blob(path, q, n_mode):
+    """Write the int8 network as a file that the game loads with --net-file.
+
+    The layout is written down in host/src/host_netfile.cpp, which reads it. The
+    game refuses a file that does not fit, so a change here must go there too.
+    """
+    out = bytearray(b"PHNQ")
+    out += struct.pack("<i", 1)
+    ships = q.get("ships")
+    n_ships = 0 if ships is None else ships.shape[0]
+    ship_n = 0 if ships is None else ships.shape[1]
+    has_fire_ship = 1 if "fire_acc_ship" in q else 0
+    out += struct.pack("<14i", q["n_in"], q["nh"], q["n_l"], q["n_out"], n_mode,
+                       IN_FIX, IN_SHIFT, SHIFT, LUT_HALF, q["m_half"], q["fire_acc"],
+                       n_ships, ship_n, has_fire_ship)
+    out += struct.pack("<f", float(q.get("ship_tol", 0.0)))
+
+    def i32(v):
+        return np.asarray(v, dtype="<i4").tobytes()
+
+    out += i32(q["in_mean"]) + i32(q["in_mul"])
+    for l in range(q["n_l"] + 1):
+        out += np.asarray(q["w%d" % l], dtype=np.int8).tobytes()
+        out += i32(q["b%d" % l]) + i32(q["m%d" % l])
+    if n_mode:
+        out += i32(q["m_mode"])
+    out += np.asarray(q["lut"], dtype=np.int8).tobytes()
+    if n_ships:
+        out += np.asarray(ships, dtype="<f4").tobytes()
+    if has_fire_ship:
+        out += i32(q["fire_acc_ship"])
+    out += b"END!"
+    with open(path, "wb") as f:
+        f.write(bytes(out))
+    return len(out)
+
+
+def check(header, obs_path, exe, rows, blob=None):
+    """Run the game's own forward pass on recorded observations and compare.
+
+    With `blob`, the game loads that file with --net-file and checks the loaded
+    network's arithmetic instead of the compiled one's.
+    """
     text, d, a = read_header(header)
     q = quantize(d, a)
     obs = read_obs(obs_path)[:rows]
     want = forward_q(q, obs)
-    r = subprocess.run([exe, "--net-check", obs_path, "--frames", str(rows)],
-                       capture_output=True, text=True)
+    cmd = [exe, "--net-check", obs_path, "--frames", str(rows)]
+    if blob:
+        cmd += ["--net-file", blob]
+    r = subprocess.run(cmd, capture_output=True, text=True)
     got = np.array([[int(v) for v in line.split()[1:]] for line in r.stdout.splitlines()
                     if line.startswith("q ")], dtype=np.int64)
     if got.shape != want.shape:
@@ -251,14 +294,23 @@ def main():
                     help="compare the game's forward pass with this script's on a recording")
     ap.add_argument("--exe", help="the game to check, built with the int8 header")
     ap.add_argument("--rows", type=int, default=20000, help="rows to check (default 20000)")
+    ap.add_argument("--blob", metavar="FILE",
+                    help="write the int8 network as a file for the game's --net-file. "
+                         "With --check, check the game's run of that file instead")
     args = ap.parse_args()
     if args.check:
         if not args.exe:
             print("error: --check needs --exe")
             return 1
-        return check(args.header, args.check, args.exe, args.rows)
+        return check(args.header, args.check, args.exe, args.rows, args.blob)
+    if args.blob:
+        text, d, a = read_header(args.header)
+        q = quantize(d, a)
+        size = write_blob(args.blob, q, int(d.get("PILOT_MODE_N", 0)))
+        print("wrote %s: %d bytes" % (args.blob, size))
+        return 0
     if not args.out:
-        print("error: give --out or --check")
+        print("error: give --out, --blob or --check")
         return 1
     text, d, a = read_header(args.header)
     if "PILOT_NET_INT8" in text:
