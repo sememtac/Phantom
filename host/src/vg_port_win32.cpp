@@ -186,8 +186,8 @@ float g_host_stick_sens = 0.10f;
 // ---------------------------------------------------------------------------
 //
 // THE PAD IS DRESSED AS FINGERS TOO, for the reason the mouse is: vg_input.cpp stays
-// the one steering model. The right stick puts the steering thumb somewhere inside its
-// disc, the left stick drags the throttle thumb the way W and S do, and the triggers
+// the one steering model. The left stick puts the steering thumb somewhere inside its
+// disc, the triggers drag the throttle thumb the way W and S do, and the face buttons
 // and shoulders press the same buttons and the same rear-view patch that the mouse,
 // Space and R press. Nothing here reaches the simulation by any other road, so a
 // sitting flown on the pad and one flown on the mouse are the same game, recorded the
@@ -214,10 +214,11 @@ float g_host_stick_sens = 0.10f;
 
 typedef DWORD (WINAPI *XInputGetStateFn)(DWORD, XINPUT_STATE*);
 
-// The stick deadzone is XInput's own recommended figure for this pad's right stick,
-// which is what a worn 360 stick needs to stop drifting: about 27% of travel. Past it
-// the travel is rescaled to start from zero, so there is no step at the edge. The
-// left stick is not read at all.
+// The stick deadzones are XInput's own recommended figures for this pad, which are
+// what a worn 360 stick needs to stop drifting: about 24% of travel for the left stick,
+// which steers, and 27% for the right, which only moves the pointer in a menu. Past
+// them the travel is rescaled to start from zero, so there is no step at the edge.
+#define PAD_LSTICK_DEAD   XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE    // 7849 of 32767
 #define PAD_RSTICK_DEAD   XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE   // 8689 of 32767
 // THE TRIGGERS ARE THE THROTTLE, the Ace Combat way: right opens it, left closes it,
 // and the further the pull the faster it moves. A finger resting on a trigger is not
@@ -227,11 +228,11 @@ typedef DWORD (WINAPI *XInputGetStateFn)(DWORD, XINPUT_STATE*);
 // full deflection. Squared, so a small push is fine enough to land on a button.
 #define PAD_POINTER_PX_PER_SEC 700.0f
 
-// THE FPS WAY BY DEFAULT: push the right stick up and the nose comes up, the same as
-// the mouse. The pad has been both ways round and split across both sticks the Ace
-// Combat way, and the author's verdict was that Phantom "plays more like a fps/drone
-// game rather than a plane game". --pad-invert is the flight-stick way, pull back
-// to climb, for anybody who flies like that.
+// THE FPS WAY BY DEFAULT: push the stick up and the nose comes up, the same as the
+// mouse. The pad has been both ways round and split across both sticks the Ace Combat
+// way, and the author's verdict was that Phantom "plays more like a fps/drone game
+// rather than a plane game". --pad-invert is the flight-stick way, pull back to climb,
+// for anybody who flies like that.
 bool g_host_pad_invert = false;
 // HOW SOFT THE MIDDLE OF THE STICK IS, 0..1. 0 is linear. Above it, the response is
 // e*a^3 + (1-e)*a: a full push is still a full push, but the first part of the
@@ -282,13 +283,14 @@ static void pad_poll(void) {
             if (s_xget(i, &st) == ERROR_SUCCESS) {
                 s_pad = (int)i;
                 // THE LAYOUT RIDES ON THE CONNECT LINE. It changed three times during
-                // one M1 session, and a recording's log is the only record of how it
-                // was flown -- so a sitting says which layout it was, and the training
-                // can tell them apart if the flying differs. The expo is printed as the
-                // curve uses it, clamped to 0..1.
+                // one M1 session and again after it, and a recording's log is the only
+                // record of how it was flown -- so a sitting says which layout it was,
+                // and the training can tell them apart if the flying differs. "fps" was
+                // the aim on the right stick; "fps-left" is the aim on the left. The
+                // expo is printed as the curve uses it, clamped to 0..1.
                 const float e = g_host_pad_expo < 0.0f ? 0.0f
                               : (g_host_pad_expo > 1.0f ? 1.0f : g_host_pad_expo);
-                printf("input: xinput pad %d connected, layout fps, invert %d, expo %.2f\n",
+                printf("input: xinput pad %d connected, layout fps-left, invert %d, expo %.2f\n",
                        s_pad, g_host_pad_invert ? 1 : 0, (double)e);
                 fflush(stdout);
                 break;
@@ -315,15 +317,15 @@ static float pad_trigger(BYTE v) {
     return (float)(v - PAD_TRIG_DEAD) / (255.0f - (float)PAD_TRIG_DEAD);
 }
 
-// The right stick past its deadzone, as a direction and an amount: `t` is 0 at the
-// edge of the deadzone and 1 at the rim, and (ux, uy) is the unit direction with +y UP
-// the stick. Returns false inside the deadzone. A radial deadzone, so a diagonal push
-// is neither favoured nor cut.
-static bool pad_rstick(float* ux, float* uy, float* t) {
-    const float x = (float)s_gp.sThumbRX, y = (float)s_gp.sThumbRY;
+// A stick past its deadzone, as a direction and an amount: `t` is 0 at the edge of
+// the deadzone and 1 at the rim, and (ux, uy) is the unit direction with +y UP the
+// stick. Returns false inside the deadzone. A radial deadzone, so a diagonal push is
+// neither favoured nor cut.
+static bool pad_stick(SHORT sx, SHORT sy, int dead, float* ux, float* uy, float* t) {
+    const float x = (float)sx, y = (float)sy;
     const float mag = sqrtf(x * x + y * y);
-    if (mag <= (float)PAD_RSTICK_DEAD) return false;
-    float k = (mag - (float)PAD_RSTICK_DEAD) / (32767.0f - (float)PAD_RSTICK_DEAD);
+    if (mag <= (float)dead) return false;
+    float k = (mag - (float)dead) / (32767.0f - (float)dead);
     if (k > 1.0f) k = 1.0f;     // a 360 stick reaches past 32767 on the diagonals
     *ux = x / mag;
     *uy = y / mag;
@@ -377,7 +379,7 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
         // A sub-pixel remainder is carried, or a gentle push would never move at all.
         static float s_menu_x = -1.0f, s_menu_y = -1.0f;
         float ux, uy, t;
-        if (pad_rstick(&ux, &uy, &t)) {
+        if (pad_stick(s_gp.sThumbRX, s_gp.sThumbRY, PAD_RSTICK_DEAD, &ux, &uy, &t)) {
             float px, py;
             if (!host_mouse_logical(&px, &py)) { px = SCR_W * 0.5f; py = SCR_H * 0.5f; }
             // Follow the real pointer unless it is still where the stick left it,
@@ -435,13 +437,18 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     s_ox += mdx * g_host_stick_sens;
     s_oy += mdy * g_host_stick_sens;
 
-    // THE RIGHT STICK IS THE THUMB'S POSITION, both axes, and it wins while it is pushed.
+    // THE LEFT STICK IS THE THUMB'S POSITION, both axes, and it wins while it is pushed.
     //
     // ONE STICK FOR THE WHOLE AIM, the way a shooter or a drone is flown: up is nose
-    // up, sideways is the turn. Splitting pitch onto the left stick the Ace Combat way
-    // was tried and the author found it "too confusing" -- the aim is one thing, so it
-    // belongs under one thumb. The left stick does nothing in flight, because the
-    // triggers are already the throttle.
+    // up, sideways is the turn. Splitting pitch and turn across the two sticks the Ace
+    // Combat way was tried and the author found it "too confusing" -- the aim is one
+    // thing, so it belongs under one thumb.
+    //
+    // THE LEFT ONE, because the right thumb is the trigger finger. B fires, and with
+    // the aim on the right stick, firing meant letting go of the aim at the moment it
+    // mattered most -- in the author's words, "really hard to steer and fire missile
+    // when i have to take my thumb off the stick". The right stick does nothing in
+    // flight; in a menu it is still the pointer.
     //
     // A stick is positional by nature and springs back, which is exactly the thumb on
     // glass that STEER_MODE 0 models -- so its deflection is the thumb's offset from
@@ -474,7 +481,8 @@ int vg_touch_read(uint16_t* xs, uint16_t* ys) {
     const float pad_lim = (float)STEER_RANGE - 1.0f;
     {
         float ux = 0.0f, uy = 0.0f, t = 0.0f;
-        const bool stick = pad_rstick(&ux, &uy, &t);
+        const bool stick = pad_stick(s_gp.sThumbLX, s_gp.sThumbLY, PAD_LSTICK_DEAD,
+                                     &ux, &uy, &t);
         // ROLL IS THE SHOULDERS. The board rolls by holding a button and pushing the
         // thumb sideways, so a shoulder presses that button (see vg_buttons_read) and
         // puts the thumb at the side stop -- the board's own control with the thumb at

@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
         }
         // The pad's pitch the flight-stick way: pull back to climb. See host_opts.h.
         else if (!strcmp(argv[i], "--pad-invert")) g_host_pad_invert = true;
-        // The softness of the middle of the pad's right stick. See host_opts.h.
+        // The softness of the middle of the pad's left stick. See host_opts.h.
         else if (!strcmp(argv[i], "--pad-expo") && i + 1 < argc)
             g_host_pad_expo = (float)atof(argv[++i]);
         // THE SEAT, FLOWN BY THE GAME. Enter the gym as usual and watch the two
@@ -312,10 +312,10 @@ int main(int argc, char** argv) {
                    "               deflection costs 115/F counts of hand\n"
                    "               movement, about 3 cm at 1000 DPI by default.\n"
                    "               Raw counts, so it is never accelerated.\n"
-                   "  --pad-invert Xbox pad: pull the right stick back to pitch\n"
+                   "  --pad-invert Xbox pad: pull the left stick back to pitch\n"
                    "               the nose UP, like a flight stick. The default\n"
                    "               is the FPS way: push up to point the nose up.\n"
-                   "  --pad-expo F Xbox pad: how soft the middle of the right\n"
+                   "  --pad-expo F Xbox pad: how soft the middle of the left\n"
                    "               stick is, 0 to 1. 0 is linear. Default 0.6. A\n"
                    "               full push always gives the full turn.\n"
                    "  --headless   no window drawn, fixed 1/60 step. Runs as fast\n"

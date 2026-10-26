@@ -154,7 +154,7 @@ pause, when you open a menu, and when you move to another window.
 
 XBOX 360 CONTROLLER
 
-  Right stick           Aim. Push up to point the nose up.
+  Left stick            Aim. Push up to point the nose up.
   Right trigger         Open the throttle. Let go to keep the setting.
   Left trigger          Close the throttle
   B                     Fire a missile
@@ -164,8 +164,8 @@ XBOX 360 CONTROLLER
   In a menu             Right stick moves the pointer. A selects. B goes back.
 
 The controller works together with the mouse and the keyboard. If you hold B
-when a fight ends, release it before you press B in the menu. The left stick
-does nothing in flight. To make forward on the right stick point the nose down,
+when a fight ends, release it before you press B in the menu. The right stick
+does nothing in flight. To make forward on the left stick point the nose down,
 as on the stick of an aeroplane, run:
 
     phantom.exe --pad-invert
