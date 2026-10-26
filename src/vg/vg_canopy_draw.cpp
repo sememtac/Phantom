@@ -564,6 +564,16 @@ static uint32_t s_hit_seed = 0x9E3779B9u;       // advanced per frame, so static
 #define CANOPY_HIT_TIME   1.60f
 #define CANOPY_HIT_FLASH  0.82f
 
+// THE STATIC'S BRIGHT GRAIN, which was full white. Turned down for photosensitive players
+// rather than for the look: every time a failing panel drops out, this grain is laid over
+// its whole region at once, so the grain's brightness IS the size of that flicker. The dark
+// grain stays black.
+//
+// Through VGC, because gate_run stores it straight into the band buffer, which is in PANEL
+// byte order. 0xFFFF and 0x0000 read the same either way round, which is the only reason
+// the bare literals worked; a grey does not. (16, 32, 16) is half of every channel.
+#define CANOPY_STATIC_GRAIN  VGC(0x8410)
+
 static inline uint32_t hit_hash(uint32_t x, uint32_t y, uint32_t s) {
     uint32_t h = x * 0x9E3779B9u ^ y * 0x85EBCA6Bu ^ s;
     h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
@@ -578,6 +588,13 @@ static inline uint32_t hit_hash(uint32_t x, uint32_t y, uint32_t s) {
 // match: the hull does not heal, so neither does the cockpit.
 static uint8_t s_fault_n   = 0;
 static uint8_t s_fault_z[VG_CANOPY_MAX_ZONES];
+
+// THE FAULTY PANELS' BEAT, in ticks of this many a second. The masks in gate_run count in
+// these: out for 7 of every 64, and for 40 of every 1024. Seconds and not frames, so a
+// board that drops under sixty does not slow the beat, and a PC above it does not speed it.
+#define CANOPY_FAULT_TICK_HZ  60.0f
+static float    s_fault_t    = 0.0f;   // seconds since the match began
+static uint32_t s_fault_tick = 0;      // ...in beat ticks, worked out once a frame
 
 // WHICH PANEL IS THE MIDDLE ONE, once per drawing.
 //
@@ -639,6 +656,8 @@ void vg_canopy_damage(float hull_frac) {
 
 void vg_canopy_hit_clear(void) {
     s_fault_n  = 0;
+    s_fault_t  = 0.0f;
+    s_fault_tick = 0;
     s_centre_z = -1;
     for (int i = 0; i < VG_CANOPY_MAX_ZONES; i++) s_hit_t[i] = 0.0f;
     s_gate_on = s_intro_on;
@@ -672,6 +691,9 @@ void vg_canopy_hit_step(float dt) {
     }
     // Crawls rather than holding still: a static field that does not move is a texture.
     s_hit_seed = s_hit_seed * 1664525u + 1013904223u;
+    // The faulty panels' beat, once here rather than once a run in gate_run.
+    s_fault_t   += dt;
+    s_fault_tick = (uint32_t)(s_fault_t * CANOPY_FAULT_TICK_HZ);
     // FAULTS COUNT TOO, and leaving them out was a bug that made the whole progression
     // invisible: vg_canopy_damage set this true when a panel failed, this line cleared it
     // on the very next frame, and the while loop in there never ran again because the fault
@@ -723,16 +745,28 @@ void IRAM_ATTR vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, 
             bool faulty = false;
             for (int i = 0; i < s_fault_n; i++) if (s_fault_z[i] == z) faulty = true;
             if (faulty) {
-                const uint32_t ph = hit_hash((uint32_t)z, 0u, s_hit_seed & ~0xFFu);
                 // Out for a short slice of each cycle, and occasionally for a long one.
-                const uint32_t beat = (s_hit_seed >> 3) + ph;
+                //
+                // ON A CLOCK, which it was not. The beat and the phase were both read from
+                // s_hit_seed, a new LCG value every frame, so there was no cycle: the panel
+                // dropped out at random about seven times a second, never for more than four
+                // frames, and the long one never came. The phase is the panel's own and stays
+                // put. Only the grain below still crawls per frame.
+                //
+                // NOT ANY CONSTANT. Most put two panels' short drops a few ticks apart, which
+                // is two panels blinking together. 0x38F32 was searched for: across regions
+                // 0 to 6, every one that can fail on any hull, the short drops sit at least
+                // 8 ticks apart and the long ones at least 47, and the order they come round
+                // in is scrambled rather than a sweep. Check all three before changing it.
+                const uint32_t ph   = hit_hash((uint32_t)z, 0u, 0x38F32u);
+                const uint32_t beat = s_fault_tick + ph;
                 const bool out = ((beat & 0x3Fu) < 7u) || ((beat & 0x3FFu) < 40u);
                 if (out) {
                     uint16_t* qf = &row[y0];
                     for (int i = 0; i < n; i++) {
                         const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
                         if ((r & 0xFFu) < 190u)
-                            qf[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                            qf[i] = (r & 0x100u) ? CANOPY_STATIC_GRAIN : 0x0000;
                     }
                     return;
                 }
@@ -754,7 +788,7 @@ void IRAM_ATTR vg_canopy_gate_run(uint16_t* row, int lx, int py, int y0, int n, 
                     for (int i = 0; i < n; i++) {
                         const uint32_t r = hit_hash((uint32_t)lx, (uint32_t)(y0 + i), s_hit_seed);
                         if ((r & 0xFFu) < keep)
-                            qh[i] = (r & 0x100u) ? 0xFFFF : 0x0000;
+                            qh[i] = (r & 0x100u) ? CANOPY_STATIC_GRAIN : 0x0000;
                     }
                 }
                 return;
