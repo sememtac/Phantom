@@ -20,9 +20,9 @@ static bool       s_capture = true;
 // The fence is right while somebody is flying -- where the pointer sits inside it
 // IS the stick -- and wrong the rest of the time. It was on whenever the window
 // had focus, which meant the only way to reach another window was alt-tab, and
-// that is painful when several instances are open for testing. A headless run is
-// worse: it opens a window it never draws into, and that window was fencing the
-// desktop's pointer for the whole run.
+// that is painful when several instances are open for testing. A headless run was
+// worse: it opened a window it never drew into, and that window fenced the
+// desktop's pointer for the whole run. It opens none now (see host_window_open).
 //
 // AND A RUN THE BOT IS FLYING IS THE SAME CASE. --bot draws a window, so neither
 // of the guards above catches it, and the fence took the desktop's pointer the
@@ -256,6 +256,19 @@ bool host_window_open(int scale, const char* title) {
     if (s_hwnd) return true;
     s_scale = (scale < 1) ? 1 : (scale > 4 ? 4 : scale);
 
+    // NO WINDOW AT ALL WHEN HEADLESS. A hidden one was still a window on the
+    // desktop, and every guard in this file was added after it had done something
+    // to a person: fenced the pointer, snapped it to a centre, asked for the
+    // foreground. A training generation starts some 800 runs, so even a rare
+    // wrong call happened all the time -- the author lost the keyboard while typing
+    // in another program. Nothing a measurement run needs comes through a window.
+    // It reads no keys (host_window_focused says no), maps no pointer
+    // (host_mouse_logical has nothing to map through) and presents nothing (the
+    // frame returns before the renderer). So it gets no class, no window, no raw
+    // input and nothing to show, and the guards stop being the only thing between
+    // a sweep and the desktop.
+    if (vg_headless) return true;
+
     WNDCLASSA wc = {};
     wc.lpfnWndProc   = wndproc;
     wc.hInstance     = GetModuleHandleA(nullptr);
@@ -279,6 +292,9 @@ bool host_window_open(int scale, const char* title) {
     // path below still works and is used whenever this is not ready. It is about
     // a frame less latency between the render and the glass -- which the message
     // pump's win32k stalls can still swamp, but when they are quiet it helps.
+    // (Never for a headless run, which returned at the top: the device, the swap
+    // chain and the two shader compiles were about 0.2 s of every measurement
+    // run's start, and a training generation starts some 800 of them.)
     host_d3d_init(s_hwnd, SCR_W, SCR_H);
 
     // Top-down: negative height, so row 0 is the top row and the panel's own
@@ -311,17 +327,18 @@ bool host_window_open(int scale, const char* title) {
         RegisterRawInputDevices(&rid, 1, sizeof(rid));
     }
 
-    // NOT SHOWN WHEN HEADLESS. The window still exists, because the game reads the
-    // keyboard and the pointer through it and the message pump has to have
-    // somewhere to arrive -- but a run that draws nothing should not take the
-    // desktop's focus, and it certainly should not fence the pointer.
-    ShowWindow(s_hwnd, vg_headless ? SW_HIDE : SW_SHOW);
+    // Only a window somebody will look at gets this far: a headless run returned
+    // at the top.
+    ShowWindow(s_hwnd, SW_SHOW);
     SetForegroundWindow(s_hwnd);
     return true;
 }
 
 void host_window_close(void) {
-    ClipCursor(nullptr);   // never leave the desktop's pointer fenced to a dead window
+    // Never leave the desktop's pointer fenced to a dead window. A headless run
+    // never fenced it, though, and the fence is global: freeing it from here
+    // frees one that the player's own window may be holding.
+    if (!vg_headless) ClipCursor(nullptr);
     host_d3d_shutdown();
     if (s_bgra) { free(s_bgra); s_bgra = nullptr; }
     if (s_hwnd) { DestroyWindow(s_hwnd); s_hwnd = nullptr; }
@@ -332,10 +349,25 @@ bool host_window_quit_requested(void) { return s_quit; }
 // no event able to set it again, and it could disagree with the window manager
 // after an alt-tab. The system already knows the answer.
 bool host_window_focused(void) {
+    // NEVER, HEADLESS. The window is hidden and never asks for the focus, so the
+    // answer is known without a win32k call -- and the input code asks once for
+    // every key it reads, every frame. It also means a measurement run cannot
+    // read the keyboard, whatever the desktop is doing.
+    if (vg_headless) return false;
     return s_hwnd != nullptr && GetForegroundWindow() == s_hwnd;
 }
 
 bool host_window_pump(void) {
+    // A HEADLESS RUN HAS NO WINDOW, so there is nothing to pump and nothing to
+    // fence (see host_window_open). This return came first as a measurement: the
+    // fence and cursor calls below are win32k calls that serialise across every
+    // process on the desktop, so sixteen runs at ~80k frames a second each queued
+    // for them in turn -- 54k frames a second in TOTAL, each run blocked 85% of the
+    // time. Returning before them alone made it 281k. ClipCursor(nullptr) is also
+    // global, so each of those calls could drop a fence the player's own window
+    // was holding.
+    if (vg_headless) return !s_quit;
+
     // BOUNDED. A while(PeekMessage) loop cannot exit while messages arrive faster
     // than it handles them. On this desk mouse messages dispatch at ~0.5 ms each
     // (an injected hook, or the virtualised input stack -- measured the same with

@@ -151,7 +151,10 @@ void setup(void) {
     // next frame queued while the device is still sending the current one.
     Serial.setRxBufferSize(2048);
 
-    delay(300);
+    // NOT WHEN HEADLESS. On the desktop this is a plain 300 ms Sleep at the start
+    // of every run, and a training generation starts some 800 of them. The board
+    // never runs headless, so it still waits.
+    if (!vg_headless) delay(300);
     Serial.println("\n=== PHANTOM ===");
 
     if (!vg_panel_init()) {

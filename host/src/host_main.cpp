@@ -418,10 +418,10 @@ int main(int argc, char** argv) {
     // OPENED BEFORE setup(), so that a window that cannot be created is reported
     // as itself rather than as the panel failing inside the game's own start-up.
     //
-    // STILL OPENED WHEN HEADLESS, which is worth saying so it does not read as an
-    // oversight: the game reads the keyboard and the pointer through the window.
-    // Nothing is drawn into it -- the frame returns before the renderer -- so it
-    // costs a message pump and shows whatever was last on it.
+    // NOT OPENED WHEN HEADLESS. The call is still made, and host_window_open
+    // returns at once without creating anything: a measurement run reads no keys,
+    // maps no pointer and draws nothing, and a hidden window on the desktop was
+    // what kept taking the focus from whoever was using the machine. See there.
     if (!host_window_open(scale, "PHANTOM")) {
         fprintf(stderr, "could not open a window\n");
         return 1;

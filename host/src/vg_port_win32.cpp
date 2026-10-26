@@ -714,6 +714,12 @@ static int16_t  s_abuf[AU_BUFS][AU_CAP];
 static bool     s_audio_ok = false;
 
 bool vg_audio_init(void) {
+    // NO DEVICE WHEN HEADLESS, and no warning either. The frame returns before
+    // any sound is made, and opening the device was ~30 ms of every measurement
+    // run's start. True, so the synth sets up exactly as it does with a device;
+    // s_audio_ok stays false, so a write takes nothing.
+    if (vg_headless) return true;
+
     WAVEFORMATEX wf = {};
     wf.wFormatTag      = WAVE_FORMAT_PCM;
     wf.nChannels       = 1;
