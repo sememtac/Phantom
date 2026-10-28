@@ -19,6 +19,8 @@ static void mnv_hint(Ship* s, VgMnv m, VgMnvStatus st) {
     s->mnv_hint_m  = m;
     s->mnv_hint_st = st;
 }
+// A manoeuvre of the library (step C), flown by the director. See director_choose.
+static bool mnv_is_lib(uint8_t m) { return m >= MNV_STALK && m < VG_MNV_N; }
 
 // Enemy fighter behaviour, in strict priority order:
 //
@@ -1340,11 +1342,28 @@ static bool lighting(Ship* s, const ShipSpec* sp, int index, const Missile* inc,
 // is banked is not carried out of the fight.
 static bool salvo_ready(const Ship* s, const ShipSpec* sp) {
     if (!vg_enemy_break || sp->wpn != WPN_SLAAM) return true;
-    const int c    = agg_col(sp);
-    const int want = (int)agg(AGG_SALVO, c);
+    const int  c    = agg_col(sp);
+    const bool lib  = mnv_is_lib(s->mnv) && agg(AGG_S1_SALVO, c) > 0.5f;
+    const int  want = (int)agg(lib ? AGG_S1_SALVO : AGG_SALVO, c);
     if (want <= 1) return true;
     if (s->stacks >= ((want < s->rounds) ? want : s->rounds)) return true;
-    return vlen(s->pos) < agg(AGG_IN_MIN, c) * sp->lock_range;
+    const float r = vlen(s->pos);
+    // IN THE LIBRARY, EARLY ONLY WHEN THE LOCK IS ABOUT TO GO -- stage 0's measured
+    // rule: the player past AGG_S1_EDGE of the holding cone off the aim, the edge
+    // of lock range, or the stalk about to end in a slash. A face or a pivot fires
+    // what it has. What is banked is not carried out of the shot.
+    if (lib) {
+        if (!s->locked || s->stacks <= 0 || r < 1.0f) return false;
+        const float hold = (sp->lock_hold_cos < -1.0f) ? ENEMY_LOCK_HOLD_WIDE
+                                                       : vg_lock_cos_at(sp, r, true);
+        float cs = vdot(s->aim_dir, vmul(s->pos, -1.0f / r));
+        if (cs > 1.0f) cs = 1.0f;
+        if (cs < -1.0f) cs = -1.0f;
+        if (agg(AGG_S1_EDGE, c) > 0.0f && acosf(cs) > agg(AGG_S1_EDGE, c) * acosf(hold)) return true;
+        return r > 0.95f * sp->lock_range || r < 1.1f * agg(AGG_STK_RCLOSE, c) * sp->lock_range
+            || s->mnv != MNV_STALK;
+    }
+    return r < agg(AGG_IN_MIN, c) * sp->lock_range;
 }
 
 // THE HUNT. See AGG_HUNT_RANGE. Returns true while it is steering.
@@ -2042,6 +2061,200 @@ static bool valid_net(const Ship* s, const MnvCtx* c) {
     return vg_bot_enemy_may_fly(c->index);
 }
 
+// =============================================================================
+// THE LIBRARY, BATCH 1 (step C): STALK, FACE, SLASH and PIVOT. See AGG_DIR_ON.
+// =============================================================================
+//
+// The shapes are the research's (captures/ai_eval/research/bfm_doctrine.md M1, M5 and
+// M9); every threshold is a knob, measured in captures/brk.
+
+// What a library manoeuvre reads, worked out once a frame.
+struct LibFacts {
+    int   c;          // its column of the aggression table
+    float lr;         // its lock range
+    Vec3  to, los;    // to the player, and that as a unit
+    float r;
+    bool  chased;     // inside the player's lock cone and range
+    float nose;       // cos of the player off its nose
+    float danger;     // the round coming in, as it judges it (0 before it has reacted)
+};
+static LibFacts lib_facts(const Ship* s, const MnvCtx* c) {
+    LibFacts x;
+    x.c      = agg_col(c->sp);
+    x.lr     = c->sp->lock_range;
+    x.to     = vsub(v3(0, 0, 0), s->pos);
+    x.r      = vlen(x.to);
+    x.los    = (x.r > 1.0f) ? vmul(x.to, 1.0f / x.r) : s->fwd;
+    x.chased = x.r > 1.0f && x.r <= vg.spec->lock_range
+            && s->pos.z / x.r >= vg_lock_cos_at(vg.spec, x.r, false);
+    x.nose   = vdot(s->fwd, x.los);
+    x.danger = c->reacted ? incoming_danger(s, c->inc) : 0.0f;
+    return x;
+}
+static float lib_min(VgMnv m, int c) { return MNV_TIME[m][0][c]; }
+static bool  lib_danger(const LibFacts* x) { return x->danger >= agg(AGG_EVADE_MIN, x->c); }
+
+// THE PRESSURE CLOCK: no slash while it has not threatened the player for AGG_DIR_PRESS.
+static bool lib_may_slash(const Ship* s, const LibFacts* x) {
+    return s->dir_threat_t < agg(AGG_DIR_PRESS, x->c);
+}
+// THE STALEMATE: orbiting for AGG_DIR_STALE, and not a circle it is winning.
+static bool lib_stalemate(const Ship* s, const LibFacts* x) {
+    return s->dir_orbit_t >= agg(AGG_DIR_STALE, x->c) && s->seat_hit_t >= agg(AGG_DIR_WIN, x->c);
+}
+static bool lib_close(const LibFacts* x) { return x->r < agg(AGG_STK_RCLOSE, x->c) * x->lr; }
+// PINNED: the player behind the beam and too close to turn in on (AGG_FACE_RMIN). The
+// doctrine's exit from a break and face when "he holds lag at low speed (the AI is
+// losing)" is the slash, and measured, a stalk that stayed was pinned at the merge floor
+// for seconds, its nose 120 degrees off a player who spun at 100 units a second -- which
+// is the orbit the author called endless. Not held by the pressure clock: it is the way
+// out of being shot at, not a way of leaving the fight.
+//
+// AND ONLY WHILE THE PLAYER IS SLOW (AGG_PIN_SLOW of their speed range): against a
+// player who chases at speed the same exit is running away, and measured it was -- the
+// AEGIS died 15 times in ten minutes.
+static bool lib_pinned(const LibFacts* x) {
+    const float span = vg.spec->speed_max - vg.spec->speed_min;
+    const float psn  = (span > 1.0f) ? (vg.speed - vg.spec->speed_min) / span : 0.0f;
+    return x->r < agg(AGG_FACE_RMIN, x->c) * x->lr && x->nose < agg(AGG_FACE_BEHIND, x->c)
+        && psn < agg(AGG_PIN_SLOW, x->c);
+}
+// THE SLASH AFTER A PASS: inside AGG_STK_RCLOSE, when it may, and -- with AGG_SL_AFTER --
+// only once the stalk has fired. Measured without it: a slow player follows the slash,
+// the pivot faces them inside the slash range, and the next slash goes at once, round
+// and round at 150-500 units without a lock or a round.
+static bool lib_close_slash(const Ship* s, const LibFacts* x) {
+    if (!lib_close(x) || !lib_may_slash(s, x)) return false;
+    if (agg(AGG_SL_AFTER, x->c) < 0.5f) return true;
+    return s->mnv == MNV_STALK && s->launch_t < s->mnv_t;
+}
+
+static void start_lib(Ship* s, MnvCtx* c) {
+    (void)c;
+    s->lib_rounds = (int8_t)s->rounds;
+}
+
+// STALK (M1). Inside AGG_STK_R, nose near the player, holding AGG_STK_RDES. Close the range
+// it holds and it does not orbit; slow and nose near, and it locks. It ends at
+// AGG_STK_RCLOSE, outside the floors, when the slash may go -- and otherwise it presses
+// on, because a pilot that has not threatened anybody for seconds does not get to leave.
+static bool valid_stalk(const Ship* s, const MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    return x.r > 1.0f && x.r <= agg(AGG_STK_R, x.c) * x.lr && !lib_danger(&x)
+        && !lib_close_slash(s, &x) && !lib_pinned(&x);
+}
+static VgMnvStatus step_stalk(Ship* s, MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    if (lib_danger(&x)) return MNV_ABORTED;
+    if (x.r > agg(AGG_STK_R, x.c) * x.lr * 1.1f) return MNV_ABORTED;    // out of reach: the hunt
+    if (lib_close_slash(s, &x) || lib_pinned(&x)) return MNV_DONE;   // the slash is next
+    // THE HUNT'S AIM: a short lead, AGG_STK_OFS beside on its own stable side, kept inside
+    // AGG_STK_CLAMP of the acquiring cone so the nose stays where the lock is.
+    float t_go = x.r / (s->speed > 100.0f ? s->speed : 100.0f);
+    if (t_go > ENEMY_BRK_LEAD_MAX) t_go = ENEMY_BRK_LEAD_MAX;
+    Vec3 aim = vadd(x.to, v3(0.0f, 0.0f, vg.speed * t_go));
+    const Vec3 side = vsub(s->offset_dir, vmul(x.los, vdot(s->offset_dir, x.los)));
+    if (vlen2(side) > 1e-4f) aim = vadd(aim, vmul(vnorm(side), agg(AGG_STK_OFS, x.c)));
+    const float edge = cosf(agg(AGG_STK_CLAMP, x.c) * acosf(vg_lock_cos_at(c->sp, x.r, false)));
+    const Vec3  a    = vnorm(aim);
+    if (vdot(a, x.los) < edge) {
+        const Vec3 sd = vnorm(vsub(a, vmul(x.los, vdot(a, x.los))));
+        aim = vadd(vmul(x.los, edge), vmul(sd, sqrtf(1.0f - edge * edge)));
+    }
+    *c->desired = aim;
+    // THE RANGE, BY THROTTLE: the player's own speed along the line, plus AGG_STK_K for
+    // every unit off AGG_STK_RDES; never above AGG_STK_VMAX of its speed range; at its
+    // slowest while the player is off the nose (AGG_STK_TURN), its tightest turn.
+    float v = vg.speed * x.los.z + agg(AGG_STK_K, x.c) * (x.r - agg(AGG_STK_RDES, x.c) * x.lr);
+    const float vmax = c->smin + (c->smax - c->smin) * agg(AGG_STK_VMAX, x.c);
+    if (v > vmax) v = vmax;
+    if (v < c->smin) v = c->smin;
+    if (x.nose < agg(AGG_STK_TURN, x.c)) v = c->smin;
+    s->target_speed = v;
+    s->steer_by     = STEER_PRESS;
+    s->stale_t      = 0.0f;
+    return MNV_RUNNING;
+}
+
+// FACE (M9), BREAK AND FACE. Chased, with the player behind the beam and room to finish
+// the turn (AGG_FACE_RMIN): turn into them at the slowest speed. A fast chaser overshoots
+// into a head-on; a slow one meets the nose. A floor that takes the frame ends it: the
+// turn has no room, and the slash is the way past.
+static bool valid_face(const Ship* s, const MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    return x.chased && x.nose < agg(AGG_FACE_BEHIND, x.c)
+        && x.r >= agg(AGG_FACE_RMIN, x.c) * x.lr && !lib_danger(&x);
+}
+static VgMnvStatus step_face(Ship* s, MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    if (lib_danger(&x)) return MNV_ABORTED;
+    if (x.nose > agg(AGG_FACE_COS, x.c)) return MNV_DONE;               // facing them
+    if (s->mnv_floor != FLOOR_NONE) return MNV_ABORTED;                // a floor took the turn
+    *c->desired     = x.to;
+    s->target_speed = c->smin;
+    s->steer_by     = STEER_TAIL;
+    s->stale_t      = 0.0f;
+    return MNV_RUNNING;
+}
+
+// SLASH (M5). Past AGG_STK_RCLOSE when it may, or out of a stalemate whatever the clock:
+// at full throttle, on the heading it has while the player is ahead -- the blow-through
+// -- and then straight away, out to AGG_SL_R or its MAX. A PIVOT always follows.
+//
+// STRAIGHT, AND THAT WAS MEASURED. Bent away from the player's nose (the doctrine's
+// offset, AGG_SL_OFS), the slash is motion across the line to the player, which is what
+// ORBIT counts: 46-70% of slash frames orbited. Straight out, the range is what moves.
+static bool valid_slash(const Ship* s, const MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    return x.r > 1.0f && !lib_danger(&x)
+        && (lib_close_slash(s, &x) || lib_pinned(&x) || lib_stalemate(s, &x));
+}
+static void start_slash(Ship* s, MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    s->lib_rounds  = (int8_t)s->rounds;
+    s->dir_break   = lib_stalemate(s, &x) ? 1 : 0;
+    s->dir_orbit_t = 0.0f;
+}
+static VgMnvStatus step_slash(Ship* s, MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    if (lib_danger(&x)) return MNV_ABORTED;
+    if (x.r >= agg(AGG_SL_R, x.c) * x.lr && s->mnv_t >= lib_min(MNV_SLASH, x.c)) return MNV_DONE;
+    // Away from the player's nose: the player looks down +z, so that is the part of its
+    // position across the z axis.
+    Vec3 lat = v3(s->pos.x, s->pos.y, 0.0f);
+    if (vlen2(lat) < 1.0f) lat = vcross(s->up, s->fwd);
+    lat = vnorm(lat);
+    const Vec3 way  = (x.nose > 0.0f) ? s->fwd : vmul(x.los, -1.0f);
+    *c->desired     = vadd(way, vmul(lat, agg(AGG_SL_OFS, x.c)));
+    s->target_speed = c->smax;
+    s->steer_by     = STEER_RESET;
+    s->stale_t      = 0.0f;
+    return MNV_RUNNING;
+}
+
+// PIVOT (M5): the slowest speed and the turn to face, after a slash. The doctrine's own
+// opening for the player: two seconds, slow and predictable.
+//
+// THE THROTTLE FIRST, ON THE SAME HEADING, and then the turn. The speed lags the
+// throttle, and a ship that turns while it is still fast sweeps round the player, which
+// ORBIT counts (50-77% of pivot frames when it turned at once). Chopped first, the turn is
+// the tight one and the range is what moved.
+static bool valid_pivot(const Ship* s, const MnvCtx* c) {
+    (void)c;
+    return s->dir_next == MNV_PIVOT;
+}
+static VgMnvStatus step_pivot(Ship* s, MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    if (lib_danger(&x)) return MNV_ABORTED;
+    if (x.nose > agg(AGG_FACE_COS, x.c)) return MNV_DONE;
+    const bool chop = s->speed > c->smin + (c->smax - c->smin) * agg(AGG_PV_CHOP, x.c);
+    *c->desired     = chop ? s->fwd : x.to;
+    s->target_speed = c->smin;
+    s->steer_by     = STEER_TACTIC;
+    s->stale_t      = 0.0f;
+    return MNV_RUNNING;
+}
+
 // A MANOEUVRE OF THE LIBRARY (stage 2) is valid, start and step, flown by the chooser
 // that picks it. The old layers above have only valid(): RULES flies them.
 struct MnvDef {
@@ -2064,6 +2277,10 @@ static const MnvDef MNV_DEF[VG_MNV_N] = {
     /* press    */ { valid_press,    nullptr, nullptr },
     /* plan     */ { valid_plan,     nullptr, nullptr },
     /* net      */ { valid_net,      nullptr, nullptr },
+    /* stalk    */ { valid_stalk,    start_lib,   step_stalk },
+    /* face     */ { valid_face,     start_lib,   step_face  },
+    /* slash    */ { valid_slash,    start_slash, step_slash },
+    /* pivot    */ { valid_pivot,    start_lib,   step_pivot },
 };
 static_assert(sizeof(MNV_TIME) / sizeof(MNV_TIME[0]) == VG_MNV_N,
               "cfg_combat.h: a MIN and MAX row for every manoeuvre in VG_MNV_LIST");
@@ -2100,7 +2317,8 @@ static int rules_rank(VgMnv m, const ShipSpec* sp) {
 // THE RULES' CHOICE ON A FLOOR FRAME, when nothing flew to say: the first valid one
 // in their order. Without the mask, the one that is running.
 static VgMnv mnv_first_valid(const Ship* s, const ShipSpec* sp) {
-    if (!vg_mnv_want_mask) return (VgMnv)s->mnv;
+    // Under the director (AGG_DIR_ON) its choice on a floor frame is the one running.
+    if (!vg_mnv_want_mask || agg(AGG_DIR_ON, agg_col(sp)) > 0.5f) return (VgMnv)s->mnv;
     static const VgMnv ORDER[] = { MNV_LIGHT, MNV_EXPOSED, MNV_CBREAK, MNV_BREAKOUT, MNV_HUNT,
                                    MNV_RESET, MNV_NET, MNV_EVADE, MNV_TAIL, MNV_DRY,
                                    MNV_PRESS, MNV_NET, MNV_STANDOFF, MNV_PLAN };
@@ -2178,7 +2396,7 @@ static void mnv_frame(Ship* s, const MnvCtx* c, VgFloor fl, VgMnv flew) {
         s->mnv_floor_t = 0.0f;
     }
     if (fl != FLOOR_NONE) s->mnv_floor_t += c->dt;
-    if (flew != MNV_NONE && flew != s->mnv) {
+    if (flew != MNV_NONE && (flew != s->mnv || s->mnv_restart)) {
         if (s->mnv != MNV_NONE) {
             const VgMnvStatus st = mnv_exit(s, c, (VgMnv)s->mnv, flew);
             mnv_emit(s, c->index, VG_MNV_EV_END, s->mnv, st, FLOOR_NONE, s->mnv_t);
@@ -2228,9 +2446,109 @@ float vg_mnv_max_t(int m, int cls) {
     return (m >= 0 && m < VG_MNV_N && cls >= 0 && cls < SHIP_CLASSES) ? MNV_TIME[m][1][cls] : 0.0f;
 }
 
+// =============================================================================
+// THE DIRECTOR (step C): the scripted chooser for a hull with AGG_DIR_ON. See
+// ai_architecture.md 2.4 (commitment) and 2.5 (the director).
+// =============================================================================
+
+// ITS CLOCKS, every frame, floors included. THREAT: its lock, the player inside its
+// acquiring cone and range, or one of its rounds in the air. ORBIT: the AI tab's measure,
+// the same arithmetic as census_orbit.diff -- its motion relative to the player mostly
+// across the line, sweeping round them, within 1.25 lock ranges.
+static void dir_tick(Ship* s, const MnvCtx* c) {
+    const LibFacts x = lib_facts(s, c);
+    bool threat = s->locked
+               || (x.r <= x.lr && vdot(s->aim_dir, x.los) > vg_lock_cos_at(c->sp, x.r, false));
+    for (int i = 0; i < MAX_MISSILES && !threat; i++) {
+        const Missile* m = &vg.msl[i];
+        threat = m->alive && !m->from_player && m->shooter == c->index;
+    }
+    s->dir_threat_t = threat ? 0.0f : s->dir_threat_t + c->dt;
+    const Vec3  rel    = vsub(vmul(s->fwd, s->speed), v3(0, 0, vg.speed));
+    const float vr     = vlen(rel);
+    const float across = vlen(vsub(rel, vmul(x.los, vdot(rel, x.los))));
+    float k = c->dt / ENEMY_CIRCLE_SMOOTH;
+    if (k > 1.0f) k = 1.0f;
+    s->dir_otan += (((vr > 1.0f) ? across / vr : 0.0f) - s->dir_otan) * k;
+    s->dir_ow   += (((x.r > 1.0f) ? across / x.r : 0.0f) - s->dir_ow) * k;
+    const bool orbit = s->dir_otan >= agg(AGG_DIR_OTAN, x.c) && s->dir_ow >= agg(AGG_DIR_OW, x.c)
+                    && x.r <= 1.25f * x.lr;
+    s->dir_orbit_t = orbit ? s->dir_orbit_t + c->dt : 0.0f;
+}
+
+// The running library manoeuvre has ended: say how, and let the same one start afresh.
+static void dir_ended(Ship* s, VgMnv m, VgMnvStatus st) {
+    mnv_hint(s, m, st);
+    s->mnv_restart = 1;
+    if (m == MNV_SLASH && st != MNV_ABORTED) s->dir_next = MNV_PIVOT;
+    if (m == MNV_SLASH || m == MNV_PIVOT) s->dir_break = 0;
+}
+
+static VgMnv director_choose(Ship* s, MnvCtx* c) {
+    const LibFacts x   = lib_facts(s, c);
+    const VgMnv    cur = (VgMnv)s->mnv;
+    // 1. A ROUND IT JUDGES LIKELY TO HIT: the old evade, exactly as the hunt answers it.
+    if (lib_danger(&x)) {
+        const VgMnv m = fly_evade(s, c);
+        if (m != MNV_NONE) {
+            if (mnv_is_lib(cur)) dir_ended(s, cur, MNV_SWITCH);
+            return m;
+        }
+    }
+    // 2. THE RUNNING ONE KEEPS THE FRAME until it ends or reaches MAX. A stalemate takes
+    // it from a stalk or a face at once. After its MIN a stalk or a slash gives way to
+    // FACE: being chased outranks holding a range, and it outranks leaving.
+    if (mnv_is_lib(cur)) {
+        const float tmax = MNV_TIME[cur][1][x.c];
+        if ((cur == MNV_STALK || cur == MNV_FACE) && lib_stalemate(s, &x)) {
+            dir_ended(s, cur, MNV_SWITCH);   // the stalemate breaker does not wait
+        } else if ((cur == MNV_STALK || cur == MNV_SLASH) && s->mnv_t >= lib_min(cur, x.c) && valid_face(s, c)) {
+            dir_ended(s, cur, MNV_SWITCH);
+        } else if (tmax > 0.0f && s->mnv_t >= tmax) {
+            dir_ended(s, cur, MNV_MAX);
+        } else {
+            const VgMnvStatus st = MNV_DEF[cur].step(s, c);
+            if (st == MNV_RUNNING) {
+                *c->broke = true;
+                return cur;
+            }
+            dir_ended(s, cur, st);
+        }
+    }
+    // 3. CHOOSE: the pivot a slash asked for, then FACE, SLASH, the old exposed shot
+    // (AGG_DIR_EXPO), STALK.
+    VgMnv want = MNV_NONE;
+    if (valid_pivot(s, c))      want = MNV_PIVOT;
+    else if (valid_face(s, c))  want = MNV_FACE;
+    else if (valid_slash(s, c)) want = MNV_SLASH;
+    s->dir_next = MNV_NONE;
+    if (want == MNV_NONE && agg(AGG_DIR_EXPO, x.c) > 0.5f) {
+        const VgMnv m = fly_exposed(s, c);
+        if (m != MNV_NONE) return m;
+    }
+    if (want == MNV_NONE && valid_stalk(s, c)) want = MNV_STALK;
+    if (want != MNV_NONE) {
+        MNV_DEF[want].start(s, c);
+        if (MNV_DEF[want].step(s, c) == MNV_RUNNING) {
+            *c->broke = true;
+            return want;
+        }
+    }
+    // 4. OUTSIDE THE STALK, OR NOTHING ABOVE COULD FLY: the old layers the library does not
+    // replace -- the hunt (from outside AGG_STK_R its pursuit, flat out), the missile evade,
+    // and the tactics phase. Not the circle break, the reset, the tail defence or the
+    // hunt's break-away: those are what the library replaces.
+    VgMnv m = fly_hunt(s, c);
+    if (m != MNV_NONE) return m;
+    m = fly_evade(s, c);
+    if (m != MNV_NONE) return m;
+    return fly_tactics(s, c);
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) { vg_mnv_bout_end(s, index); return; }
     s->mnv_hint_m = MNV_NONE;
+    s->mnv_restart = 0;
     if (s->hit_flash > 0) s->hit_flash -= dt;
 
     // Everything below is expressed as a fraction of THIS ship's own capability
@@ -2302,6 +2620,8 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // before anything below has moved a timer, and it changes nothing itself.
     MnvCtx mc = { sp, index, dt, smin, smax, close_r, reacted, inc, inc_range,
                   &desired, &broke };
+    const bool directed = agg(AGG_DIR_ON, agg_col(sp)) > 0.5f;   // see director_choose
+    if (directed) dir_tick(s, &mc);
     if (vg_mnv_want_mask) s->mnv_valid = mnv_valid_mask(s, &mc);
 
     s->steer_by = STEER_NONE;
@@ -2342,7 +2662,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // EVERYTHING BELOW THE FLOORS IS A MANOEUVRE, and the rules choose it: the
     // old chain, in its old order. See rules_choose.
     } else {
-        flew = rules_choose(s, &mc);
+        flew = directed ? director_choose(s, &mc) : rules_choose(s, &mc);
     }
     mnv_frame(s, &mc, flr, flew);
 

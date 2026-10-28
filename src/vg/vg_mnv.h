@@ -26,7 +26,11 @@
     X(DRY,      "dry")       /* an empty rack; the EXTEND mode */               \
     X(PRESS,    "press")     /* the attack pass, the slow-player press, v1 */   \
     X(PLAN,     "plan")      /* the class plan of AEGIS, LANCE and CHARIOT */   \
-    X(NET,      "net")       /* the network flies it */
+    X(NET,      "net")       /* the network flies it */                     \
+    X(STALK,    "stalk")     /* step C: hold a range, nose near (M1) */     \
+    X(FACE,     "face")      /* step C: chased, turn into them (M9) */      \
+    X(SLASH,    "slash")     /* step C: blow through, bounded (M5) */       \
+    X(PIVOT,    "pivot")     /* step C: slowest, turn to face (M5) */
 
 enum VgMnv : uint8_t {
 #define VG_MNV_ENUM(id, name) MNV_##id,

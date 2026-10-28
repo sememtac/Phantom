@@ -898,6 +898,32 @@ enum AggKnob {
     AGG_TURN_SPEED,    // ...this, of its speed range: a turn is only tighter if the
                        // speed goes
     AGG_OUT_SPEED,     // the break-away's speed, of its speed range (1: flat out)
+    // THE LIBRARY AND THE DIRECTOR (step C): see director_choose in vg_ai.cpp.
+    AGG_DIR_ON,            // 1: the director chooses for this hull; 0: the rules
+    AGG_DIR_PRESS,         // s without threatening the player, after which it may not slash
+    AGG_DIR_STALE,         // s of ORBIT before the stalemate breaker slashes (AEGIS: its slash costs it most)...
+    AGG_DIR_WIN,           // ...unless it hit the player within this many s (the 12 s rule)
+    AGG_DIR_OTAN,          // ORBIT: share of its motion across the line to the player...
+    AGG_DIR_OW,            // ...and its sweep round them, rad/s (census_orbit.diff's)
+    AGG_DIR_EXPO,          // 1: the old exposed shot still flies when nothing above it does
+    AGG_STK_R,             // x lock range: it stalks inside this, and hunts outside
+    AGG_STK_RDES,          // x lock range: the range a stalk holds...
+    AGG_STK_RCLOSE,        // x lock range: ...and inside this it slashes after a shot (AEGIS: never, it stays)
+    AGG_STK_K,             // 1/s: throttle per unit off STK_RDES, on the player's own speed
+    AGG_STK_VMAX,          // of its speed range: a stalk is never faster
+    AGG_STK_OFS,           // units beside the player it aims (the hunt's)...
+    AGG_STK_CLAMP,         // ...kept inside this share of the acquiring cone
+    AGG_STK_TURN,          // cos: the player further off the nose than this, it flies at its slowest
+    AGG_FACE_BEHIND,       // cos: it faces a chaser this far off the nose (0: behind the beam)...
+    AGG_FACE_RMIN,         // ...from this range out, x lock range...
+    AGG_FACE_COS,          // ...until the player is inside this cos of its nose (a pivot too)
+    AGG_PIN_SLOW,          // of the player's speed range: slower than this, close behind it, it slashes out
+    AGG_SL_R,              // x lock range: a slash runs out to this range, then pivots
+    AGG_SL_AFTER,          // 1: the slash at close range only after the stalk has fired
+    AGG_SL_OFS,            // how hard the slash bends away from the player's nose (0: straight)
+    AGG_PV_CHOP,           // of its speed range: a pivot holds its heading until it is this slow
+    AGG_S1_SALVO,          // a banking rack in the library banks this many (0: AGG_SALVO)...
+    AGG_S1_EDGE,           // ...and fires early past this share of the holding cone off the aim
     AGG_KNOBS
 };
 
@@ -932,6 +958,31 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* TURN_COS      */ { -2.0f,                -2.0f,                  -2.0f,                  -2.0f                },
     /* TURN_SPEED    */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
     /* OUT_SPEED     */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
+    /* DIR_ON        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_PRESS     */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_STALE     */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_WIN       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_OTAN      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_OW        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_EXPO      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_R         */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_RDES      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_RCLOSE    */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_K         */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_VMAX      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_OFS       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_CLAMP     */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_TURN      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* FACE_BEHIND   */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* FACE_RMIN     */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* FACE_COS      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PIN_SLOW      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_R          */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_AFTER      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_OFS        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PV_CHOP       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* S1_SALVO      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* S1_EDGE       */ { 0.0f, 0.0f, 0.0f, 0.0f },
 };
 
 // THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
@@ -955,8 +1006,10 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* LOCK_SPEED    */ { 0.0f,   0.0f,   0.0f,   BRK_SPEED_STANDOFF },   // slowest: longest nose-on,
                                                                           // quickest lock
     /* OFFSET        */ { 200.0f, 200.0f, 200.0f, 0.0f },
-    /* SHOT_MIN      */ { 0.0f, 0.0f, 0.0f, 0.0f },   // fire on the lock -- AEGIS too since
-                                                            // playtest 5 (0.2 before): see TURN_COS
+    /* SHOT_MIN      */ { 0.2f, 0.0f, 0.0f, 0.0f },   // fire on the lock -- AEGIS 0 from playtest 5,
+                                                            // 0.2 again from step C: stage 0 measured
+                                                            // it with the slow approach (the curved
+                                                            // seat: 0 hit nothing, 0.2 hit 0.42 a minute)
     /* EVADE_MIN     */ { 0.80f,  0.80f,  0.80f,  ENEMY_EVADE_DANGER },   // only a near-certain hit
     /* EXPO_CD       */ { 0.3f,   0.3f,   0.3f,   ENEMY_EXPO_COOLDOWN },
     /* HOLD          */ { 1.0f,   2.0f,   1.0f,   ENEMY_CIRCLE_TIME },    // LANCE keeps its two seconds
@@ -1004,6 +1057,33 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* TURN_COS      */ { 0.0f, -2.0f, -2.0f, -2.0f },
     /* TURN_SPEED    */ { 0.0f,  0.0f,  0.0f,  0.0f },
     /* OUT_SPEED     */ { 1.0f,  1.0f,  1.0f,  1.0f },
+    // THE LIBRARY AND THE DIRECTOR, step C, for AEGIS and LANCE. CHARIOT and
+    // BALLISTA keep the rules, which the author called right.
+    /* DIR_ON        */ { 1.0f, 1.0f, 0.0f, 0.0f },
+    /* DIR_PRESS     */ { 6.0f, 6.0f, 0.0f, 0.0f },
+    /* DIR_STALE     */ { 5.0f, 3.0f, 0.0f, 0.0f },
+    /* DIR_WIN       */ { 12.0f, 12.0f, 0.0f, 0.0f },
+    /* DIR_OTAN      */ { 0.85f, 0.85f, 0.0f, 0.0f },
+    /* DIR_OW        */ { 0.25f, 0.25f, 0.0f, 0.0f },
+    /* DIR_EXPO      */ { 1.0f, 0.0f, 0.0f, 0.0f },
+    /* STK_R         */ { 1.0f, 1.0f, 0.0f, 0.0f },
+    /* STK_RDES      */ { 0.55f, 0.35f, 0.0f, 0.0f },
+    /* STK_RCLOSE    */ { 0.0f, 0.22f, 0.0f, 0.0f },
+    /* STK_K         */ { 0.5f, 0.5f, 0.0f, 0.0f },
+    /* STK_VMAX      */ { 0.3f, 0.3f, 0.0f, 0.0f },
+    /* STK_OFS       */ { 200.0f, 200.0f, 0.0f, 0.0f },
+    /* STK_CLAMP     */ { 0.5f, 0.5f, 0.0f, 0.0f },
+    /* STK_TURN      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* FACE_BEHIND   */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* FACE_RMIN     */ { 0.15f, 0.15f, 0.0f, 0.0f },
+    /* FACE_COS      */ { 0.866f, 0.866f, 0.0f, 0.0f },
+    /* PIN_SLOW      */ { 0.08f, 0.08f, 0.0f, 0.0f },
+    /* SL_R          */ { 0.5f, 0.5f, 0.0f, 0.0f },
+    /* SL_AFTER      */ { 1.0f, 1.0f, 0.0f, 0.0f },
+    /* SL_OFS        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PV_CHOP       */ { 0.3f, 0.3f, 0.0f, 0.0f },
+    /* S1_SALVO      */ { 0.0f, 4.0f, 0.0f, 0.0f },
+    /* S1_EDGE       */ { 0.0f, 0.8f, 0.0f, 0.0f },
 };
 
 // =============================================================================
@@ -1052,4 +1132,14 @@ static constexpr float MNV_TIME[][2][4] = {
                      { 0.0f, 0.0f, 0.0f, 0.0f } },
     /* net      */ { { 0.0f, 0.0f, 0.0f, 0.0f },
                      { 0.0f, 0.0f, 0.0f, 0.0f } },
+    // THE LIBRARY (step C), flown by these rows. The starting values of
+    // ai_architecture.md 2.4: a hold of 1 to 5 s, a pivot until it faces or 2.5 s.
+    /* stalk    */ { { 1.0f, 1.0f, 1.0f, 1.0f },
+                     { 8.0f, 8.0f, 8.0f, 8.0f } },
+    /* face     */ { { 0.5f, 0.5f, 0.5f, 0.5f },
+                     { 2.5f, 2.5f, 2.5f, 2.5f } },
+    /* slash    */ { { 1.0f, 1.0f, 1.0f, 1.0f },
+                     { 3.0f, 3.0f, 3.0f, 3.0f } },
+    /* pivot    */ { { 0.5f, 0.5f, 0.5f, 0.5f },
+                     { 2.5f, 2.5f, 2.5f, 2.5f } },
 };

@@ -202,6 +202,15 @@ struct Ship {
     // FOR THE SELECTOR'S OBSERVATION: STAGE1_INTERFACE.md section 3.
     float    launch_t;       // s since its rack last went down; 99 at spawn
     float    nolock_t;       // s since it last held a lock on the player; 99 at spawn
+    uint8_t  mnv_restart;    // the running manoeuvre ended and starts afresh this frame
+    // THE DIRECTOR'S CLOCKS AND THE LIBRARY'S STATE (step C). See director_choose.
+    float    dir_threat_t;   // s since it last threatened the player: the pressure clock
+    float    dir_orbit_t;    // s of unbroken ORBIT: the stalemate clock
+    float    dir_otan;       // ORBIT, smoothed: share of its motion across the line
+    float    dir_ow;         // ...and its sweep round the player, rad/s
+    uint8_t  dir_break;      // 1 while the stalemate breaker's slash runs
+    uint8_t  dir_next;       // VgMnv a manoeuvre asked to be followed by
+    int8_t   lib_rounds;     // rounds when the running library manoeuvre started
     // NOTHING HAS LANDED FOR THIS LONG, in seconds, either way.
     //
     // A trained pilot has no idea a fight is going nowhere. Cloning teaches what
