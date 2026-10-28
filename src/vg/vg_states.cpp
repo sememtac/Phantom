@@ -1134,7 +1134,7 @@ void vg_upd_playing(float dt, const VgInput* in, const Tap* tap) {
             // rather than to the specific round or collision that did it, because a
             // tournament match is one pilot against one pilot: if you did not come out
             // of it, they did, and the reason is between you and the wall. That also
-            // means a kamikaze, a stray missile and a boundary hit all settle the same
+            // means a collision, a stray missile and a boundary hit all settle the same
             // way, which is the same rule the bracket already uses.
             // NOT IN THE GYM, AND THIS IS THE IMPORTANT ONE. vg_title_lost
             // strips the title, empties the bank, resets the callsign and the

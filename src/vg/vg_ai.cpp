@@ -10,20 +10,16 @@
 // Enemy fighter behaviour, in strict priority order:
 //
 //   1. wall avoidance   -- outranks even running from a missile, because flying
-//                          into the boundary to dodge is just a slower death,
-//                          and it outranks a suicide run because the wall
-//                          cannot be aimed at anybody
-//   2. suicide run      -- once committed, nothing else matters, including a
-//                          missile on their tail
-//   3. missile evasion  -- break ACROSS the seeker, never away from it
-//   4. defend           -- somebody is on the tail: outrun them if they are
+//                          into the boundary to dodge is just a slower death
+//   2. missile evasion  -- break ACROSS the seeker, never away from it
+//   3. defend           -- somebody is on the tail: outrun them if they are
 //                          slow, force an overshoot if they are not
-//   5. an empty rack    -- extend and reload rather than joust with nothing,
+//   4. an empty rack    -- extend and reload rather than joust with nothing,
 //                          and only while the player is near enough to matter
-//   6. the class tactic -- where this hull wants to be, and the only step of
-//                          the six that differs between the four
+//   5. the class tactic -- where this hull wants to be, and the only step of
+//                          the five that differs between the four
 //
-// PRESSING A WON POSITION cuts across step 6 rather than joining the list. It is
+// PRESSING A WON POSITION cuts across step 5 rather than joining the list. It is
 // not another thing to do, it is a reason not to stop doing the current one --
 // see has_the_angle.
 //
@@ -158,7 +154,7 @@ static float break_range_for(float base) {
 // THE TACTIC: what this class wants to be doing when nothing is trying to kill
 // it this instant.
 //
-// Steps 1 to 3 above -- the wall, the suicide run, the missile on the tail --
+// Steps 1 and 2 above -- the wall and the missile on the tail --
 // are survival, and every hull does them the same way. What is left is
 // POSITIONING, and that is where one class should differ from another: where it
 // wants to be relative to the player, and how fast.
@@ -1033,8 +1029,7 @@ bool vg_enemy_break = true;
 // The extend is flat out, which outruns it; the run takes its shot first, and only
 // a round inside ENEMY_BRK_LAST_DITCH makes it break before then; after the shot
 // it answers at the ordinary range. On those frames this declines, the layers
-// below answer the missile, and the break picks up where it was. A committed run
-// is not a suicide run.
+// below answer the missile, and the break picks up where it was.
 //
 // THE RUN leads the player by up to ENEMY_BRK_LEAD_MAX of their motion, but never
 // by more than half its own lock cone, so the lead does not cost it the lock it
@@ -1511,10 +1506,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // by a long chase. Until it expires they carry on doing whatever they were
     // doing, which is exactly what being slow to notice looks like from outside.
     //
-    // WALL AVOIDANCE AND THE SUICIDE RUN ARE EXEMPT, and they should be: one is
-    // not a reaction to anybody and the other is a decision already taken. The
-    // gate is on ANSWERING an attack, which is the only thing a person can be
-    // late to.
+    // WALL AVOIDANCE IS EXEMPT, and it should be: it is not a reaction to
+    // anybody. The gate is on ANSWERING an attack, which is the only thing a
+    // person can be late to.
     const bool threat_now =
         (inc && inc_range < ENEMY_EVADE_RANGE) ||
         on_my_six(s, vsub(v3(0, 0, 0), s->pos), vlen(s->pos));
@@ -1535,20 +1529,6 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     Vec3  elocal = vg_arena_local_of(s->pos);
     float eclear = vg_arena_clearance(elocal);
-
-    // Commit to a suicide run: this pilot is the sort, they are nearly dead, and
-    // the player is close enough for it to be a decision rather than a plan.
-    // ITS THRESHOLD IS A TABLE KNOB with the break on: see AGG_RAM_HULL.
-    if (!s->kamikaze_on && s->kamikaze_will &&
-        s->hull <= sp->hull * (vg_enemy_break ? agg(AGG_RAM_HULL, agg_col(sp))
-                                              : ENEMY_KAMIKAZE_HULL) &&
-        vlen2(s->pos) < ENEMY_KAMIKAZE_RANGE * ENEMY_KAMIKAZE_RANGE) {
-        s->kamikaze_on = true;
-        // Said once, on the decision. The player gets a line and a ship that
-        // stops manoeuvring and starts pointing straight at them, which together
-        // are the only warning they get.
-        vg_comms_say(s, VOICE_TAUNT);
-    }
 
     // IS THIS FIGHT GOING ANYWHERE? A hit either way resets the clock; otherwise
     // it runs. The player's hull is read once, on the first ship, so four
@@ -1573,31 +1553,6 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->evade_t = 0;
         s->break_t = 0;
 
-    } else if (s->kamikaze_on) {
-        s->steer_by = STEER_RAM;
-        // GIVEN UP, with the break on, after AGG_RAM_MAX: the pilot does not
-        // commit again this life.
-        s->ram_t += dt;
-        if (vg_enemy_break && agg(AGG_RAM_MAX, agg_col(sp)) > 0.0f
-            && s->ram_t > agg(AGG_RAM_MAX, agg_col(sp))) {
-            s->kamikaze_on   = false;
-            s->kamikaze_will = false;
-        }
-        // Straight at the player, everything open. Above missile evasion on
-        // purpose: a pilot who has decided to ram does not care what is chasing
-        // them. Still BELOW wall avoidance, because dying against the boundary
-        // achieves nothing at all -- the whole point is to take the player with
-        // them, and the wall cannot be aimed.
-        //
-        // Aimed a little past the player rather than at them. A pursuit curve
-        // that converges exactly on its aim point arrives with the closing speed
-        // fallen to nothing, which is a stern chase, not a collision.
-        Vec3 to = vsub(v3(0, 0, 0), s->pos);
-        desired = vadd(to, vmul(vnorm(to), ENEMY_KAMIKAZE_LEAD));
-        s->target_speed = smax;
-        s->evade_t = 0;
-        s->break_t = 0;
-
     // ABOUT TO HIT THEM, a second ahead. See ENEMY_AVOID_LOOK: the floor below is
     // the same rule as a distance, and as a distance it fires too late to work.
     // Same rank and the same label, because it is the same decision made in time.
@@ -1611,8 +1566,8 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // TOO CLOSE, AND CONTACT KILLS THE PLAYER OUTRIGHT. See ENEMY_MERGE_FLOOR:
     // this is the floor the network has always had and the tactics never did,
     // and without it an aggressive pilot converts its own aggression into the
-    // player's death by touching them. Under the wall and under a suicide run,
-    // because one is equally fatal and the other is a decision already taken.
+    // player's death by touching them. Under the wall, because it is equally
+    // fatal.
     } else if (vlen2(s->pos) < ENEMY_MERGE_FLOOR * ENEMY_MERGE_FLOOR) {
         s->steer_by = STEER_EVADE;
         desired     = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.75f);
@@ -1631,9 +1586,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     } else if (exposed_shot(s, sp, reacted, inc ? inc_range : 1e9f, inc, smin, smax, &desired)) {
         broke = true;
 
-    // OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME. Under the wall,
-    // the suicide run and both collision floors -- it must never be the reason two
-    // ships touch -- and above the reset, the network and every tactic, because it
+    // OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME. Under the wall
+    // and both collision floors -- it must never be the reason two ships touch --
+    // and above the reset, the network and every tactic, because it
     // is a decision about the shape of the fight, and with the network flying, the
     // rules own the extend and the turn in while the network flies the rest.
     } else if (breaking(s, sp, reacted, inc ? inc_range : 1e9f, inc ? inc->speed : 0.0f,
@@ -1757,8 +1712,8 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
         //
         // It sits exactly where a class tactic sits, and that is the whole design
-        // of this function paying off: everything above -- the wall, the suicide
-        // run, the missile, the tail -- is survival that every hull does the same
+        // of this function paying off: everything above -- the wall, the
+        // missile, the tail -- is survival that every hull does the same
         // way, and everything here is POSITIONING. A network is another opinion
         // about positioning.
         //
@@ -2012,17 +1967,15 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // different plan -- it is the same plan, pressed. Whatever the ship decided to
     // do, it does it while coming at the player rather than away from them.
     //
-    // SKIPPED FOR THE THINGS THAT OUTRANK A FIGHT. Not into a wall, not while
-    // breaking from a missile, and not during a suicide run, which is already
-    // this taken to its end.
+    // SKIPPED FOR THE THINGS THAT OUTRANK A FIGHT. Not into a wall, and not
+    // while breaking from a missile.
     // AND NOT THE NETWORK, WHEN A HARNESS SAYS SO. The pull bends whatever flew this
     // frame 55% toward the player -- the network's heading included, which is the
     // opposite of the "manoeuvre to stay alive" the author asked of it. Whether the
     // network should be exempt is a measurement, so it is a switch first: see
     // vg_net_corner_exempt.
     if (s->hull < sp->hull * ENEMY_CORNERED_HULL &&
-        s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE &&
-        s->steer_by != STEER_RAM && !broke &&
+        s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE && !broke &&
         !(vg_net_corner_exempt && s->steer_by == STEER_NET)) {
         const Vec3  to = vsub(v3(0, 0, 0), s->pos);
         const float r  = vlen(to);

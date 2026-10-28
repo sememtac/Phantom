@@ -25,7 +25,6 @@
 enum SteerBy : uint8_t {
     STEER_NONE = 0,
     STEER_WALL,      // the boundary, which outranks everything
-    STEER_RAM,       // committed to a suicide run
     STEER_EVADE,     // breaking across an incoming missile
     STEER_TAIL,      // answering somebody on its six
     STEER_DRY,       // extending on an empty rack
@@ -159,7 +158,6 @@ struct Ship {
     uint8_t illum;        // ILLUM_*: a semi-active ship lighting its round
     uint8_t hunt_out;     // 1 while the hunt breaks away: AGG_IN_MIN
     float   hunt_t;       // seconds into this break-away
-    float   ram_t;        // seconds into a suicide run: AGG_RAM_MAX
     // PER HULL: how long since the player was last hit.
     float   seat_hit_t;
     float   seen_health;
@@ -215,12 +213,6 @@ struct Ship {
     // who dies before this is set, because the player was never given a chance
     // to be part of it.
     bool  engaged;
-
-    // Suicide run. `kamikaze_will` is this pilot's disposition, rolled once at
-    // spawn. `kamikaze_on` is the commitment, and once it is set it never
-    // clears: a pilot who has decided to ram does not change their mind.
-    bool  kamikaze_will;
-    bool  kamikaze_on;
 
     // Who is flying it. Carried on the ship rather than looked up through the
     // bracket, because a missile detonating has to name the pilot it just

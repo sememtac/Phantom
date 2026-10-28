@@ -175,9 +175,7 @@
 // should be: the pilot trades their own life for most of yours, and whether that
 // finishes you depends on the fight so far rather than on the contact itself.
 //
-// The rammer still dies outright. They are under ENEMY_KAMIKAZE_HULL by the time
-// they commit -- a third of a hull -- so this kills them anyway, and saying so
-// here is cheaper than a special case.
+// The opponent still dies outright, whatever its hull.
 #define SHIP_COLLIDE_DAMAGE  0.55f
 // Far enough that a match opens with a search rather than a merge. At 1300 the
 // two of you were on top of each other before the HUD had finished coming up;
@@ -309,10 +307,9 @@
 // preempts it: evading a missile, answering a tail, or a firing pass. Played,
 // that reads as the enemy laying a trap.
 //
-// So this sits high in the chain instead, under only the wall and a suicide run
-// -- the wall is also fatal, and a pilot who has DECIDED to ram is doing this on
-// purpose and has already announced it. The network has had exactly this floor
-// since it started flying; the tactics never did.
+// So this sits high in the chain instead, under only the wall, which is also
+// fatal. The network has had exactly this floor since it started flying; the
+// tactics never did.
 #define ENEMY_MERGE_FLOOR    150.0f
 
 // THE SAME FLOOR AS A TIME, because a collision is a time problem and the floor
@@ -353,8 +350,7 @@
 // 25.0 an hour, because they lived through the merge to do it; and a bout ran
 // 31 s to 38 s at the median. The same on seeds the sweep never saw.
 //
-// UNDER THE SUICIDE RUN, which is a decision and not an accident, and under the
-// wall. What it leaves behind is that decision.
+// UNDER THE WALL, and nothing else.
 #define ENEMY_AVOID_MISS     75.0f   // closest approach it will accept, world units
 #define ENEMY_AVOID_LOOK     1.0f    // ...this many seconds ahead
 #define ENEMY_AVOID_HOLD     0.6f    // committed to the turn this long once it starts
@@ -432,7 +428,7 @@
 //
 // NOT A SUICIDE RUN. It still obeys every firing gate, still evades a missile,
 // still turns away from the wall. It presses: nose on, closing, and willing to
-// take the exchange. The kamikaze is untouched and still sits below it.
+// take the exchange.
 #define ENEMY_CORNERED_HULL  0.50f   // fraction of hull below which it presses
 // How much of the way to turn from wherever it wanted to point, toward the
 // player. Not all the way: a cornered pilot commits, it does not stop flying.
@@ -821,37 +817,6 @@
 #define ENEMY_BREAK_TIME_MIN 1.1f
 #define ENEMY_BREAK_TIME_MAX 1.8f
 
-// --- suicide runs ----------------------------------------------------------
-// Some pilots will trade their ship for yours. The willingness is rolled once
-// per pilot at spawn, so a given opponent either is that sort or is not, and it
-// stays true for the whole match. Rolling it per frame would make every enemy
-// occasionally suicidal, which reads as a bug rather than as a character.
-//
-// DOWN FROM 0.35, on a playtest report of dying to rams more often than the
-// mechanic was meant to fire. At a third of all pilots it was not a character
-// trait any more, it was the standard ending to a won fight.
-//
-// THE GYM MAKES IT LOOK WORSE THAN IT IS, and that is worth knowing before this
-// number is touched again. A tournament run meets four opponents; the gym hands
-// out a fresh pilot on every respawn, so a session there samples this dozens of
-// times an hour where a run samples it four times. Judge the frequency in a
-// tournament, not in the workshop.
-#define ENEMY_KAMIKAZE_CHANCE   0.09f   // of pilots who would do it at all
-
-// A willing pilot commits when their hull is this low. They are going to die to
-// the next hit anyway, so the ship stops being an asset to protect and becomes
-// the largest weapon they have left.
-#define ENEMY_KAMIKAZE_HULL     0.34f
-
-// ...and only from inside this range, so it reads as a decision made during a
-// fight rather than a behaviour they spawned with.
-#define ENEMY_KAMIKAZE_RANGE    1800.0f
-
-// Aim point for the run. Not the origin: the player IS the origin, and a ship
-// that converges perfectly on it decelerates into a stern chase it cannot win.
-// Aiming slightly beyond means the closing speed is still rising at contact.
-#define ENEMY_KAMIKAZE_LEAD     140.0f
-
 // --- incoming missile alert -------------------------------------------------
 // The alert used to appear at 260 units, which against a missile closing at
 // several hundred a second is under a second of warning -- an alert that only
@@ -927,10 +892,6 @@ enum AggKnob {
     AGG_OUT_CHASED,    // 1: it keeps breaking away with the player's nose on it;
                        // 0: it turns back in -- it does not fear being caught
     AGG_SALVO,         // a banking rack: rounds banked before it fires (0: one)
-    // THE SUICIDE RUN, the kamikaze trait. The decision to keep it is the author's;
-    // these hold today's behaviour until then.
-    AGG_RAM_HULL,      // of its hull: a pilot with the trait commits below this (0: never)
-    AGG_RAM_MAX,       // s: a run that has not connected by now is given up (0: never)
     // THE TURN BACK AND THE BREAK-AWAY'S SPEED (playtest 5), inside the hunt. With
     // the player further off the nose than...
     AGG_TURN_COS,      // ...this cosine (below -1: never), the hunt flies at...
@@ -968,8 +929,6 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* OUT_ANG       */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
     /* OUT_CHASED    */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
     /* SALVO         */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
-    /* RAM_HULL      */ { ENEMY_KAMIKAZE_HULL,  ENEMY_KAMIKAZE_HULL,    ENEMY_KAMIKAZE_HULL,    ENEMY_KAMIKAZE_HULL  },
-    /* RAM_MAX       */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
     /* TURN_COS      */ { -2.0f,                -2.0f,                  -2.0f,                  -2.0f                },
     /* TURN_SPEED    */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
     /* OUT_SPEED     */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
@@ -1029,8 +988,6 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* OUT_ANG       */ { 90.0f, 0.0f, 0.0f, 0.0f },
     /* OUT_CHASED    */ { 1.0f,   1.0f,   1.0f,   1.0f },
     /* SALVO         */ { 0.0f,   2.0f,   0.0f,   0.0f },   // LANCE: two banked, then the salvo
-    /* RAM_HULL      */ { ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL },
-    /* RAM_MAX       */ { 0.0f,   0.0f,   0.0f,   0.0f },
     // AEGIS, FROM PLAYTEST 5: "aegis needs to know it's about facing the enemy,
     // even if it requires doing very short strafing runs", and in m3 it "doesn't turn
     // around as quickly and launch its attack". Its break-away was v5's -- straight

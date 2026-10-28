@@ -267,7 +267,6 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--net-file") && i + 1 < argc) net_file = argv[++i];
         else if (!strcmp(argv[i], "--seat-net-file") && i + 1 < argc) seat_net_file = argv[++i];
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
-        else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
         // The opponent without the break or the exposed shot. See vg_enemy_break.
         else if (!strcmp(argv[i], "--no-break")) vg_enemy_break = false;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
@@ -425,8 +424,6 @@ int main(int argc, char** argv) {
                    "  --shot N     write frame N to shot.ppm and keep running. The\n"
                    "               frame clock is pinned to 1/60 so that frame N is\n"
                    "               the same frame in every run.\n"
-                   "  --no-ram     no opponent rolls a suicide run. For testing:\n"
-                   "               a rammer ends the engagement being measured.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
@@ -658,7 +655,7 @@ int main(int argc, char** argv) {
     // a headless run returns from the frame before the telemetry block, so
     // nothing it counted is ever shown otherwise.
     {
-        static const char* K[] = { "-","WALL","RAM","EVADE","TAIL","DRY","PRESS",
+        static const char* K[] = { "-","WALL","EVADE","TAIL","DRY","PRESS",
                                    "NET","TACTIC","RESET","CORNER","SUPPORT" };
         for (int c = 0; c < SHIP_CLASSES; c++) {
             if (!g_ai_frames[c]) continue;

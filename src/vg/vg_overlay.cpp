@@ -347,7 +347,7 @@ void vg_draw_overlays(void) {
             if (r < bestr) { bestr = r; best = i; }
         }
         if (best >= 0) {
-            static const char* WHO[] = { "-", "WALL", "RAM", "EVADE", "TAIL",
+            static const char* WHO[] = { "-", "WALL", "EVADE", "TAIL",
                                          "DRY", "PRESS", "NET", "TACTIC",
                                          "RESET", "CORNER" };
             const uint8_t w = vg.enemy[best].steer_by;

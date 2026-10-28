@@ -239,9 +239,8 @@ extern bool vg_enemy_net;
 // what "can the network do more" actually means, and it is a question with a
 // measurable answer rather than an opinion.
 //
-// The wall and the suicide run stay above it either way. The wall because a
-// collision is fatal and the data holds almost none; the suicide run because it
-// is a decision already taken and not a steering problem.
+// The wall stays above it either way, because a collision is fatal and the data
+// holds almost none.
 extern bool vg_net_owns_survival;
 
 // THE NETWORK ASKED EARLY FOR EVERY CLASS, CHARIOT AND BALLISTA INCLUDED.
@@ -318,19 +317,6 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt);
 // Pins the scripted seat's throttle shut, so the parked-and-shooting exploit can
 // be measured. Test harness only; nothing in the game sets it.
 extern bool vg_bot_park;
-
-// TESTING ONLY: nobody rolls a suicide run. --no-ram.
-//
-// The disposition is rolled per PILOT, and the gym hands out a fresh one on every
-// respawn -- so a workshop session samples a 9% chance dozens of times an hour
-// where a tournament run samples it four times. See ENEMY_KAMIKAZE_CHANCE, which
-// says the same thing and is tuned for the tournament.
-//
-// That makes the gym the wrong place to judge the frequency AND a difficult place
-// to test anything else, because a rammer ends the engagement you were measuring.
-// This switch takes it out of the workshop without touching the number the real
-// game is balanced on -- which is the mistake it exists to prevent.
-extern bool vg_no_ram;
 
 extern bool vg_bot_on;
 

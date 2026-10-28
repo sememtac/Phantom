@@ -513,7 +513,7 @@ def main():
     r.add_argument("--reuse", action="store_true",
                    help="read the output of a fight that is already in the folder")
     r.add_argument("--extra", nargs=argparse.REMAINDER, default=[],
-                   help="more flags for the game, for example --extra --no-ram")
+                   help="more flags for the game, for example --extra --no-break")
 
     s = sub.add_parser("score", help="count kills and deaths in a person's flying")
     s.add_argument("files", nargs="+",
