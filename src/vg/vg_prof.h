@@ -354,6 +354,14 @@ extern uint32_t g_cen_seat_hits[];   // ...on the seat
 extern uint32_t g_cen_evade[];       // frames: a round of its <= 2 s from the seat
 extern uint32_t g_cen_sol_hits[];    // hits on the seat by its solution shots
 void vg_census_round_end(int shooter, float age, bool hit, int why);
+extern uint32_t g_cen_turnin[];       // the break: extend -> run
+extern uint32_t g_cen_break_shots[];  // rounds fired on the run
+extern uint32_t g_cen_break_hits[];   // hits on the seat by rounds launched on the run
+extern uint32_t g_cen_expo_shots[];   // rounds fired while expo_t > 0 (the exposed shot)
+extern uint32_t g_cen_expo_hits[];    // hits on the seat by those rounds
+extern uint32_t g_cen_illum_hold[];   // frames lighting its own round (ILLUM_HOLD)
+extern uint32_t g_cen_illum_letgo[];  // frames it let go for an incoming round
+extern uint32_t g_cen_illum_hits[];   // hits on the seat while it held the light
 extern uint32_t g_cen_rams_net[];    // collisions counted against the network
 extern uint32_t g_cen_rams_seat[];   // collisions the seat drove into
 void vg_census_collision(int index);

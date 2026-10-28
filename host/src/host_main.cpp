@@ -708,6 +708,14 @@ int main(int argc, char** argv) {
                    (unsigned long)g_cen_seat_hits[c], 100.0 * g_cen_evade[c] / n,
                    (unsigned long)g_cen_sol_hits[c], (unsigned long)g_cen_rams_net[c],
                    (unsigned long)g_cen_rams_seat[c]);
+            // THE BREAK, on its own line: it exists only with the break in the tree.
+            printf("break %-8s turnin %lu shots %lu hits %lu | exposed shots %lu hits %lu"
+                   " | illum hold %.1f%% letgo %lu hits %lu\n",
+                   vg_ship_class[c].name, (unsigned long)g_cen_turnin[c],
+                   (unsigned long)g_cen_break_shots[c], (unsigned long)g_cen_break_hits[c],
+                   (unsigned long)g_cen_expo_shots[c], (unsigned long)g_cen_expo_hits[c],
+                   100.0 * g_cen_illum_hold[c] / n, (unsigned long)g_cen_illum_letgo[c],
+                   (unsigned long)g_cen_illum_hits[c]);
             // PRESSURE, its own line so the readers of `aggr` do not move.
             printf("press %-8s mutual %.1f%% wide %.1f%% | freact %lu launches %lu\n",
                    vg_ship_class[c].name, 100.0 * g_cen_mutual[c] / n,

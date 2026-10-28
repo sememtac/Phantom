@@ -652,6 +652,32 @@ static float    s_cen_r[MAX_ENEMIES], s_cen_run[MAX_ENEMIES], s_cen_ret_t[MAX_EN
 static float    s_cen_bout[MAX_ENEMIES];   // the bout clock last frame: a drop is a new bout
 static uint32_t s_cen_runf[MAX_ENEMIES];
 static int      s_cen_state[MAX_ENEMIES], s_cen_rounds[MAX_ENEMIES];
+// THE BREAK, counted (Gameplay's break-and-attack, in vg_ai.cpp below). Agreed with
+// Gameplay so both mark the same frames: a TURN-IN is the frame brk_phase goes from
+// BRK_EXTEND to BRK_RUN; a BREAK SHOT is a round fired on the run; a BREAK HIT is a
+// hit on the seat by a round LAUNCHED on the run -- what the author singled out: "the
+// break away attempt did landed good hits when the opponent suddenly turned around".
+// THE EXPOSED SHOT (the break's second kind): rounds fired while expo_t > 0, the
+// opponent taking a shot at a seat that has left itself open. Counted apart, and
+// never as a break shot. Hits are matched in vg_census_round_end to the shooter's
+// recent run and exposed windows by the round's age.
+// ILLUMINATION (a semi-active hull lighting its own round): frames it holds the lock
+// for its round (ILLUM_HOLD), the times it let go for a round judged likely to hit
+// it (ILLUM_LET_GO), and hits on the seat while it was still holding.
+uint32_t g_cen_turnin[SHIP_CLASSES]      = { 0 };
+uint32_t g_cen_break_shots[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_break_hits[SHIP_CLASSES]  = { 0 };
+uint32_t g_cen_expo_shots[SHIP_CLASSES]  = { 0 };
+uint32_t g_cen_expo_hits[SHIP_CLASSES]   = { 0 };
+uint32_t g_cen_illum_hold[SHIP_CLASSES]  = { 0 };
+uint32_t g_cen_illum_letgo[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_illum_hits[SHIP_CLASSES]  = { 0 };
+#define CEN_RUNS       4        // windows kept per opponent, for rounds still flying
+static uint8_t s_cen_brk[MAX_ENEMIES];
+static bool    s_cen_expo[MAX_ENEMIES];
+static int     s_cen_runk[MAX_ENEMIES], s_cen_expk[MAX_ENEMIES];
+static float   s_cen_run_a[MAX_ENEMIES][CEN_RUNS], s_cen_run_b[MAX_ENEMIES][CEN_RUNS];
+static float   s_cen_exp_a[MAX_ENEMIES][CEN_RUNS], s_cen_exp_b[MAX_ENEMIES][CEN_RUNS];
 // AGGRESSION (playtest 3: "aggression needs to be met at least 10 fold"), the same
 // definitions as Gameplay's:
 // A SOLUTION SHOT is a round fired with all four of:
@@ -743,6 +769,12 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
         s_cen_state[i]  = 0;
         s_cen_rounds[i] = s->rounds;
         s_cen_lock_was[i] = s->locked;
+        s_cen_brk[i]  = s->brk_phase;
+        s_cen_expo[i] = s->expo_t > 0.0f;
+        for (int k = 0; k < CEN_RUNS; k++) {
+            s_cen_run_a[i][k] = s_cen_run_b[i][k] = -1.0f;
+            s_cen_exp_a[i][k] = s_cen_exp_b[i][k] = -1.0f;
+        }
         for (int k = 0; k < CEN_SOLS; k++) s_cen_sol_t[i][k] = -1.0f;
         s_cen_fr_t[i] = -1.0f;
     }
@@ -850,6 +882,36 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
         s_cen_run[i]  = 0.0f;
         s_cen_runf[i] = 0;
     }
+
+    // THE BREAK: open a window on entering the run (a turn-in when it came from the
+    // extend) or an exposed shot, close it on leaving, and count the rounds fired.
+    // A ROUND COUNTED HERE WAS FIRED LAST FRAME, after this census had run, so the
+    // state it was fired in is last frame's or this one's: either counts.
+    const uint8_t ph = s->brk_phase, ph_was = s_cen_brk[i];
+    const bool    ex = s->expo_t > 0.0f, ex_was = s_cen_expo[i];
+    if (ph == BRK_RUN && ph_was != BRK_RUN) {
+        if (ph_was == BRK_EXTEND) g_cen_turnin[c]++;
+        s_cen_runk[i] = (s_cen_runk[i] + 1) % CEN_RUNS;
+        s_cen_run_a[i][s_cen_runk[i]] = bt;
+        s_cen_run_b[i][s_cen_runk[i]] = 1e30f;
+    } else if (ph != BRK_RUN && ph_was == BRK_RUN) {
+        s_cen_run_b[i][s_cen_runk[i]] = bt;
+    }
+    if (ex && !ex_was) {
+        s_cen_expk[i] = (s_cen_expk[i] + 1) % CEN_RUNS;
+        s_cen_exp_a[i][s_cen_expk[i]] = bt;
+        s_cen_exp_b[i][s_cen_expk[i]] = 1e30f;
+    } else if (!ex && ex_was) {
+        s_cen_exp_b[i][s_cen_expk[i]] = bt;
+    }
+    s_cen_brk[i]  = ph;
+    s_cen_expo[i] = ex;
+    if (ex || ex_was)
+        g_cen_expo_shots[c]  += (uint32_t)fired;
+    else if (ph == BRK_RUN || ph_was == BRK_RUN)
+        g_cen_break_shots[c] += (uint32_t)fired;
+    if (s->illum == ILLUM_HOLD)        g_cen_illum_hold[c]++;
+    else if (s->illum == ILLUM_LET_GO) g_cen_illum_letgo[c]++;
 
     switch (s_cen_state[i]) {
         case 0:
@@ -1380,6 +1442,15 @@ void vg_census_collision(int index) {
     else                          g_cen_rams_seat[c]++;
 }
 
+// CEN_EDGE on both ends of a window, for the same one-frame seam as the shots: a
+// window opens and closes at a census, the round left a frame either side of it.
+#define CEN_EDGE 0.1f
+static bool cen_inside(const float* a, const float* b, float t) {
+    for (int k = 0; k < CEN_RUNS; k++)
+        if (a[k] >= 0.0f && t >= a[k] - CEN_EDGE && t <= b[k] + CEN_EDGE) return true;
+    return false;
+}
+
 // One of opponent `shooter`'s rounds ended (detonate()): `hit` if it hit the seat,
 // `why` the missile census's reason (3 is the wall), `age` how long it flew. For
 // the fight census; counting only.
@@ -1400,6 +1471,14 @@ void vg_census_round_end(int shooter, float age, bool hit, int why) {
             break;
         }
     }
+    // A hit by a round launched in one of its exposed-shot windows is an EXPOSED HIT,
+    // else one launched on a run is a BREAK HIT. Apart from both: a hit while its
+    // shooter still holds the light on it is an ILLUMINATED HIT.
+    if (cen_inside(s_cen_exp_a[shooter], s_cen_exp_b[shooter], launched))
+        g_cen_expo_hits[c]++;
+    else if (cen_inside(s_cen_run_a[shooter], s_cen_run_b[shooter], launched))
+        g_cen_break_hits[c]++;
+    if (vg.enemy[shooter].illum == ILLUM_HOLD) g_cen_illum_hits[c]++;
 }
 
 void vg_update_enemy(Ship* s, int index, float dt) {
