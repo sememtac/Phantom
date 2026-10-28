@@ -901,14 +901,14 @@ enum AggKnob {
     // THE LIBRARY AND THE DIRECTOR (step C): see director_choose in vg_ai.cpp.
     AGG_DIR_ON,            // 1: the director chooses for this hull; 0: the rules
     AGG_DIR_PRESS,         // s without threatening the player, after which it may not slash
-    AGG_DIR_STALE,         // s of ORBIT before the stalemate breaker slashes (AEGIS: its slash costs it most)...
+    AGG_DIR_STALE,         // s of ORBIT before the stalemate breaker slashes...
     AGG_DIR_WIN,           // ...unless it hit the player within this many s (the 12 s rule)
     AGG_DIR_OTAN,          // ORBIT: share of its motion across the line to the player...
     AGG_DIR_OW,            // ...and its sweep round them, rad/s (census_orbit.diff's)
     AGG_DIR_EXPO,          // 1: the old exposed shot still flies when nothing above it does
     AGG_STK_R,             // x lock range: it stalks inside this, and hunts outside
     AGG_STK_RDES,          // x lock range: the range a stalk holds...
-    AGG_STK_RCLOSE,        // x lock range: ...and inside this it slashes after a shot (AEGIS: never, it stays)
+    AGG_STK_RCLOSE,        // x lock range: ...and inside this it slashes after a shot (AEGIS: a strafe across)
     AGG_STK_K,             // 1/s: throttle per unit off STK_RDES, on the player's own speed
     AGG_STK_VMAX,          // of its speed range: a stalk is never faster
     AGG_STK_OFS,           // units beside the player it aims (the hunt's)...
@@ -926,6 +926,13 @@ enum AggKnob {
     AGG_S1_EDGE,           // ...and fires early past this share of the holding cone off the aim
     // THE SLASH ALONG THE TUBE (batch 1, the rams): see step_slash.
     AGG_SL_TUBE,           // 1: once past, the slash runs along the tube (extend_dir), not straight away
+    // NOT AWAY (batch 1, the running-away gate): see step_slash and fly_evade_dir.
+    AGG_SL_ANG,            // degrees off straight away for a slash (0: along the tube; 90: across their path)
+    AGG_SL_BLOW,           // 1: it blows through on its heading first while the player is ahead; 0: across at once
+    AGG_SL_T,              // s: a slash is over after this, whatever the range (0: by range)
+    AGG_SL_PIVOT,          // 1: a pivot follows a slash; 0: straight back to the chooser
+    AGG_DIR_EVTOW,         // 1: the director's evade crosses the round's path on the side toward the player
+    AGG_PV_AWAY,           // 1: a pivot slows on its heading even pointing away; 0: pointing away, it turns at once
     AGG_KNOBS
 };
 
@@ -986,6 +993,12 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* S1_SALVO      */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* S1_EDGE       */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* SL_TUBE       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_ANG        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_BLOW       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_T          */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_PIVOT      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* DIR_EVTOW     */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PV_AWAY       */ { 0.0f, 0.0f, 0.0f, 0.0f },
 };
 
 // THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
@@ -1064,14 +1077,14 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     // BALLISTA keep the rules, which the author called right.
     /* DIR_ON        */ { 1.0f, 1.0f, 0.0f, 0.0f },
     /* DIR_PRESS     */ { 6.0f, 6.0f, 0.0f, 0.0f },
-    /* DIR_STALE     */ { 5.0f, 3.0f, 0.0f, 0.0f },
+    /* DIR_STALE     */ { 3.0f, 3.0f, 0.0f, 0.0f },
     /* DIR_WIN       */ { 12.0f, 12.0f, 0.0f, 0.0f },
     /* DIR_OTAN      */ { 0.85f, 0.85f, 0.0f, 0.0f },
     /* DIR_OW        */ { 0.25f, 0.25f, 0.0f, 0.0f },
     /* DIR_EXPO      */ { 1.0f, 0.0f, 0.0f, 0.0f },
     /* STK_R         */ { 1.0f, 1.0f, 0.0f, 0.0f },
     /* STK_RDES      */ { 0.55f, 0.35f, 0.0f, 0.0f },
-    /* STK_RCLOSE    */ { 0.0f, 0.22f, 0.0f, 0.0f },
+    /* STK_RCLOSE    */ { 0.15f, 0.22f, 0.0f, 0.0f },
     /* STK_K         */ { 0.5f, 0.5f, 0.0f, 0.0f },
     /* STK_VMAX      */ { 0.3f, 0.3f, 0.0f, 0.0f },
     /* STK_OFS       */ { 200.0f, 200.0f, 0.0f, 0.0f },
@@ -1089,6 +1102,13 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* S1_EDGE       */ { 0.0f, 0.8f, 0.0f, 0.0f },
     // THE SLASH ALONG THE TUBE (batch 1, the rams): see step_slash.
     /* SL_TUBE       */ { 1.0f, 1.0f, 0.0f, 0.0f },
+    // NOT AWAY (batch 1, the running-away gate): see step_slash and fly_evade_dir.
+    /* SL_ANG        */ { 90.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_BLOW       */ { 0.0f, 1.0f, 0.0f, 0.0f },
+    /* SL_T          */ { 0.6f, 0.0f, 0.0f, 0.0f },
+    /* SL_PIVOT      */ { 0.0f, 1.0f, 0.0f, 0.0f },
+    /* DIR_EVTOW     */ { 1.0f, 0.0f, 0.0f, 0.0f },
+    /* PV_AWAY       */ { 1.0f, 0.0f, 0.0f, 0.0f },
 };
 
 // =============================================================================

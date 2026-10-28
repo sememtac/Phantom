@@ -2130,6 +2130,7 @@ static bool lib_close_slash(const Ship* s, const LibFacts* x) {
 }
 
 static void start_lib(Ship* s, MnvCtx* c) {
+    s->lib_clock = 0.0f;   // see make_b1_clock: its own time, not mnv_t
     (void)c;
     s->lib_rounds = (int8_t)s->rounds;
 }
@@ -2210,6 +2211,7 @@ static bool valid_slash(const Ship* s, const MnvCtx* c) {
         && (lib_close_slash(s, &x) || lib_pinned(&x) || lib_stalemate(s, &x));
 }
 static void start_slash(Ship* s, MnvCtx* c) {
+    s->lib_clock = 0.0f;   // see make_b1_clock: its own time, not mnv_t
     const LibFacts x = lib_facts(s, c);
     s->lib_rounds  = (int8_t)s->rounds;
     s->dir_break   = lib_stalemate(s, &x) ? 1 : 0;
@@ -2219,7 +2221,8 @@ static void start_slash(Ship* s, MnvCtx* c) {
 static VgMnvStatus step_slash(Ship* s, MnvCtx* c) {
     const LibFacts x = lib_facts(s, c);
     if (lib_danger(&x)) return MNV_ABORTED;
-    if (x.r >= agg(AGG_SL_R, x.c) * x.lr && s->mnv_t >= lib_min(MNV_SLASH, x.c)) return MNV_DONE;
+    if (x.r >= agg(AGG_SL_R, x.c) * x.lr && s->lib_clock >= lib_min(MNV_SLASH, x.c)) return MNV_DONE;
+    if (agg(AGG_SL_T, x.c) > 0.0f && s->lib_clock >= agg(AGG_SL_T, x.c)) return MNV_DONE;
     // Away from the player's nose: the player looks down +z, so that is the part of its
     // position across the z axis.
     Vec3 lat = v3(s->pos.x, s->pos.y, 0.0f);
@@ -2229,8 +2232,19 @@ static VgMnvStatus step_slash(Ship* s, MnvCtx* c) {
     // straight at a wall -- and a ship turning off the wall cannot dodge (the wall
     // outranks the 1 s lookahead): measured, that was every ram batch 1 added. The
     // old break's extend_dir, its side chosen once a slash.
-    const Vec3 way  = (x.nose > 0.0f) ? s->fwd
-                    : (agg(AGG_SL_TUBE, x.c) > 0.5f) ? extend_dir(s, x.los) : vmul(x.los, -1.0f);
+    Vec3 way = (x.nose > 0.0f) ? s->fwd
+             : (agg(AGG_SL_TUBE, x.c) > 0.5f) ? extend_dir(s, x.los) : vmul(x.los, -1.0f);
+    // ACROSS, NOT AWAY (AGG_SL_ANG): off straight away by that angle, on the side the
+    // nose is already on, so it is a turn and never a reversal. At 90 it crosses the
+    // player's path, which is stage 1's AEGIS strafe: straight out was 95% of the
+    // AEGIS's running away, and blowing through first ran it into the floors.
+    if ((x.nose <= 0.0f || agg(AGG_SL_BLOW, x.c) < 0.5f) && agg(AGG_SL_ANG, x.c) > 0.0f) {
+        Vec3 side = vsub(s->fwd, vmul(x.los, vdot(s->fwd, x.los)));
+        if (vlen2(side) < 1e-4f) side = vcross(x.los, s->up);
+        side = vnorm(side);
+        const float th = agg(AGG_SL_ANG, x.c) * 0.0174533f;
+        way = vadd(vmul(x.los, -cosf(th)), vmul(side, sinf(th)));
+    }
     *c->desired     = vadd(way, vmul(lat, agg(AGG_SL_OFS, x.c)));
     s->target_speed = c->smax;
     s->steer_by     = STEER_RESET;
@@ -2253,7 +2267,10 @@ static VgMnvStatus step_pivot(Ship* s, MnvCtx* c) {
     const LibFacts x = lib_facts(s, c);
     if (lib_danger(&x)) return MNV_ABORTED;
     if (x.nose > agg(AGG_FACE_COS, x.c)) return MNV_DONE;
-    const bool chop = s->speed > c->smin + (c->smax - c->smin) * agg(AGG_PV_CHOP, x.c);
+    // ...BUT NOT POINTING AWAY (AGG_PV_AWAY 0): slowing on a heading away from the
+    // player is running, and measured it was half of LANCE's.
+    const bool chop = s->speed > c->smin + (c->smax - c->smin) * agg(AGG_PV_CHOP, x.c)
+                   && (agg(AGG_PV_AWAY, x.c) > 0.5f || x.nose > 0.0f);
     *c->desired     = chop ? s->fwd : x.to;
     s->target_speed = c->smin;
     s->steer_by     = STEER_TACTIC;
@@ -2470,6 +2487,7 @@ static void dir_tick(Ship* s, const MnvCtx* c) {
         threat = m->alive && !m->from_player && m->shooter == c->index;
     }
     s->dir_threat_t = threat ? 0.0f : s->dir_threat_t + c->dt;
+    s->lib_clock   += c->dt;   // the running library manoeuvre's time
     const Vec3  rel    = vsub(vmul(s->fwd, s->speed), v3(0, 0, vg.speed));
     const float vr     = vlen(rel);
     const float across = vlen(vsub(rel, vmul(x.los, vdot(rel, x.los))));
@@ -2486,8 +2504,31 @@ static void dir_tick(Ship* s, const MnvCtx* c) {
 static void dir_ended(Ship* s, VgMnv m, VgMnvStatus st) {
     mnv_hint(s, m, st);
     s->mnv_restart = 1;
-    if (m == MNV_SLASH && st != MNV_ABORTED) s->dir_next = MNV_PIVOT;
+    if (m == MNV_SLASH && st != MNV_ABORTED && agg(AGG_SL_PIVOT, agg_col(s->spec)) > 0.5f)
+        s->dir_next = MNV_PIVOT;
     if (m == MNV_SLASH || m == MNV_PIVOT) s->dir_break = 0;
+}
+
+// THE DIRECTOR'S EVADE (AGG_DIR_EVTOW): the old one -- across the round's path, slow --
+// on the side of that path toward the player, kept there every frame while both ships
+// turn, so answering a round is not steering away from them. The same random draws.
+static VgMnv fly_evade_dir(Ship* s, MnvCtx* c) {
+    if (agg(AGG_DIR_EVTOW, agg_col(c->sp)) < 0.5f) return fly_evade(s, c);
+    MNV_LOCALS(c);
+    if (!(reacted && inc && inc_range < ENEMY_EVADE_RANGE)) return MNV_NONE;
+    s->steer_by = STEER_EVADE;
+    const Vec3 los = vnorm(vsub(v3(0, 0, 0), s->pos));
+    if (s->evade_t <= 0) {
+        Vec3 d = vnorm(vadd(break_across(inc->dir, s->up, 0.0f), vmul(vg_rand_unit(), 0.35f)));
+        if (vdot(d, los) < 0.0f) d = vnorm(vsub(vmul(inc->dir, 2.0f * vdot(d, inc->dir)), d));
+        s->evade_dir = d;
+        s->evade_t   = vg_frand(0.9f, 1.6f);
+    }
+    Vec3 d = s->evade_dir;
+    if (vdot(d, los) < 0.0f) d = vnorm(vsub(vmul(inc->dir, 2.0f * vdot(d, inc->dir)), d));
+    desired = d;
+    s->target_speed = smin * 1.15f;
+    return MNV_EVADE;
 }
 
 static VgMnv director_choose(Ship* s, MnvCtx* c) {
@@ -2495,7 +2536,7 @@ static VgMnv director_choose(Ship* s, MnvCtx* c) {
     const VgMnv    cur = (VgMnv)s->mnv;
     // 1. A ROUND IT JUDGES LIKELY TO HIT: the old evade, exactly as the hunt answers it.
     if (lib_danger(&x)) {
-        const VgMnv m = fly_evade(s, c);
+        const VgMnv m = fly_evade_dir(s, c);
         if (m != MNV_NONE) {
             if (mnv_is_lib(cur)) dir_ended(s, cur, MNV_SWITCH);
             return m;
@@ -2546,7 +2587,7 @@ static VgMnv director_choose(Ship* s, MnvCtx* c) {
     // hunt's break-away: those are what the library replaces.
     VgMnv m = fly_hunt(s, c);
     if (m != MNV_NONE) return m;
-    m = fly_evade(s, c);
+    m = fly_evade_dir(s, c);
     if (m != MNV_NONE) return m;
     return fly_tactics(s, c);
 }

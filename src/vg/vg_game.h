@@ -211,6 +211,7 @@ struct Ship {
     uint8_t  dir_break;      // 1 while the stalemate breaker's slash runs
     uint8_t  dir_next;       // VgMnv a manoeuvre asked to be followed by
     int8_t   lib_rounds;     // rounds when the running library manoeuvre started
+    float    lib_clock;      // s since the running library manoeuvre started
     // NOTHING HAS LANDED FOR THIS LONG, in seconds, either way.
     //
     // A trained pilot has no idea a fight is going nowhere. Cloning teaches what
