@@ -84,6 +84,28 @@ static void mnv_print(const VgMnvEvent* e) {
     }
 }
 
+// --mnv-chooser MODE: test choosers for the hook (vg_mnv.h). Testing only.
+static uint32_t s_sel_rng = 12345u;   // the desktop's own, not the game's
+static VgMnv sel_rules(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) {
+    (void)allowed; (void)cur; (void)t; (void)p;
+    return vg_mnv_rules_choice(i);
+}
+static VgMnv sel_stay(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) {
+    (void)t; (void)p;
+    return (cur != MNV_NONE && (allowed & (1u << cur))) ? cur : vg_mnv_rules_choice(i);
+}
+static VgMnv sel_random(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) {
+    (void)cur; (void)t; (void)p;
+    int n = 0;
+    for (int m = 0; m < VG_MNV_N; m++) n += (allowed >> m) & 1u;
+    if (n == 0) return vg_mnv_rules_choice(i);
+    s_sel_rng = s_sel_rng * 1664525u + 1013904223u;
+    int k = (int)((s_sel_rng >> 8) % (uint32_t)n);
+    for (int m = 0; m < VG_MNV_N; m++)
+        if ((allowed >> m) & 1u) { if (k == 0) return (VgMnv)m; k--; }
+    return vg_mnv_rules_choice(i);
+}
+
 static void bout_print(const VgBout* b) {
     static const char* OUT[] = { "won", "lost", "draw" };
     static const char* BY[]  = { "missile", "ram", "wall", "other", "time" };
@@ -298,6 +320,16 @@ int main(int argc, char** argv) {
         // THE CHOICE LOG, and the valid mask every frame. See vg_mnv.h.
         else if (!strcmp(argv[i], "--log-manoeuvre")) vg_mnv_tap = mnv_print;
         else if (!strcmp(argv[i], "--mnv-mask")) vg_mnv_want_mask = true;
+        // THE CHOOSER HOOK, with a test chooser behind it. See vg_mnv.h.
+        else if (!strcmp(argv[i], "--mnv-chooser") && i + 1 < argc) {
+            const char* md = argv[++i];
+            vg_mnv_want_mask = true;
+            if (!strcmp(md, "rules"))        { vg_mnv_chooser = sel_rules; vg_mnv_sel_every = 1; vg_mnv_sel_min = 0.0f; }
+            else if (!strcmp(md, "rules10")) vg_mnv_chooser = sel_rules;
+            else if (!strcmp(md, "stay"))    vg_mnv_chooser = sel_stay;
+            else if (!strcmp(md, "random"))  vg_mnv_chooser = sel_random;
+            else { fprintf(stderr, "--mnv-chooser: rules, rules10, stay or random\n"); return 1; }
+        }
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
             screen = screen_by_name(argv[++i]);
             if (!screen) {
@@ -458,6 +490,9 @@ int main(int argc, char** argv) {
                    "               takes over and lets go. See vg_mnv.h.\n"
                    "  --mnv-mask   work out every frame which manoeuvres may fly.\n"
                    "               For the selector's tools. It changes no fight.\n"
+                   "  --mnv-chooser M  test the chooser hook: rules (the rules' own\n"
+                   "               choice every frame, the same fights), rules10,\n"
+                   "               stay or random. Testing only.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
@@ -683,6 +718,10 @@ int main(int argc, char** argv) {
     // open rather than dropped, so a long stalemate shows up as one instead of as
     // nothing at all.
     printf("frames %lu\n", flown);
+    if (vg_mnv_chooser)
+        printf("mnvsel decisions %u switches %u refused_min %u invalid %u unflown %u\n",
+               g_mnv_sel_decisions, g_mnv_sel_switches, g_mnv_sel_refused, g_mnv_sel_invalid,
+               g_mnv_sel_unflown);
     if ((vg.state == VG_PLAYING || vg.state == VG_HIT) && vg_bout_time() > 0.0f)
         printf("bout open t=%.2f\n", (double)vg_bout_time());
 

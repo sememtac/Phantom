@@ -2395,7 +2395,7 @@ static void mnv_emit(const Ship* s, int index, uint8_t kind, uint8_t mnv, uint8_
     e.mnv    = mnv;
     e.status = status;
     e.floor  = fl;
-    e.by     = VG_MNV_BY_RULES;
+    e.by     = s->mnv_by;
     e.p[0]   = s->mnv_p[0];
     e.p[1]   = s->mnv_p[1];
     e.p[2]   = s->mnv_p[2];
@@ -2427,7 +2427,8 @@ static void mnv_frame(Ship* s, const MnvCtx* c, VgFloor fl, VgMnv flew) {
         }
         s->mnv      = flew;
         s->mnv_t    = 0.0f;
-        s->mnv_p[0] = s->mnv_p[1] = s->mnv_p[2] = 0.0f;   // the rules have no parameters
+        for (int k = 0; k < 3; k++)   // the rules have no parameters; a selector's pick may
+            s->mnv_p[k] = (s->mnv_by == VG_MNV_BY_SELECTOR && flew == s->sel_pick) ? s->sel_p[k] : 0.0f;
         mnv_emit(s, c->index, VG_MNV_EV_START, flew, MNV_RUNNING, FLOOR_NONE, 0.0f);
     }
     if (s->mnv != MNV_NONE) s->mnv_t += c->dt;
@@ -2592,6 +2593,103 @@ static VgMnv director_choose(Ship* s, MnvCtx* c) {
     return fly_tactics(s, c);
 }
 
+// =============================================================================
+// STAGE 3: THE CHOOSER HOOK. See vg_mnv.h.
+// =============================================================================
+VgMnvChooser vg_mnv_chooser   = nullptr;
+uint32_t     vg_mnv_sel_every = 6;
+float        vg_mnv_sel_min   = 1.0f;
+uint32_t     g_mnv_sel_decisions = 0, g_mnv_sel_switches = 0, g_mnv_sel_refused = 0,
+             g_mnv_sel_invalid = 0, g_mnv_sel_unflown = 0;
+
+// FLY m NOW, over whatever the rules set this frame. A manoeuvre of the library starts
+// (when it is new) and steps; an old layer is asked through its own fly function, and
+// the tactics phase decides among dry, press, plan and standoff itself. False if it
+// cannot fly this frame.
+static bool mnv_fly_one(Ship* s, MnvCtx* c, VgMnv m, VgMnv* out) {
+    if (mnv_is_lib(m)) {
+        if (s->mnv != m || s->mnv_restart) MNV_DEF[m].start(s, c);
+        if (MNV_DEF[m].step(s, c) != MNV_RUNNING) return false;
+        *c->broke = true;
+        *out = m;
+        return true;
+    }
+    VgMnv got = MNV_NONE;
+    switch (m) {
+        case MNV_LIGHT:    got = fly_light(s, c);   break;
+        case MNV_EXPOSED:  got = fly_exposed(s, c); break;
+        case MNV_CBREAK:   got = fly_cbreak(s, c);  break;
+        case MNV_HUNT:
+        case MNV_BREAKOUT: got = fly_hunt(s, c);    break;
+        case MNV_RESET:    got = fly_reset(s, c);   break;
+        case MNV_EVADE:    got = fly_evade(s, c);   break;
+        case MNV_TAIL:     got = fly_tail(s, c);    break;
+        case MNV_NET:      got = fly_net_early(s, c);
+                           if (got == MNV_NONE) got = fly_tactics(s, c);
+                           break;
+        default:           got = fly_tactics(s, c); break;
+    }
+    if (got == MNV_NONE) return false;
+    *out = got;
+    return true;
+}
+
+// AFTER THE RULES HAVE FLOWN: ask the chooser at a decision point, hold its pick between
+// them, and fly the pick when it is not what the rules flew.
+static VgMnv mnv_select(Ship* s, MnvCtx* c, VgMnv flew) {
+    if (!vg_mnv_chooser) return flew;
+    s->mnv_by    = VG_MNV_BY_SELECTOR;
+    s->mnv_rules = flew;                      // vg_mnv_rules_choice reads it
+    const int    col     = agg_col(c->sp);
+    const bool   tracked = c->inc != nullptr;
+    const bool   newround = tracked && !s->sel_inc;
+    s->sel_inc = tracked ? 1 : 0;
+    const VgMnv  held = (VgMnv)s->sel_pick;
+    const uint32_t every = vg_mnv_sel_every ? vg_mnv_sel_every : 1u;
+    bool decide = ((vg_host_frame + 3u * (uint32_t)c->index) % every) == 0u
+               || held == MNV_NONE || s->mnv_floor != FLOOR_NONE || newround;
+    if (!decide && mnv_is_lib(held)) {
+        const float tmax = MNV_TIME[held][1][col];
+        if (tmax > 0.0f && s->mnv_t >= tmax) decide = true;      // its MAX
+    }
+    VgMnv out = flew;
+    if (!decide) {
+        if (held == flew || mnv_fly_one(s, c, held, &out)) return out;
+        decide = true;                                          // it can no longer fly
+    }
+    g_mnv_sel_decisions++;
+    const VgMnv cur = (VgMnv)s->mnv;
+    // valid_mask | current, and what the rules flew this frame: it can always fly, and a
+    // manoeuvre the chain itself made valid this frame (the pivot after a slash) is not in
+    // the mask taken before the chain.
+    const uint32_t allowed = (s->mnv_valid | (cur != MNV_NONE ? (1u << cur) : 0u)
+                              | (flew != MNV_NONE ? (1u << flew) : 0u)) & ~1u;
+    float p[3] = { 0.0f, 0.0f, 0.0f };
+    VgMnv pick = vg_mnv_chooser(c->index, allowed, cur, s->mnv_t, p);
+    if (pick >= VG_MNV_N || !(allowed & (1u << pick))) {   // a chooser bug: the rules' choice
+        g_mnv_sel_invalid++;
+        pick = flew;
+    }
+    // MIN: not out of the running one sooner, except into EVADE or TAIL.
+    if (cur != MNV_NONE && pick != cur && pick != MNV_EVADE && pick != MNV_TAIL
+        && s->mnv_t < MNV_TIME[cur][0][col] * vg_mnv_sel_min && (allowed & (1u << cur))) {
+        g_mnv_sel_refused++;
+        pick = cur;
+    }
+    if (pick != flew) {
+        if (mnv_fly_one(s, c, pick, &out)) {
+            g_mnv_sel_switches++;
+        } else {
+            g_mnv_sel_unflown++;
+            pick = flew;
+            out  = flew;
+        }
+    }
+    s->sel_pick = pick;
+    for (int k = 0; k < 3; k++) s->sel_p[k] = p[k];
+    return out;
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
     if (!s->alive) { vg_mnv_bout_end(s, index); return; }
     s->mnv_hint_m = MNV_NONE;
@@ -2710,6 +2808,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // old chain, in its old order. See rules_choose.
     } else {
         flew = directed ? director_choose(s, &mc) : rules_choose(s, &mc);
+        flew = mnv_select(s, &mc, flew);   // the chooser hook, if one is set
     }
     mnv_frame(s, &mc, flr, flew);
 

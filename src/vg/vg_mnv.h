@@ -94,3 +94,19 @@ extern uint32_t vg_host_frame;
 // THE BOUT IS OVER FOR THIS SHIP: ends its manoeuvre and any floor span, for the log.
 struct Ship;
 void vg_mnv_bout_end(Ship* s, int index);
+
+// =============================================================================
+// STAGE 3: THE CHOOSER HOOK. See STAGE1_INTERFACE.md sections 8 and 10.
+// =============================================================================
+//
+// Set by the host (--selector-file, or --mnv-chooser to test it). Returns the manoeuvre
+// to fly, from `allowed` (valid_mask | current, never none), and may write p[3], each
+// -1..1. nullptr: the rules choose, as today. Installing one turns vg_mnv_want_mask on.
+typedef VgMnv (*VgMnvChooser)(int index, uint32_t allowed, VgMnv current, float t_in, float p[3]);
+extern VgMnvChooser vg_mnv_chooser;
+extern uint32_t     vg_mnv_sel_every;   // frames between decision points (6: 10 Hz)
+extern float        vg_mnv_sel_min;     // x MNV_TIME's MIN (1; the identity test uses 0)
+// What the hook did, for the host to print: decision points, switches it made, switches
+// refused for MIN, picks outside `allowed` (a chooser bug), picks that could not fly.
+extern uint32_t     g_mnv_sel_decisions, g_mnv_sel_switches, g_mnv_sel_refused,
+                    g_mnv_sel_invalid, g_mnv_sel_unflown;

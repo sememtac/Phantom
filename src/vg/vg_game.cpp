@@ -146,6 +146,10 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->launch_t     = 99.0f;   // nothing launched or locked yet: STAGE1_INTERFACE.md
     s->nolock_t     = 99.0f;
     s->mnv_restart  = 0;
+    s->mnv_by       = VG_MNV_BY_RULES;
+    s->sel_pick     = 0;
+    s->sel_inc      = 0;
+    s->sel_p[0] = s->sel_p[1] = s->sel_p[2] = 0.0f;
     s->dir_threat_t = 0.0f;
     s->dir_orbit_t  = 0.0f;
     s->dir_otan     = 0.0f;

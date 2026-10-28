@@ -203,6 +203,11 @@ struct Ship {
     float    launch_t;       // s since its rack last went down; 99 at spawn
     float    nolock_t;       // s since it last held a lock on the player; 99 at spawn
     uint8_t  mnv_restart;    // the running manoeuvre ended and starts afresh this frame
+    // THE CHOOSER HOOK (stage 3). See vg_mnv.h.
+    uint8_t  mnv_by;         // VG_MNV_BY_*: who chose this frame, for the log
+    uint8_t  sel_pick;       // VgMnv: the chooser's pick, held between its decision points
+    uint8_t  sel_inc;        // 1 while a player round tracks it: a new one is a decision point
+    float    sel_p[3];       // the pick's parameters
     // THE DIRECTOR'S CLOCKS AND THE LIBRARY'S STATE (step C). See director_choose.
     float    dir_threat_t;   // s since it last threatened the player: the pressure clock
     float    dir_orbit_t;    // s of unbroken ORBIT: the stalemate clock
