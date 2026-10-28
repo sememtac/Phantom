@@ -2800,8 +2800,12 @@ static VgMnv mnv_select(Ship* s, MnvCtx* c, VgMnv flew) {
     s->sel_inc = tracked ? 1 : 0;
     const VgMnv  held = (VgMnv)s->sel_pick;
     const uint32_t every = vg_mnv_sel_every ? vg_mnv_sel_every : 1u;
+    // A decision point: the 10 Hz clock, nothing held, a floor just flown, a new round,
+    // or the running manoeuvre ended this frame (DONE, ABORTED, or one of the
+    // director's own exits: its step 2 runs before this and takes the DONE).
     bool decide = ((vg_host_frame + 3u * (uint32_t)c->index) % every) == 0u
-               || held == MNV_NONE || s->mnv_floor != FLOOR_NONE || newround;
+               || held == MNV_NONE || s->mnv_floor != FLOOR_NONE || newround
+               || s->mnv_restart;
     if (!decide && mnv_is_lib(held)) {
         const float tmax = MNV_TIME[held][1][col];
         if (tmax > 0.0f && s->mnv_t >= tmax) decide = true;      // its MAX
@@ -2824,8 +2828,9 @@ static VgMnv mnv_select(Ship* s, MnvCtx* c, VgMnv flew) {
         g_mnv_sel_invalid++;
         pick = flew;
     }
-    // MIN: not out of the running one sooner, except into EVADE or TAIL.
-    if (cur != MNV_NONE && pick != cur && pick != MNV_EVADE && pick != MNV_TAIL
+    // MIN: not out of the running one sooner, except into EVADE or TAIL. One that has
+    // ended this frame is not running.
+    if (cur != MNV_NONE && pick != cur && pick != MNV_EVADE && pick != MNV_TAIL && !s->mnv_restart
         && s->mnv_t < MNV_TIME[cur][0][col] * vg_mnv_sel_min && (allowed & (1u << cur))) {
         g_mnv_sel_refused++;
         pick = cur;
