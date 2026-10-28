@@ -2165,6 +2165,10 @@ static void mnv_emit(const Ship* s, int index, uint8_t kind, uint8_t mnv, uint8_
 // AFTER THE CHAIN: the floor span, the manoeuvre and its clock. The clock keeps running
 // under a floor, and a floor does not end the manoeuvre it took the frame from.
 static void mnv_frame(Ship* s, const MnvCtx* c, VgFloor fl, VgMnv flew) {
+    if (s->mnv_hold) {   // the bout is over: nothing starts until the spawn
+        s->mnv_rules = (flew != MNV_NONE) ? flew : (VgMnv)s->mnv;
+        return;
+    }
     if (fl != s->mnv_floor) {
         if (s->mnv_floor != FLOOR_NONE)
             mnv_emit(s, c->index, VG_MNV_EV_FLOOR_OFF, s->mnv, MNV_RUNNING, s->mnv_floor, s->mnv_floor_t);

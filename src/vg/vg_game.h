@@ -198,6 +198,7 @@ struct Ship {
     float    mnv_floor_t;    // s into this floor's span
     float    mnv_p[3];       // its parameters, each -1..1
     uint32_t mnv_valid;      // bit m: m may fly now (only with vg_mnv_want_mask)
+    uint8_t  mnv_hold;       // 1 from the bout line to the next spawn: nothing starts
     // FOR THE SELECTOR'S OBSERVATION: STAGE1_INTERFACE.md section 3.
     float    launch_t;       // s since its rack last went down; 99 at spawn
     float    nolock_t;       // s since it last held a lock on the player; 99 at spawn

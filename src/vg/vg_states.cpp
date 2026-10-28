@@ -1,4 +1,5 @@
-﻿#include "vg_sim.h"
+﻿#include "vg_mnv.h"
+#include "vg_sim.h"
 #include "vg_weapons.h"
 #include "vg_flight.h"
 #include "vg_states.h"
@@ -539,6 +540,12 @@ void vg_bout_begin(void) {
 float vg_bout_time(void) { return s_bout_t; }
 
 static void bout_end(uint8_t outcome, uint8_t cause) {
+    // THE CHOICE LOG: the bout is over for every ship, and nothing starts again
+    // until it spawns. See vg_mnv.h.
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        vg_mnv_bout_end(&vg.enemy[i], i);
+        vg.enemy[i].mnv_hold = 1;
+    }
     if (vg_bout_tap) {
         VgBout b = { outcome, cause, s_bout_t, s_bout_hull0 };
         vg_bout_tap(&b);
@@ -584,6 +591,7 @@ static void collide_player(void) {
             vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
             vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
             s->alive = false;
+            vg_mnv_bout_end(s, i);   // the choice log ends its manoeuvre now
             s_bout_rammed = true;
             s_bout_hit_by = BOUT_BY_RAM;
             // DAMAGE, NOT AN OUTCOME. See SHIP_COLLIDE_DAMAGE: a ram is meant to

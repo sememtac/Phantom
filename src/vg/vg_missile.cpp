@@ -4,6 +4,7 @@
 #include <math.h>
 #include "vg_cockpit.h"
 #include "vg_prof.h"     // vg_census_round_end, for the AI's fight census
+#include "vg_mnv.h"      // vg_mnv_bout_end, for the choice log
 
 // Seeker guidance. The whole missile duel rests on one rule -- a missile can only
 // pull so many degrees per second -- and on the seeker cone that turns falling
@@ -191,6 +192,7 @@ static void hit_enemy(int index, float dmg) {
         vg_spawn_blast(s->pos, 46.0f, 9, 0, 1.9f);
         vg_spawn_shrapnel(s->pos, 30.0f, 54.0f, 34, 4.4f, 1.8f);
         s->alive = false;
+        vg_mnv_bout_end(s, index);   // the choice log ends its manoeuvre now
     }
 }
 

@@ -67,6 +67,7 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     Ship* s = &vg.enemy[i];
     // THE LAST MANOEUVRE ENDS WITH THE BOUT, logged against the hull that flew it.
     vg_mnv_bout_end(s, i);
+    s->mnv_hold = 0;
 
     s->spec       = vg_spec(cls);
     s->pilot      = pilot ? pilot : vg_pilot_default();
