@@ -130,7 +130,8 @@ static VgMnv sel_rules(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) 
 }
 static VgMnv sel_stay(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) {
     (void)t; (void)p;
-    return (cur != MNV_NONE && (allowed & (1u << cur))) ? cur : vg_mnv_rules_choice(i);
+    return (cur != MNV_NONE && (allowed & (1u << cur)) && !vg_mnv_ended(i)) ? cur
+                                                                       : vg_mnv_rules_choice(i);
 }
 static VgMnv sel_random(int i, uint32_t allowed, VgMnv cur, float t, float p[3]) {
     (void)cur; (void)t; (void)p;

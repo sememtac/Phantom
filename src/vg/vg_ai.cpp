@@ -2610,6 +2610,7 @@ static const Ship* mnv_ship(int i) {
 VgMnv vg_mnv_rules_choice(int i) { const Ship* s = mnv_ship(i); return s ? (VgMnv)s->mnv_rules : MNV_NONE; }
 uint32_t vg_mnv_valid_mask(int i) { const Ship* s = mnv_ship(i); return s ? s->mnv_valid : 0u; }
 VgMnv vg_mnv_current(int i)      { const Ship* s = mnv_ship(i); return s ? (VgMnv)s->mnv : MNV_NONE; }
+bool  vg_mnv_ended(int i)        { const Ship* s = mnv_ship(i); return s && s->mnv_restart; }
 float vg_mnv_time_in(int i)      { const Ship* s = mnv_ship(i); return s ? s->mnv_t : 0.0f; }
 void vg_mnv_params(int i, float p[3]) {
     const Ship* s = mnv_ship(i);
@@ -2762,8 +2763,16 @@ uint32_t     g_mnv_sel_decisions = 0, g_mnv_sel_switches = 0, g_mnv_sel_refused 
 // cannot fly this frame.
 static bool mnv_fly_one(Ship* s, MnvCtx* c, VgMnv m, VgMnv* out) {
     if (mnv_is_lib(m)) {
-        if (s->mnv != m || s->mnv_restart) MNV_DEF[m].start(s, c);
-        if (MNV_DEF[m].step(s, c) != MNV_RUNNING) return false;
+        const bool running = s->mnv == m && !s->mnv_restart;
+        if (!running) MNV_DEF[m].start(s, c);
+        const VgMnvStatus st = MNV_DEF[m].step(s, c);
+        if (st != MNV_RUNNING) {
+            if (running) {   // the running episode ended: as dir_ended marks it
+                mnv_hint(s, m, st);
+                s->mnv_restart = 1;
+            }
+            return false;
+        }
         *c->broke = true;
         *out = m;
         return true;

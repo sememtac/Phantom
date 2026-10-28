@@ -60,6 +60,8 @@ extern const char* const VG_MNV_BY_NAME[];
 VgMnv       vg_mnv_rules_choice(int i);   // a floor frame: the first valid in the rules' order
 uint32_t    vg_mnv_valid_mask(int i);     // bit m: m may fly now. 0 unless vg_mnv_want_mask
 VgMnv       vg_mnv_current(int i);
+bool        vg_mnv_ended(int i);          // the current one ended this frame: a chooser
+                                          // that holds its own pick must not keep it
 float       vg_mnv_time_in(int i);        // s since the current one started
 void        vg_mnv_params(int i, float p[3]);
 VgFloor     vg_mnv_preempted(int i);      // the floor that flew this frame
