@@ -2214,6 +2214,7 @@ static void start_slash(Ship* s, MnvCtx* c) {
     s->lib_rounds  = (int8_t)s->rounds;
     s->dir_break   = lib_stalemate(s, &x) ? 1 : 0;
     s->dir_orbit_t = 0.0f;
+    s->brk_sign    = 0.0f;   // extend_dir picks its side afresh
 }
 static VgMnvStatus step_slash(Ship* s, MnvCtx* c) {
     const LibFacts x = lib_facts(s, c);
@@ -2224,7 +2225,12 @@ static VgMnvStatus step_slash(Ship* s, MnvCtx* c) {
     Vec3 lat = v3(s->pos.x, s->pos.y, 0.0f);
     if (vlen2(lat) < 1.0f) lat = vcross(s->up, s->fwd);
     lat = vnorm(lat);
-    const Vec3 way  = (x.nose > 0.0f) ? s->fwd : vmul(x.los, -1.0f);
+    // Once past, away along the tube rather than straight away, which is usually
+    // straight at a wall -- and a ship turning off the wall cannot dodge (the wall
+    // outranks the 1 s lookahead): measured, that was every ram batch 1 added. The
+    // old break's extend_dir, its side chosen once a slash.
+    const Vec3 way  = (x.nose > 0.0f) ? s->fwd
+                    : (agg(AGG_SL_TUBE, x.c) > 0.5f) ? extend_dir(s, x.los) : vmul(x.los, -1.0f);
     *c->desired     = vadd(way, vmul(lat, agg(AGG_SL_OFS, x.c)));
     s->target_speed = c->smax;
     s->steer_by     = STEER_RESET;

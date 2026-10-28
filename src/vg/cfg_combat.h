@@ -924,6 +924,8 @@ enum AggKnob {
     AGG_PV_CHOP,           // of its speed range: a pivot holds its heading until it is this slow
     AGG_S1_SALVO,          // a banking rack in the library banks this many (0: AGG_SALVO)...
     AGG_S1_EDGE,           // ...and fires early past this share of the holding cone off the aim
+    // THE SLASH ALONG THE TUBE (batch 1, the rams): see step_slash.
+    AGG_SL_TUBE,           // 1: once past, the slash runs along the tube (extend_dir), not straight away
     AGG_KNOBS
 };
 
@@ -983,6 +985,7 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* PV_CHOP       */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* S1_SALVO      */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* S1_EDGE       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* SL_TUBE       */ { 0.0f, 0.0f, 0.0f, 0.0f },
 };
 
 // THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
@@ -1084,6 +1087,8 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* PV_CHOP       */ { 0.3f, 0.3f, 0.0f, 0.0f },
     /* S1_SALVO      */ { 0.0f, 4.0f, 0.0f, 0.0f },
     /* S1_EDGE       */ { 0.0f, 0.8f, 0.0f, 0.0f },
+    // THE SLASH ALONG THE TUBE (batch 1, the rams): see step_slash.
+    /* SL_TUBE       */ { 1.0f, 1.0f, 0.0f, 0.0f },
 };
 
 // =============================================================================
