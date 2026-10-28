@@ -25,6 +25,24 @@ const VgNetQ* host_net_load(const char* path);   // host_netfile.cpp
 #include <stdlib.h>
 #include <string.h>
 
+// --dump-enemy F: opponent 0's own observation each frame, in the --dump layout
+// ('PHOB', version 1, 41 obs + 4 act), for the census's shot-timing comparison with
+// the author's recordings. The "action" is pull, 0, throttle, launch.
+static FILE* s_enemy_dump = nullptr;
+static void enemy_dump_tap(const VgObs* o, const float* act) {
+    fwrite(o->v, sizeof(float), VG_OBS_N, s_enemy_dump);
+    fwrite(act, sizeof(float), 4, s_enemy_dump);
+}
+static bool enemy_dump_open(const char* path) {
+    s_enemy_dump = fopen(path, "wb");
+    if (!s_enemy_dump) return false;
+    uint32_t hdr[3] = { 0, (uint32_t)VG_OBS_N | (1u << 16), 4u };
+    memcpy(&hdr[0], "PHOB", 4);
+    fwrite(hdr, sizeof(uint32_t), 3, s_enemy_dump);
+    vg_census_enemy_tap = enemy_dump_tap;
+    return true;
+}
+
 #include "vg_states.h"
 #include "vg_sky.h"
 #include "vg_tv.h"
@@ -244,6 +262,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--net-rules-trigger")) vg_net_rules_trigger = true;
         // The cornered pull leaves frames the network flew alone. See vg_net_corner_exempt.
         else if (!strcmp(argv[i], "--net-corner-exempt")) vg_net_corner_exempt = true;
+        else if (!strcmp(argv[i], "--seat-author-curve")) vg_bot_author_curve = true;
         // NETWORKS FROM FILES, for the training harness: see host_netfile.cpp.
         else if (!strcmp(argv[i], "--net-file") && i + 1 < argc) net_file = argv[++i];
         else if (!strcmp(argv[i], "--seat-net-file") && i + 1 < argc) seat_net_file = argv[++i];
@@ -306,6 +325,12 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
             vg_agg_bias = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--dump-enemy") && i + 1 < argc) {
+            if (!enemy_dump_open(argv[++i])) {
+                fprintf(stderr, "could not open %s for writing\n", argv[i]);
+                return 1;
+            }
+        }
         else if (!strcmp(argv[i], "--net-check") && i + 1 < argc) net_check = argv[++i];
         // A matchup, by class index, entered without touching the menus.
         else if (!strcmp(argv[i], "--gym") && i + 2 < argc) {
@@ -329,6 +354,8 @@ int main(int argc, char** argv) {
                    "  --headless   no window drawn, fixed 1/60 step. Runs as fast\n"
                    "               as the machine allows.\n"
                    "  --dump F     write (observation, action) pairs to F.\n"
+                   "  --dump-enemy F  write opponent 0's own observation each\n"
+                   "               frame to F, in the --dump layout (census).\n"
                    "               The recorded time shows in the top right.\n"
                    "  --record-minutes M  with --dump: stop when the total\n"
                    "               reaches M minutes. Only live flight counts:\n"
@@ -350,6 +377,9 @@ int main(int argc, char** argv) {
                    "               the one built into the game.\n"
                    "  --seat-net-file F  the same for the player's seat, with\n"
                    "               --bot and without --scripted.\n"
+                   "  --seat-author-curve  with --seat-net-file: the seat's stick\n"
+                   "               and throttle are stretched to the author's own\n"
+                   "               spread (M1 recordings). A test seat.\n"
                    "  --net-check F  run the network on each row of the --dump\n"
                    "               file F, print its outputs as integers, and\n"
                    "               stop. For tools/quantize_pilot.py --check.\n"
@@ -609,6 +639,11 @@ int main(int argc, char** argv) {
     }
 
     host_dataset_close();
+    if (s_enemy_dump) {
+        vg_census_enemy_tap = nullptr;
+        fclose(s_enemy_dump);
+        s_enemy_dump = nullptr;
+    }
 
     // HOW FAR IT GOT. The bout still running when the run ended is printed as
     // open rather than dropped, so a long stalemate shows up as one instead of as
@@ -642,6 +677,40 @@ int main(int argc, char** argv) {
             printf(" | reengage %lu dead %.0f%%", (unsigned long)g_ai_lockon[c],
                    g_ai_dead[c] * f);
             printf("\n");
+        }
+        // THE FIGHT CENSUS, its own line so the readers of `ai` do not move. Counts
+        // are whole-run totals; shares are of the opponent's alive frames. See the
+        // definitions in vg_ai.cpp.
+        for (int c = 0; c < SHIP_CLASSES; c++) {
+            if (!g_ai_frames[c]) continue;
+            const double n = (double)g_ai_frames[c];
+            printf("fight %-8s frames %lu | circle %.1f%% | extend %lu return %lu pass %lu"
+                   " shots %lu | tail %.1f%% shots %lu | threat %.1f%% (lock %.1f%% msl %.1f%%)"
+                   " nose %.1f%% attack %.1f%% | pull %.2f | seat pull %.2f thr %.2f"
+                   " spin %.1f%%\n",
+                   vg_ship_class[c].name, (unsigned long)g_ai_frames[c],
+                   100.0 * g_cen_circle[c] / n, (unsigned long)g_cen_extend[c],
+                   (unsigned long)g_cen_return[c], (unsigned long)g_cen_pass[c],
+                   (unsigned long)g_cen_shots[c], 100.0 * g_cen_tail[c] / n,
+                   (unsigned long)g_cen_tail_shots[c], 100.0 * g_cen_threat[c] / n,
+                   100.0 * g_ai_locked[c] / n, 100.0 * g_cen_inbound[c] / n,
+                   100.0 * g_cen_nose[c] / n, 100.0 * g_cen_attack[c] / n,
+                   g_cen_pull_sum[c] / n, g_cen_seat_pull_sum[c] / n,
+                   g_cen_seat_thr_sum[c] / n, 100.0 * g_cen_spin[c] / n);
+            // AGGRESSION, on its own line so the readers of `fight` do not move.
+            printf("aggr %-8s shots %lu solution %lu | ended %lu wall %lu hits %lu"
+                   " | evade %.1f%% | solution hits %lu | rams net %lu seat %lu\n",
+                   vg_ship_class[c].name,
+                   (unsigned long)g_cen_shots[c], (unsigned long)g_cen_sol_shots[c],
+                   (unsigned long)g_cen_ended[c], (unsigned long)g_cen_wall_end[c],
+                   (unsigned long)g_cen_seat_hits[c], 100.0 * g_cen_evade[c] / n,
+                   (unsigned long)g_cen_sol_hits[c], (unsigned long)g_cen_rams_net[c],
+                   (unsigned long)g_cen_rams_seat[c]);
+            // PRESSURE, its own line so the readers of `aggr` do not move.
+            printf("press %-8s mutual %.1f%% wide %.1f%% | freact %lu launches %lu\n",
+                   vg_ship_class[c].name, 100.0 * g_cen_mutual[c] / n,
+                   100.0 * g_cen_mutual_w[c] / n, (unsigned long)g_cen_freact[c],
+                   (unsigned long)g_cen_launch[c]);
         }
     }
 

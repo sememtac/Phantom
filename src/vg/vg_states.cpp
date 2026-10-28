@@ -572,6 +572,8 @@ static void collide_player(void) {
         if (!s->alive) continue;
         float r = ENEMY_HIT_RADIUS + SHIP_RADIUS;
         if (vlen2(s->pos) < r * r) {
+            // For the AI's fight census: whose ram this was (vg_census_collision).
+            vg_census_collision(i);
             // Say it BEFORE clearing alive. A pilot who dies in a collision gets
             // the same last line as one who dies to a missile; only the missile
             // path used to speak, so half the deaths in the game were silent.

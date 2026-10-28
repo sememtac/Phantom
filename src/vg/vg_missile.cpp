@@ -3,6 +3,7 @@
 #include "vg_arena.h"
 #include <math.h>
 #include "vg_cockpit.h"
+#include "vg_prof.h"     // vg_census_round_end, for the AI's fight census
 
 // Seeker guidance. The whole missile duel rests on one rule -- a missile can only
 // pull so many degrees per second -- and on the seeker cone that turns falling
@@ -130,6 +131,8 @@ static void detonate(Missile* m, bool hit, int why) {
     g_msl_end[who]++;
     if (hit) g_msl_hit[who]++;
     if (why >= 0 && why < 5) g_msl_why[who][why]++;
+    // For the AI's fight census: every opponent round that ends, by its shooter.
+    if (!m->from_player) vg_census_round_end(m->shooter, m->age, hit, why);
     if (m->locked) g_msl_endlock[who]++;
 
     vg_spawn_debris(m->pos, hit ? 14.0f : 5.0f, hit ? 8 : 3);

@@ -258,6 +258,7 @@ extern bool vg_net_all_phases;
 // heading of whatever flew the frame toward the player. True exempts frames the
 // network flew. False, the shipped default, until the training says which is right.
 extern bool vg_net_corner_exempt;
+extern bool vg_bot_author_curve;
 
 // See vg_bot.cpp. 0 disables the heading bias; 0.45 was the first guess.
 extern float vg_agg_bias;

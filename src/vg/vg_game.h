@@ -627,6 +627,10 @@ struct VgGame {
     // has to be spun up and has to be allowed to stop.
     float       roll_rate;
 
+    // How hard the seat is pulling this frame: |stick|, 0..1, written by
+    // vg_world_step. Read by the AI's fight census and its circling test.
+    float       seat_pull;
+
     // The caution annunciators moved to vg_cockpit.h, inside Cockpit.
 
     // How hard the airframe is working, 0 at rest and 1 at the reference speed

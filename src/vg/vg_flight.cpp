@@ -127,6 +127,9 @@ void vg_world_step(float dt, float pitch_in, float yaw_in, float roll_in,
     float rate  = vg.spec->turn_rate * vg.agility;
     float yaw   = yaw_in   * rate * dt;
     float pitch = pitch_in * rate * dt;
+    // The share of the turn the seat is using, for the AI's census and its circling
+    // test (vg_ai.cpp). Nothing in the flight model reads it.
+    vg.seat_pull = fminf(1.0f, sqrtf(pitch_in * pitch_in + yaw_in * yaw_in));
 
     vg.roll += roll_in;
     if (vg.roll >  6.28318531f) vg.roll -= 6.28318531f;

@@ -234,6 +234,8 @@ bool vg_net_owns_survival = true;
 bool vg_net_all_phases = false;
 // See vg_bot.h. Off: the shipped behaviour.
 bool vg_net_corner_exempt = false;
+// The seat network's stick through the author's quantile map (net_act). Test seat only.
+bool vg_bot_author_curve = false;
 // HOW FAR AN AGGRESSIVE PILOT PULLS THE HEADING TOWARD THE TARGET, 0 to disable.
 //
 // A dial rather than a constant because the first attempt to settle this compared
@@ -645,15 +647,82 @@ static void trigger(const VgObs* o, VgInput* in, bool may_fire, int judged) {
 // wrong width, which is what happens when the observation grows and nobody
 // retrains. And it does not fly near the wall: the recorded pilot never hit one,
 // so the data cannot teach the one mistake that is always fatal.
+// THE AUTHOR'S EXTREMES BACK (vg_bot_author_curve, a test seat). An imitation net
+// learns the mean of the hand: its pull never passes ~0.5 and its throttle stays
+// 0.11-0.42, where the author's M1 sittings pull 0.8-0.9 a quarter of the time and
+// sit at zero or full throttle a fifth of it. So the eased stick goes through a
+// quantile map: the direction is the net's, the size is the author's. One map per
+// hull (vg_ship_class order), from the author's sittings in that hull to this seat's
+// own closed-loop output in it, refitted until they agree (captures/ai_eval/m3/
+// fit_curve.py). The net is shown its OWN throttle and speed back in its own scale
+// (the inverse map), or it reads the mapped throttle as a habit of flying fast and
+// runs it to full.
+static const float AC_PX[SHIP_CLASSES][7] = {
+    { 0.000f, 0.063f, 0.124f, 0.232f, 0.276f, 0.301f, 1.000f },
+    { 0.000f, 0.073f, 0.126f, 0.220f, 0.267f, 0.296f, 1.000f },
+    { 0.000f, 0.092f, 0.163f, 0.260f, 0.296f, 0.325f, 1.000f },
+    { 0.000f, 0.050f, 0.107f, 0.211f, 0.252f, 0.280f, 1.000f },
+};
+static const float AC_PY[SHIP_CLASSES][7] = {
+    { 0.000f, 0.011f, 0.105f, 0.430f, 0.813f, 0.898f, 1.000f },
+    { 0.000f, 0.006f, 0.059f, 0.282f, 0.734f, 0.877f, 1.000f },
+    { 0.000f, 0.000f, 0.041f, 0.306f, 0.784f, 0.886f, 1.000f },
+    { 0.000f, 0.000f, 0.030f, 0.236f, 0.727f, 0.888f, 1.000f },
+};
+static const float AC_TX[SHIP_CLASSES][7] = {
+    { 0.000f, 0.167f, 0.208f, 0.268f, 0.466f, 0.747f, 1.000f },
+    { 0.000f, 0.155f, 0.184f, 0.228f, 0.344f, 0.676f, 1.000f },
+    { 0.000f, 0.124f, 0.148f, 0.193f, 0.403f, 0.730f, 1.000f },
+    { 0.000f, 0.074f, 0.088f, 0.118f, 0.251f, 0.368f, 1.000f },
+};
+static const float AC_TY[SHIP_CLASSES][7] = {
+    { 0.000f, 0.000f, 0.121f, 0.407f, 0.700f, 1.000f, 1.000f },
+    { 0.000f, 0.000f, 0.093f, 0.393f, 0.700f, 1.000f, 1.000f },
+    { 0.000f, 0.000f, 0.182f, 0.446f, 0.900f, 1.000f, 1.000f },
+    { 0.000f, 0.000f, 0.014f, 0.250f, 0.557f, 0.800f, 1.000f },
+};
+static float ac_map(const float* X, const float* Y, float x) {
+    if (x <= X[0]) return Y[0];
+    for (int i = 1; i < 7; i++)
+        if (x <= X[i]) return Y[i - 1] + (Y[i] - Y[i - 1]) * (x - X[i - 1]) / (X[i] - X[i - 1]);
+    return Y[6];
+}
+// The inverse. On a flat stretch of Y (a foot at zero, a top at full) it answers
+// the end of the stretch nearest the middle.
+static float ac_unmap(const float* X, const float* Y, float y) {
+    if (y <= Y[0]) {
+        int i = 0;
+        while (i < 6 && Y[i + 1] <= Y[0]) i++;
+        return X[i];
+    }
+    for (int i = 1; i < 7; i++)
+        if (y <= Y[i] && Y[i] > Y[i - 1])
+            return X[i - 1] + (X[i] - X[i - 1]) * (y - Y[i - 1]) / (Y[i] - Y[i - 1]);
+    int i = 6;
+    while (i > 0 && Y[i - 1] >= Y[6]) i--;
+    return X[i];
+}
+// The seat's hull, as a row of the tables.
+static int ac_hull(void) {
+    const int h = vg.spec ? (int)(vg.spec - &vg_ship_class[0]) : 0;
+    return (h >= 0 && h < SHIP_CLASSES) ? h : 0;
+}
+
 static bool net_act(const VgObs* o, VgInput* in, float dt) {
     if (!vg_bot_net || !vg_net_available()) return false;
     if (o->v[OBS_WALL] < BOT_WALL_TURN || !o->has_target) return false;
     // The SEAT's network: in self-play it is not the opponents' (see vg_net_use).
     if (!vg_net_knows_ship_seat(o->v, VG_OBS_N)) return false;
 
+    VgObs seen = *o;
+    const int h = ac_hull();
+    if (vg_bot_author_curve) {
+        seen.v[OBS_OWN_THROTTLE] = ac_unmap(AC_TX[h], AC_TY[h], o->v[OBS_OWN_THROTTLE]);
+        seen.v[OBS_OWN_SPEED]    = ac_unmap(AC_TX[h], AC_TY[h], o->v[OBS_OWN_SPEED]);
+    }
     const uint32_t t0 = micros();
     VgNetOut n;
-    vg_net_run_seat(o->v, VG_OBS_N, &n);
+    vg_net_run_seat(seen.v, VG_OBS_N, &n);
     vg_bot_net_us = micros() - t0;
     // Billed to `ai` in the telemetry, which is the counter for the only
     // THINKING in the frame and read 0 before a network existed.
@@ -671,6 +740,16 @@ static bool net_act(const VgObs* o, VgInput* in, float dt) {
     in->pitch    = s_np;
     in->yaw      = s_ny;
     in->throttle = s_nt;
+    if (vg_bot_author_curve) {
+        const float p = sqrtf(s_np * s_np + s_ny * s_ny);
+        if (p > 1e-4f) {
+            const float q = ac_map(AC_PX[h], AC_PY[h], p > 1.0f ? 1.0f : p) / p;
+            in->pitch = s_np * q;
+            in->yaw   = s_ny * q;
+        }
+        in->throttle = ac_map(AC_TX[h], AC_TY[h],
+                              s_nt < 0.0f ? 0.0f : (s_nt > 1.0f ? 1.0f : s_nt));
+    }
     // Not eased. A trigger is a decision, not a position.
     s_net_fire = n.fire;
     return true;

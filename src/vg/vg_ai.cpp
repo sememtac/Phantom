@@ -3,6 +3,7 @@
 #include "vg_bot.h"
 #include "vg_modes.h"
 #include "vg_wpnsys.h"
+#include "vg_prof.h"     // vg_bout_time, for the fight census
 #include <math.h>
 
 // Enemy fighter behaviour, in strict priority order:
@@ -566,11 +567,335 @@ float    g_ai_range[SHIP_CLASSES]   = { 0 };   // summed range, world units
 // with an empty rack should be leaving, not pointing.
 float    g_ai_aimk[(int)SHIP_CLASSES * STEER_KINDS] = { 0 };
 
+// THE FIGHT CENSUS: the author's verdict on the 10-25 playtests, as numbers. The
+// opponents circle, or leave and never come back; a player who sits at zero
+// throttle turning hard is never punished; and pressure is "the need for me to
+// personally disengage knowing that i might get hit if i keep engaging". Counting
+// only, like everything above: nothing here changes a decision. Per class of the
+// opponent, over its alive frames. Checked against the author's own verdict on the
+// four playtested opponents -- see captures/ai_eval/PLAN.md, 2026-10-25.
+//
+// CIRCLING: both ships pulling hard -- each at CEN_PULL or more of its OWN maximum
+// turn at its current speed, smoothed over CEN_TAU -- with the range holding (|rdot|
+// under CEN_RDOT_K of the opponent's top speed), inside its lock range, and NEITHER
+// side holding a lock. Counted only inside a run that has held for CEN_CIRCLE_T, and
+// then from the run's first frame, so a merge that crosses the test for a moment is
+// not a circle. CEN_PULL is where the author's own smoothed pull sits on 55% of
+// their AEGIS frames; 0.5 missed most of a soft seat's turning.
+// A PASS is the thing the author asked for: the range opens past CEN_EXTEND of the
+// lock range (an extend), comes back under CEN_RETURN of it with the opponent's aim
+// inside its lock cone (a return), and the opponent fires within CEN_PASS_T of the
+// return. Counted apart, so "leaves and never comes back" is extends without returns.
+// TAIL: the opponent's nose on the seat from the seat's rear half, and the rounds it
+// fires from there. The author calls that being attacked ("it does know to attack you
+// if it's on your tail"); the one opponent that never got there ("doesn't capitalize
+// ... when it's behind me") was the one with no pressure, though it fired as often as
+// any. So the TAIL is the pressure, and THREAT below is not: it ranks that opponent
+// highest, because its missiles track the seat for a while and miss.
+// THREAT: the opponent holds a lock on the seat, or a missile it fired is still
+// tracking the seat -- the seat's own OBS_MSL_IN test, given to the shooter.
+// NOSE: the seat inside the opponent's lock cone and lock range, from anywhere.
+// ATTACK: the seat's nose on the opponent inside the SEAT's lock cone and range.
+// SEAT: how hard the seat pulls and how much throttle it carries, and SPIN, the
+// author's "remain at 0 throttle just to spin around": under CEN_SPIN_THR of
+// throttle while pulling CEN_SPIN_PULL or more.
+uint32_t g_cen_circle[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_extend[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_return[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_pass[SHIP_CLASSES]       = { 0 };
+uint32_t g_cen_shots[SHIP_CLASSES]      = { 0 };
+uint32_t g_cen_tail[SHIP_CLASSES]       = { 0 };
+uint32_t g_cen_tail_shots[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_threat[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_inbound[SHIP_CLASSES]    = { 0 };
+uint32_t g_cen_nose[SHIP_CLASSES]       = { 0 };
+uint32_t g_cen_attack[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_spin[SHIP_CLASSES]       = { 0 };
+float    g_cen_pull_sum[SHIP_CLASSES]      = { 0 };   // the opponent's own, smoothed
+float    g_cen_seat_pull_sum[SHIP_CLASSES] = { 0 };
+float    g_cen_seat_thr_sum[SHIP_CLASSES]  = { 0 };
+#define CEN_PULL      0.4f
+#define CEN_RDOT_K    0.25f    // of the opponent's speed_max, a second
+#define CEN_CIRCLE_T  2.0f
+#define CEN_TAU       0.5f     // smoothing of both pulls and the range rate, seconds
+#define CEN_EXTEND    0.8f
+#define CEN_RETURN    0.6f
+#define CEN_PASS_T    8.0f
+#define CEN_SPIN_THR  0.15f
+#define CEN_SPIN_PULL 0.5f
+static float    s_cen_pull[MAX_ENEMIES];   // this pilot's last turn, from the turn step
+static float    s_cen_pe[MAX_ENEMIES], s_cen_ps[MAX_ENEMIES], s_cen_rdot[MAX_ENEMIES];
+static float    s_cen_r[MAX_ENEMIES], s_cen_run[MAX_ENEMIES], s_cen_ret_t[MAX_ENEMIES];
+static float    s_cen_bout[MAX_ENEMIES];   // the bout clock last frame: a drop is a new bout
+static uint32_t s_cen_runf[MAX_ENEMIES];
+static int      s_cen_state[MAX_ENEMIES], s_cen_rounds[MAX_ENEMIES];
+// AGGRESSION (playtest 3: "aggression needs to be met at least 10 fold"), the same
+// definitions as Gameplay's:
+// A SOLUTION SHOT is a round fired with all four of:
+//   LOCK on the seat (this frame or the last: the census runs before the shooter
+//     fires);
+//   REACH: range <= reach - away * life, away being the seat's speed directly away
+//     from the shooter (floored at 0);
+//   FASTER: the seat slower than the round's launch speed;
+//   NOT CROSSING: the seat's speed across the line of sight under half the round's
+//     launch speed.
+// Gameplay's term, from 6,000+ rounds against both author-like seats: the misses
+// that end in the wall are a fast seat crossing the line of sight (AUC 0.91 for its
+// speed, 0.85 for crossing; 0.59 for range). An AEGIS round leaves slower than a
+// seat at full throttle and cannot hold it in its cone. Solution shots hit 54-93%
+// of the time, the others 5-54%. The launch speed even for the rounds that speed
+// up: the conservative form. Its hits are told apart by launch time (SOLUTION HITS).
+// Independent of anything the AI uses to decide when to fire: this measures.
+// ROUND ENDS, per shooter class, from detonate() (vg_census_round_end): ended, by the
+// wall, and hits on the seat.
+// FORCED EVADE: frames where one of its locked rounds would reach the seat within
+// CEN_EVADE_T at the present closing speed -- the seat has to do something now. A
+// little longer than the AI's own evade trigger (ENEMY_EVADE_RANGE at missile speed,
+// ~1.6 s): a person answers slower.
+uint32_t g_cen_sol_shots[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_ended[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_wall_end[SHIP_CLASSES]  = { 0 };
+uint32_t g_cen_seat_hits[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_evade[SHIP_CLASSES]     = { 0 };
+uint32_t g_cen_sol_hits[SHIP_CLASSES]  = { 0 };
+uint32_t g_cen_rams_net[SHIP_CLASSES]  = { 0 };   // collisions counted against the network
+uint32_t g_cen_rams_seat[SHIP_CLASSES] = { 0 };   // ...and the ones the seat drove into
+#define CEN_RAM_COS 0.866f      // cos 30 degrees: heading at the seat
+// PRESSURE, the two research measures (2026-10-28), to be checked against the
+// author's verdicts before anything is scored with them:
+// MUTUAL THREAT: frames where the seat has the opponent in its own lock cone and
+//   range (ATTACK) AND the opponent has the seat in its lock cone and range (NOSE)
+//   or one of its locked rounds is tracking the seat. Engaging costs the seat
+//   something. MUTUAL WIDE: the same with the seat's cone widened to 60 degrees.
+// FORCED REACTION: a launch (the rack going down) after which the seat's heading
+//   turns more than 90 degrees within CEN_FREACT_T. Any direction: breaking into it
+//   is a reaction too. Counted once a launch; LAUNCHES counts the launches.
+uint32_t g_cen_mutual[SHIP_CLASSES]   = { 0 };
+uint32_t g_cen_mutual_w[SHIP_CLASSES] = { 0 };
+uint32_t g_cen_freact[SHIP_CLASSES]   = { 0 };
+uint32_t g_cen_launch[SHIP_CLASSES]   = { 0 };
+#define CEN_WIDE_COS  0.5f      // cos 60 degrees
+#define CEN_FREACT_T  1.0f
+static float s_cen_fr_t[MAX_ENEMIES];      // seconds since its last launch, < 0: none
+static Vec3  s_cen_fr_dir[MAX_ENEMIES];    // the seat's heading then, arena frame
+static bool  s_cen_fr_done[MAX_ENEMIES];
+// THE OPPONENT'S OWN VIEW, for comparing how it shoots with how the author shoots
+// (host --dump-enemy): opponent 0's observation each frame it has a target, in the
+// recordings' layout, with an "action" of its pull, 0, its throttle and a launch flag.
+// Host only; null on the board.
+void (*vg_census_enemy_tap)(const VgObs* o, const float* act) = nullptr;
+// The seat's heading in the arena frame (the sim is centred on the seat).
+static Vec3 cen_seat_heading(void) {
+    return vsub(vg_arena_local_of(v3(0, 0, 1)), vg_arena_local_of(v3(0, 0, 0)));
+}
+#define CEN_EVADE_T  2.0f
+#define CEN_SOLS     8          // solution launches kept per opponent, for rounds in flight
+#define CEN_SOL_EDGE 0.05f      // seconds: a hit's launch time against a kept launch
+static bool  s_cen_lock_was[MAX_ENEMIES];
+static int   s_cen_solk[MAX_ENEMIES];
+static float s_cen_sol_t[MAX_ENEMIES][CEN_SOLS];
+// The distance a round covers in its life: vg_msl_reach in vg_ship.cpp, which is
+// file-local there.
+static float cen_reach(const ShipSpec* sp) {
+    if (sp->msl_accel <= 0.0f) return sp->msl_speed * sp->msl_life;
+    const float ramp = (sp->msl_speed_max - sp->msl_speed) / sp->msl_accel;
+    if (ramp >= sp->msl_life)
+        return sp->msl_speed * sp->msl_life + 0.5f * sp->msl_accel * sp->msl_life * sp->msl_life;
+    return sp->msl_speed * ramp + 0.5f * sp->msl_accel * ramp * ramp
+         + (sp->msl_life - ramp) * sp->msl_speed_max;
+}
+
+static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float dt) {
+    const float r  = vlen(s->pos);
+    const float bt = vg_bout_time();
+    // A NEW BOUT, or the first frame of this slot: start from what is there now, so
+    // the jump to a fresh spawn is not read as a range rate.
+    if (bt < s_cen_bout[i] || s_cen_r[i] <= 0.0f) {
+        s_cen_r[i]      = r;
+        s_cen_rdot[i]   = 0.0f;
+        s_cen_pe[i]     = s_cen_pull[i];
+        s_cen_ps[i]     = vg.seat_pull;
+        s_cen_run[i]    = 0.0f;
+        s_cen_runf[i]   = 0;
+        s_cen_state[i]  = 0;
+        s_cen_rounds[i] = s->rounds;
+        s_cen_lock_was[i] = s->locked;
+        for (int k = 0; k < CEN_SOLS; k++) s_cen_sol_t[i][k] = -1.0f;
+        s_cen_fr_t[i] = -1.0f;
+    }
+    s_cen_bout[i] = bt;
+    const float k = (dt > 0.0f) ? fminf(1.0f, dt / CEN_TAU) : 0.0f;
+    if (dt > 0.0f) s_cen_rdot[i] += ((r - s_cen_r[i]) / dt - s_cen_rdot[i]) * k;
+    s_cen_r[i] = r;
+    s_cen_pe[i] += (s_cen_pull[i] - s_cen_pe[i]) * k;
+    s_cen_ps[i] += (vg.seat_pull  - s_cen_ps[i]) * k;
+
+    g_cen_pull_sum[c]      += s_cen_pe[i];
+    g_cen_seat_pull_sum[c] += vg.seat_pull;
+    g_cen_seat_thr_sum[c]  += vg.throttle;
+    if (vg.throttle < CEN_SPIN_THR && vg.seat_pull >= CEN_SPIN_PULL) g_cen_spin[c]++;
+
+    // A SHOT is the rack going down: one round a missile, whatever fired it.
+    const int fired = (s->rounds < s_cen_rounds[i]) ? s_cen_rounds[i] - s->rounds : 0;
+    g_cen_shots[c] += (uint32_t)fired;
+    s_cen_rounds[i] = s->rounds;
+    if (fired && r > 1.0f && (s->locked || s_cen_lock_was[i])) {
+        // The seat flies +z; the line of sight runs from the shooter to the seat (-pos).
+        // CROSSING is |v_seat - away * los| with away floored at 0, as Gameplay
+        // measured it: a seat coming at the shooter counts its whole speed, because a
+        // round meeting it head-on has as little time to turn as one it is crossing.
+        const float away  = fmaxf(0.0f, vg.speed * (-s->pos.z / r));
+        const float cross = sqrtf(fmaxf(0.0f, vg.speed * vg.speed - away * away));
+        if (r <= cen_reach(sp) - away * sp->msl_life
+            && vg.speed < sp->msl_speed && cross < 0.5f * sp->msl_speed) {
+            g_cen_sol_shots[c] += (uint32_t)fired;
+            s_cen_solk[i] = (s_cen_solk[i] + 1) % CEN_SOLS;
+            s_cen_sol_t[i][s_cen_solk[i]] = bt;
+        }
+    }
+    s_cen_lock_was[i] = s->locked;
+
+    bool nose = false;
+    if (r > 1.0f && r <= sp->lock_range)
+        nose = vdot(s->aim_dir, vmul(s->pos, -1.0f / r)) > vg_lock_cos_at(sp, r, false);
+    if (nose) g_cen_nose[c]++;
+    // The seat's nose is +z, so its rear half is z < 0.
+    if (nose && s->pos.z < 0.0f) {
+        g_cen_tail[c]++;
+        g_cen_tail_shots[c] += (uint32_t)fired;
+    }
+    const bool att = r > 1.0f && vg.spec && r <= vg.spec->lock_range
+                  && s->pos.z / r > vg_lock_cos_at(vg.spec, r, false);
+    if (att) g_cen_attack[c]++;
+
+    bool inbound = false, evade = false;
+    for (int m = 0; m < MAX_MISSILES && !evade; m++) {
+        const Missile* ms = &vg.msl[m];
+        if (!ms->alive || ms->from_player || !ms->locked || ms->shooter != i) continue;
+        inbound = true;
+        // The seat is at the origin and flies +z at vg.speed.
+        const float d = vlen(ms->pos);
+        if (d > 1.0f) {
+            const Vec3  rel     = vsub(vmul(ms->dir, ms->speed), v3(0, 0, vg.speed));
+            const float closing = -vdot(rel, vmul(ms->pos, 1.0f / d));
+            if (closing > 0.0f && d <= closing * CEN_EVADE_T) evade = true;
+        }
+    }
+    if (inbound) g_cen_inbound[c]++;
+    if (evade) g_cen_evade[c]++;
+    if (inbound || s->locked) g_cen_threat[c]++;
+
+    if (nose || inbound) {
+        if (att) g_cen_mutual[c]++;
+        if (r > 1.0f && vg.spec && r <= vg.spec->lock_range && s->pos.z / r > CEN_WIDE_COS)
+            g_cen_mutual_w[c]++;
+    }
+    if (fired) {
+        g_cen_launch[c]++;
+        s_cen_fr_t[i]    = 0.0f;
+        s_cen_fr_dir[i]  = cen_seat_heading();
+        s_cen_fr_done[i] = false;
+    } else if (s_cen_fr_t[i] >= 0.0f) {
+        s_cen_fr_t[i] += dt;
+        if (!s_cen_fr_done[i] && vdot(cen_seat_heading(), s_cen_fr_dir[i]) < 0.0f) {
+            g_cen_freact[c]++;
+            s_cen_fr_done[i] = true;
+        }
+        if (s_cen_fr_t[i] > CEN_FREACT_T) s_cen_fr_t[i] = -1.0f;
+    }
+    if (vg_census_enemy_tap && i == 0) {
+        VgObs o;
+        vg_bot_observe_enemy(i, &o);
+        if (o.has_target) {
+            const float act[4] = { s_cen_pull[i], 0.0f, o.v[OBS_OWN_THROTTLE],
+                                   fired ? 1.0f : 0.0f };
+            vg_census_enemy_tap(&o, act);
+        }
+    }
+
+    const bool circ = s_cen_ps[i] >= CEN_PULL && s_cen_pe[i] >= CEN_PULL
+                   && fabsf(s_cen_rdot[i]) <= CEN_RDOT_K * sp->speed_max
+                   && r <= sp->lock_range && !vg_wpn.locked && !s->locked;
+    if (circ) {
+        s_cen_run[i] += dt;
+        s_cen_runf[i]++;
+        if (s_cen_run[i] >= CEN_CIRCLE_T) {
+            g_cen_circle[c] += s_cen_runf[i];
+            s_cen_runf[i] = 0;
+        }
+    } else {
+        s_cen_run[i]  = 0.0f;
+        s_cen_runf[i] = 0;
+    }
+
+    switch (s_cen_state[i]) {
+        case 0:
+            if (r > CEN_EXTEND * sp->lock_range) { s_cen_state[i] = 1; g_cen_extend[c]++; }
+            break;
+        case 1:
+            if (r < CEN_RETURN * sp->lock_range && nose) {
+                s_cen_state[i] = 2;
+                s_cen_ret_t[i] = 0.0f;
+                g_cen_return[c]++;
+            }
+            break;
+        default:
+            s_cen_ret_t[i] += dt;
+            if (fired) { g_cen_pass[c]++; s_cen_state[i] = 0; }
+            else if (s_cen_ret_t[i] > CEN_PASS_T) s_cen_state[i] = 0;
+            break;
+    }
+}
+
 
 // Which row of the class table this hull is, or -1 if it is not one of them.
 static int class_of(const ShipSpec* sp) {
     const int i = (int)(sp - &vg_ship_class[0]);
     return (i >= 0 && i < SHIP_CLASSES) ? i : -1;
+}
+
+// A COLLISION with opponent `index` (collide_player, before it dies): whose ram, for
+// the score's ram rule. Conservative, as the main thread set it (2026-10-27): the
+// NETWORK'S if it was closing on the seat with its heading within 30 degrees of it,
+// or if the network was steering that frame; the SEAT'S only if the seat drove into
+// it from behind or the side -- the opponent ahead of the seat's beam, heading
+// elsewhere, and not the network's frame. Anything else counts against the network.
+// Most collisions in Gameplay's log were the seat running into an opponent it chased
+// toward the wall.
+void vg_census_collision(int index) {
+    if (index < 0 || index >= MAX_ENEMIES || !vg.enemy[index].spec) return;
+    const Ship* s = &vg.enemy[index];
+    const int c = class_of(s->spec);
+    if (c < 0) return;
+    const float r = vlen(s->pos);
+    const Vec3  to_seat = (r > 1e-3f) ? vmul(s->pos, -1.0f / r) : v3(0, 0, 1);
+    const bool  heading = vdot(s->fwd, to_seat) >= CEN_RAM_COS;
+    const bool  net     = s->steer_by == STEER_NET;
+    const bool  ahead   = s->pos.z > 0.0f;     // the seat's nose is +z
+    if (heading || net || !ahead) g_cen_rams_net[c]++;
+    else                          g_cen_rams_seat[c]++;
+}
+
+// One of opponent `shooter`'s rounds ended (detonate()): `hit` if it hit the seat,
+// `why` the missile census's reason (3 is the wall), `age` how long it flew. For
+// the fight census; counting only.
+void vg_census_round_end(int shooter, float age, bool hit, int why) {
+    if (shooter < 0 || shooter >= MAX_ENEMIES || !vg.enemy[shooter].spec) return;
+    const int c = class_of(vg.enemy[shooter].spec);
+    if (c < 0) return;
+    g_cen_ended[c]++;
+    if (why == 3) g_cen_wall_end[c]++;
+    if (!hit) return;
+    g_cen_seat_hits[c]++;
+    // Its launch time, against the solution launches kept for this shooter.
+    const float launched = vg_bout_time() - age;
+    for (int k = 0; k < CEN_SOLS; k++) {
+        if (s_cen_sol_t[shooter][k] >= 0.0f
+            && fabsf(launched - s_cen_sol_t[shooter][k]) <= CEN_SOL_EDGE) {
+            g_cen_sol_hits[c]++;
+            break;
+        }
+    }
 }
 
 void vg_update_enemy(Ship* s, int index, float dt) {
@@ -1034,6 +1359,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                 }
                 if (s_census_nolock[index] > AI_DEAD_TIME) g_ai_dead[c]++;
                 s_census_locked[index] = s->locked;
+                census_fight(s, sp, c, index, dt);
             }
             const float rr = vlen(s->pos);
             g_ai_range[c] += rr;
@@ -1089,6 +1415,11 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // Turn, and derive the visual bank from which way we are pulling.
     Vec3 before = s->fwd;
     s->fwd = vg_turn_toward(s->fwd, desired, erate * dt);
+    // FOR THE CENSUS: how much of its own turn this pilot used. Counting only.
+    if (index >= 0 && index < MAX_ENEMIES && erate * dt > 1e-6f) {
+        const float turned = atan2f(vlen(vcross(before, s->fwd)), vdot(before, s->fwd));
+        s_cen_pull[index] = fminf(1.0f, turned / (erate * dt));
+    }
 
     Vec3  u     = vnorm(vsub(s->up, vmul(s->fwd, vdot(s->up, s->fwd))));
     Vec3  right = vcross(u, s->fwd);

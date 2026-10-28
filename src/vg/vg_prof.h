@@ -331,6 +331,38 @@ extern uint32_t g_ai_dead[];    // frames after more than 4 s without a lock
 extern float    g_ai_aim[];
 extern float    g_ai_aimk[];  // [class * STEER_KINDS + kind]
 extern float    g_ai_range[];
+// THE FIGHT CENSUS: circling, passes, the seat's tail. See vg_ai.cpp.
+extern uint32_t g_cen_circle[];      // frames inside a circling run of 2 s or more
+extern uint32_t g_cen_extend[];
+extern uint32_t g_cen_return[];
+extern uint32_t g_cen_pass[];
+extern uint32_t g_cen_shots[];       // rounds the opponent fired
+extern uint32_t g_cen_tail[];        // frames: its nose on the seat, from the seat's rear half
+extern uint32_t g_cen_tail_shots[];  // ...and the rounds it fired from there
+extern uint32_t g_cen_threat[];      // frames: a lock on the seat, or its missile tracking it
+extern uint32_t g_cen_inbound[];     // ...the missile part alone
+extern uint32_t g_cen_nose[];        // frames: the seat inside its lock cone and range
+extern uint32_t g_cen_attack[];      // frames: it inside the SEAT's lock cone and range
+extern uint32_t g_cen_spin[];        // frames: the seat under 15% throttle, pulling hard
+extern float    g_cen_pull_sum[];
+extern float    g_cen_seat_pull_sum[];
+extern float    g_cen_seat_thr_sum[];
+extern uint32_t g_cen_sol_shots[];   // rounds fired with a lock and the seat in reach
+extern uint32_t g_cen_ended[];       // its rounds that ended, any way
+extern uint32_t g_cen_wall_end[];    // ...in the wall
+extern uint32_t g_cen_seat_hits[];   // ...on the seat
+extern uint32_t g_cen_evade[];       // frames: a round of its <= 2 s from the seat
+extern uint32_t g_cen_sol_hits[];    // hits on the seat by its solution shots
+void vg_census_round_end(int shooter, float age, bool hit, int why);
+extern uint32_t g_cen_rams_net[];    // collisions counted against the network
+extern uint32_t g_cen_rams_seat[];   // collisions the seat drove into
+void vg_census_collision(int index);
+extern uint32_t g_cen_mutual[];      // frames of mutual threat (seat's lock cone)
+extern uint32_t g_cen_mutual_w[];    // ...with the seat's cone at 60 degrees
+extern uint32_t g_cen_freact[];      // launches the seat turned > 90 deg after, in 1 s
+extern uint32_t g_cen_launch[];      // launches (rack decrements, one per frame)
+struct VgObs;
+extern void (*vg_census_enemy_tap)(const VgObs* o, const float* act);   // host --dump-enemy
 
 extern uint32_t g_msl_dark[2];
 extern uint32_t g_msl_relit[2];
