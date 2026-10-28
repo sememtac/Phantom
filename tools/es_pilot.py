@@ -24,7 +24,15 @@ of flight, or as a share of frames:
     - draws    a bout reached the time limit: a fight not finished
     - rams     a bout that ended in a collision, whoever survived. Strictly
                worse than a draw: the author rejected suicidal ramming, and with
-               draws penalised a ram would otherwise be the cheapest way out
+               draws penalised a ram would otherwise be the cheapest way out.
+               If the game prints the census ram split, only the network's
+               collisions are rams. A collision is the seat's ("seatrams") if
+               the opponent was in front of the seat, did not fly toward the
+               seat (heading more than 30 degrees off), and the network did not
+               have control in that frame: the seat flew into it from behind or
+               from the side. All other collisions are the network's. Seatrams
+               have weight 0. The ram rule applies to all ram bouts.
+               --no-ram-split counts all ram bouts as rams, as before
       (a seat that dies against the wall scores nothing: the network did not
        earn it, and it is not a draw either)
     + damage   seat hull taken minus network hull lost
@@ -71,8 +79,10 @@ credit for the damage it did. Then a ram is worse than a draw whatever the hulls
 as long as the rams weight is more than the draws weight.
 
 Each class is scored apart and the four scores are added, so that a weak class
-counts as much as a strong one. --weights changes the weights. --eval scores
-networks on fixed fights and prints these parts, without training.
+counts as much as a strong one. --weights changes the weights. --class-weights
+multiplies each class's score, so that a run can aim at some classes and keep the
+others as a guard. --eval scores networks on fixed fights and prints these parts,
+without training.
 
 THE LEAGUE is what the network fights against. --seat-kinds gives the seats and
 the weight of each: "scripted" (the scripted seat), "plain" (the network in
@@ -125,6 +135,7 @@ EXPOSED = re.compile(r"^break \w+.*\| exposed shots (\d+) hits (\d+)", re.M)
 ILLUM = re.compile(r"^break \w+.*\| illum hold ([\d.]+)% letgo (\d+) hits (\d+)", re.M)
 AGGR = re.compile(r"^aggr \w+\s+shots (\d+) solution (\d+) \| ended (\d+) wall (\d+) hits (\d+)"
                   r" \| evade ([\d.]+)%(?: \| solution hits (\d+))?", re.M)
+RAMSPLIT = re.compile(r"^aggr \w+.*\| rams net (\d+) seat (\d+)", re.M)
 
 # The weights, and the sign each part enters with. See the docstring for each.
 # Set against the M2 network's own numbers (2026-10-25): it drew almost every
@@ -138,14 +149,14 @@ DEFAULT_WEIGHTS = {"kills": 1.0, "ttk": 0.5, "deaths": 1.0, "draws": 0.75,
                    "breakhits": 0.0, "breakshots": 0.0, "hitseat": 0.0,
                    "expohits": 0.0, "exposhots": 0.0,
                    "evade": 0.0, "solshots": 0.0, "wallshots": 0.0, "solhits": 0.0,
-                   "illumhits": 0.0, "illumhold": 0.0, "letgo": 0.0}
+                   "illumhits": 0.0, "illumhold": 0.0, "letgo": 0.0, "seatrams": 0.0}
 SIGN = {"kills": 1, "ttk": 1, "deaths": -1, "draws": -1, "rams": -1, "seatwall": 0,
         "damage": 1, "hit": -1,
         "armed": 1, "reengage": 1, "dead": -1, "lock": 1, "guided": 1,
         "circle": -1, "tail": 1, "tailshots": 1, "passes": 1,
         "breakhits": 1, "breakshots": 1, "hitseat": 1, "expohits": 1, "exposhots": 1,
         "evade": 1, "solshots": 1, "wallshots": -1, "solhits": 1,
-        "illumhits": 1, "illumhold": 1, "letgo": 1}
+        "illumhits": 1, "illumhold": 1, "letgo": 1, "seatrams": -1}
 
 
 def span(text):
@@ -248,7 +259,7 @@ def fly(job):
     return r.stdout
 
 
-def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False):
+def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False, ram_split=True):
     """The score of one fight and its parts. None if the run was short."""
     m = FRAMES.search(text)
     if not m or int(m.group(1)) != frames:
@@ -259,6 +270,21 @@ def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False):
     kills = [b for b in bouts if b[0] == "lost" and b[2] == "missile"]
     seatwall = sum(1 for b in bouts if b[0] == "lost" and b[2] in ("wall", "other"))
     rams = sum(1 for b in bouts if b[2] == "ram")
+    # WHOSE RAM. A game with the census says which collisions were the network's and
+    # which the seat drove into; only the network's count as rams. The ram rule
+    # below (no damage credit in a ram bout) stays on every ram bout.
+    seatrams = 0
+    split = RAMSPLIT.findall(text) if ram_split else []
+    if split:
+        net = sum(int(n) for n, _ in split)
+        seatrams = sum(int(s) for _, s in split)
+        # Each collision ends its bout, so the census count and the ram bouts must
+        # agree. A ram bout that the census did not attribute counts against the
+        # network.
+        if net + seatrams > rams:
+            print("warning: the census has %d collisions but %d ram bouts"
+                  % (net + seatrams, rams), file=sys.stderr)
+        rams = max(net, rams - seatrams)
     deaths = sum(1 for b in bouts if b[0] == "won")
     draws = sum(1 for b in bouts if b[0] == "draw")
     # With the ram rule, a bout that ends in a ram gives no credit for damage done.
@@ -330,7 +356,8 @@ def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False):
              "exposhots": exposhots / minutes, "expohits": expohits / minutes,
              "evade": evade, "solshots": solshots / minutes, "wallshots": wallshots / minutes,
              "solhits": solhits / minutes, "illumhits": illumhits / minutes,
-             "illumhold": illumhold, "letgo": letgo / minutes}
+             "illumhold": illumhold, "letgo": letgo / minutes,
+             "seatrams": seatrams / minutes}
     total = sum(SIGN[k] * w[k] * parts[k] for k in SIGN)
     return total, parts
 
@@ -357,8 +384,10 @@ def evaluate(blobs, fights, args, w, pool, log_dir=None, log_blobs=None):
     n_cls = [[0.0] * len(CLASSES) for _ in blobs]
     short = 0
     ram_rule = getattr(args, "ram_rule", False)
+    ram_split = not getattr(args, "no_ram_split", False)
     for job, text in zip(jobs, texts):
-        s = score_fight(text, job["enemy"], job["frames"], w, job["bout"], ram_rule)
+        s = score_fight(text, job["enemy"], job["frames"], w, job["bout"], ram_rule,
+                        ram_split)
         if s is None:
             short += 1
             continue
@@ -368,14 +397,29 @@ def evaluate(blobs, fights, args, w, pool, log_dir=None, log_blobs=None):
         for k, v in s[1].items():
             cls[bi][e][k] += v * sw
         n_cls[bi][e] += sw
-    # Each class apart, then added, so a weak class counts as much as a strong one.
-    scores = np.array([sum(sum(x * sw for x, sw in c) / sum(sw for _, sw in c) if c else 0.0
-                           for c in p) for p in per])
+    # Each class apart, then added, so a weak class counts as much as a strong one --
+    # times its class weight (--class-weights), so a run can aim at some classes and
+    # keep the others as a guard.
+    cw = class_weights(args)
+    scores = np.array([sum(cw[e] * sum(x * sw for x, sw in c) / sum(sw for _, sw in c)
+                           if c else 0.0 for e, c in enumerate(p)) for p in per])
     cls = [[{k: v / max(n, 1e-9) for k, v in c.items()} for c, n in zip(cb, nb)]
            for cb, nb in zip(cls, n_cls)]
     parts = [{k: sum(c[k] for c, n in zip(cb, nb) if n) / max(sum(1 for n in nb if n), 1)
               for k in SIGN} for cb, nb in zip(cls, n_cls)]
     return scores, parts, short, cls
+
+
+def class_weights(args):
+    """The weight of each opponent class in the score, in CLASSES order. 1 for all,
+    unless --class-weights gives some, for example AEGIS:1,LANCE:1,CHARIOT:0.25."""
+    w = [1.0] * len(CLASSES)
+    for part in filter(None, (getattr(args, "class_weights", None) or "").split(",")):
+        name, _, v = part.partition(":")
+        if name not in CLASSES:
+            raise SystemExit("error: no class called %s" % name)
+        w[CLASSES.index(name)] = float(v)
+    return w
 
 
 def seat_list(args):
@@ -420,7 +464,8 @@ def cmd_eval(args):
         scores, parts, short, cls = evaluate(blobs, fights, args, w, pool, log_dir)
     print("%d fights for each network, %g min each, %s. Short runs: %d."
           % (len(fights), args.minutes, args.flags, short))
-    print("Per 10 min: missile kills, ttk bonus, deaths, draws, rams (any outcome),")
+    print("Per 10 min: missile kills, ttk bonus, deaths, draws, rams (the network's;")
+    print("srams at the end: the collisions the seat drove into),")
     print("seat lost to the wall, hits on the network by seat missiles, hull exchange.")
     print("Shares: lock, armed, dead (4 s past the last lock). reengage: new passes a minute.")
     print("Census: circle and tail shares; passes, tail shots, break hits per 10 min;")
@@ -431,7 +476,8 @@ def cmd_eval(args):
             " %6s %6s %6s %6s %6s %6s %6s %6s")
     print(head % ("network", "class", "kills", "ttk", "deaths", "draws", "rams",
                   "swall", "hit", "dmg", "lock", "armed", "reeng", "dead",
-                  "circ", "pass", "tail", "tshot", "bhit", "exch", "hitS", "evade") + "  score")
+                  "circ", "pass", "tail", "tshot", "bhit", "exch", "hitS", "evade")
+          + " srams  score")
     result = []
     for b, sc, pa, cb in zip(blobs, scores, parts, cls):
         name = os.path.basename(b)
@@ -449,6 +495,7 @@ def cmd_eval(args):
                           "%.2f" % (10 * p["breakhits"]),
                           "%.2f" % (p["hitseat"] / p["hit"]) if p["hit"] > 0 else "-",
                           "%.1f" % (10 * p["hitseat"]), "%.1f%%" % (100 * p["evade"]))
+                  + " %5.2f" % (10 * p["seatrams"])
                   + ("  %.3f" % sc if label == "all" else ""))
         result.append({"blob": b, "score": float(sc), "parts": pa, "classes": cb})
     if args.name:
@@ -509,8 +556,14 @@ def main():
     ap.add_argument("--seat-blob", default="captures/ai_eval/m3/mixed32F.bin",
                     help="with --seat-kinds: the network file of the plain and curve seats "
                          "(default: the M2 imitation of the author)")
+    ap.add_argument("--class-weights",
+                    help="the weight of each opponent class in the score, for example "
+                         "AEGIS:1,LANCE:1,CHARIOT:0.25,BALLISTA:0.25 (default 1 for all)")
     ap.add_argument("--ram-rule", action="store_true",
                     help="no credit for damage done in a bout that ends in a ram")
+    ap.add_argument("--no-ram-split", action="store_true",
+                    help="count every ram bout as a ram of the network, as before the "
+                         "census ram split. Use it to compare with old tables")
     ap.add_argument("--flags",
                     default="--net-all-phases --net-rules-trigger --no-modes --net-corner-exempt",
                     help="game flags for every fight (default: the network flies every "
@@ -609,7 +662,7 @@ def main():
             write_blob(mean_blob, d, unflatten(theta, a, names))
             # The fights of the generation's own network are kept (one file a fight, not
             # the whole population's), so the causes of its bouts can be read later.
-            scores, parts, short, _ = evaluate(blobs + [mean_blob], fights, args, w, pool,
+            scores, parts, short, cls = evaluate(blobs + [mean_blob], fights, args, w, pool,
                                                os.path.join(out, "fights"), {mean_blob})
             cand, mean_score = scores[:-1], scores[-1]
             write_float_header(os.path.join(out, "gen_%03d.h" % gen), text,
@@ -621,7 +674,8 @@ def main():
             theta = theta + args.lr * sc * g - args.anchor * (theta - theta0)
             line = {"gen": gen, "mean_score": float(mean_score),
                     "best": float(cand.max()), "median": float(np.median(cand)),
-                    "parts": parts[-1], "short": short, "fights": len(fights),
+                    "parts": parts[-1], "classes": dict(zip(CLASSES, cls[-1])),
+                    "short": short, "fights": len(fights),
                     "seconds": round(time.time() - t0, 1),
                     "drift": float(np.sqrt(np.mean(((theta - theta0) / sc) ** 2)))}
             if args.resume is not None:
@@ -630,10 +684,10 @@ def main():
                 f.write(json.dumps(line) + "\n")
             pm = parts[-1]
             print("gen %3d  score %.3f  best copy %.3f  /10 min: kills %.2f deaths %.2f "
-                  "draws %.2f rams %.2f swall %.2f bhits %.2f  circle %.0f%%  exch %s  "
-                  "drift %.3f  short %d  %.0f s"
+                  "draws %.2f rams %.2f srams %.2f swall %.2f bhits %.2f  circle %.0f%%  "
+                  "exch %s  drift %.3f  short %d  %.0f s"
                   % (gen, mean_score, cand.max(), 10 * pm["kills"], 10 * pm["deaths"],
-                     10 * pm["draws"], 10 * pm["rams"], 10 * pm["seatwall"],
+                     10 * pm["draws"], 10 * pm["rams"], 10 * pm["seatrams"], 10 * pm["seatwall"],
                      10 * pm["breakhits"], 100 * pm["circle"],
                      "%.2f" % (pm["hitseat"] / pm["hit"]) if pm["hit"] > 0 else "-",
                      line["drift"], short, line["seconds"]))
