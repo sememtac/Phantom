@@ -268,6 +268,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--seat-net-file") && i + 1 < argc) seat_net_file = argv[++i];
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         else if (!strcmp(argv[i], "--no-ram")) vg_no_ram = true;
+        // The opponent without the break or the exposed shot. See vg_enemy_break.
+        else if (!strcmp(argv[i], "--no-break")) vg_enemy_break = false;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
             screen = screen_by_name(argv[++i]);
             if (!screen) {

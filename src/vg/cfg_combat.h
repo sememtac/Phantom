@@ -505,6 +505,231 @@
 #define ENEMY_RESET_MIN      1.4f    // seconds committed to the re-merge
 #define ENEMY_RESET_MAX      2.2f
 
+// --- out of a circle, away, and back in to attack ---------------------------
+//
+// THE AUTHOR'S VERDICT ON EVERY OPPONENT, 2026-10-25: each one either circles --
+// "dog tail chasing spinning around" -- or leaves and never comes back. Nothing
+// punishes a player who sits at zero throttle and turns, so nothing ever makes
+// them leave. What they asked for, in their words: "disengage, break away for a
+// bit and turn around to fire at you", and pressure defined as "the need for me to
+// personally disengage knowing that i might get hit if i keep engaging".
+//
+// THE RESET ABOVE IS NOT THIS. It waits for twelve seconds with nobody landing
+// anything, and a hit EITHER WAY restarts that clock, so a circle with the odd
+// graze never trips it; it then runs for under two and a half seconds, which opens
+// a few hundred units at most; and nothing comes after it, so the fight resumes
+// exactly where it was.
+//
+// SO THIS WATCHES FOR THE CIRCLE ITSELF, with the AI tab's census test so that
+// what triggers it is what is measured: both ships pulling hard, the range not
+// moving, inside this ship's lock range, and nobody holding a lock. Held for
+// ENEMY_CIRCLE_TIME, the ship leaves at full throttle along the tube until it has
+// opened its class's distance, then turns back in and makes ONE committed run:
+// leading the player, slowing into its envelope, and shooting through the same
+// trigger as always. Then the fight is the fight again, and if it goes back to a
+// circle, the whole thing happens again.
+//
+// THE CIRCLE TEST IS THE AI TAB'S CENSUS, number for number, so that what this
+// answers is what is measured. 0.4 is where the author's own smoothed pull sits on
+// more than half their AEGIS frames in the M1 recordings; 0.25 of top speed keeps
+// the median range rate of a mutual turn, which is under 80 units a second.
+#define ENEMY_CIRCLE_PULL     0.40f   // both ships using this share of their turn
+#define ENEMY_CIRCLE_RDOT_K   0.25f   // ...the range moving slower than this x top speed
+#define ENEMY_CIRCLE_SMOOTH   0.50f   // seconds: the pulls and the range rate, smoothed
+// SOONER, from the second playtest: against the network "it still takes too long
+// for the computer to realize it should break away". At two seconds the circle
+// was already being counted when the break began, and the smoothing on the
+// pulls kept it counted for the first of the extend.
+#define ENEMY_CIRCLE_TIME     1.0f    // seconds of an unbroken circle before it leaves
+// THE EXTEND IS ALSO THE MISSILE DEFENCE. Flat out, every hull outruns the rounds
+// of its own class, so a ship running away is a ship the player's shot cannot
+// catch -- and the classic way to die is to turn back in front of a round that is
+// still chasing. So it runs flat out the whole way, and it does not turn back while
+// something is tracking it inside the alert range, up to a harder ceiling.
+#define ENEMY_BRK_EXTEND_MAX  6.0f    // the extend ends here even if the range has not opened
+#define ENEMY_BRK_EXTEND_HARD 9.0f    // ...unless a round is still chasing, then here
+#define ENEMY_BRK_RUN_MAX     7.0f    // the run's ceiling, from the turn to the break
+#define ENEMY_BRK_COOLDOWN    2.0f    // after a run, before another circle can start one
+#define ENEMY_BRK_LEAD_MAX    0.30f   // seconds of the player's motion it aims ahead, at most
+// A COMMITTED RUN takes the shot before it answers an incoming round, unless the
+// round is this close: inside it, the break across is the only thing still worth
+// doing. After its shot, it answers at the ordinary ENEMY_EVADE_RANGE.
+#define ENEMY_BRK_LAST_DITCH  250.0f
+
+// --- the exposed shot -------------------------------------------------------
+//
+// "NOT ENOUGH TO MAKE ME FEEL LIKE IT'S PRESSURING ME OR TAKING SHOT AT ME WHENEVER I
+// AM EXPOSED" -- the author, on the tactics with the break, which they otherwise
+// called the most fun opponent yet. Exposed means inside this ship's lock range
+// while it is outside the player's own cone: the player cannot shoot it, so it is
+// the moment to shoot them.
+//
+// MEASURED, NOTHING POINTED AT THEM. Against the author-like seat the player was
+// exposed on most frames, and the opponent's nose was on them for 6-18% of those
+// and its lock for 1-11%. The rack was not the reason and neither was the lock
+// time: the tactics fly their curves, an empty AEGIS orbits to rearm, and the
+// network points wherever it points. Nothing anywhere decided to turn onto a
+// player who had turned away. So this does: nose on, slowed to the class's own
+// lock speed, and the ordinary trigger does the rest.
+//
+// UNDER BOTH COLLISION FLOORS and over the break, because a shot at somebody who
+// cannot answer it is worth more than the plan to set one up. A round coming in
+// close is answered first, as everywhere.
+#define ENEMY_EXPO_MAX        4.0f    // seconds it will spend lining one up
+#define ENEMY_EXPO_COOLDOWN   1.5f    // ...and before it starts another
+
+// --- the shot, judged ---------------------------------------------------------
+//
+// "8 OF 10 TACTICS SHOTS WENT INTO THE WALL." The opponent fired the moment it held
+// a lock, and the lock says nothing about whether the round can follow the target.
+// Measured on its rounds against the two author-like seats, what decides that
+// is the target's SPEED and how fast it is CROSSING the line of sight, both
+// against the round's own speed -- not the range, and not how far off the nose it
+// left. An AEGIS round flies at 340 and a seat at full throttle at 420: of its
+// rounds fired at the curved seat while it was faster than the round or crossing,
+// 5% arrived and 74% hit the wall. The round lost the seat from its cone in the
+// first second and flew on.
+//
+// So the pilot judges the shot, the way a person does: what chance does this round
+// have against that target, flying the way it is flying now? See hit_chance. Below
+// the class's minimum it holds the lock and waits for a better moment -- the seat
+// slowing to turn or to lock, or the geometry closing up -- instead of spending
+// the round. Not a weapon rule: the trigger's own gates are untouched, and a
+// network that has its own opinion about the trigger keeps it.
+//
+// LOW FOR THE TWO HULLS A SEAT CAN OUTRUN. Against a seat flying its own hull an
+// AEGIS or a CHARIOT round is slower than the seat, so the chance is low on almost
+// every shot: at 0.45 an AEGIS fired once every eleven minutes at the curved seat,
+// and a CHARIOT landed about a fifth of the hits it did with no gate. A round that
+// probably misses still has to be answered, and that is pressure; a round fired at
+// somebody flying away across the line of sight at full speed is only the wall. So
+// these two hold only the shots with next to no chance -- AEGIS halved its rounds
+// into the wall and lost no hits against the plain seat; for CHARIOT, whose seeker
+// takes in almost everything, only the hopeless go. LANCE and BALLISTA were not
+// moved by the gate at any height in their own matchups.
+#define ENEMY_SHOT_MIN_FIGHTER   0.20f
+#define ENEMY_SHOT_MIN_GEOMETRY  0.45f
+#define ENEMY_SHOT_MIN_SLASH     0.10f
+#define ENEMY_SHOT_MIN_STANDOFF  0.45f
+
+// --- BALLISTA lights its round -------------------------------------------------
+//
+// "WE NEED TO ENSURE THAT THE SHIP KNOWS TO ILLUMINATE THE MISSILE ... ALWAYS FAVOR
+// GUIDANCE UNLESS THE CHANCE OF BEING HIT IS HIGH." A semi-active round rides its
+// launcher's lock, and the launcher let go of two in three of them: of 1,266 rounds
+// a tactics BALLISTA fired at the author-like seats, 736 went dark before they
+// arrived, because nothing in it knew a round was in the air. Not one of those
+// hit; of the ones that stayed lit, 80% did. The network flying it did the same.
+//
+// So while one of its rounds is guided, it keeps the player in its lock -- above
+// the break, the exposed shot and the network -- and lets go only for a round
+// coming in at it that it judges likely to hit: its seeker still holds this ship,
+// it is under ENEMY_DANGER_TTI from impact, and hit_chance, read from the incoming
+// round's side, is over ENEMY_ILLUM_DANGER. Then everything below answers it as
+// before.
+#define ENEMY_ILLUM_DANGER   0.50f
+#define ENEMY_ILLUM_SPEED    0.40f   // of its speed span, while it lights
+// THE SAME CHANCE, READ FROM THE OTHER SIDE: a round coming in at this ship. Only
+// a round this close in time is a danger yet; further out there is still time to
+// answer it after whatever this ship is in the middle of. See incoming_danger.
+#define ENEMY_DANGER_TTI         2.0f
+
+// --- answering a round, with the advantage ------------------------------------------
+//
+// HOLDING THE ADVANTAGE, it answers only a round it judges likely to hit. The
+// exposed shot gave way to any round inside ENEMY_EVADE_RANGE, so a player who
+// threw a round at it -- any round, from any angle -- took the one shot it had
+// lined up away from it. Now it gives way when incoming_danger says the round is
+// likely to arrive, and otherwise takes the shot.
+#define ENEMY_EVADE_DANGER    0.50f
+// AN EMPTY AEGIS BREAKS TOO. Holding the break until a round came back held more
+// than half of what was left of an AEGIS's circling against the network. Its run
+// is flown nose-on, which is the contact in front, which is what refills an
+// AR-AAM rack -- so it comes back with the round it went to get.
+#define BRK_DRY_BREAK         1
+// THE SNIPER'S BREAK IS ITS OWN STANDOFF. A BALLISTA flown by the network
+// knife-fights, and with no break of its own it was half of all the circling
+// left. An extend is wrong for it -- the slowest hull in the game, back turned --
+// but its class tactic already holds a band and leaves when crowded, so its
+// break is that tactic, flown for this long.
+#define BRK_STANDOFF_BREAK    1
+#define ENEMY_BRK_STANDOFF_T  5.0f
+// PER CLASS: how far it opens the range, as a fraction of its own lock range; how
+// fast it flies the last of the run, inside that range, as a fraction of its speed
+// span; and how long after its first shot the run is over.
+#define BRK_EXTEND_FIGHTER    1.00f
+#define BRK_EXTEND_GEOMETRY   1.00f
+#define BRK_EXTEND_SLASH      1.30f
+// NOT ITS STANDOFF BAND. Three thousand units at the slowest speed in the game is
+// nine seconds with its back to every round in the air -- measured, it took more
+// hits on the way out than in the whole rest of the fight. It locks at 4200 in an
+// eight-degree cone with no lock time, so it needs room to turn, not a band.
+#define BRK_EXTEND_STANDOFF   0.45f
+#define BRK_SPEED_FIGHTER     0.35f   // the fighter's close-in speed
+#define BRK_SPEED_GEOMETRY    0.22f   // GEOM_SPEED_K: slow, to hold the lock
+#define BRK_SPEED_SLASH       0.45f   // SLASH_SPEED_K: fast, just under the gate
+#define BRK_SPEED_STANDOFF    0.15f   // point and hold
+#define BRK_AFTER_FIGHTER     0.6f
+#define BRK_AFTER_GEOMETRY    1.0f
+#define BRK_AFTER_SLASH       1.5f    // the whole rack, which is the class
+#define BRK_AFTER_STANDOFF    5.0f    // semi-active: it keeps lighting the round
+
+// --- each hull's reset (playtest 3, the author's design) ------------------------
+//
+// "FOR AEGIS THE RETREAT IS A BIT TOO FAR AND IT WORKS AGAINST ITS PLAYSTYLE." It
+// rearms only with the contact in its forward half, and an extend out to its own
+// lock range turned its back for up to six seconds: its mean range in that sitting
+// was 968, against about 400 before. So each hull now resets its own way:
+//   AEGIS    a short break-off, then back in early, nose on, rearming as it comes
+//   LANCE    a little more room than that, to lock on for its salvo -- not much
+//            more, because it still has to aim to lock
+//   CHARIOT  today's reset, which the author called a good baseline for the staple
+//            run and gun, with its long cooldown
+//   BALLISTA a shorter retreat and then closer combat: see STANDOFF3_HOLD_K
+// How far the extend opens the range (a fraction of the hull's lock range), and
+// its two ceilings in seconds: open or not, and chased or not.
+#define BRK3_EXTEND_FIGHTER    0.40f
+#define BRK3_EXTEND_GEOMETRY   0.60f
+#define BRK3_EXT_MAX_FIGHTER   2.0f
+#define BRK3_EXT_MAX_GEOMETRY  3.5f
+#define BRK3_EXT_HARD_FIGHTER  3.0f
+#define BRK3_EXT_HARD_GEOMETRY 4.5f
+// How long a circle holds before the break, and how long after one before the next.
+// LANCE keeps two seconds of circle: the first of them is the lock it is building,
+// and one second cost it -- deaths 1.78 -> 2.88 per ten minutes against the plain
+// seat, network flying.
+#define BRK3_HOLD_GEOMETRY     2.0f
+#define BRK3_CD_FIGHTER        1.0f
+#define BRK3_CD_GEOMETRY       1.5f
+#define BRK3_CD_SLASH          4.0f    // the long cooldown is the class
+#define BRK3_CD_STANDOFF       2.0f
+// BALLISTA'S BREAK, shorter, and the band it holds, closer. It held three thousand
+// units and fired from there: of its rounds launched beyond 2500, 3.5% arrived and
+// 86% ran out of life, where inside 1600 they hit 60-73%. The round is slow, but
+// it turns at five radians a second with a 65-degree seeker -- a wide threshold up
+// close, which is where the author wants it fought.
+#define BRK3_STANDOFF_T        2.5f
+#define STANDOFF3_HOLD_K       0.32f   // x its own lock range: about 1350
+#define STANDOFF3_FLEE_K       1.0f    // x ENEMY_BREAK_RANGE: it leaves only inside 560
+
+// --- the break, per hull ------------------------------------------------------
+//
+// LANCE HOLDS ITS LOCK, and that is what a run costs it. A committed run takes its
+// shot before it answers a round, and a LANCE is the slowest of them to shoot: it
+// has to hold its lock, so it sat in front of the player's rounds the longest.
+// Measured against the author-like seat, it died fourteen times as often as before
+// the break (0.16 to 2.28 a ten minutes) for 0.09 kills. So a LANCE on its run
+// answers a round at the ordinary evade range, before its shot as well as after it.
+// That took its deaths from 2.28 to 1.78 and kept its kills. Ending a run that has
+// no lock after 1.5 s was also measured: it took the kills to nothing.
+#define BRK_EVADE_EARLY_GEOMETRY  1
+// A CHARIOT HITTING FROM THE CIRCLE IS NOT CIRCLING. The complaint was a circle with
+// no punishment in it, and a twelve-round rack landing from the turn IS the
+// punishment: breaking out of it halved this class's kills. So a CHARIOT does not
+// break while the player has been hit in the last this-many seconds -- a little
+// over its ten-second reload, so one burst a reload keeps it in the circle.
+#define BRK_WINNING_SLASH         12.0f   // 0: break whatever
+
 // --- how many of its own rounds a pilot will have in the air ----------------
 //
 // THE RATE LIMIT WAS NEVER THE PROBLEM, and it is worth writing down why, because
@@ -641,3 +866,185 @@
 // This one used to have a double-beat shape of its own, which is the more
 // authentic thing and read as a flicker on a 480x480 panel held at arm's length.
 // One flash, accelerating, is what the boundary does and it works.
+
+// =============================================================================
+// AGGRESSION: every knob of the opponent's aggression, in one table (break v4)
+// =============================================================================
+//
+// "WE ARE PUSHING TO MAKE AI BECOME MORE AGGRESSIVE (VERY VERY AGGRESSIVE) ... ID
+// RATHER OVERTUNE THEN TUNE IT DOWN THAN UNDERTUNING LIKE WHAT WE HAVE NOW." -- the
+// author, 2026-10-26, after the opponent in playtest 3 fired four rounds in three
+// and a half minutes. The weapons and the flight model stay as they are; this is
+// all behaviour, and it is all here, so that tuning it down is an edit to numbers.
+//
+// EACH KNOB HAS TWO ROWS. CALM is break v3, the opponent the author found not
+// pressuring, with the values the earlier parts named; HOT is this tuning. One
+// number blends them:
+//   AGGRESSION 0   break v3, exactly -- the same fights, frame for frame
+//   AGGRESSION 1   the HOT row
+//   in between     the way back down; above 1, further than the table
+// To tune a single knob, change its HOT cell.
+#define AGGRESSION 1.0f
+
+enum AggKnob {
+    // THE HUNT, the layer that attacks: under the collision floors, BALLISTA's
+    // light, the exposed shot and the break, over everything else.
+    AGG_HUNT_RANGE,    // x lock range: inside this it hunts the player; 0 never
+    AGG_HUNT_MIN,      // x lock range: ...and outside this; closer in, the class's
+                       // own fight (the tactics or the network) has the ship
+    AGG_NET_HUNT_MIN,  // the same, while the network flies it: inside this the
+                       // network fights, and the hunt only brings it back in
+    AGG_HUNT_DRY,      // s of reload left at which an empty rack hunts again
+                       // (an AR-AAM rearms facing the player, so it always does)
+    AGG_CHASE_SPEED,   // of its speed span, closing on them from outside...
+    AGG_LOCK_RANGE,    // ...this, x lock range, inside which it flies at...
+    AGG_LOCK_SPEED,    // ...this share of its speed span, to lock
+    AGG_OFFSET,        // units: it aims this far beside the player, inside the lock
+                       // cone, so a pass goes by them instead of into the floors
+    // THE TRIGGER AND THE NERVE
+    AGG_SHOT_MIN,      // hit chance it fires at (hit_chance); 0 fires on the lock
+    AGG_EVADE_MIN,     // hit chance of a round coming in that it breaks off for
+                       // while hunting or taking the exposed shot
+    AGG_EXPO_CD,       // s after an exposed shot before it looks for the next
+    // THE RESET, each hull's own: the break out of a circle
+    AGG_HOLD,          // s of circle before it breaks
+    AGG_EXTEND,        // how far it opens the range, x lock range
+    AGG_EXT_MAX,       // s: the extend ends here, open or not...
+    AGG_EXT_HARD,      // s: ...and here, chased or not
+    AGG_BREAK_CD,      // s after a break before another can start
+    // BALLISTA (the other columns are not read)
+    AGG_STANDOFF_T,    // s: its break is its standoff for this long
+    AGG_BAND,          // x lock range: the band its standoff holds
+    AGG_FLEE,          // x ENEMY_BREAK_RANGE: it leaves only inside this
+    AGG_ILLUM_DANGER,  // hit chance of a round coming in that makes it stop lighting
+    // THE CHARGE AND THE BREAK-AWAY (playtest 4), inside the hunt: in nose on from
+    // a distance, and when the player is closer than...
+    AGG_IN_MIN,        // ...this, x lock range, away again (0: never) -- until...
+    AGG_OUT_R,         // ...the range is back to this, x lock range...
+    AGG_OUT_MAX,       // ...or this many seconds have gone,
+    AGG_OUT_ANG,       // degrees off straight away: 0 opens the range, 90 crosses
+                       // their path with them on the beam
+    AGG_OUT_CHASED,    // 1: it keeps breaking away with the player's nose on it;
+                       // 0: it turns back in -- it does not fear being caught
+    AGG_SALVO,         // a banking rack: rounds banked before it fires (0: one)
+    // THE SUICIDE RUN, the kamikaze trait. The decision to keep it is the author's;
+    // these hold today's behaviour until then.
+    AGG_RAM_HULL,      // of its hull: a pilot with the trait commits below this (0: never)
+    AGG_RAM_MAX,       // s: a run that has not connected by now is given up (0: never)
+    // THE TURN BACK AND THE BREAK-AWAY'S SPEED (playtest 5), inside the hunt. With
+    // the player further off the nose than...
+    AGG_TURN_COS,      // ...this cosine (below -1: never), the hunt flies at...
+    AGG_TURN_SPEED,    // ...this, of its speed range: a turn is only tighter if the
+                       // speed goes
+    AGG_OUT_SPEED,     // the break-away's speed, of its speed range (1: flat out)
+    AGG_KNOBS
+};
+
+//  knob                AEGIS                   LANCE                   CHARIOT                 BALLISTA
+static constexpr float AGG_CALM[AGG_KNOBS][4] = {
+    /* HUNT_RANGE    */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* HUNT_MIN      */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* NET_HUNT_MIN  */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* HUNT_DRY      */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* CHASE_SPEED   */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
+    /* LOCK_RANGE    */ { 0.6f,                 0.6f,                   0.6f,                   0.6f                 },
+    /* LOCK_SPEED    */ { BRK_SPEED_FIGHTER,    BRK_SPEED_GEOMETRY,     BRK_SPEED_SLASH,        BRK_SPEED_STANDOFF   },
+    /* OFFSET        */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* SHOT_MIN      */ { ENEMY_SHOT_MIN_FIGHTER, ENEMY_SHOT_MIN_GEOMETRY, ENEMY_SHOT_MIN_SLASH, ENEMY_SHOT_MIN_STANDOFF },
+    /* EVADE_MIN     */ { ENEMY_EVADE_DANGER,   ENEMY_EVADE_DANGER,     ENEMY_EVADE_DANGER,     ENEMY_EVADE_DANGER   },
+    /* EXPO_CD       */ { ENEMY_EXPO_COOLDOWN,  ENEMY_EXPO_COOLDOWN,    ENEMY_EXPO_COOLDOWN,    ENEMY_EXPO_COOLDOWN  },
+    /* HOLD          */ { ENEMY_CIRCLE_TIME,    BRK3_HOLD_GEOMETRY,     ENEMY_CIRCLE_TIME,      ENEMY_CIRCLE_TIME    },
+    /* EXTEND        */ { BRK3_EXTEND_FIGHTER,  BRK3_EXTEND_GEOMETRY,   BRK_EXTEND_SLASH,       BRK_EXTEND_STANDOFF  },
+    /* EXT_MAX       */ { BRK3_EXT_MAX_FIGHTER, BRK3_EXT_MAX_GEOMETRY,  ENEMY_BRK_EXTEND_MAX,   ENEMY_BRK_EXTEND_MAX },
+    /* EXT_HARD      */ { BRK3_EXT_HARD_FIGHTER, BRK3_EXT_HARD_GEOMETRY, ENEMY_BRK_EXTEND_HARD, ENEMY_BRK_EXTEND_HARD },
+    /* BREAK_CD      */ { BRK3_CD_FIGHTER,      BRK3_CD_GEOMETRY,       BRK3_CD_SLASH,          BRK3_CD_STANDOFF     },
+    /* STANDOFF_T    */ { BRK3_STANDOFF_T,      BRK3_STANDOFF_T,        BRK3_STANDOFF_T,        BRK3_STANDOFF_T      },
+    /* BAND          */ { STANDOFF3_HOLD_K,     STANDOFF3_HOLD_K,       STANDOFF3_HOLD_K,       STANDOFF3_HOLD_K     },
+    /* FLEE          */ { STANDOFF3_FLEE_K,     STANDOFF3_FLEE_K,       STANDOFF3_FLEE_K,       STANDOFF3_FLEE_K     },
+    /* ILLUM_DANGER  */ { ENEMY_ILLUM_DANGER,   ENEMY_ILLUM_DANGER,     ENEMY_ILLUM_DANGER,     ENEMY_ILLUM_DANGER   },
+    /* IN_MIN        */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* OUT_R         */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* OUT_MAX       */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* OUT_ANG       */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* OUT_CHASED    */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
+    /* SALVO         */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* RAM_HULL      */ { ENEMY_KAMIKAZE_HULL,  ENEMY_KAMIKAZE_HULL,    ENEMY_KAMIKAZE_HULL,    ENEMY_KAMIKAZE_HULL  },
+    /* RAM_MAX       */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* TURN_COS      */ { -2.0f,                -2.0f,                  -2.0f,                  -2.0f                },
+    /* TURN_SPEED    */ { 0.0f,                 0.0f,                   0.0f,                   0.0f                 },
+    /* OUT_SPEED     */ { 1.0f,                 1.0f,                   1.0f,                   1.0f                 },
+};
+
+// THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
+// longer, CHARIOT long -- at a shorter length, and hunts. BALLISTA'S COLUMN IS ITS
+// CALM ONE: it already resets short and fights close, and every hotter setting
+// measured cost it hits on the curved author-like seat in its own matchup --
+// hunting took it from 4.4 hits a minute to 1.5, the nerve knobs alone to 3.2.
+//  knob                AEGIS   LANCE   CHARIOT BALLISTA
+static constexpr float AGG_HOT[AGG_KNOBS][4] = {
+    /* HUNT_RANGE    */ { 3.0f,   3.0f,   3.0f,   0.0f },   // the whole arena, near enough
+    /* HUNT_MIN      */ { 0.0f,   0.0f,   0.0f,   0.0f },
+    /* NET_HUNT_MIN  */ { 0.0f,   0.0f,   0.0f,   0.0f },   // the hunt flies the close fight over the
+                                                            // network. CHARIOT: the author loved it.
+                                                            // AEGIS and LANCE: their charge and
+                                                            // break-away is here, and the gen-48
+                                                            // network flying LANCE's close fight hit
+                                                            // the curved seat 0.03 times a minute
+    /* HUNT_DRY      */ { 0.0f,   2.0f,   0.0f,   0.0f },   // CHARIOT's dry extend is the class
+    /* CHASE_SPEED   */ { 1.0f,   1.0f,   1.0f,   1.0f },   // flat out: a turning player bleeds speed
+    /* LOCK_RANGE    */ { 0.8f,   0.8f,   0.8f,   0.6f },
+    /* LOCK_SPEED    */ { 0.0f,   0.0f,   0.0f,   BRK_SPEED_STANDOFF },   // slowest: longest nose-on,
+                                                                          // quickest lock
+    /* OFFSET        */ { 200.0f, 200.0f, 200.0f, 0.0f },
+    /* SHOT_MIN      */ { 0.0f, 0.0f, 0.0f, 0.0f },   // fire on the lock -- AEGIS too since
+                                                            // playtest 5 (0.2 before): see TURN_COS
+    /* EVADE_MIN     */ { 0.80f,  0.80f,  0.80f,  ENEMY_EVADE_DANGER },   // only a near-certain hit
+    /* EXPO_CD       */ { 0.3f,   0.3f,   0.3f,   ENEMY_EXPO_COOLDOWN },
+    /* HOLD          */ { 1.0f,   2.0f,   1.0f,   ENEMY_CIRCLE_TIME },    // LANCE keeps its two seconds
+    /* EXTEND        */ { 0.30f,  0.45f,  1.00f,  BRK_EXTEND_STANDOFF },
+    /* EXT_MAX       */ { 1.5f,   2.5f,   4.5f,   ENEMY_BRK_EXTEND_MAX },
+    /* EXT_HARD      */ { 2.5f,   3.5f,   7.0f,   ENEMY_BRK_EXTEND_HARD },
+    /* BREAK_CD      */ { 0.5f,   1.0f,   3.0f,   BRK3_CD_STANDOFF },
+    /* STANDOFF_T    */ { BRK3_STANDOFF_T,  BRK3_STANDOFF_T,  BRK3_STANDOFF_T,  BRK3_STANDOFF_T },
+    /* BAND          */ { STANDOFF3_HOLD_K, STANDOFF3_HOLD_K, STANDOFF3_HOLD_K, STANDOFF3_HOLD_K },
+    /* FLEE          */ { STANDOFF3_FLEE_K, STANDOFF3_FLEE_K, STANDOFF3_FLEE_K, STANDOFF3_FLEE_K },
+    /* ILLUM_DANGER  */ { ENEMY_ILLUM_DANGER, ENEMY_ILLUM_DANGER, ENEMY_ILLUM_DANGER, ENEMY_ILLUM_DANGER },
+    // AEGIS AND LANCE, from the author's own diagnosis of playtest 4: "their class
+    // mechanics work against the retreat and circling behavior, they often need to
+    // break away repeatedly to look for opening and reorient, especially lance needs
+    // some slight distance to charge up the salvo while aegis should not fear being
+    // caught but rather try to always face the opponent to deliver attack when it's
+    // charged up." Measured, the hunt took both into the merge -- a LANCE at 270
+    // units, nose 120 degrees off a parked player, locked 2% of the time -- so the
+    // hunt now stops closing at AGG_IN_MIN and breaks straight out: AEGIS briefly,
+    // LANCE twice as long, for the distance a salvo needs. Against the curved
+    // author-like seat flying any hull, that took AEGIS from 0.38 hits a minute to
+    // 0.96 and LANCE from 0.45 to 1.05 (tactics). Breaking away across the player's
+    // path, or at any angle, kept them alive and lost the hits. NOT YET FOR LANCE
+    // AGAINST LANCE: an author-like LANCE chases one that breaks away, and in that
+    // mirror it measured worse (0.28 to 0.09). CHARIOT and BALLISTA: off.
+    /* IN_MIN        */ { 0.10f,  0.15f,  0.0f,   0.0f },
+    /* OUT_R         */ { 0.45f,  0.50f,  0.0f,   0.0f },
+    /* OUT_MAX       */ { 0.6f, 2.5f, 0.0f, 0.0f },
+    /* OUT_ANG       */ { 90.0f, 0.0f, 0.0f, 0.0f },
+    /* OUT_CHASED    */ { 1.0f,   1.0f,   1.0f,   1.0f },
+    /* SALVO         */ { 0.0f,   2.0f,   0.0f,   0.0f },   // LANCE: two banked, then the salvo
+    /* RAM_HULL      */ { ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL, ENEMY_KAMIKAZE_HULL },
+    /* RAM_MAX       */ { 0.0f,   0.0f,   0.0f,   0.0f },
+    // AEGIS, FROM PLAYTEST 5: "aegis needs to know it's about facing the enemy,
+    // even if it requires doing very short strafing runs", and in m3 it "doesn't turn
+    // around as quickly and launch its attack". Its break-away was v5's -- straight
+    // out, flat out, for up to a second and a half -- which is the one leg on which
+    // an AR-AAM cannot rearm, and the turn back after it was flown at speed: two and
+    // a half seconds for half a circle. Now the break-away is a strafe across the
+    // player's path (OUT_ANG 90) for 0.6 s, the turn back is flown at its slowest
+    // (TURN_COS, TURN_SPEED), and every round goes as it is ready (SHOT_MIN 0, which
+    // was 0.2). Against the plain author-like seat in its own mirror that took its
+    // deaths from 12 to 1.5 every ten minutes at the same 2.4 hits a minute. Against
+    // the curved one it fires 40% more and hits almost nothing: those are the rounds
+    // SHOT_MIN 0.2 held, at under one chance in ten. That is the trade the author
+    // asked to see, and 0.2 puts it back.
+    /* TURN_COS      */ { 0.0f, -2.0f, -2.0f, -2.0f },
+    /* TURN_SPEED    */ { 0.0f,  0.0f,  0.0f,  0.0f },
+    /* OUT_SPEED     */ { 1.0f,  1.0f,  1.0f,  1.0f },
+};

@@ -3,6 +3,7 @@
 #include "vg_bot.h"
 #include "vg_modes.h"
 #include "vg_wpnsys.h"
+#include "vg_net.h"      // vg_net_available, for the hunt
 #include "vg_prof.h"     // vg_bout_time, for the fight census
 #include <math.h>
 
@@ -30,6 +31,26 @@
 // rate, and flat out they cannot shoot.
 
 // Closest player missile currently tracking this enemy.
+// THE AGGRESSION TABLE, read. See AGGRESSION in cfg_combat.h. One column per
+// class, in the class table's order; a hull's tactic names its column too.
+static_assert(SHIP_CLASSES == 4, "the aggression table has one column per class");
+static int agg_col(const ShipSpec* sp) {
+    const int c = (int)(sp - &vg_ship_class[0]);
+    return (c >= 0 && c < SHIP_CLASSES) ? c : 0;
+}
+static int agg_col(ShipTactic t) {
+    switch (t) {
+        case TACTIC_GEOMETRY: return 1;
+        case TACTIC_SLASH:    return 2;
+        case TACTIC_STANDOFF: return 3;
+        case TACTIC_FIGHTER:
+        default:              return 0;
+    }
+}
+static float agg(AggKnob k, int c) {
+    return AGG_CALM[k][c] + (AGG_HOT[k][c] - AGG_CALM[k][c]) * AGGRESSION;
+}
+
 static const Missile* incoming_for(int enemy_index, float* out_range) {
     const Missile* best = nullptr;
     float bestr = 1e9f;
@@ -431,14 +452,16 @@ static void tactic_dry(Ship* s, Vec3 to, float smax, Vec3* desired,
 // cockpit: the ship turns its back and leaves.
 static void tactic_standoff(Ship* s, const ShipSpec* sp, Vec3 to, float range,
                             float smin, float smax, Vec3* desired) {
-    const float hold = sp->lock_range * STANDOFF_HOLD_K;
+    // CLOSER WITH THE BREAK ON: see STANDOFF3_HOLD_K.
+    const float hold = sp->lock_range * (vg_enemy_break ? agg(AGG_BAND, agg_col(sp)) : STANDOFF_HOLD_K);
     // NOT shortened against a slow target, unlike the merge breaks. Those exist
     // as caution about the other ship and a parked one is not worth being cautious
     // about. This one is the CLASS: a standoff hull wants its range whoever it is
     // facing, and handing it a reason to close because the target slowed down
     // would trade the identity away for a press it does not need. It shoots from
     // out there; that is the whole point of it.
-    const float flee = ENEMY_BREAK_RANGE * STANDOFF_FLEE_K;
+    // ...and with the break on, it leaves only when it is crowded: STANDOFF3_FLEE_K.
+    const float flee = ENEMY_BREAK_RANGE * (vg_enemy_break ? agg(AGG_FLEE, agg_col(sp)) : STANDOFF_FLEE_K);
 
     // DID THE LAST RUN ACHIEVE ANYTHING? Judged when it ends rather than while it
     // is happening, because a run has to be given its whole length first.
@@ -848,6 +871,487 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
 }
 
 
+// ---------------------------------------------------------------------------
+// OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME.
+// ---------------------------------------------------------------------------
+// The extend, the run's speed, the run's end after its shot, the extend's two
+// ceilings, the circle hold and the cooldown. See BRK3_EXTEND_FIGHTER.
+struct BrkClass { float extend_k, speed_k, after, ext_max, ext_hard, hold, cd; };
+
+// THE PER-HULL EXCEPTIONS, apart from the table above so they can go on their own.
+struct BrkHull { bool evade_early; float winning; };
+
+static BrkHull brk_hull(ShipTactic t) {
+    switch (t) {
+        case TACTIC_GEOMETRY: return { BRK_EVADE_EARLY_GEOMETRY != 0, 0.0f };
+        case TACTIC_SLASH:    return { false, BRK_WINNING_SLASH };
+        default:              return { false, 0.0f };
+    }
+}
+
+static BrkClass brk_class(ShipTactic t) {
+    switch (t) {
+        // THE RESET'S KNOBS ARE THE AGGRESSION TABLE'S: see AGGRESSION.
+        case TACTIC_GEOMETRY: return { agg(AGG_EXTEND, 1), BRK_SPEED_GEOMETRY, BRK_AFTER_GEOMETRY,
+                                       agg(AGG_EXT_MAX, 1), agg(AGG_EXT_HARD, 1),
+                                       agg(AGG_HOLD, 1), agg(AGG_BREAK_CD, 1) };
+        case TACTIC_SLASH:    return { agg(AGG_EXTEND, 2), BRK_SPEED_SLASH, BRK_AFTER_SLASH,
+                                       agg(AGG_EXT_MAX, 2), agg(AGG_EXT_HARD, 2),
+                                       agg(AGG_HOLD, 2), agg(AGG_BREAK_CD, 2) };
+        case TACTIC_STANDOFF: return { agg(AGG_EXTEND, 3), BRK_SPEED_STANDOFF, BRK_AFTER_STANDOFF,
+                                       agg(AGG_EXT_MAX, 3), agg(AGG_EXT_HARD, 3),
+                                       agg(AGG_HOLD, 3), agg(AGG_BREAK_CD, 3) };
+        case TACTIC_FIGHTER:
+        default:              return { agg(AGG_EXTEND, 0), BRK_SPEED_FIGHTER, BRK_AFTER_FIGHTER,
+                                       agg(AGG_EXT_MAX, 0), agg(AGG_EXT_HARD, 0),
+                                       agg(AGG_HOLD, 0), agg(AGG_BREAK_CD, 0) };
+    }
+}
+
+// WATCHED EVERY FRAME, whoever is flying -- the tactics or the network -- because
+// the circle is a fact about the two ships, not about the layer that steered.
+// The same test the census counts: both pulling hard, the range not moving, inside
+// this ship's lock range, and nobody locked. circle_t is the unbroken run of it.
+static void circle_watch(Ship* s, const ShipSpec* sp, float dt) {
+    if (dt <= 0.0f) return;
+    const float r = vlen(s->pos);
+    if (s->prev_range <= 0.0f) {
+        // A NEW BOUT starts from what is true now, not from zero.
+        s->pull_s      = s->turn_frac;
+        s->seat_pull_s = vg.seat_pull;
+        s->rdot_s      = 0.0f;
+    } else {
+        float k = dt / ENEMY_CIRCLE_SMOOTH;
+        if (k > 1.0f) k = 1.0f;
+        s->rdot_s      += ((r - s->prev_range) / dt - s->rdot_s) * k;
+        s->pull_s      += (s->turn_frac - s->pull_s) * k;
+        s->seat_pull_s += (vg.seat_pull - s->seat_pull_s) * k;
+    }
+    s->prev_range = r;
+    const bool circling = s->seat_pull_s >= ENEMY_CIRCLE_PULL
+                       && s->pull_s >= ENEMY_CIRCLE_PULL
+                       && fabsf(s->rdot_s) <= ENEMY_CIRCLE_RDOT_K * sp->speed_max
+                       && r <= sp->lock_range
+                       && !vg_wpn.locked && !s->locked;
+    s->circle_t = circling ? s->circle_t + dt : 0.0f;
+    if (s->brk_cd > 0.0f) s->brk_cd -= dt;
+    if (s->brk_phase != BRK_NONE) s->brk_t += dt;
+    if (s->brk_shot_t >= 0.0f) s->brk_shot_t += dt;
+    // HOW LONG SINCE THE PLAYER WAS LAST HIT, for a hull that does not break a circle
+    // it is winning. Any hit counts: there is one opponent in a duel, and two ships
+    // landing hits between them is no less a fight going somewhere.
+    if (s->seen_health >= 0.0f && vg.health < s->seen_health - 1e-4f) s->seat_hit_t = 0.0f;
+    else                                                                 s->seat_hit_t += dt;
+    s->seen_health = vg.health;
+}
+
+// AWAY, AND ALONG THE TUBE. Straight away from the player is usually straight at
+// a wall: the tube is 1900 in radius and the extend wants a lock range or more.
+// Along the loop there is always room, so the extend follows it, on whichever side
+// of the loop points away from the player -- chosen once, so the ship does not
+// dither between the two -- with a share of plain "away" so the range opens from
+// the first second. The wall still outranks it.
+static Vec3 extend_dir(Ship* s, Vec3 los) {
+    const Vec3 away = vmul(los, -1.0f);
+    if (vg_arena.kind != ARENA_TORUS) return away;
+    const Vec3  l = vg_arena_local_of(s->pos);
+    const float h = sqrtf(l.x * l.x + l.z * l.z);
+    if (h < 1.0f) return away;
+    Vec3 t = vg_arena_dir_to_view(v3(-l.z / h, 0.0f, l.x / h));
+    if (s->brk_sign == 0.0f) s->brk_sign = (vdot(t, away) >= 0.0f) ? 1.0f : -1.0f;
+    t = vmul(t, s->brk_sign);
+    return vnorm(vadd(vmul(t, 0.6f), vmul(away, 0.8f)));
+}
+
+bool vg_enemy_break = true;
+
+// THE BREAK. Returns true while it is steering.
+//
+// A ROUND COMING IN IS ANSWERED BY RUNNING, then by the shot, then by the break.
+// The extend is flat out, which outruns it; the run takes its shot first, and only
+// a round inside ENEMY_BRK_LAST_DITCH makes it break before then; after the shot
+// it answers at the ordinary range. On those frames this declines, the layers
+// below answer the missile, and the break picks up where it was. A committed run
+// is not a suicide run.
+//
+// THE RUN leads the player by up to ENEMY_BRK_LEAD_MAX of their motion, but never
+// by more than half its own lock cone, so the lead does not cost it the lock it
+// came for. It closes fast, and inside its lock range it slows to its class's
+// speed, because the lock is earned slowly at full throttle -- LOCK_SPEED_PENALTY.
+// A STANDOFF hull does not lead: an eight-degree cone and a round it keeps lighting
+// all the way in want the nose on the player, not ahead of them.
+//
+// IT ENDS on the class's own terms after the first shot, at the break range --
+// the merge still belongs to the tactic and the floors above -- or on its ceiling.
+// An AR-AAM rack refills while the player is in front, so an AEGIS that arrives
+// empty keeps its nose on them and shoots when the round comes back.
+static bool breaking(Ship* s, const ShipSpec* sp, bool reacted, float inc_range,
+                     float inc_speed, float smin, float smax, Vec3* desired) {
+    if (!vg_enemy_break) return false;
+    const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+    const float r  = vlen(to);
+    if (r < 1.0f) return false;
+    const Vec3 los = vmul(to, 1.0f / r);
+    const BrkClass bc = brk_class(sp->tactic);
+    const BrkHull  bh = brk_hull(sp->tactic);
+
+    if (s->brk_phase == BRK_NONE) {
+        if (s->circle_t < bc.hold || s->brk_cd > 0.0f) return false;
+        // NOT THE SNIPER. A BALLISTA is the slowest thing in the game, so an extend
+        // is nine seconds with its back to every round in the air -- measured, it
+        // took more hits on the way out than in all the rest of the fight. Its own
+        // standoff already holds the range and leaves when it is crowded.
+        if (sp->tactic == TACTIC_STANDOFF && !BRK_STANDOFF_BREAK) return false;
+        // PER HULL: not out of a circle that is landing hits. See BRK_WINNING_SLASH.
+        if (bh.winning > 0.0f && s->seat_hit_t < bh.winning) return false;
+        // AN AR-AAM RACK ONLY REFILLS WITH THE PLAYER IN FRONT, and an extend puts
+        // them behind. Leaving with nothing in the rack comes back with nothing, so
+        // an AEGIS goes when it has a round to come back with.
+        if (sp->wpn == WPN_ARAAM && s->rounds <= 0 && !BRK_DRY_BREAK) return false;
+        s->brk_phase = BRK_EXTEND;
+        s->brk_t     = 0.0f;
+        s->brk_sign  = 0.0f;
+        s->circle_t  = 0.0f;
+    }
+    // RUN FROM WHAT YOU CAN OUTRUN, AND BREAK ACROSS WHAT YOU CANNOT. Flat out, a
+    // ship faster than the round chasing it has already won; a BALLISTA is not, and
+    // running away from a faster round is the one answer that always loses.
+    const bool shot_taken = s->brk_phase == BRK_RUN && s->brk_shot_t >= 0.0f;
+    const bool outrun     = inc_speed < smax;
+    const float answer_at = (shot_taken || (s->brk_phase == BRK_EXTEND && !outrun)
+                             || (s->brk_phase == BRK_RUN && bh.evade_early))
+                          ? ENEMY_EVADE_RANGE : ENEMY_BRK_LAST_DITCH;
+    if (reacted && inc_range < answer_at) return false;
+
+    // THE SNIPER'S BREAK: its own standoff, then back to the fight. No run.
+    if (sp->tactic == TACTIC_STANDOFF) {
+        if (s->brk_t < agg(AGG_STANDOFF_T, agg_col(sp))) {
+            tactic_standoff(s, sp, to, r, smin, smax, desired);
+            s->steer_by = STEER_TACTIC;
+            s->stale_t  = 0.0f;
+            return true;
+        }
+        s->brk_phase = BRK_NONE;
+        s->brk_cd    = bc.cd;
+        s->circle_t  = 0.0f;
+        return false;
+    }
+    if (s->brk_phase == BRK_EXTEND) {
+        const float want    = sp->lock_range * bc.extend_k;
+        // NOT INTO A LOCK. Turning back in while the player has this ship in their
+        // sights hands them the first shot -- the player is slower, so they lock
+        // sooner -- and the trace of every such run is the same: their round, then
+        // ours, then ours missing. So it keeps running until they lose it, up to
+        // the same harder ceiling.
+        const bool  chased  = (inc_range < MSL_ALERT_RANGE && outrun) || vg_wpn.locked;
+        const bool  opened  = r >= want || s->brk_t >= bc.ext_max;
+        if (!(opened && !chased) && s->brk_t < bc.ext_hard) {
+            *desired        = extend_dir(s, los);
+            s->target_speed = smax;
+            s->steer_by     = STEER_RESET;
+            s->stale_t      = 0.0f;
+            return true;
+        }
+        s->brk_phase  = BRK_RUN;
+        s->brk_t      = 0.0f;
+        s->brk_rounds = s->rounds;
+        s->brk_shot_t = -1.0f;
+    }
+
+    // THE RUN.
+    if (s->rounds < s->brk_rounds && s->brk_shot_t < 0.0f) s->brk_shot_t = 0.0f;
+    s->brk_rounds = s->rounds;
+    float brk_k = 1.0f;
+    if (sp->tactic == TACTIC_GEOMETRY) brk_k = GEOM_BREAK_K;
+    if (sp->tactic == TACTIC_SLASH)    brk_k = SLASH_BREAK_K;
+    if (sp->tactic == TACTIC_STANDOFF) brk_k = STANDOFF_FLEE_K;
+    const bool shot_done = s->brk_shot_t >= 0.0f &&
+        (s->brk_shot_t > bc.after || (s->rounds <= 0 && sp->tactic == TACTIC_SLASH));
+    // A LOCK IN HAND IS WORTH THE LAST FEW HUNDRED UNITS. Holding one and not yet
+    // shot, the run goes on to half the break range; both collision floors above
+    // still turn it away from contact.
+    const float end_r = ENEMY_BREAK_RANGE * brk_k
+                      * ((s->locked && s->brk_shot_t < 0.0f && s->rounds > 0) ? 0.5f : 1.0f);
+    if (r < end_r || s->brk_t > ENEMY_BRK_RUN_MAX || shot_done) {
+        s->brk_phase  = BRK_NONE;
+        s->brk_cd     = bc.cd;
+        s->brk_shot_t = -1.0f;
+        s->circle_t   = 0.0f;
+        return false;
+    }
+
+    Vec3 aim = to;
+    if (sp->tactic != TACTIC_STANDOFF) {
+        float t_go = r / (s->speed > 100.0f ? s->speed : 100.0f);
+        if (t_go > ENEMY_BRK_LEAD_MAX) t_go = ENEMY_BRK_LEAD_MAX;
+        aim = vadd(to, v3(0.0f, 0.0f, vg.speed * t_go));
+        // Never more than half the cone off the player.
+        const float half = cosf(0.5f * acosf(vg_lock_cos_at(sp, r, false)));
+        const Vec3  a    = vnorm(aim);
+        if (vdot(a, los) < half) {
+            const Vec3 side = vnorm(vsub(a, vmul(los, vdot(a, los))));
+            aim = vadd(vmul(los, half), vmul(side, sqrtf(1.0f - half * half)));
+        }
+    }
+    *desired        = aim;
+    s->target_speed = (r > sp->lock_range * 1.3f) ? smax
+                    : smin + (smax - smin) * bc.speed_k;
+    s->steer_by     = STEER_PRESS;
+    s->stale_t      = 0.0f;
+    return true;
+}
+
+// THE CHANCE THIS PILOT SEES IN A ROUND. See ENEMY_SHOT_MIN_FIGHTER.
+//
+// A round of class `wsp`, at `from` with speed `vm`, against a target at `tpos`
+// moving at `tvel` (both relative, as missile_target sees them). Four numbers,
+// each a ratio so one table serves every class and both directions -- this ship's
+// own shot, and a round coming in at it:
+//   the target's speed over the round's; its speed across the line of sight over
+//   the round's; its speed along it, away from the round, over the round's; and
+//   the time to impact at the present closing speed over the round's life.
+// The weights are a logistic fitted to 31,000 rounds of headless fights, both
+// sides' rounds against both author-like seats and the AI, per weapon class, with
+// semi-active rounds whose launcher let go of them left out: for that class it is
+// the chance IF it is lit (captures/brk/fit_phit.py, 2026-10-26).
+static const float HIT_W[SHIP_CLASSES][5] = {
+    //  bias    speed   across  away    time
+    {  3.048f, -2.657f, -0.830f, 0.990f, -0.282f },   // AEGIS
+    {  4.403f, -2.375f, -1.570f, 1.187f, -0.016f },   // LANCE
+    {  3.574f, -2.050f, -2.439f, 0.929f, -0.578f },   // CHARIOT
+    {  5.469f, -2.480f, -2.184f, 1.026f, -0.722f },   // BALLISTA
+};
+
+static float hit_chance(const ShipSpec* wsp, Vec3 from, float vm, Vec3 tpos, Vec3 tvel) {
+    const int c = (int)(wsp - &vg_ship_class[0]);
+    if (c < 0 || c >= SHIP_CLASSES) return 1.0f;
+    const Vec3  d = vsub(tpos, from);
+    const float r = vlen(d);
+    if (r < 1.0f) return 1.0f;
+    const Vec3  los  = vmul(d, 1.0f / r);
+    if (vm < 1.0f) vm = 1.0f;
+    const float vt2  = vdot(tvel, tvel);
+    const float away = vdot(tvel, los);
+    const float lat2 = vt2 - away * away;
+    const float lat  = sqrtf(lat2 > 0.0f ? lat2 : 0.0f);
+    const float clos = vm - away;
+    const float tti  = r / (clos > 30.0f ? clos : 30.0f);
+    const float* w = HIT_W[c];
+    const float z = w[0] + w[1] * sqrtf(vt2) / vm + w[2] * lat / vm + w[3] * away / vm
+                  + w[4] * tti / wsp->msl_life;
+    return 1.0f / (1.0f + expf(-z));
+}
+
+// THIS SHIP'S OWN SHOT, at the player, judged against its class's minimum.
+static bool shot_worth(const Ship* s, const ShipSpec* sp) {
+    if (!vg_enemy_break) return true;
+    const float need = agg(AGG_SHOT_MIN, agg_col(sp));   // see AGGRESSION
+    return hit_chance(sp, s->pos, sp->msl_speed, v3(0, 0, 0), v3(0, 0, vg.speed)) >= need;
+}
+
+// A ROUND COMING IN AT THIS SHIP, as its pilot perceives it. See
+// ENEMY_DANGER_TTI. Zero if there is none, if its seeker no longer holds this
+// ship (it cannot come back: no class that fires at an enemy reacquires once it is
+// clear of the cone), if it is opening, or if it is more than ENEMY_DANGER_TTI from
+// impact. Otherwise hit_chance from the round's side, with this ship flying on as
+// it is.
+static float incoming_danger(const Ship* s, const Missile* m) {
+    if (!m || !m->spec) return 0.0f;
+    const Vec3  d = vsub(s->pos, m->pos);
+    const float r = vlen(d);
+    if (r < 1.0f) return 1.0f;
+    const Vec3 los = vmul(d, 1.0f / r);
+    if (vdot(m->dir, los) < m->spec->msl_seeker_cos) return 0.0f;
+    const Vec3  tv   = vmul(s->fwd, s->speed);
+    const float clos = m->speed * vdot(m->dir, los) - vdot(tv, los);
+    if (clos <= 0.0f || r > clos * ENEMY_DANGER_TTI) return 0.0f;
+    return hit_chance(m->spec, m->pos, m->speed, s->pos, tv);
+}
+
+// THE EXPOSED SHOT. See ENEMY_EXPO_MAX. Returns true while it is steering.
+//
+// It ends on the class's own terms after its first shot -- the burst, the whole
+// rack for a slasher, the round lit all the way in for a semi-active hull -- or
+// when the player turns their nose onto it with no lock in hand, or at the merge,
+// or on its ceiling. Then it waits ENEMY_EXPO_COOLDOWN before it looks again.
+static void expo_tick(Ship* s, float dt) {
+    if (s->expo_t > 0.0f) {
+        s->expo_t -= dt;
+        if (s->expo_t <= 0.0f) s->expo_cd = agg(AGG_EXPO_CD, agg_col(s->spec));
+    } else if (s->expo_cd > 0.0f) {
+        s->expo_cd -= dt;
+    }
+    if (s->expo_shot_t >= 0.0f) s->expo_shot_t += dt;
+}
+
+static bool exposed_shot(Ship* s, const ShipSpec* sp, bool reacted, float inc_range,
+                         const Missile* inc, float smin, float smax, Vec3* desired) {
+    if (!vg_enemy_break) return false;
+    const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+    const float r  = vlen(to);
+    if (r < 1.0f) return false;
+    // Where this ship sits on the player's canopy: inside their cone and range they
+    // threaten it; anywhere else, they are exposed to it.
+    const bool threat  = r <= vg.spec->lock_range
+                      && s->pos.z / r >= vg_lock_cos_at(vg.spec, r, false);
+    const bool exposed = !threat && r <= sp->lock_range && r > ENEMY_ATTACK_MIN;
+
+    // NOT A LANCE. It has to bank its locks before it may shoot, and a few seconds of
+    // pointing is not long enough to: measured, with this its kills went to nothing
+    // in both modes and its draws went up. Its break run is where it shoots.
+    if (sp->tactic == TACTIC_GEOMETRY) return false;
+    if (s->expo_t <= 0.0f) {
+        if (s->expo_cd > 0.0f || !exposed || !reacted || s->rounds <= 0) return false;
+        s->expo_t      = ENEMY_EXPO_MAX;
+        s->expo_shot_t = -1.0f;
+        s->expo_rounds = s->rounds;
+    }
+    if (s->rounds < s->expo_rounds && s->expo_shot_t < 0.0f) s->expo_shot_t = 0.0f;
+    s->expo_rounds = s->rounds;
+
+    const BrkClass bc = brk_class(sp->tactic);
+    const bool shot_done = s->expo_shot_t >= 0.0f &&
+        (s->expo_shot_t > bc.after || (s->rounds <= 0 && sp->tactic == TACTIC_SLASH));
+    const bool give_up = (threat && !s->locked) || r <= ENEMY_ATTACK_MIN
+                      || (s->rounds <= 0 && s->expo_shot_t < 0.0f);
+    if (shot_done || give_up) {
+        s->expo_t      = 0.0f;
+        s->expo_cd     = agg(AGG_EXPO_CD, agg_col(sp));
+        s->expo_shot_t = -1.0f;
+        return false;
+    }
+    // HOLDING THE ADVANTAGE, it answers only a round it judges likely to hit:
+    // see ENEMY_EVADE_DANGER.
+    if (reacted && inc_range < ENEMY_EVADE_RANGE
+        && incoming_danger(s, inc) >= agg(AGG_EVADE_MIN, agg_col(sp))) return false;
+
+    *desired        = to;
+    // The turn back, as the hunt flies it: see AGG_TURN_COS.
+    const bool turning = vdot(s->fwd, vmul(to, 1.0f / r)) < agg(AGG_TURN_COS, agg_col(sp));
+    s->target_speed = smin + (smax - smin) * (turning ? agg(AGG_TURN_SPEED, agg_col(sp)) : bc.speed_k);
+    s->steer_by     = STEER_PRESS;
+    s->stale_t      = 0.0f;
+    return true;
+}
+
+// BALLISTA LIGHTS ITS ROUND. See ENEMY_ILLUM_DANGER. Returns true while it is
+// steering: the player held in its lock, at a speed it can turn at.
+static bool lighting(Ship* s, const ShipSpec* sp, int index, const Missile* inc,
+                     float smin, float smax, Vec3* desired) {
+    s->illum = ILLUM_NONE;
+    if (!vg_enemy_break || !vg_msl_semi_active(sp)) return false;
+    bool lit = false;
+    for (int i = 0; i < MAX_MISSILES && !lit; i++) {
+        const Missile* m = &vg.msl[i];
+        lit = m->alive && !m->from_player && m->shooter == index && m->locked;
+    }
+    if (!lit) return false;
+    if (incoming_danger(s, inc) >= agg(AGG_ILLUM_DANGER, agg_col(sp))) {
+        s->illum = ILLUM_LET_GO;
+        return false;
+    }
+    s->illum        = ILLUM_HOLD;
+    *desired        = vsub(v3(0, 0, 0), s->pos);
+    s->target_speed = smin + (smax - smin) * ENEMY_ILLUM_SPEED;
+    s->steer_by     = STEER_PRESS;
+    s->stale_t      = 0.0f;
+    return true;
+}
+
+// THE SALVO, banked. See AGG_SALVO. A banking rack fires when it holds that many
+// rounds banked, or all it has -- or when the hunt is about to break away, so what
+// is banked is not carried out of the fight.
+static bool salvo_ready(const Ship* s, const ShipSpec* sp) {
+    if (!vg_enemy_break || sp->wpn != WPN_SLAAM) return true;
+    const int c    = agg_col(sp);
+    const int want = (int)agg(AGG_SALVO, c);
+    if (want <= 1) return true;
+    if (s->stacks >= ((want < s->rounds) ? want : s->rounds)) return true;
+    return vlen(s->pos) < agg(AGG_IN_MIN, c) * sp->lock_range;
+}
+
+// THE HUNT. See AGG_HUNT_RANGE. Returns true while it is steering.
+//
+// Whenever the player is in range it goes for them: lead pursuit, the aim kept
+// inside half the lock cone so the nose stays where a lock is earned; flat out
+// from outside AGG_LOCK_RANGE, because a player who turns bleeds speed and one
+// who runs is matched; and at the class's locking speed inside it. A player
+// coming the other way is a head-on shot, and it takes it -- the closing speeds
+// add, and the collision floors above are what stop the pass, not the hunt. A
+// pass that missed is followed by the next one at once: there is no reset here to
+// wait out. It gives way only to a round coming in that it judges near-certain to
+// hit, AGG_EVADE_MIN, and to an empty rack (AGG_HUNT_DRY) -- except an AR-AAM's,
+// which rearms facing the player and so keeps hunting.
+static bool hunting(Ship* s, const ShipSpec* sp, bool reacted, const Missile* inc,
+                    float smin, float smax, float dt, Vec3* desired) {
+    if (!vg_enemy_break) return false;
+    const int   c  = agg_col(sp);
+    const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+    const float r  = vlen(to);
+    const float lo = (vg_enemy_net && vg_net_available()) ? agg(AGG_NET_HUNT_MIN, c)
+                                                         : agg(AGG_HUNT_MIN, c);
+    if (r < 1.0f || r > agg(AGG_HUNT_RANGE, c) * sp->lock_range || r < lo * sp->lock_range)
+        return false;
+    if (s->rounds <= 0 && sp->wpn != WPN_ARAAM && s->reload_t > agg(AGG_HUNT_DRY, c))
+        return false;
+    if (reacted && incoming_danger(s, inc) >= agg(AGG_EVADE_MIN, c)) return false;
+
+    const Vec3 los = vmul(to, 1.0f / r);
+    // THE CHARGE AND THE BREAK-AWAY. See AGG_IN_MIN. Closer than it, the hunt stops
+    // closing and turns away -- by AGG_OUT_ANG from straight out, on the side the
+    // nose is already on, so it is a turn and never a reversal -- at full speed,
+    // until the range is back to AGG_OUT_R or AGG_OUT_MAX has gone; then in again.
+    const float in_min = agg(AGG_IN_MIN, c) * sp->lock_range;
+    if (in_min > 0.0f) {
+        if (!s->hunt_out && r < in_min) { s->hunt_out = 1; s->hunt_t = 0.0f; }
+        if (s->hunt_out) {
+            s->hunt_t += dt;
+            // Chased -- inside the player's own cone and range -- it turns back in
+            // unless AGG_OUT_CHASED says to keep going.
+            const bool chased = r <= vg.spec->lock_range
+                             && s->pos.z / r >= vg_lock_cos_at(vg.spec, r, false);
+            if (r >= agg(AGG_OUT_R, c) * sp->lock_range || s->hunt_t >= agg(AGG_OUT_MAX, c)
+                || (chased && agg(AGG_OUT_CHASED, c) < 0.5f)) {
+                s->hunt_out = 0;
+            } else {
+                Vec3 lat = vsub(s->fwd, vmul(los, vdot(s->fwd, los)));
+                if (vlen2(lat) < 1e-4f) lat = vcross(los, s->up);
+                lat = vnorm(lat);
+                const float th = agg(AGG_OUT_ANG, c) * 0.0174533f;
+                *desired        = vadd(vmul(los, -cosf(th)), vmul(lat, sinf(th)));
+                s->target_speed = smax - (smax - smin) * (1.0f - agg(AGG_OUT_SPEED, c));
+                s->steer_by     = STEER_RESET;
+                s->stale_t      = 0.0f;
+                return true;
+            }
+        }
+    } else {
+        s->hunt_out = 0;
+    }
+    float t_go = r / (s->speed > 100.0f ? s->speed : 100.0f);
+    if (t_go > ENEMY_BRK_LEAD_MAX) t_go = ENEMY_BRK_LEAD_MAX;
+    Vec3 aim = vadd(to, v3(0.0f, 0.0f, vg.speed * t_go));
+    // BESIDE THEM: see AGG_OFFSET. The side is the ship's own stable one.
+    Vec3 side = vsub(s->offset_dir, vmul(los, vdot(s->offset_dir, los)));
+    if (vlen2(side) > 1e-4f) aim = vadd(aim, vmul(vnorm(side), agg(AGG_OFFSET, c)));
+    const float half = cosf(0.5f * acosf(vg_lock_cos_at(sp, r, false)));
+    const Vec3  a    = vnorm(aim);
+    if (vdot(a, los) < half) {
+        const Vec3 side = vnorm(vsub(a, vmul(los, vdot(a, los))));
+        aim = vadd(vmul(los, half), vmul(side, sqrtf(1.0f - half * half)));
+    }
+    *desired        = aim;
+    // THE TURN BACK. See AGG_TURN_COS: with the player this far off the nose the
+    // speed comes off, so the nose comes round at the hull's best rate.
+    const bool turning = vdot(s->fwd, los) < agg(AGG_TURN_COS, c);
+    s->target_speed = smin + (smax - smin) * (turning ? agg(AGG_TURN_SPEED, c)
+                    : (r > agg(AGG_LOCK_RANGE, c) * sp->lock_range) ? agg(AGG_CHASE_SPEED, c)
+                                                                    : agg(AGG_LOCK_SPEED, c));
+    s->steer_by     = STEER_PRESS;
+    s->stale_t      = 0.0f;
+    return true;
+}
+
 // Which row of the class table this hull is, or -1 if it is not one of them.
 static int class_of(const ShipSpec* sp) {
     const int i = (int)(sp - &vg_ship_class[0]);
@@ -913,6 +1417,9 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     const float close_r = sp->lock_range * ENEMY_CLOSE_RANGE_K;
 
     update_aim(s, dt);
+    circle_watch(s, sp, dt);
+    expo_tick(s, dt);
+    bool broke = false;
 
     float  inc_range = 1e9f;
     const Missile* inc = incoming_for(index, &inc_range);
@@ -952,8 +1459,10 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     // Commit to a suicide run: this pilot is the sort, they are nearly dead, and
     // the player is close enough for it to be a decision rather than a plan.
+    // ITS THRESHOLD IS A TABLE KNOB with the break on: see AGG_RAM_HULL.
     if (!s->kamikaze_on && s->kamikaze_will &&
-        s->hull <= sp->hull * ENEMY_KAMIKAZE_HULL &&
+        s->hull <= sp->hull * (vg_enemy_break ? agg(AGG_RAM_HULL, agg_col(sp))
+                                              : ENEMY_KAMIKAZE_HULL) &&
         vlen2(s->pos) < ENEMY_KAMIKAZE_RANGE * ENEMY_KAMIKAZE_RANGE) {
         s->kamikaze_on = true;
         // Said once, on the decision. The player gets a line and a ship that
@@ -987,6 +1496,14 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     } else if (s->kamikaze_on) {
         s->steer_by = STEER_RAM;
+        // GIVEN UP, with the break on, after AGG_RAM_MAX: the pilot does not
+        // commit again this life.
+        s->ram_t += dt;
+        if (vg_enemy_break && agg(AGG_RAM_MAX, agg_col(sp)) > 0.0f
+            && s->ram_t > agg(AGG_RAM_MAX, agg_col(sp))) {
+            s->kamikaze_on   = false;
+            s->kamikaze_will = false;
+        }
         // Straight at the player, everything open. Above missile evasion on
         // purpose: a pilot who has decided to ram does not care what is chasing
         // them. Still BELOW wall avoidance, because dying against the boundary
@@ -1023,6 +1540,33 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         s->target_speed = smax;
         s->attack_t = 0.0f;      // the pass is over; it got what it was going to get
         s->break_t  = 0.0f;
+
+    // BALLISTA LIGHTS ITS ROUND. See ENEMY_ILLUM_DANGER. Under both collision
+    // floors and over everything else, until a round coming in is likely to hit.
+    } else if (lighting(s, sp, index, inc, smin, smax, &desired)) {
+        broke = true;
+
+    // THE EXPOSED SHOT. See ENEMY_EXPO_MAX. Under both collision floors, over the
+    // break: a shot at somebody who cannot answer it is worth more than the plan
+    // to set one up.
+    } else if (exposed_shot(s, sp, reacted, inc ? inc_range : 1e9f, inc, smin, smax, &desired)) {
+        broke = true;
+
+    // OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME. Under the wall,
+    // the suicide run and both collision floors -- it must never be the reason two
+    // ships touch -- and above the reset, the network and every tactic, because it
+    // is a decision about the shape of the fight, and with the network flying, the
+    // rules own the extend and the turn in while the network flies the rest.
+    } else if (breaking(s, sp, reacted, inc ? inc_range : 1e9f, inc ? inc->speed : 0.0f,
+                        smin, smax, &desired)) {
+        broke = true;
+
+    // THE HUNT. See AGG_HUNT_RANGE. Under the floors, the light, the exposed shot
+    // and the break; over the reset, the network, the missile evade, the tail
+    // defence and every tactic -- an opponent that is in range and not about to
+    // be hit is attacking.
+    } else if (hunting(s, sp, reacted, inc, smin, smax, dt, &desired)) {
+        broke = true;
 
     // NOTHING IS WORKING, SO STOP DOING IT. Committed for a couple of seconds:
     // away and across, at speed, with the approach offset re-rolled so the
@@ -1399,7 +1943,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // vg_net_corner_exempt.
     if (s->hull < sp->hull * ENEMY_CORNERED_HULL &&
         s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE &&
-        s->steer_by != STEER_RAM &&
+        s->steer_by != STEER_RAM && !broke &&
         !(vg_net_corner_exempt && s->steer_by == STEER_NET)) {
         const Vec3  to = vsub(v3(0, 0, 0), s->pos);
         const float r  = vlen(to);
@@ -1415,6 +1959,12 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // Turn, and derive the visual bank from which way we are pulling.
     Vec3 before = s->fwd;
     s->fwd = vg_turn_toward(s->fwd, desired, erate * dt);
+    {   // How much of its turn it used: the circle test reads it next frame.
+        const float cap = erate * dt;
+        const float a   = atan2f(vlen(vcross(before, s->fwd)), vdot(before, s->fwd));
+        const float f   = (cap > 1e-6f) ? a / cap : 0.0f;
+        s->turn_frac = (f > 1.0f) ? 1.0f : f;
+    }
     // FOR THE CENSUS: how much of its own turn this pilot used. Counting only.
     if (index >= 0 && index < MAX_ENEMIES && erate * dt > 1e-6f) {
         const float turned = atan2f(vlen(vcross(before, s->fwd)), vdot(before, s->fwd));
@@ -1538,7 +2088,10 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // trigger asks the same function.
     const bool banked = vg_wpn_has_shot(*s, sp);
 
-    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)) {
+    // THE SHOT, JUDGED, last and only when everything else would fire: see
+    // ENEMY_SHOT_MIN_FIGHTER. A network with its own opinion (judged > 0) keeps it.
+    if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)
+        && (judged > 0 || (shot_worth(s, sp) && salvo_ready(s, sp)))) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
         // is -- but the round leaves on the direction this pilot thinks is the
         // target, which is the same error that made the lock slow to earn.

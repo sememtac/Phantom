@@ -37,6 +37,14 @@ enum SteerBy : uint8_t {
     STEER_KINDS      // how many there are; not a mode
 };
 
+// WHERE IN THE BREAK A SHIP IS, for Ship::brk_phase. See ENEMY_CIRCLE_TIME.
+// The values are fixed: the AI tab's census counts them.
+enum { BRK_NONE = 0, BRK_EXTEND = 1, BRK_RUN = 2 };
+
+// WHAT A SEMI-ACTIVE SHIP IS DOING ABOUT ITS ROUND, for Ship::illum. See
+// ENEMY_ILLUM_DANGER. The values are fixed: the AI tab's census counts them.
+enum { ILLUM_NONE = 0, ILLUM_HOLD = 1, ILLUM_LET_GO = 2 };
+
 struct Ship {
     bool  alive;
     // Which class this fighter is flying. Everything about its performance comes
@@ -128,6 +136,33 @@ struct Ship {
     // the pass has gone wrong and the fight is now about getting away.
     float defend_t;
     Vec3  defend_dir;
+    // OUT OF A CIRCLE AND BACK IN. See ENEMY_CIRCLE_TIME. The pulls and the range
+    // rate are smoothed here, circle_t is how long the circle has held unbroken,
+    // and brk_phase is where in the break it is: BRK_NONE, BRK_EXTEND or BRK_RUN.
+    float   turn_frac;    // last frame's turn, as a share of what the ship had
+    float   pull_s;       // ...smoothed
+    float   seat_pull_s;  // the player's stick deflection, smoothed
+    float   rdot_s;       // range rate, smoothed
+    float   prev_range;
+    float   circle_t;
+    uint8_t brk_phase;
+    float   brk_t;        // seconds into this phase
+    float   brk_cd;       // seconds before another break may start
+    float   brk_sign;     // which way along the tube the extend runs, chosen once
+    int     brk_rounds;   // rounds last frame, to see the run's shots
+    float   brk_shot_t;   // seconds since the run's first shot, <0 before it
+    // THE EXPOSED SHOT. See ENEMY_EXPO_MAX. expo_t > 0 while it is taking one.
+    float   expo_t;
+    float   expo_cd;
+    float   expo_shot_t;  // seconds since its first shot, <0 before it
+    int     expo_rounds;  // rounds last frame, to see the shot
+    uint8_t illum;        // ILLUM_*: a semi-active ship lighting its round
+    uint8_t hunt_out;     // 1 while the hunt breaks away: AGG_IN_MIN
+    float   hunt_t;       // seconds into this break-away
+    float   ram_t;        // seconds into a suicide run: AGG_RAM_MAX
+    // PER HULL: how long since the player was last hit.
+    float   seat_hit_t;
+    float   seen_health;
     // >0 while turning out of a collision course. See ENEMY_AVOID_LOOK.
     float avoid_t;
     Vec3  avoid_dir;
@@ -489,6 +524,11 @@ uint8_t     vg_state_flags(VgState s);
 static inline bool vg_state_is_menu(VgState s) {
     return (vg_state_flags(s) & VGS_MENU) != 0u;
 }
+
+// THE BREAK AND THE EXPOSED SHOT, as one switch. On in the game. Off is the
+// opponent as it was before either existed, fight for fight -- a harness
+// measures against that. --no-break on the desktop.
+extern bool vg_enemy_break;
 
 struct VgGame {
     VgState  state;
