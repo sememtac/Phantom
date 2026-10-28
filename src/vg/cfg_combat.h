@@ -1163,7 +1163,7 @@ static constexpr float MNV_TIME[][2][4] = {
                      { 8.0f, 8.0f, 8.0f, 8.0f } },
     /* face     */ { { 0.5f, 0.5f, 0.5f, 0.5f },
                      { 2.5f, 2.5f, 2.5f, 2.5f } },
-    /* slash    */ { { 1.0f, 1.0f, 1.0f, 1.0f },
+    /* slash    */ { { AGG_HOT[AGG_SL_T][0], 1.0f, 1.0f, 1.0f },   // AEGIS: its strafe's length
                      { 3.0f, 3.0f, 3.0f, 3.0f } },
     /* pivot    */ { { 0.5f, 0.5f, 0.5f, 0.5f },
                      { 2.5f, 2.5f, 2.5f, 2.5f } },
