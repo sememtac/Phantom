@@ -265,6 +265,9 @@ extern float vg_agg_bias;
 // Turn a policy's control into an enemy's steering. `desired` comes back as a
 // direction to turn toward, in view space, and target_speed as a speed. Returns
 // false when the network declined, and then the class tactic flies as usual.
+// WOULD THE NETWORK TAKE THIS FRAME? vg_bot_fly_enemy's own tests, made before it
+// runs the network, and nothing else: pure, for the manoeuvre mask (vg_mnv.h).
+bool vg_bot_enemy_may_fly(int index);
 bool vg_bot_fly_enemy(int index, const struct Ship* s, Vec3* desired,
                       float* target_speed, float dt);
 

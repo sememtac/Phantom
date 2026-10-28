@@ -186,6 +186,21 @@ struct Ship {
     // exists so that "the network is flying this one" is a thing a person can
     // SEE happening, and can watch hand over to a rule at a wall or a missile.
     uint8_t steer_by;
+    // THE MANOEUVRE, for the chooser's bookkeeping and its log. See vg_mnv.h. In
+    // stage 1 nothing that flies the ship reads these.
+    uint8_t  mnv;            // VgMnv: the one running
+    uint8_t  mnv_rules;      // VgMnv: the rules' choice this frame
+    uint8_t  mnv_floor;      // VgFloor: the floor that flew this frame
+    uint8_t  mnv_last_exit;  // VgMnvStatus: how the one before ended
+    uint8_t  mnv_hint_m;     // a layer that ended itself this frame...
+    uint8_t  mnv_hint_st;    // ...and how (VgMnvStatus)
+    float    mnv_t;          // s since the running one started
+    float    mnv_floor_t;    // s into this floor's span
+    float    mnv_p[3];       // its parameters, each -1..1
+    uint32_t mnv_valid;      // bit m: m may fly now (only with vg_mnv_want_mask)
+    // FOR THE SELECTOR'S OBSERVATION: STAGE1_INTERFACE.md section 3.
+    float    launch_t;       // s since its rack last went down; 99 at spawn
+    float    nolock_t;       // s since it last held a lock on the player; 99 at spawn
     // NOTHING HAS LANDED FOR THIS LONG, in seconds, either way.
     //
     // A trained pilot has no idea a fight is going nowhere. Cloning teaches what

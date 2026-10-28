@@ -439,6 +439,16 @@ void vg_bot_modes_reset(void) {
     }
 }
 
+bool vg_bot_enemy_may_fly(int index) {
+    if (!vg_enemy_net || !vg_net_available()) return false;
+    if (index < 0 || index >= MAX_ENEMIES) return false;
+    VgObs o;
+    vg_bot_observe_enemy(index, &o);
+    if (!o.has_target) return false;
+    if (!vg_net_knows_ship(o.v, VG_OBS_N)) return false;
+    return o.v[OBS_WALL] >= BOT_WALL_TURN;
+}
+
 bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
                       float* target_speed, float dt) {
     if (!vg_enemy_net || !vg_net_available()) return false;

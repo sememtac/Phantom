@@ -17,6 +17,7 @@
 #include "vg_canopy_set.h"
 #include "vg_anomaly.h"
 #include "vg_bot.h"
+#include "vg_mnv.h"
 #include "vg_net.h"
 #include "vg_flight.h"
 #include "vg_weapons.h"
@@ -64,6 +65,8 @@ void vg_spawn_opponent(void) {
 void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
                     const PilotSpec* pilot) {
     Ship* s = &vg.enemy[i];
+    // THE LAST MANOEUVRE ENDS WITH THE BOUT, logged against the hull that flew it.
+    vg_mnv_bout_end(s, i);
 
     s->spec       = vg_spec(cls);
     s->pilot      = pilot ? pilot : vg_pilot_default();
@@ -139,6 +142,8 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->roll_vis     = 0;
     s->hit_flash    = 0;
     s->engaged      = false;
+    s->launch_t     = 99.0f;   // nothing launched or locked yet: STAGE1_INTERFACE.md
+    s->nolock_t     = 99.0f;
 }
 
 // ---------------------------------------------------------------------------

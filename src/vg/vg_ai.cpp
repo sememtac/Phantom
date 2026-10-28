@@ -6,6 +6,19 @@
 #include "vg_net.h"      // vg_net_available, for the hunt
 #include "vg_prof.h"     // vg_bout_time, for the fight census
 #include <math.h>
+#include "vg_mnv.h"
+
+// THE MANOEUVRE BOOKKEEPING'S TWO HOOKS INTO THE OLD LAYERS. See vg_mnv.h.
+//
+// A layer that ends itself says how, for the choice log's exit reason; nothing that
+// flies reads it. And a DRY RUN -- the valid mask asking a layer, on a copy of the
+// ship, whether it would fly -- must not draw a random number, so the one layer that
+// would (the standoff break) stops short when it is asked that way.
+static bool s_mnv_dry = false;
+static void mnv_hint(Ship* s, VgMnv m, VgMnvStatus st) {
+    s->mnv_hint_m  = m;
+    s->mnv_hint_st = st;
+}
 
 // Enemy fighter behaviour, in strict priority order:
 //
@@ -1083,6 +1096,7 @@ static bool breaking(Ship* s, const ShipSpec* sp, bool reacted, float inc_range,
     // THE SNIPER'S BREAK: its own standoff, then back to the fight. No run.
     if (sp->tactic == TACTIC_STANDOFF) {
         if (s->brk_t < agg(AGG_STANDOFF_T, agg_col(sp))) {
+            if (s_mnv_dry) return true;   // asked, not flown: the standoff draws
             tactic_standoff(s, sp, to, r, smin, smax, desired);
             s->steer_by = STEER_TACTIC;
             s->stale_t  = 0.0f;
@@ -1091,6 +1105,7 @@ static bool breaking(Ship* s, const ShipSpec* sp, bool reacted, float inc_range,
         s->brk_phase = BRK_NONE;
         s->brk_cd    = bc.cd;
         s->circle_t  = 0.0f;
+        mnv_hint(s, MNV_CBREAK, MNV_DONE);
         return false;
     }
     if (s->brk_phase == BRK_EXTEND) {
@@ -1130,6 +1145,7 @@ static bool breaking(Ship* s, const ShipSpec* sp, bool reacted, float inc_range,
     const float end_r = ENEMY_BREAK_RANGE * brk_k
                       * ((s->locked && s->brk_shot_t < 0.0f && s->rounds > 0) ? 0.5f : 1.0f);
     if (r < end_r || s->brk_t > ENEMY_BRK_RUN_MAX || shot_done) {
+        mnv_hint(s, MNV_CBREAK, (r < end_r || shot_done) ? MNV_DONE : MNV_MAX);
         s->brk_phase  = BRK_NONE;
         s->brk_cd     = bc.cd;
         s->brk_shot_t = -1.0f;
@@ -1234,7 +1250,10 @@ static float incoming_danger(const Ship* s, const Missile* m) {
 static void expo_tick(Ship* s, float dt) {
     if (s->expo_t > 0.0f) {
         s->expo_t -= dt;
-        if (s->expo_t <= 0.0f) s->expo_cd = agg(AGG_EXPO_CD, agg_col(s->spec));
+        if (s->expo_t <= 0.0f) {
+            s->expo_cd = agg(AGG_EXPO_CD, agg_col(s->spec));
+            mnv_hint(s, MNV_EXPOSED, MNV_MAX);
+        }
     } else if (s->expo_cd > 0.0f) {
         s->expo_cd -= dt;
     }
@@ -1272,6 +1291,7 @@ static bool exposed_shot(Ship* s, const ShipSpec* sp, bool reacted, float inc_ra
     const bool give_up = (threat && !s->locked) || r <= ENEMY_ATTACK_MIN
                       || (s->rounds <= 0 && s->expo_shot_t < 0.0f);
     if (shot_done || give_up) {
+        mnv_hint(s, MNV_EXPOSED, shot_done ? MNV_DONE : MNV_ABORTED);
         s->expo_t      = 0.0f;
         s->expo_cd     = agg(AGG_EXPO_CD, agg_col(sp));
         s->expo_shot_t = -1.0f;
@@ -1369,6 +1389,8 @@ static bool hunting(Ship* s, const ShipSpec* sp, bool reacted, const Missile* in
                              && s->pos.z / r >= vg_lock_cos_at(vg.spec, r, false);
             if (r >= agg(AGG_OUT_R, c) * sp->lock_range || s->hunt_t >= agg(AGG_OUT_MAX, c)
                 || (chased && agg(AGG_OUT_CHASED, c) < 0.5f)) {
+                mnv_hint(s, MNV_BREAKOUT, r >= agg(AGG_OUT_R, c) * sp->lock_range ? MNV_DONE
+                                        : s->hunt_t >= agg(AGG_OUT_MAX, c) ? MNV_MAX : MNV_ABORTED);
                 s->hunt_out = 0;
             } else {
                 Vec3 lat = vsub(s->fwd, vmul(los, vdot(s->fwd, los)));
@@ -1476,8 +1498,735 @@ void vg_census_round_end(int shooter, float age, bool hit, int why) {
     if (vg.enemy[shooter].illum == ILLUM_HOLD) g_cen_illum_hits[c]++;
 }
 
+// =============================================================================
+// THE MANOEUVRES (stage 1). See vg_mnv.h.
+// =============================================================================
+//
+// What a manoeuvre sees: the frame's facts, worked out once by vg_update_enemy.
+struct MnvCtx {
+    const ShipSpec* sp;
+    int             index;
+    float           dt;
+    float           smin, smax, close_r;
+    bool            reacted;
+    const Missile*  inc;
+    float           inc_range;
+    Vec3*           desired;   // where it points this frame
+    bool*           broke;     // the cornered pull leaves this frame alone
+};
+
+// THE OLD CHAIN'S NAMES, so each layer below reads exactly as it did inside
+// vg_update_enemy -- the same statements in the same order, which is what keeps the
+// fights the same.
+#define MNV_LOCALS(c)                                                              \
+    const ShipSpec* sp = (c)->sp;  const int index = (c)->index;                  \
+    const float dt = (c)->dt, smin = (c)->smin, smax = (c)->smax;                 \
+    const float close_r = (c)->close_r;  const bool reacted = (c)->reacted;       \
+    const Missile* inc = (c)->inc;  const float inc_range = (c)->inc_range;       \
+    Vec3& desired = *(c)->desired;  bool& broke = *(c)->broke;                    \
+    (void)sp; (void)index; (void)dt; (void)smin; (void)smax; (void)close_r;       \
+    (void)reacted; (void)inc; (void)inc_range; (void)desired; (void)broke
+
+// THE OLD LAYERS, ONE FUNCTION EACH. A layer's test and its flying are one call, as
+// they were: several keep timers when they are asked, even on frames they decline, and
+// splitting them into a start and a step would move those side effects. Each returns
+// the manoeuvre it flew, or MNV_NONE to pass the frame on.
+static VgMnv fly_light(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // BALLISTA LIGHTS ITS ROUND. See ENEMY_ILLUM_DANGER. Under both collision
+    // floors and over everything else, until a round coming in is likely to hit.
+    if (!lighting(s, sp, index, inc, smin, smax, &desired)) return MNV_NONE;
+    broke = true;
+    return MNV_LIGHT;
+}
+
+static VgMnv fly_exposed(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // THE EXPOSED SHOT. See ENEMY_EXPO_MAX. Under both collision floors, over the
+    // break: a shot at somebody who cannot answer it is worth more than the plan
+    // to set one up.
+    if (!exposed_shot(s, sp, reacted, inc ? inc_range : 1e9f, inc, smin, smax, &desired))
+        return MNV_NONE;
+    broke = true;
+    return MNV_EXPOSED;
+}
+
+static VgMnv fly_cbreak(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME. Under the wall
+    // and both collision floors -- it must never be the reason two ships touch --
+    // and above the reset, the network and every tactic, because it
+    // is a decision about the shape of the fight, and with the network flying, the
+    // rules own the extend and the turn in while the network flies the rest.
+    if (!breaking(s, sp, reacted, inc ? inc_range : 1e9f, inc ? inc->speed : 0.0f,
+                  smin, smax, &desired))
+        return MNV_NONE;
+    broke = true;
+    return MNV_CBREAK;
+}
+
+// The hunt and its break-away are one layer and two manoeuvres: hunt_out says which.
+static VgMnv fly_hunt(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // THE HUNT. See AGG_HUNT_RANGE. Under the floors, the light, the exposed shot
+    // and the break; over the reset, the network, the missile evade, the tail
+    // defence and every tactic -- an opponent that is in range and not about to
+    // be hit is attacking.
+    if (!hunting(s, sp, reacted, inc, smin, smax, dt, &desired)) return MNV_NONE;
+    broke = true;
+    return s->hunt_out ? MNV_BREAKOUT : MNV_HUNT;
+}
+
+static VgMnv fly_reset(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // NOTHING IS WORKING, SO STOP DOING IT. Committed for a couple of seconds:
+    // away and across, at speed, with the approach offset re-rolled so the
+    // re-merge comes from a side the last one did not.
+    //
+    // ABOVE the network and below the wall and the missile, because it is a
+    // decision about the FIGHT rather than about this second -- but staying alive
+    // still outranks changing the subject.
+    if (!(s->reset_t > 0.0f || s->stale_t > ENEMY_STALE_TIME)) return MNV_NONE;
+    if (s->reset_t <= 0.0f) {
+        s->reset_dir  = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.7f);
+        s->reset_t    = vg_frand(ENEMY_RESET_MIN, ENEMY_RESET_MAX);
+        s->offset_dir = vg_rand_unit();
+        s->stale_t    = 0.0f;
+        s->press_t    = 0.0f;   // a held position is part of what was not working
+    }
+    s->steer_by     = STEER_RESET;
+    desired         = s->reset_dir;
+    s->target_speed = smax;
+    return MNV_RESET;
+}
+
+static VgMnv fly_net_early(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
+    // It declines a class it never learned and a boundary, so the layers below
+    // still fly everything it will not.
+    if (!(vg_net_owns_survival && net_owns_phase(sp->tactic) &&
+          vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)))
+        return MNV_NONE;
+    s->steer_by = STEER_NET;
+    return MNV_NET;
+}
+
+static VgMnv fly_evade(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    if (!(reacted && inc && inc_range < ENEMY_EVADE_RANGE)) return MNV_NONE;
+    s->steer_by = STEER_EVADE;
+    // Turning across the seeker is what forces the bearing outside its cone;
+    // turning away from it just gets you run down.
+    if (s->evade_t <= 0) {
+        s->evade_dir = vnorm(vadd(break_across(inc->dir, s->up, 0.0f),
+                                  vmul(vg_rand_unit(), 0.35f)));
+        s->evade_t   = vg_frand(0.9f, 1.6f);
+    }
+    desired = s->evade_dir;
+    // Bleed speed to tighten the break -- the same trick the player has.
+    s->target_speed = smin * 1.15f;
+    return MNV_EVADE;
+}
+
+static VgMnv fly_tail(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    if (!(s->defend_t > 0
+          || (reacted &&
+              on_my_six(s, vsub(v3(0, 0, 0), s->pos), vlen(s->pos)))))
+        return MNV_NONE;
+    // ABOVE THE TACTIC, BELOW THE MISSILE. A round already in the air is the
+    // more urgent of the two, and a pilot being tracked still has time to
+    // answer properly -- but neither can wait for the class's positioning
+    // plan, which assumes the fight is still being flown forwards.
+    s->evade_t = 0;
+    s->steer_by = STEER_TAIL;
+    tactic_defend(s, vsub(v3(0, 0, 0), s->pos), smin, smax, &desired);
+    return MNV_TAIL;
+}
+
+// THE TACTICS PHASE: the dry rack, the network's modes, the attack pass, the
+// slow-player press, the network, the class plan and the v1 press, still one block
+// because they share its timers. It always flies, and says which of them it was.
+static VgMnv fly_tactics(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    VgMnv m = MNV_NONE;
+    s->evade_t = 0;
+
+    Vec3  to    = vsub(v3(0, 0, 0), s->pos);   // player is the origin
+    float range = vlen(to);
+
+    // PRESSING, decided before the tactic and spent inside it.
+    //
+    // Every tactic breaks off on a RANGE test, and range cannot tell a merge
+    // that went well from one that went badly -- so the pass that ended with
+    // this ship behind the player, nose on, was abandoned exactly like the
+    // one that ended in front of them. That is why a fight read as a series
+    // of jousts with no consequence to losing one.
+    //
+    // Held for ENEMY_PRESS_TIME once taken, because a hard turn breaks the
+    // angle for a frame at a time and re-deciding every frame would drop the
+    // pursuit constantly. Ended by ENEMY_PRESS_MAX whatever happens: a pilot
+    // who keeps just barely holding the angle would otherwise never let go,
+    // and an opponent that cannot be shaken is not a fight, it is a fact.
+    //
+    // ROUNDS IN THE RACK ARE PART OF IT. Sitting on somebody's tail with an
+    // empty magazine is the same mistake as jousting with one.
+    //
+    // press_run is the ceiling and it is why there are two timers. press_t is
+    // the COMMITMENT, refreshed while the angle holds so that a hard turn
+    // breaking it for a frame does not drop the pursuit; press_run is how long
+    // this one pursuit has lasted, and once it passes ENEMY_PRESS_MAX the
+    // refresh stops and the commitment simply expires. It is cleared when the
+    // pursuit ends, so re-acquiring later is a NEW pursuit with a full budget
+    // rather than a continuation that has already spent it.
+    if (s->press_t > 0.0f) {
+        s->press_t   -= dt;
+        s->press_run += dt;
+    } else {
+        s->press_run = 0.0f;
+    }
+    if (s->rounds > 0 && s->press_run < ENEMY_PRESS_MAX * s->pilot->press &&
+        has_the_angle(s, to, range)) {
+        s->press_t = ENEMY_PRESS_TIME * s->pilot->press;
+    }
+    const bool pressing = (s->press_t > 0.0f);
+    // The break is what pressing suppresses, so cancelling the timer is the
+    // whole mechanism: every tactic's first test is `break_t > 0`.
+    if (pressing) s->break_t = 0;
+
+    // AN EMPTY RACK OUTRANKS THE CLASS PLAN, and sits under defend: something
+    // shooting at this ship now is worth more than a weapon it will have
+    // shortly. It outranks pressing too -- see the note above about a tail
+    // held with nothing to fire -- and has_the_angle already refuses to arm
+    // on an empty rack, so this only has to run first.
+    const bool dry = (s->rounds <= 0 && s->reload_t > 0.0f &&
+                      range < ENEMY_DRY_RANGE);
+    if (dry) {
+        m = MNV_DRY;
+        s->steer_by = STEER_DRY;
+        // An AR-AAM rack only refills with the contact in front -- see tactic_dry.
+        tactic_dry(s, to, smax, &desired, sp->wpn == WPN_ARAAM);
+    } else
+    // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
+    //
+    // It sits exactly where a class tactic sits, and that is the whole design
+    // of this function paying off: everything above -- the wall, the
+    // missile, the tail -- is survival that every hull does the same
+    // way, and everything here is POSITIONING. A network is another opinion
+    // about positioning.
+    //
+    // It declines near the boundary and when there is nothing to fight, and
+    // then the class tactic flies as it always did. There is no frame where
+    // nobody is steering.
+    {
+        // THE NETWORK FIRST, because asking it is what decides the mode: one
+        // forward pass gives both where to point this frame and what the ship
+        // is trying to do over the next few seconds. Reading the mode before
+        // this had run would always read the previous frame's answer, and the
+        // whole strategy layer would sit in a branch that never executes --
+        // which is exactly what it did until this was measured.
+        //
+        // The firing gates below are untouched either way, so a network-flown
+        // enemy still has to be slow enough and hold a lock long enough, in its
+        // own class's cone. It gets a different opinion about where to be, not
+        // a different game.
+        const bool net_flew =
+            vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt);
+    // WHAT THE POLICY THINKS THIS SHIP IS DOING, if it has an opinion.
+    //
+    // This is the strategy layer and it sits ABOVE the class tactic rather
+    // than beside it: the tactic answers "how does this hull fight", the mode
+    // answers "what am I trying to do for the next few seconds". A CHARIOT
+    // that has decided to EXTEND leaves like a CHARIOT, and a BALLISTA that
+    // has decided to EXTEND leaves like a BALLISTA -- the mode picks the
+    // verb and the class still supplies the manner.
+    //
+    // PRESS is deliberately the class tactic itself rather than a fifth
+    // behaviour. Closing and taking the shot IS what every tactic here does;
+    // giving it a separate implementation would only mean two of them to keep
+    // in step.
+    //
+    // -1 means the network has no opinion -- an untrained class, older
+    // weights, a frame it declined -- and then this whole block is skipped and
+    // the class flies exactly as it did before modes existed.
+    const int mode = vg_bot_enemy_mode(index);
+    bool by_mode = true;
+    switch (mode) {
+        case VG_MODE_BREAK:
+            // Across whatever is coming, or across the player when nothing is.
+            // The same manoeuvre the evade path flies, chosen a second early
+            // and on purpose rather than as a reaction.
+            m = MNV_EVADE;
+            s->steer_by = STEER_EVADE;
+            if (s->evade_t <= 0) {
+                const Vec3 away = inc ? inc->dir : vnorm(vsub(v3(0, 0, 0), s->pos));
+                s->evade_dir = vnorm(vadd(break_across(away, s->up, 0.0f),
+                                          vmul(vg_rand_unit(), 0.35f)));
+                s->evade_t   = vg_frand(0.9f, 1.6f);
+            }
+            desired = s->evade_dir;
+            s->target_speed = smin * 1.15f;
+            break;
+        case VG_MODE_EXTEND:
+            // Away and across at speed. tactic_dry is already exactly this --
+            // it is what a ship does when it has nothing to shoot with -- and
+            // leaving on purpose is the same manoeuvre for a better reason.
+            m = MNV_DRY;
+            s->steer_by = STEER_DRY;
+            tactic_dry(s, to, smax, &desired);
+            break;
+        case VG_MODE_HOLD:
+            // Keep the range and keep the nose. Not a retreat and not a
+            // commitment: the seconds a lock is earned in.
+            m = MNV_STANDOFF;
+            s->steer_by = STEER_PRESS;
+            tactic_standoff(s, sp, to, range, smin, smax, &desired);
+            break;
+        default:
+            by_mode = false;   // PRESS, or no opinion at all
+            break;
+    }
+    // THE AIMED SHOT, and it is the one thing the tactics never do.
+    //
+    // Every one of them flies a curve past the player. That is right against
+    // somebody who is moving -- a straight run at a ship that can shoot back
+    // is how you get shot -- but against one that has parked it means the nose
+    // is never on them and the lock is never earned. See ENEMY_PRESS_SLOW_AT.
+    //
+    // So: stop flying the pattern, slow to where the lock comes quickly, and
+    // point. It stays subject to every firing gate, and it stops the moment
+    // they move again or the lock is in hand and the class can go back to
+    // fighting properly.
+    // HELD, and dropping out on `locked` was the whole of why this did not
+    // bite. The moment the lock was earned the ship went back to flying its
+    // curve, which pointed the nose away, which broke the lock, which brought
+    // it back here -- an oscillation that never held a firing solution long
+    // enough to spend more than a round or two of the rack.
+    //
+    // A pilot who has a parked target in their sights does not immediately
+    // look somewhere else. It holds until the rack is dry or they move.
+    // A FIRING PASS AT SOMETHING THAT IS MOVING.
+    //
+    // The slow-target press below is the easy half: a parked ship cannot
+    // punish an approach, so pointing at it costs nothing. This is the other
+    // half, and it costs something on purpose -- lining up on a ship that can
+    // shoot back means being pointed at by it too. That is what a pass IS.
+    //
+    // Committed, because a run decided fresh every frame is a ship that
+    // half-points at somebody forever. It ends on its own clock, or the break
+    // at ENEMY_BREAK_RANGE ends it -- and that is what turns a converging
+    // chase into line up, shoot, break, come back.
+    if (s->attack_cd > 0.0f) s->attack_cd -= dt;
+    if (s->attack_t  > 0.0f) s->attack_t  -= dt;
+    // NOT A STANDOFF HULL, for the third time tonight and for the same reason
+    // each time. A firing pass is a decision to close, and its lock range is
+    // 4200 -- so "in the window" is almost always true and it would spend the
+    // fight running at people. Measured, its damage in ordinary flying went
+    // 0.55 -> 1.94: the sniper stops sniping. It already has an aimed shot for
+    // a target that has parked, which is the only time it should leave.
+    if (sp->tactic != TACTIC_STANDOFF
+        && s->attack_t <= 0.0f && s->attack_cd <= 0.0f && reacted
+        && s->rounds > 0 && !s->locked
+        && range < sp->lock_range * ENEMY_ATTACK_RANGE_K
+        && range > ENEMY_ATTACK_MIN) {
+        s->attack_t  = vg_frand(ENEMY_ATTACK_TIME_MIN, ENEMY_ATTACK_TIME_MAX)
+                     * s->pilot->nerve;
+        s->attack_cd = ENEMY_ATTACK_COOLDOWN;
+    }
+
+    // THE PASS ENDS AT THE BREAK RANGE, and leaving this out made it a ram.
+    //
+    // A run sets by_mode, which skips the class tactic -- and the break lives
+    // INSIDE the tactic. So the nose stayed on the player for the whole
+    // committed window with nothing left to call it off, and a manoeuvre meant
+    // to be line up, shoot, break became line up, shoot, arrive. Played, it
+    // read as the enemy laying a trap.
+    //
+    // Cancelling the run here rather than breaking directly hands the frame
+    // back to the tactic, whose own break test is immediately true at this
+    // range. One break, owned by one piece of code.
+    if (s->attack_t > 0.0f && range < ENEMY_BREAK_RANGE) s->attack_t = 0.0f;
+
+    const float press_at = (sp->tactic == TACTIC_STANDOFF)
+                         ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
+    if (!by_mode && s->attack_t > 0.0f && s->rounds > 0) {
+        m = MNV_PRESS;
+        s->steer_by     = STEER_PRESS;
+        desired         = vsub(v3(0, 0, 0), s->pos);
+        // Slow for the same reason the parked press is slow: LOCK_SPEED_PENALTY
+        // is 1.8, so a ship at full throttle needs nearly three times as long
+        // to earn the lock it came here for.
+        s->target_speed = smin * 1.25f;
+        by_mode         = true;
+    } else if (!by_mode && player_speed_norm() < press_at
+        && s->rounds > 0 && range < sp->lock_range) {
+        m = MNV_PRESS;
+        s->steer_by = STEER_PRESS;
+        desired     = vsub(v3(0, 0, 0), s->pos);
+        // TWO PHASES, because holding a firing solution at fifteen hundred
+        // units is not pressure -- it is a threat nobody has to answer.
+        //
+        // Outside the working range, CLOSE, at speed: the lock is worthless
+        // until the round has a short enough flight for a parked ship to still
+        // be there when it arrives. Inside it, slow down, because the lock
+        // time is scaled by how fast the shooter is going -- LOCK_SPEED_PENALTY
+        // is 1.8, and a ship at full throttle needs nearly three times as long
+        // to earn the same lock. The player already knows this. It is why they
+        // stopped.
+        // SLOW THE WHOLE TIME, and closing at speed first was measured and
+        // thrown away: it arrives sooner and cannot shoot when it does,
+        // because LOCK_SPEED_PENALTY is 1.8 and a ship at full throttle needs
+        // nearly three times as long to earn the same lock. Damage against a
+        // parked target FELL on every class. At this speed the nose is already
+        // on them, so it drifts in while it works the lock, which is both the
+        // approach and the aim.
+        s->target_speed = smin * 1.15f;
+        by_mode         = true;
+    }
+
+    // PRESS is the network's own flying: closing and taking the shot is what
+    // it was fitted to do, so there is nothing to add. No opinion at all falls
+    // back to the class tactic, exactly as before there were modes.
+    if (!by_mode && net_flew) { s->steer_by = STEER_NET; m = MNV_NET; }
+    else if (!by_mode)
+    switch (sp->tactic) {
+        case TACTIC_STANDOFF:
+            m = MNV_STANDOFF;
+            tactic_standoff(s, sp, to, range, smin, smax, &desired);
+            break;
+        case TACTIC_SLASH:
+            m = MNV_PLAN;
+            tactic_slash(s, sp, to, range, close_r, smin, smax, &desired);
+            break;
+        case TACTIC_GEOMETRY:
+            m = MNV_PLAN;
+            tactic_geometry(s, sp, to, range, close_r, smin, smax, &desired);
+            break;
+        case TACTIC_FIGHTER:
+        default:
+            m = MNV_PLAN;
+            tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);
+            break;
+    }
+    }
+    if (s->steer_by == STEER_NONE) s->steer_by = STEER_TACTIC;
+
+    // Holding the angle means holding the NOSE on them, and the tactic has
+    // just aimed at a point beside the player so the pass does not converge.
+    // Overriding it here rather than threading a flag through all four keeps
+    // the tactics about positioning, which is the one thing they are for.
+    if (pressing && !dry) {
+        // Last word, so it is the label too.
+        m = MNV_PRESS;
+        s->steer_by = STEER_PRESS;
+        desired = to;
+        // Slow enough to be allowed to shoot -- the firing gate applies to a
+        // won position exactly as it does to a merge -- and slow is also what
+        // lets them stay inside the player's turn.
+        s->target_speed = smin + (smax - smin) * 0.30f;
+    }
+    return (m != MNV_NONE) ? m : MNV_PLAN;
+}
+
+// THE RULES: the old chain, in its old order. The first layer that flies takes the
+// frame.
+typedef VgMnv (*MnvFly)(Ship* s, MnvCtx* c);
+static const MnvFly RULES[] = {
+    fly_light, fly_exposed, fly_cbreak, fly_hunt, fly_reset,
+    fly_net_early, fly_evade, fly_tail, fly_tactics,
+};
+
+static VgMnv rules_choose(Ship* s, MnvCtx* c) {
+    for (MnvFly f : RULES) {
+        const VgMnv m = f(s, c);
+        if (m != MNV_NONE) return m;
+    }
+    return MNV_PLAN;   // not reached: the tactics always fly
+}
+
+// MAY IT FLY NOW? One pure test per manoeuvre, for the valid mask. Where a layer keeps
+// state, it is asked on a copy of the ship, so asking changes nothing.
+//
+// EXACT for the layers above the tactics phase. The network, the press and the modes
+// are the tactics phase's own tests, read as they stand before the phase runs: close,
+// not exact, because the phase moves its timers before it tests them.
+static bool valid_light(const Ship* s, const MnvCtx* c) {
+    Ship t = *s;
+    Vec3 d;
+    return lighting(&t, c->sp, c->index, c->inc, c->smin, c->smax, &d);
+}
+
+static bool valid_exposed(const Ship* s, const MnvCtx* c) {
+    Ship t = *s;
+    Vec3 d;
+    return exposed_shot(&t, c->sp, c->reacted, c->inc ? c->inc_range : 1e9f, c->inc,
+                        c->smin, c->smax, &d);
+}
+
+static bool valid_cbreak(const Ship* s, const MnvCtx* c) {
+    Ship t = *s;
+    Vec3 d;
+    s_mnv_dry = true;
+    const bool f = breaking(&t, c->sp, c->reacted, c->inc ? c->inc_range : 1e9f,
+                            c->inc ? c->inc->speed : 0.0f, c->smin, c->smax, &d);
+    s_mnv_dry = false;
+    return f;
+}
+
+// 0: the hunt would not fly; 1: it would hunt; 2: it would break away.
+static int hunt_would(const Ship* s, const MnvCtx* c) {
+    Ship t = *s;
+    Vec3 d;
+    if (!hunting(&t, c->sp, c->reacted, c->inc, c->smin, c->smax, c->dt, &d)) return 0;
+    return t.hunt_out ? 2 : 1;
+}
+static bool valid_hunt(const Ship* s, const MnvCtx* c)     { return hunt_would(s, c) == 1; }
+static bool valid_breakout(const Ship* s, const MnvCtx* c) { return hunt_would(s, c) == 2; }
+
+static bool valid_reset(const Ship* s, const MnvCtx* c) {
+    (void)c;
+    return s->reset_t > 0.0f || s->stale_t > ENEMY_STALE_TIME;
+}
+
+static bool valid_evade(const Ship* s, const MnvCtx* c) {
+    (void)s;
+    return (c->reacted && c->inc && c->inc_range < ENEMY_EVADE_RANGE)
+        || vg_bot_enemy_mode(c->index) == VG_MODE_BREAK;
+}
+
+static bool valid_tail(const Ship* s, const MnvCtx* c) {
+    return s->defend_t > 0
+        || (c->reacted && on_my_six(s, vsub(v3(0, 0, 0), s->pos), vlen(s->pos)));
+}
+
+static bool valid_standoff(const Ship* s, const MnvCtx* c) {
+    (void)s;
+    return c->sp->tactic == TACTIC_STANDOFF || vg_bot_enemy_mode(c->index) == VG_MODE_HOLD;
+}
+
+static bool valid_dry(const Ship* s, const MnvCtx* c) {
+    return (s->rounds <= 0 && s->reload_t > 0.0f && vlen(s->pos) < ENEMY_DRY_RANGE)
+        || vg_bot_enemy_mode(c->index) == VG_MODE_EXTEND;
+}
+
+static bool valid_press(const Ship* s, const MnvCtx* c) {
+    const Vec3  to    = vsub(v3(0, 0, 0), s->pos);
+    const float range = vlen(to);
+    const bool  dry   = s->rounds <= 0 && s->reload_t > 0.0f && range < ENEMY_DRY_RANGE;
+    if (dry) return false;
+    if (s->press_t > c->dt) return true;   // the v1 press, held
+    if (s->rounds <= 0) return false;
+    if (s->press_run < ENEMY_PRESS_MAX * s->pilot->press && has_the_angle(s, to, range))
+        return true;
+    // A firing pass, held or starting; it ends at the break range.
+    if (range >= ENEMY_BREAK_RANGE) {
+        if (s->attack_t > c->dt) return true;
+        if (c->sp->tactic != TACTIC_STANDOFF && s->attack_t <= c->dt && s->attack_cd <= c->dt
+            && c->reacted && !s->locked && range < c->sp->lock_range * ENEMY_ATTACK_RANGE_K
+            && range > ENEMY_ATTACK_MIN)
+            return true;
+    }
+    const float press_at = (c->sp->tactic == TACTIC_STANDOFF)
+                         ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
+    return player_speed_norm() < press_at && range < c->sp->lock_range;
+}
+
+static bool valid_plan(const Ship* s, const MnvCtx* c) {
+    (void)s;
+    return c->sp->tactic != TACTIC_STANDOFF;
+}
+
+static bool valid_net(const Ship* s, const MnvCtx* c) {
+    (void)s;
+    return vg_bot_enemy_may_fly(c->index);
+}
+
+// A MANOEUVRE OF THE LIBRARY (stage 2) is valid, start and step, flown by the chooser
+// that picks it. The old layers above have only valid(): RULES flies them.
+struct MnvDef {
+    bool        (*valid)(const Ship* s, const MnvCtx* c);   // pure: may it fly now?
+    void        (*start)(Ship* s, MnvCtx* c);               // commit its directions and timers
+    VgMnvStatus (*step)(Ship* s, MnvCtx* c);                // one frame
+};
+static const MnvDef MNV_DEF[VG_MNV_N] = {
+    /* none     */ { nullptr,        nullptr, nullptr },
+    /* hunt     */ { valid_hunt,     nullptr, nullptr },
+    /* breakout */ { valid_breakout, nullptr, nullptr },
+    /* cbreak   */ { valid_cbreak,   nullptr, nullptr },
+    /* reset    */ { valid_reset,    nullptr, nullptr },
+    /* evade    */ { valid_evade,    nullptr, nullptr },
+    /* tail     */ { valid_tail,     nullptr, nullptr },
+    /* exposed  */ { valid_exposed,  nullptr, nullptr },
+    /* light    */ { valid_light,    nullptr, nullptr },
+    /* standoff */ { valid_standoff, nullptr, nullptr },
+    /* dry      */ { valid_dry,      nullptr, nullptr },
+    /* press    */ { valid_press,    nullptr, nullptr },
+    /* plan     */ { valid_plan,     nullptr, nullptr },
+    /* net      */ { valid_net,      nullptr, nullptr },
+};
+static_assert(sizeof(MNV_TIME) / sizeof(MNV_TIME[0]) == VG_MNV_N,
+              "cfg_combat.h: a MIN and MAX row for every manoeuvre in VG_MNV_LIST");
+
+static uint32_t mnv_valid_mask(const Ship* s, const MnvCtx* c) {
+    uint32_t mask = 0;
+    for (int m = 0; m < VG_MNV_N; m++)
+        if (MNV_DEF[m].valid && MNV_DEF[m].valid(s, c)) mask |= 1u << m;
+    return mask;
+}
+
+// WHERE EACH SITS IN THE RULES' ORDER. The network is asked early only when it owns
+// survival. The hunt and its break-away are one layer.
+static int rules_rank(VgMnv m, const ShipSpec* sp) {
+    const bool early = vg_net_owns_survival && net_owns_phase(sp->tactic);
+    switch (m) {
+        case MNV_LIGHT:    return 0;
+        case MNV_EXPOSED:  return 1;
+        case MNV_CBREAK:   return 2;
+        case MNV_BREAKOUT:
+        case MNV_HUNT:     return 3;
+        case MNV_RESET:    return 4;
+        case MNV_NET:      return early ? 5 : 10;
+        case MNV_EVADE:    return 6;
+        case MNV_TAIL:     return 7;
+        case MNV_DRY:      return 8;
+        case MNV_PRESS:    return 9;
+        case MNV_STANDOFF:
+        case MNV_PLAN:     return 11;
+        default:           return 12;
+    }
+}
+
+// THE RULES' CHOICE ON A FLOOR FRAME, when nothing flew to say: the first valid one
+// in their order. Without the mask, the one that is running.
+static VgMnv mnv_first_valid(const Ship* s, const ShipSpec* sp) {
+    if (!vg_mnv_want_mask) return (VgMnv)s->mnv;
+    static const VgMnv ORDER[] = { MNV_LIGHT, MNV_EXPOSED, MNV_CBREAK, MNV_BREAKOUT, MNV_HUNT,
+                                   MNV_RESET, MNV_NET, MNV_EVADE, MNV_TAIL, MNV_DRY,
+                                   MNV_PRESS, MNV_NET, MNV_STANDOFF, MNV_PLAN };
+    const bool early = vg_net_owns_survival && net_owns_phase(sp->tactic);
+    for (int k = 0; k < (int)(sizeof(ORDER) / sizeof(ORDER[0])); k++) {
+        if (k == 6 && !early) continue;
+        if (s->mnv_valid & (1u << ORDER[k])) return ORDER[k];
+    }
+    return (VgMnv)s->mnv;
+}
+
+// WHY `old` STOPPED, with `now` taking the frame. A layer that ended itself said so;
+// one that lost the frame to a layer above it was switched; the rest stopped because
+// what they needed went away, or reached what they were for.
+static VgMnvStatus mnv_exit(const Ship* s, const MnvCtx* c, VgMnv old, VgMnv now) {
+    if (s->mnv_hint_m == old && s->mnv_hint_st != MNV_RUNNING) return (VgMnvStatus)s->mnv_hint_st;
+    if (rules_rank(now, c->sp) < rules_rank(old, c->sp)) return MNV_SWITCH;
+    switch (old) {
+        case MNV_RESET:    return MNV_DONE;   // its committed leg ran out
+        case MNV_EVADE:    return (c->inc && c->inc_range < ENEMY_EVADE_RANGE) ? MNV_SWITCH : MNV_DONE;
+        case MNV_TAIL:     return MNV_DONE;
+        case MNV_DRY:      return (s->rounds > 0) ? MNV_DONE : MNV_ABORTED;
+        case MNV_LIGHT:    return (s->illum == ILLUM_LET_GO) ? MNV_ABORTED : MNV_DONE;
+        case MNV_CBREAK:   return (s->brk_phase != BRK_NONE) ? MNV_SWITCH : MNV_ABORTED;
+        case MNV_EXPOSED:  return (s->expo_t > 0.0f) ? MNV_SWITCH : MNV_ABORTED;
+        case MNV_BREAKOUT: return s->hunt_out ? MNV_SWITCH : MNV_ABORTED;
+        default:           return MNV_ABORTED;
+    }
+}
+
+const char* const VG_MNV_NAME[VG_MNV_N] = {
+#define VG_MNV_STR(id, name) name,
+    VG_MNV_LIST(VG_MNV_STR)
+#undef VG_MNV_STR
+};
+const char* const VG_MNV_STATUS_NAME[] = { "running", "done", "aborted", "max", "switch", "bout" };
+const char* const VG_FLOOR_NAME[]      = { "none", "wall", "avoid", "merge", "safety" };
+const char* const VG_MNV_BY_NAME[]     = { "rules", "selector", "force" };
+bool     vg_mnv_want_mask = false;
+void   (*vg_mnv_tap)(const VgMnvEvent* e) = nullptr;
+uint32_t vg_host_frame = 0;
+
+static void mnv_emit(const Ship* s, int index, uint8_t kind, uint8_t mnv, uint8_t status,
+                     uint8_t fl, float t) {
+    if (!vg_mnv_tap) return;
+    VgMnvEvent e;
+    const int c = s->spec ? class_of(s->spec) : -1;
+    e.kind   = kind;
+    e.index  = (uint8_t)index;
+    e.cls    = (uint8_t)(c < 0 ? 255 : c);
+    e.mnv    = mnv;
+    e.status = status;
+    e.floor  = fl;
+    e.by     = VG_MNV_BY_RULES;
+    e.p[0]   = s->mnv_p[0];
+    e.p[1]   = s->mnv_p[1];
+    e.p[2]   = s->mnv_p[2];
+    e.t      = t;
+    vg_mnv_tap(&e);
+}
+
+// AFTER THE CHAIN: the floor span, the manoeuvre and its clock. The clock keeps running
+// under a floor, and a floor does not end the manoeuvre it took the frame from.
+static void mnv_frame(Ship* s, const MnvCtx* c, VgFloor fl, VgMnv flew) {
+    if (fl != s->mnv_floor) {
+        if (s->mnv_floor != FLOOR_NONE)
+            mnv_emit(s, c->index, VG_MNV_EV_FLOOR_OFF, s->mnv, MNV_RUNNING, s->mnv_floor, s->mnv_floor_t);
+        if (fl != FLOOR_NONE)
+            mnv_emit(s, c->index, VG_MNV_EV_FLOOR_ON, s->mnv, MNV_RUNNING, fl, 0.0f);
+        s->mnv_floor   = fl;
+        s->mnv_floor_t = 0.0f;
+    }
+    if (fl != FLOOR_NONE) s->mnv_floor_t += c->dt;
+    if (flew != MNV_NONE && flew != s->mnv) {
+        if (s->mnv != MNV_NONE) {
+            const VgMnvStatus st = mnv_exit(s, c, (VgMnv)s->mnv, flew);
+            mnv_emit(s, c->index, VG_MNV_EV_END, s->mnv, st, FLOOR_NONE, s->mnv_t);
+            s->mnv_last_exit = st;
+        }
+        s->mnv      = flew;
+        s->mnv_t    = 0.0f;
+        s->mnv_p[0] = s->mnv_p[1] = s->mnv_p[2] = 0.0f;   // the rules have no parameters
+        mnv_emit(s, c->index, VG_MNV_EV_START, flew, MNV_RUNNING, FLOOR_NONE, 0.0f);
+    }
+    if (s->mnv != MNV_NONE) s->mnv_t += c->dt;
+    s->mnv_rules = (flew != MNV_NONE) ? flew : mnv_first_valid(s, c->sp);
+}
+
+void vg_mnv_bout_end(Ship* s, int index) {
+    if (s->mnv_floor != FLOOR_NONE)
+        mnv_emit(s, index, VG_MNV_EV_FLOOR_OFF, s->mnv, MNV_RUNNING, s->mnv_floor, s->mnv_floor_t);
+    if (s->mnv != MNV_NONE) {
+        mnv_emit(s, index, VG_MNV_EV_END, s->mnv, MNV_BOUT, FLOOR_NONE, s->mnv_t);
+        s->mnv_last_exit = MNV_BOUT;
+    }
+    s->mnv         = MNV_NONE;
+    s->mnv_rules   = MNV_NONE;
+    s->mnv_floor   = FLOOR_NONE;
+    s->mnv_t       = 0.0f;
+    s->mnv_floor_t = 0.0f;
+    s->mnv_valid   = 0;
+}
+
+static const Ship* mnv_ship(int i) {
+    return (i >= 0 && i < MAX_ENEMIES) ? &vg.enemy[i] : nullptr;
+}
+VgMnv vg_mnv_rules_choice(int i) { const Ship* s = mnv_ship(i); return s ? (VgMnv)s->mnv_rules : MNV_NONE; }
+uint32_t vg_mnv_valid_mask(int i) { const Ship* s = mnv_ship(i); return s ? s->mnv_valid : 0u; }
+VgMnv vg_mnv_current(int i)      { const Ship* s = mnv_ship(i); return s ? (VgMnv)s->mnv : MNV_NONE; }
+float vg_mnv_time_in(int i)      { const Ship* s = mnv_ship(i); return s ? s->mnv_t : 0.0f; }
+void vg_mnv_params(int i, float p[3]) {
+    const Ship* s = mnv_ship(i);
+    for (int k = 0; k < 3; k++) p[k] = s ? s->mnv_p[k] : 0.0f;
+}
+VgFloor vg_mnv_preempted(int i)      { const Ship* s = mnv_ship(i); return s ? (VgFloor)s->mnv_floor : FLOOR_NONE; }
+VgMnvStatus vg_mnv_last_exit(int i)  { const Ship* s = mnv_ship(i); return s ? (VgMnvStatus)s->mnv_last_exit : MNV_RUNNING; }
+float vg_mnv_min_t(int m, int cls) {
+    return (m >= 0 && m < VG_MNV_N && cls >= 0 && cls < SHIP_CLASSES) ? MNV_TIME[m][0][cls] : 0.0f;
+}
+float vg_mnv_max_t(int m, int cls) {
+    return (m >= 0 && m < VG_MNV_N && cls >= 0 && cls < SHIP_CLASSES) ? MNV_TIME[m][1][cls] : 0.0f;
+}
+
 void vg_update_enemy(Ship* s, int index, float dt) {
-    if (!s->alive) return;
+    if (!s->alive) { vg_mnv_bout_end(s, index); return; }
+    s->mnv_hint_m = MNV_NONE;
     if (s->hit_flash > 0) s->hit_flash -= dt;
 
     // Everything below is expressed as a fraction of THIS ship's own capability
@@ -1545,8 +2294,17 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     s->prev_hull = s->hull;
     if (s->reset_t > 0.0f) s->reset_t -= dt;
 
+    // THE MASK, when something will read it: which manoeuvres may fly now. Asked
+    // before anything below has moved a timer, and it changes nothing itself.
+    MnvCtx mc = { sp, index, dt, smin, smax, close_r, reacted, inc, inc_range,
+                  &desired, &broke };
+    if (vg_mnv_want_mask) s->mnv_valid = mnv_valid_mask(s, &mc);
+
     s->steer_by = STEER_NONE;
+    VgFloor flr   = FLOOR_NONE;   // the floor that flew this frame
+    VgMnv   flew  = MNV_NONE;     // ...or the manoeuvre
     if (eclear < ARENA_ENEMY_MARGIN) {
+        flr = FLOOR_WALL;
         s->steer_by = STEER_WALL;
         desired = vg_arena_dir_to_view(vg_arena_inward(elocal));
         s->target_speed = (smin + smax) * 0.5f;
@@ -1557,6 +2315,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // the same rule as a distance, and as a distance it fires too late to work.
     // Same rank and the same label, because it is the same decision made in time.
     } else if (avoiding(s, dt)) {
+        flr = FLOOR_AVOID;
         s->steer_by = STEER_EVADE;
         desired     = s->avoid_dir;
         if (vdot(s->fwd, vsub(v3(0, 0, 0), s->pos)) < 0.0f) s->target_speed = smax;
@@ -1569,355 +2328,23 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // player's death by touching them. Under the wall, because it is equally
     // fatal.
     } else if (vlen2(s->pos) < ENEMY_MERGE_FLOOR * ENEMY_MERGE_FLOOR) {
+        flr = FLOOR_MERGE;
         s->steer_by = STEER_EVADE;
         desired     = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.75f);
         s->target_speed = smax;
         s->attack_t = 0.0f;      // the pass is over; it got what it was going to get
         s->break_t  = 0.0f;
 
-    // BALLISTA LIGHTS ITS ROUND. See ENEMY_ILLUM_DANGER. Under both collision
-    // floors and over everything else, until a round coming in is likely to hit.
-    } else if (lighting(s, sp, index, inc, smin, smax, &desired)) {
-        broke = true;
-
-    // THE EXPOSED SHOT. See ENEMY_EXPO_MAX. Under both collision floors, over the
-    // break: a shot at somebody who cannot answer it is worth more than the plan
-    // to set one up.
-    } else if (exposed_shot(s, sp, reacted, inc ? inc_range : 1e9f, inc, smin, smax, &desired)) {
-        broke = true;
-
-    // OUT OF A CIRCLE, AWAY, AND BACK IN. See ENEMY_CIRCLE_TIME. Under the wall
-    // and both collision floors -- it must never be the reason two ships touch --
-    // and above the reset, the network and every tactic, because it
-    // is a decision about the shape of the fight, and with the network flying, the
-    // rules own the extend and the turn in while the network flies the rest.
-    } else if (breaking(s, sp, reacted, inc ? inc_range : 1e9f, inc ? inc->speed : 0.0f,
-                        smin, smax, &desired)) {
-        broke = true;
-
-    // THE HUNT. See AGG_HUNT_RANGE. Under the floors, the light, the exposed shot
-    // and the break; over the reset, the network, the missile evade, the tail
-    // defence and every tactic -- an opponent that is in range and not about to
-    // be hit is attacking.
-    } else if (hunting(s, sp, reacted, inc, smin, smax, dt, &desired)) {
-        broke = true;
-
-    // NOTHING IS WORKING, SO STOP DOING IT. Committed for a couple of seconds:
-    // away and across, at speed, with the approach offset re-rolled so the
-    // re-merge comes from a side the last one did not.
-    //
-    // ABOVE the network and below the wall and the missile, because it is a
-    // decision about the FIGHT rather than about this second -- but staying alive
-    // still outranks changing the subject.
-    } else if (s->reset_t > 0.0f || s->stale_t > ENEMY_STALE_TIME) {
-        if (s->reset_t <= 0.0f) {
-            s->reset_dir  = break_across(vnorm(vsub(v3(0, 0, 0), s->pos)), s->up, -0.7f);
-            s->reset_t    = vg_frand(ENEMY_RESET_MIN, ENEMY_RESET_MAX);
-            s->offset_dir = vg_rand_unit();
-            s->stale_t    = 0.0f;
-            s->press_t    = 0.0f;   // a held position is part of what was not working
-        }
-        s->steer_by     = STEER_RESET;
-        desired         = s->reset_dir;
-        s->target_speed = smax;
-
-    // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
-    // It declines a class it never learned and a boundary, so the layers below
-    // still fly everything it will not.
-    } else if (vg_net_owns_survival && net_owns_phase(sp->tactic) &&
-               vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)) {
-        s->steer_by = STEER_NET;
-
-    } else if (reacted && inc && inc_range < ENEMY_EVADE_RANGE) {
-        s->steer_by = STEER_EVADE;
-        // Turning across the seeker is what forces the bearing outside its cone;
-        // turning away from it just gets you run down.
-        if (s->evade_t <= 0) {
-            s->evade_dir = vnorm(vadd(break_across(inc->dir, s->up, 0.0f),
-                                      vmul(vg_rand_unit(), 0.35f)));
-            s->evade_t   = vg_frand(0.9f, 1.6f);
-        }
-        desired = s->evade_dir;
-        // Bleed speed to tighten the break -- the same trick the player has.
-        s->target_speed = smin * 1.15f;
-
-    } else if (s->defend_t > 0
-               || (reacted &&
-                   on_my_six(s, vsub(v3(0, 0, 0), s->pos), vlen(s->pos)))) {
-        // ABOVE THE TACTIC, BELOW THE MISSILE. A round already in the air is the
-        // more urgent of the two, and a pilot being tracked still has time to
-        // answer properly -- but neither can wait for the class's positioning
-        // plan, which assumes the fight is still being flown forwards.
-        s->evade_t = 0;
-        s->steer_by = STEER_TAIL;
-        tactic_defend(s, vsub(v3(0, 0, 0), s->pos), smin, smax, &desired);
-
+    // EVERYTHING BELOW THE FLOORS IS A MANOEUVRE, and the rules choose it: the
+    // old chain, in its old order. See rules_choose.
     } else {
-        s->evade_t = 0;
-
-        Vec3  to    = vsub(v3(0, 0, 0), s->pos);   // player is the origin
-        float range = vlen(to);
-
-        // PRESSING, decided before the tactic and spent inside it.
-        //
-        // Every tactic breaks off on a RANGE test, and range cannot tell a merge
-        // that went well from one that went badly -- so the pass that ended with
-        // this ship behind the player, nose on, was abandoned exactly like the
-        // one that ended in front of them. That is why a fight read as a series
-        // of jousts with no consequence to losing one.
-        //
-        // Held for ENEMY_PRESS_TIME once taken, because a hard turn breaks the
-        // angle for a frame at a time and re-deciding every frame would drop the
-        // pursuit constantly. Ended by ENEMY_PRESS_MAX whatever happens: a pilot
-        // who keeps just barely holding the angle would otherwise never let go,
-        // and an opponent that cannot be shaken is not a fight, it is a fact.
-        //
-        // ROUNDS IN THE RACK ARE PART OF IT. Sitting on somebody's tail with an
-        // empty magazine is the same mistake as jousting with one.
-        //
-        // press_run is the ceiling and it is why there are two timers. press_t is
-        // the COMMITMENT, refreshed while the angle holds so that a hard turn
-        // breaking it for a frame does not drop the pursuit; press_run is how long
-        // this one pursuit has lasted, and once it passes ENEMY_PRESS_MAX the
-        // refresh stops and the commitment simply expires. It is cleared when the
-        // pursuit ends, so re-acquiring later is a NEW pursuit with a full budget
-        // rather than a continuation that has already spent it.
-        if (s->press_t > 0.0f) {
-            s->press_t   -= dt;
-            s->press_run += dt;
-        } else {
-            s->press_run = 0.0f;
-        }
-        if (s->rounds > 0 && s->press_run < ENEMY_PRESS_MAX * s->pilot->press &&
-            has_the_angle(s, to, range)) {
-            s->press_t = ENEMY_PRESS_TIME * s->pilot->press;
-        }
-        const bool pressing = (s->press_t > 0.0f);
-        // The break is what pressing suppresses, so cancelling the timer is the
-        // whole mechanism: every tactic's first test is `break_t > 0`.
-        if (pressing) s->break_t = 0;
-
-        // AN EMPTY RACK OUTRANKS THE CLASS PLAN, and sits under defend: something
-        // shooting at this ship now is worth more than a weapon it will have
-        // shortly. It outranks pressing too -- see the note above about a tail
-        // held with nothing to fire -- and has_the_angle already refuses to arm
-        // on an empty rack, so this only has to run first.
-        const bool dry = (s->rounds <= 0 && s->reload_t > 0.0f &&
-                          range < ENEMY_DRY_RANGE);
-        if (dry) {
-            s->steer_by = STEER_DRY;
-            // An AR-AAM rack only refills with the contact in front -- see tactic_dry.
-            tactic_dry(s, to, smax, &desired, sp->wpn == WPN_ARAAM);
-        } else
-        // THE TRAINED PILOT, IF THERE IS ONE AND IT WILL TAKE THE FIGHT.
-        //
-        // It sits exactly where a class tactic sits, and that is the whole design
-        // of this function paying off: everything above -- the wall, the
-        // missile, the tail -- is survival that every hull does the same
-        // way, and everything here is POSITIONING. A network is another opinion
-        // about positioning.
-        //
-        // It declines near the boundary and when there is nothing to fight, and
-        // then the class tactic flies as it always did. There is no frame where
-        // nobody is steering.
-        {
-            // THE NETWORK FIRST, because asking it is what decides the mode: one
-            // forward pass gives both where to point this frame and what the ship
-            // is trying to do over the next few seconds. Reading the mode before
-            // this had run would always read the previous frame's answer, and the
-            // whole strategy layer would sit in a branch that never executes --
-            // which is exactly what it did until this was measured.
-            //
-            // The firing gates below are untouched either way, so a network-flown
-            // enemy still has to be slow enough and hold a lock long enough, in its
-            // own class's cone. It gets a different opinion about where to be, not
-            // a different game.
-            const bool net_flew =
-                vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt);
-        // WHAT THE POLICY THINKS THIS SHIP IS DOING, if it has an opinion.
-        //
-        // This is the strategy layer and it sits ABOVE the class tactic rather
-        // than beside it: the tactic answers "how does this hull fight", the mode
-        // answers "what am I trying to do for the next few seconds". A CHARIOT
-        // that has decided to EXTEND leaves like a CHARIOT, and a BALLISTA that
-        // has decided to EXTEND leaves like a BALLISTA -- the mode picks the
-        // verb and the class still supplies the manner.
-        //
-        // PRESS is deliberately the class tactic itself rather than a fifth
-        // behaviour. Closing and taking the shot IS what every tactic here does;
-        // giving it a separate implementation would only mean two of them to keep
-        // in step.
-        //
-        // -1 means the network has no opinion -- an untrained class, older
-        // weights, a frame it declined -- and then this whole block is skipped and
-        // the class flies exactly as it did before modes existed.
-        const int mode = vg_bot_enemy_mode(index);
-        bool by_mode = true;
-        switch (mode) {
-            case VG_MODE_BREAK:
-                // Across whatever is coming, or across the player when nothing is.
-                // The same manoeuvre the evade path flies, chosen a second early
-                // and on purpose rather than as a reaction.
-                s->steer_by = STEER_EVADE;
-                if (s->evade_t <= 0) {
-                    const Vec3 away = inc ? inc->dir : vnorm(vsub(v3(0, 0, 0), s->pos));
-                    s->evade_dir = vnorm(vadd(break_across(away, s->up, 0.0f),
-                                              vmul(vg_rand_unit(), 0.35f)));
-                    s->evade_t   = vg_frand(0.9f, 1.6f);
-                }
-                desired = s->evade_dir;
-                s->target_speed = smin * 1.15f;
-                break;
-            case VG_MODE_EXTEND:
-                // Away and across at speed. tactic_dry is already exactly this --
-                // it is what a ship does when it has nothing to shoot with -- and
-                // leaving on purpose is the same manoeuvre for a better reason.
-                s->steer_by = STEER_DRY;
-                tactic_dry(s, to, smax, &desired);
-                break;
-            case VG_MODE_HOLD:
-                // Keep the range and keep the nose. Not a retreat and not a
-                // commitment: the seconds a lock is earned in.
-                s->steer_by = STEER_PRESS;
-                tactic_standoff(s, sp, to, range, smin, smax, &desired);
-                break;
-            default:
-                by_mode = false;   // PRESS, or no opinion at all
-                break;
-        }
-        // THE AIMED SHOT, and it is the one thing the tactics never do.
-        //
-        // Every one of them flies a curve past the player. That is right against
-        // somebody who is moving -- a straight run at a ship that can shoot back
-        // is how you get shot -- but against one that has parked it means the nose
-        // is never on them and the lock is never earned. See ENEMY_PRESS_SLOW_AT.
-        //
-        // So: stop flying the pattern, slow to where the lock comes quickly, and
-        // point. It stays subject to every firing gate, and it stops the moment
-        // they move again or the lock is in hand and the class can go back to
-        // fighting properly.
-        // HELD, and dropping out on `locked` was the whole of why this did not
-        // bite. The moment the lock was earned the ship went back to flying its
-        // curve, which pointed the nose away, which broke the lock, which brought
-        // it back here -- an oscillation that never held a firing solution long
-        // enough to spend more than a round or two of the rack.
-        //
-        // A pilot who has a parked target in their sights does not immediately
-        // look somewhere else. It holds until the rack is dry or they move.
-        // A FIRING PASS AT SOMETHING THAT IS MOVING.
-        //
-        // The slow-target press below is the easy half: a parked ship cannot
-        // punish an approach, so pointing at it costs nothing. This is the other
-        // half, and it costs something on purpose -- lining up on a ship that can
-        // shoot back means being pointed at by it too. That is what a pass IS.
-        //
-        // Committed, because a run decided fresh every frame is a ship that
-        // half-points at somebody forever. It ends on its own clock, or the break
-        // at ENEMY_BREAK_RANGE ends it -- and that is what turns a converging
-        // chase into line up, shoot, break, come back.
-        if (s->attack_cd > 0.0f) s->attack_cd -= dt;
-        if (s->attack_t  > 0.0f) s->attack_t  -= dt;
-        // NOT A STANDOFF HULL, for the third time tonight and for the same reason
-        // each time. A firing pass is a decision to close, and its lock range is
-        // 4200 -- so "in the window" is almost always true and it would spend the
-        // fight running at people. Measured, its damage in ordinary flying went
-        // 0.55 -> 1.94: the sniper stops sniping. It already has an aimed shot for
-        // a target that has parked, which is the only time it should leave.
-        if (sp->tactic != TACTIC_STANDOFF
-            && s->attack_t <= 0.0f && s->attack_cd <= 0.0f && reacted
-            && s->rounds > 0 && !s->locked
-            && range < sp->lock_range * ENEMY_ATTACK_RANGE_K
-            && range > ENEMY_ATTACK_MIN) {
-            s->attack_t  = vg_frand(ENEMY_ATTACK_TIME_MIN, ENEMY_ATTACK_TIME_MAX)
-                         * s->pilot->nerve;
-            s->attack_cd = ENEMY_ATTACK_COOLDOWN;
-        }
-
-        // THE PASS ENDS AT THE BREAK RANGE, and leaving this out made it a ram.
-        //
-        // A run sets by_mode, which skips the class tactic -- and the break lives
-        // INSIDE the tactic. So the nose stayed on the player for the whole
-        // committed window with nothing left to call it off, and a manoeuvre meant
-        // to be line up, shoot, break became line up, shoot, arrive. Played, it
-        // read as the enemy laying a trap.
-        //
-        // Cancelling the run here rather than breaking directly hands the frame
-        // back to the tactic, whose own break test is immediately true at this
-        // range. One break, owned by one piece of code.
-        if (s->attack_t > 0.0f && range < ENEMY_BREAK_RANGE) s->attack_t = 0.0f;
-
-        const float press_at = (sp->tactic == TACTIC_STANDOFF)
-                             ? ENEMY_PRESS_SLOW_AT : ENEMY_PRESS_SLOW_CLOSE;
-        if (!by_mode && s->attack_t > 0.0f && s->rounds > 0) {
-            s->steer_by     = STEER_PRESS;
-            desired         = vsub(v3(0, 0, 0), s->pos);
-            // Slow for the same reason the parked press is slow: LOCK_SPEED_PENALTY
-            // is 1.8, so a ship at full throttle needs nearly three times as long
-            // to earn the lock it came here for.
-            s->target_speed = smin * 1.25f;
-            by_mode         = true;
-        } else if (!by_mode && player_speed_norm() < press_at
-            && s->rounds > 0 && range < sp->lock_range) {
-            s->steer_by = STEER_PRESS;
-            desired     = vsub(v3(0, 0, 0), s->pos);
-            // TWO PHASES, because holding a firing solution at fifteen hundred
-            // units is not pressure -- it is a threat nobody has to answer.
-            //
-            // Outside the working range, CLOSE, at speed: the lock is worthless
-            // until the round has a short enough flight for a parked ship to still
-            // be there when it arrives. Inside it, slow down, because the lock
-            // time is scaled by how fast the shooter is going -- LOCK_SPEED_PENALTY
-            // is 1.8, and a ship at full throttle needs nearly three times as long
-            // to earn the same lock. The player already knows this. It is why they
-            // stopped.
-            // SLOW THE WHOLE TIME, and closing at speed first was measured and
-            // thrown away: it arrives sooner and cannot shoot when it does,
-            // because LOCK_SPEED_PENALTY is 1.8 and a ship at full throttle needs
-            // nearly three times as long to earn the same lock. Damage against a
-            // parked target FELL on every class. At this speed the nose is already
-            // on them, so it drifts in while it works the lock, which is both the
-            // approach and the aim.
-            s->target_speed = smin * 1.15f;
-            by_mode         = true;
-        }
-
-        // PRESS is the network's own flying: closing and taking the shot is what
-        // it was fitted to do, so there is nothing to add. No opinion at all falls
-        // back to the class tactic, exactly as before there were modes.
-        if (!by_mode && net_flew) s->steer_by = STEER_NET;
-        else if (!by_mode)
-        switch (sp->tactic) {
-            case TACTIC_STANDOFF:
-                tactic_standoff(s, sp, to, range, smin, smax, &desired);
-                break;
-            case TACTIC_SLASH:
-                tactic_slash(s, sp, to, range, close_r, smin, smax, &desired);
-                break;
-            case TACTIC_GEOMETRY:
-                tactic_geometry(s, sp, to, range, close_r, smin, smax, &desired);
-                break;
-            case TACTIC_FIGHTER:
-            default:
-                tactic_fighter(s, sp, to, range, close_r, smin, smax, &desired);
-                break;
-        }
-        }
-        if (s->steer_by == STEER_NONE) s->steer_by = STEER_TACTIC;
-
-        // Holding the angle means holding the NOSE on them, and the tactic has
-        // just aimed at a point beside the player so the pass does not converge.
-        // Overriding it here rather than threading a flag through all four keeps
-        // the tactics about positioning, which is the one thing they are for.
-        if (pressing && !dry) {
-            // Last word, so it is the label too.
-            s->steer_by = STEER_PRESS;
-            desired = to;
-            // Slow enough to be allowed to shoot -- the firing gate applies to a
-            // won position exactly as it does to a merge -- and slow is also what
-            // lets them stay inside the player's turn.
-            s->target_speed = smin + (smax - smin) * 0.30f;
-        }
+        flew = rules_choose(s, &mc);
     }
+    mnv_frame(s, &mc, flr, flew);
+
+    // THE SELECTOR'S TIME SINCE A LOCK, kept where the census keeps its own copy
+    // (s_census_nolock, which is never reset between bouts and stays as it is).
+    s->nolock_t = s->locked ? 0.0f : s->nolock_t + dt;
 
     {   // THE CENSUS. Taken after the whole chain has decided, so steer_by is
         // final rather than whatever an earlier branch happened to leave.
@@ -2122,6 +2549,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     // THE SHOT, JUDGED, last and only when everything else would fire: see
     // ENEMY_SHOT_MIN_FIGHTER. A network with its own opinion (judged > 0) keeps it.
+    const int rounds0 = s->rounds;   // for launch_t
     if (s->rounds > 0 && s->fire_cd <= 0 && s->locked && banked && (judged != 0)
         && (judged > 0 || (shot_worth(s, sp) && salvo_ready(s, sp)))) {
         // ALONG THE AIM. The rail is still on the nose -- that is where the ship
@@ -2176,4 +2604,5 @@ void vg_update_enemy(Ship* s, int index, float dt) {
         // pulled, which is the thing the player has to answer.
         if (fresh_burst) vg_comms_say(s, VOICE_FIRE);
     }
+    s->launch_t = (s->rounds < rounds0) ? 0.0f : s->launch_t + dt;
 }

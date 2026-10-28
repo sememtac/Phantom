@@ -1005,3 +1005,51 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* TURN_SPEED    */ { 0.0f,  0.0f,  0.0f,  0.0f },
     /* OUT_SPEED     */ { 1.0f,  1.0f,  1.0f,  1.0f },
 };
+
+// =============================================================================
+// THE MANOEUVRES' MIN AND MAX, per hull (stage 1)
+// =============================================================================
+//
+// Seconds. MIN: a chooser may not leave a manoeuvre sooner, except for EVADE or TAIL.
+// MAX: it must leave by then; 0 is no ceiling. One row per manoeuvre in the order of
+// VG_MNV_LIST (vg_mnv.h), which vg_ai.cpp checks.
+//
+// THE RULES DO NOT READ THESE. They keep each layer's own timers, which is what keeps
+// the fights the fights the chain flew, so the rows of the old layers only say what
+// those timers are, for a selector to read -- at AGGRESSION 1 where a timer is a knob.
+// Where a layer has no commitment at all, MIN is the 0.5 s PLAN.md asks for.
+//  manoeuvre       MIN: AEGIS LANCE CHARIOT BALLISTA          MAX
+static constexpr float MNV_TIME[][2][4] = {
+    /* none     */ { { 0.0f, 0.0f, 0.0f, 0.0f },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* hunt     */ { { 0.5f, 0.5f, 0.5f, 0.5f },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* breakout */ { { 0.0f, 0.0f, 0.0f, 0.0f },
+                     { AGG_HOT[AGG_OUT_MAX][0], AGG_HOT[AGG_OUT_MAX][1],
+                       AGG_HOT[AGG_OUT_MAX][2], AGG_HOT[AGG_OUT_MAX][3] } },
+    /* cbreak   */ { { 0.0f, 0.0f, 0.0f, 0.0f },   // the extend's hard ceiling, then the run's
+                     { AGG_HOT[AGG_EXT_HARD][0] + ENEMY_BRK_RUN_MAX,
+                       AGG_HOT[AGG_EXT_HARD][1] + ENEMY_BRK_RUN_MAX,
+                       AGG_HOT[AGG_EXT_HARD][2] + ENEMY_BRK_RUN_MAX,
+                       AGG_HOT[AGG_STANDOFF_T][3] } },          // BALLISTA: its standoff
+    /* reset    */ { { ENEMY_RESET_MIN, ENEMY_RESET_MIN, ENEMY_RESET_MIN, ENEMY_RESET_MIN },
+                     { ENEMY_RESET_MAX, ENEMY_RESET_MAX, ENEMY_RESET_MAX, ENEMY_RESET_MAX } },
+    /* evade    */ { { 0.9f, 0.9f, 0.9f, 0.9f },   // one leg; legs follow while a round is in
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* tail     */ { { ENEMY_DEFEND_MIN, ENEMY_DEFEND_MIN, ENEMY_DEFEND_MIN, ENEMY_DEFEND_MIN },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* exposed  */ { { 0.0f, 0.0f, 0.0f, 0.0f },
+                     { ENEMY_EXPO_MAX, ENEMY_EXPO_MAX, ENEMY_EXPO_MAX, ENEMY_EXPO_MAX } },
+    /* light    */ { { 0.0f, 0.0f, 0.0f, 0.0f },   // the round's life
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* standoff */ { { 0.5f, 0.5f, 0.5f, 0.5f },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* dry      */ { { 0.8f, 0.8f, 0.8f, 0.8f },   // one leg; legs follow until the rack is back
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* press    */ { { 0.5f, 0.5f, 0.5f, 0.5f },   // MAX: the v1 press, times the pilot's press
+                     { ENEMY_PRESS_MAX, ENEMY_PRESS_MAX, ENEMY_PRESS_MAX, ENEMY_PRESS_MAX } },
+    /* plan     */ { { 0.5f, 0.5f, 0.5f, 0.5f },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+    /* net      */ { { 0.0f, 0.0f, 0.0f, 0.0f },
+                     { 0.0f, 0.0f, 0.0f, 0.0f } },
+};

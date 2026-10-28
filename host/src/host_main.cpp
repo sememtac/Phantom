@@ -50,6 +50,7 @@ static bool enemy_dump_open(const char* path) {
 #include "vg_canopy_set.h"
 #include "vg_cine.h"
 #include "vg_pilot.h"
+#include "vg_mnv.h"
 
 // Defined in src/main.cpp, compiled unchanged.
 extern void setup(void);
@@ -58,6 +59,31 @@ extern void loop(void);
 // ONE LINE PER BOUT, as it ends, so a run that is cut short still holds every
 // bout it finished. key=value, so a reader does not depend on the column order.
 // Read by tools/pilot_eval.py.
+// --log-manoeuvre: the choice log, one line per event (vg_mnv.h). The format and the
+// expressions that read it are in captures/ai_eval/selector/STAGE1_INTERFACE.md.
+static void mnv_print(const VgMnvEvent* e) {
+    const char* cls = (e->cls < SHIP_CLASSES) ? vg_ship_class[e->cls].name : "-";
+    const unsigned f = (unsigned)vg_host_frame, i = (unsigned)e->index;
+    switch (e->kind) {
+        case VG_MNV_EV_START:
+            printf("mnv %u %u %s start %s p %.3f %.3f %.3f by %s\n", f, i, cls,
+                   VG_MNV_NAME[e->mnv], (double)e->p[0], (double)e->p[1], (double)e->p[2],
+                   VG_MNV_BY_NAME[e->by]);
+            break;
+        case VG_MNV_EV_END:
+            printf("mnv %u %u %s end %s %s t %.2f\n", f, i, cls, VG_MNV_NAME[e->mnv],
+                   VG_MNV_STATUS_NAME[e->status], (double)e->t);
+            break;
+        case VG_MNV_EV_FLOOR_ON:
+            printf("mnv %u %u %s floor %s on\n", f, i, cls, VG_FLOOR_NAME[e->floor]);
+            break;
+        case VG_MNV_EV_FLOOR_OFF:
+            printf("mnv %u %u %s floor %s off t %.2f\n", f, i, cls, VG_FLOOR_NAME[e->floor],
+                   (double)e->t);
+            break;
+    }
+}
+
 static void bout_print(const VgBout* b) {
     static const char* OUT[] = { "won", "lost", "draw" };
     static const char* BY[]  = { "missile", "ram", "wall", "other", "time" };
@@ -269,6 +295,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--park")) vg_bot_park = true;
         // The opponent without the break or the exposed shot. See vg_enemy_break.
         else if (!strcmp(argv[i], "--no-break")) vg_enemy_break = false;
+        // THE CHOICE LOG, and the valid mask every frame. See vg_mnv.h.
+        else if (!strcmp(argv[i], "--log-manoeuvre")) vg_mnv_tap = mnv_print;
+        else if (!strcmp(argv[i], "--mnv-mask")) vg_mnv_want_mask = true;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
             screen = screen_by_name(argv[++i]);
             if (!screen) {
@@ -424,6 +453,11 @@ int main(int argc, char** argv) {
                    "  --shot N     write frame N to shot.ppm and keep running. The\n"
                    "               frame clock is pinned to 1/60 so that frame N is\n"
                    "               the same frame in every run.\n"
+                   "  --log-manoeuvre  print a line when an opponent's manoeuvre\n"
+                   "               starts or ends, and when a collision rule\n"
+                   "               takes over and lets go. See vg_mnv.h.\n"
+                   "  --mnv-mask   work out every frame which manoeuvres may fly.\n"
+                   "               For the selector's tools. It changes no fight.\n"
                    "  --frames N   run N frames and exit -- a smoke test, not a mode\n");
             return 0;
         }
@@ -580,6 +614,7 @@ int main(int argc, char** argv) {
     unsigned long flown = 0;
 
     while (host_window_pump()) {
+        vg_host_frame = (uint32_t)flown;   // the choice log's frame: see vg_mnv.h
         loop();
         flown++;
         // THE RECORDING CLOCK, and the cut-off. Rows over 60 is seconds of live
