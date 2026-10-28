@@ -360,3 +360,8 @@ void vg_bot_reset(void);
 // frame is what that costs. The desktop points it at a writer.
 typedef void (*VgBotTap)(const VgObs* o, const VgInput* in);
 extern VgBotTap vg_bot_tap;
+
+// THE SELECTOR'S VIEW (stage 3): vg_bot_selector_obs_n() floats, the 41 of
+// vg_bot_observe_enemy first. See vg_bot.cpp.
+int  vg_bot_selector_obs_n(void);
+void vg_bot_selector_obs(int index, float* out);

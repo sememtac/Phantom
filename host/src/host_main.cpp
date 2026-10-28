@@ -33,6 +33,44 @@ static void enemy_dump_tap(const VgObs* o, const float* act) {
     fwrite(o->v, sizeof(float), VG_OBS_N, s_enemy_dump);
     fwrite(act, sizeof(float), 4, s_enemy_dump);
 }
+#include "vg_mnv.h"
+// --dump-selector F: the selector's training records (PHSL, STAGE1_INTERFACE.md 5).
+static FILE* s_sel_dump = nullptr;
+static void selector_dump_tap(int index, int event) {
+    const Ship* s = &vg.enemy[index];
+    if (!s->spec) return;
+    float obs[128];
+    const int n = vg_bot_selector_obs_n();
+    vg_bot_selector_obs(index, obs);
+    const uint32_t frame = vg_host_frame;
+    const uint8_t  head[4] = { (uint8_t)index, (uint8_t)(s->spec - &vg_ship_class[0]),
+                               (uint8_t)vg_mnv_rules_choice(index), (uint8_t)vg_mnv_current(index) };
+    const uint32_t mask = vg_mnv_valid_mask(index);
+    const float    tin  = vg_mnv_time_in(index);
+    float p[3];
+    vg_mnv_params(index, p);
+    const uint8_t  tail[4] = { (uint8_t)vg_mnv_preempted(index), (uint8_t)vg_mnv_last_exit(index),
+                               (uint8_t)event, 0 };
+    fwrite(&frame, 4, 1, s_sel_dump);
+    fwrite(head, 1, 4, s_sel_dump);
+    fwrite(&mask, 4, 1, s_sel_dump);
+    fwrite(&tin, 4, 1, s_sel_dump);
+    fwrite(p, 4, 3, s_sel_dump);
+    fwrite(tail, 1, 4, s_sel_dump);
+    fwrite(obs, 4, n, s_sel_dump);
+}
+static bool selector_dump_open(const char* path) {
+    s_sel_dump = fopen(path, "wb");
+    if (!s_sel_dump) return false;
+    const int n = vg_bot_selector_obs_n();
+    const uint16_t h[4] = { 1, (uint16_t)n, (uint16_t)VG_MNV_N, (uint16_t)(32 + 4 * n) };
+    fwrite("PHSL", 1, 4, s_sel_dump);
+    fwrite(h, 2, 4, s_sel_dump);
+    vg_mnv_want_mask = true;
+    vg_census_selector_tap = selector_dump_tap;
+    return true;
+}
+
 static bool enemy_dump_open(const char* path) {
     s_enemy_dump = fopen(path, "wb");
     if (!s_enemy_dump) return false;
@@ -387,6 +425,12 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
             vg_agg_bias = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--dump-selector") && i + 1 < argc) {
+            if (!selector_dump_open(argv[++i])) {
+                fprintf(stderr, "could not open %s for writing\n", argv[i]);
+                return 1;
+            }
+        }
         else if (!strcmp(argv[i], "--dump-enemy") && i + 1 < argc) {
             if (!enemy_dump_open(argv[++i])) {
                 fprintf(stderr, "could not open %s for writing\n", argv[i]);
@@ -708,6 +752,11 @@ int main(int argc, char** argv) {
     }
 
     host_dataset_close();
+    if (s_sel_dump) {
+        vg_census_selector_tap = nullptr;
+        fclose(s_sel_dump);
+        s_sel_dump = nullptr;
+    }
     if (s_enemy_dump) {
         vg_census_enemy_tap = nullptr;
         fclose(s_enemy_dump);
@@ -770,6 +819,30 @@ int main(int argc, char** argv) {
                    100.0 * g_cen_nose[c] / n, 100.0 * g_cen_attack[c] / n,
                    g_cen_pull_sum[c] / n, g_cen_seat_pull_sum[c] / n,
                    g_cen_seat_thr_sum[c] / n, 100.0 * g_cen_spin[c] / n);
+            // ORBIT, on its own line so the readers of `fight` do not move.
+            printf("orbit %-8s orbit %.1f%% slow %.1f%% | tan %.2f w %.3f\n",
+                   vg_ship_class[c].name, 100.0 * g_cen_orbit[c][0] / n,
+                   100.0 * g_cen_orbit[c][1] / n, g_cen_otan_sum[c] / n,
+                   g_cen_ow_sum[c] / n);
+            // PER MANOEUVRE, one `mcen` line each (not "mnv": that is the choice log).
+            extern uint32_t g_cen_mnv_frames[][VG_MNV_N], g_cen_mnv_floorf[][VG_MNV_N],
+                            g_cen_mnv_eps[][VG_MNV_N], g_cen_mnv_exit[][VG_MNV_N][6],
+                            g_cen_mnv_launch[][VG_MNV_N], g_cen_mnv_hits[][VG_MNV_N],
+                            g_cen_mnv_thr_n[][VG_MNV_N];
+            extern float g_cen_mnv_thr_t[][VG_MNV_N];
+            for (int m = 0; m < VG_MNV_N; m++) {
+                if (!g_cen_mnv_frames[c][m] && !g_cen_mnv_eps[c][m]) continue;
+                const uint32_t* x = g_cen_mnv_exit[c][m];
+                printf("mcen %-8s %-9s frames %lu floor %lu eps %lu | done %lu aborted %lu"
+                       " max %lu switch %lu bout %lu | launch %lu hits %lu | threat %lu t %.1f\n",
+                       vg_ship_class[c].name, VG_MNV_NAME[m],
+                       (unsigned long)g_cen_mnv_frames[c][m], (unsigned long)g_cen_mnv_floorf[c][m],
+                       (unsigned long)g_cen_mnv_eps[c][m], (unsigned long)x[1],
+                       (unsigned long)x[2], (unsigned long)x[3], (unsigned long)x[4],
+                       (unsigned long)x[5], (unsigned long)g_cen_mnv_launch[c][m],
+                       (unsigned long)g_cen_mnv_hits[c][m], (unsigned long)g_cen_mnv_thr_n[c][m],
+                       (double)g_cen_mnv_thr_t[c][m]);
+            }
             // AGGRESSION, on its own line so the readers of `fight` do not move.
             printf("aggr %-8s shots %lu solution %lu | ended %lu wall %lu hits %lu"
                    " | evade %.1f%% | solution hits %lu | rams net %lu seat %lu\n",

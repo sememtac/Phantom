@@ -354,6 +354,11 @@ extern uint32_t g_cen_seat_hits[];   // ...on the seat
 extern uint32_t g_cen_evade[];       // frames: a round of its <= 2 s from the seat
 extern uint32_t g_cen_sol_hits[];    // hits on the seat by its solution shots
 void vg_census_round_end(int shooter, float age, bool hit, int why);
+void vg_census_mnv_event(int index, int kind, int mnv, int status, float t);
+extern void (*vg_census_selector_tap)(int index, int event);   // host --dump-selector
+extern uint32_t g_cen_orbit[][2];
+extern float g_cen_otan_sum[];
+extern float g_cen_ow_sum[];
 extern uint32_t g_cen_turnin[];       // the break: extend -> run
 extern uint32_t g_cen_break_shots[];  // rounds fired on the run
 extern uint32_t g_cen_break_hits[];   // hits on the seat by rounds launched on the run

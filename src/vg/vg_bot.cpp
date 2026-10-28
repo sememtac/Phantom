@@ -1,4 +1,5 @@
 #include "vg_bot.h"
+#include "vg_mnv.h"
 #include "vg_net.h"
 #include "vg_modes.h"
 #include "vg_pilot.h"
@@ -987,4 +988,35 @@ void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     in->throttle = t;
 
     trigger(o, in, may_fire, -1);
+}
+
+// THE SELECTOR'S VIEW (the hybrid pilot's stage 3: a network that chooses among the
+// manoeuvres). The 41 of the network's observation, then where this opponent is in
+// its manoeuvre and its weapon. One definition, so the --dump-selector training data
+// and the selector itself cannot disagree about what an input means.
+static float sel_clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+int vg_bot_selector_obs_n(void) { return VG_OBS_N + VG_MNV_N + 8; }
+void vg_bot_selector_obs(int index, float* out) {
+    VgObs o;
+    vg_bot_observe_enemy(index, &o);
+    for (int k = 0; k < VG_OBS_N; k++) out[k] = o.v[k];
+    float* x = out + VG_OBS_N;
+    for (int k = 0; k < VG_MNV_N + 8; k++) x[k] = 0.0f;
+    if (index < 0 || index >= MAX_ENEMIES || !vg.enemy[index].spec) return;
+    const Ship*     s   = &vg.enemy[index];
+    const ShipSpec* sp  = s->spec;
+    const int       cls = (int)(sp - &vg_ship_class[0]);
+    const int       m   = (int)vg_mnv_current(index);
+    if (m >= 0 && m < VG_MNV_N) x[m] = 1.0f;
+    const float mx  = (m >= 0 && m < VG_MNV_N) ? vg_mnv_max_t(m, cls) : 0.0f;
+    const float tin = vg_mnv_time_in(index);
+    x[VG_MNV_N + 0] = sel_clamp01(mx > 0.0f ? tin / mx : tin / 8.0f);
+    x[VG_MNV_N + 1] = (vg_mnv_last_exit(index) == MNV_DONE) ? 1.0f : 0.0f;
+    x[VG_MNV_N + 2] = (vg_mnv_preempted(index) != FLOOR_NONE) ? 1.0f : 0.0f;
+    x[VG_MNV_N + 3] = (s->reload_t > 0.0f && sp->reload > 0.0f)
+                    ? sel_clamp01(1.0f - s->reload_t / sp->reload) : 1.0f;
+    x[VG_MNV_N + 4] = (sp->magazine > 0) ? sel_clamp01((float)s->stacks / (float)sp->magazine) : 0.0f;
+    x[VG_MNV_N + 5] = sel_clamp01(s->launch_t / 8.0f);
+    x[VG_MNV_N + 6] = sel_clamp01(s->nolock_t / 8.0f);
+    x[VG_MNV_N + 7] = (vg_wpn.locked && vg_wpn.target == index) ? 1.0f : 0.0f;
 }

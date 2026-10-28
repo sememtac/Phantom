@@ -657,6 +657,25 @@ float    g_cen_seat_thr_sum[SHIP_CLASSES]  = { 0 };
 #define CEN_PASS_T    8.0f
 #define CEN_SPIN_THR  0.15f
 #define CEN_SPIN_PULL 0.5f
+// ORBIT, the circling the author meant. Playtest 7: "both opponents just endlessly
+// circled around me" -- and CIRCLE above read 0.0% on that very sitting, because it
+// needs both pilots pulling and NEITHER locked, and the author was locked and
+// shooting. This one is geometric and blind to locks: the opponent's velocity
+// relative to the seat lies mostly ACROSS the line of sight (smoothed share >=
+// CEN_ORBIT_TAN), so it sweeps round the seat at CEN_ORBIT_W[q] rad/s or more, within
+// CEN_ORBIT_R lock ranges, for CEN_ORBIT_T s or more. Two bearing-rate thresholds;
+// the slow one has ranked the sittings the same so far. Flown against the curved
+// seat, it orders every sitting the author judged for circling as the author did,
+// which CIRCLE could not (captures/ai_eval/selector/orbit_validate.txt).
+uint32_t g_cen_orbit[SHIP_CLASSES][2] = { { 0 } };
+float    g_cen_otan_sum[SHIP_CLASSES] = { 0 };
+float    g_cen_ow_sum[SHIP_CLASSES]   = { 0 };
+#define CEN_ORBIT_TAN 0.85f
+#define CEN_ORBIT_R   1.25f
+#define CEN_ORBIT_T   2.0f
+static const float CEN_ORBIT_W[2] = { 0.25f, 0.12f };
+static float    s_cen_otan[MAX_ENEMIES], s_cen_ow[MAX_ENEMIES], s_cen_orun[MAX_ENEMIES][2];
+static uint32_t s_cen_orunf[MAX_ENEMIES][2];
 static float    s_cen_pull[MAX_ENEMIES];   // this pilot's last turn, from the turn step
 static float    s_cen_pe[MAX_ENEMIES], s_cen_ps[MAX_ENEMIES], s_cen_rdot[MAX_ENEMIES];
 static float    s_cen_r[MAX_ENEMIES], s_cen_run[MAX_ENEMIES], s_cen_ret_t[MAX_ENEMIES];
@@ -765,6 +784,54 @@ static float cen_reach(const ShipSpec* sp) {
          + (sp->msl_life - ramp) * sp->msl_speed_max;
 }
 
+// PER MANOEUVRE (stage 1): which manoeuvres earn their place. Per hull class and
+// manoeuvre: frames, frames a floor flew, episodes, exits by reason, rounds launched
+// while in it, hits on the seat by those rounds (matched by launch time, as the break
+// hits are), and the episodes that reached a THREAT -- a lock on the seat, or one of
+// its locked rounds tracking the seat -- with the summed time from the start to it.
+// Starts and ends arrive from mnv_emit, the one place they are decided, whether or
+// not --log-manoeuvre is on; frames, launches and threats are counted here.
+//
+// DESKTOP ONLY, like the loaded network in vg_net.cpp: about 3 KB of counters that
+// only a measuring run reads, so the board does not carry them.
+#if defined(_MSC_VER)
+uint32_t g_cen_mnv_frames[SHIP_CLASSES][VG_MNV_N]  = { { 0 } };
+uint32_t g_cen_mnv_floorf[SHIP_CLASSES][VG_MNV_N]  = { { 0 } };
+uint32_t g_cen_mnv_eps[SHIP_CLASSES][VG_MNV_N]     = { { 0 } };
+uint32_t g_cen_mnv_exit[SHIP_CLASSES][VG_MNV_N][6] = { { { 0 } } };
+uint32_t g_cen_mnv_launch[SHIP_CLASSES][VG_MNV_N]  = { { 0 } };
+uint32_t g_cen_mnv_hits[SHIP_CLASSES][VG_MNV_N]    = { { 0 } };
+uint32_t g_cen_mnv_thr_n[SHIP_CLASSES][VG_MNV_N]   = { { 0 } };
+float    g_cen_mnv_thr_t[SHIP_CLASSES][VG_MNV_N]   = { { 0 } };
+#define CEN_MNVL 16
+static bool    s_cen_mnv_thr[MAX_ENEMIES];
+static float   s_cen_ml_t[MAX_ENEMIES][CEN_MNVL];
+static uint8_t s_cen_ml_m[MAX_ENEMIES][CEN_MNVL];
+static int     s_cen_ml_k[MAX_ENEMIES];
+// THE SELECTOR'S TRAINING RECORDS (host --dump-selector; captures/ai_eval/selector/
+// STAGE1_INTERFACE.md): called at each decision point -- every 6th frame keyed on the
+// frame and the index, or an event: a manoeuvre ended (1), a floor stopped flying (2),
+// a player round started tracking it (3).
+void (*vg_census_selector_tap)(int index, int event) = nullptr;
+static uint8_t s_cen_sel_ev[MAX_ENEMIES];    // 1 ended, 2 a floor stopped, 3 a round tracks it
+static int     s_cen_sel_nin[MAX_ENEMIES];   // the player's rounds tracking it, last frame
+void vg_census_mnv_event(int index, int kind, int mnv, int status, float t) {
+    (void)t;
+    if (index < 0 || index >= MAX_ENEMIES || !vg.enemy[index].spec) return;
+    if (mnv < 0 || mnv >= VG_MNV_N) return;
+    const int c = (int)(vg.enemy[index].spec - &vg_ship_class[0]);
+    if (c < 0 || c >= SHIP_CLASSES) return;
+    if (kind == VG_MNV_EV_END) s_cen_sel_ev[index] = 1;
+    else if (kind == VG_MNV_EV_FLOOR_OFF && !s_cen_sel_ev[index]) s_cen_sel_ev[index] = 2;
+    if (kind == VG_MNV_EV_START) {
+        g_cen_mnv_eps[c][mnv]++;
+        s_cen_mnv_thr[index] = false;
+    } else if (kind == VG_MNV_EV_END && status >= 0 && status < 6) {
+        g_cen_mnv_exit[c][mnv][status]++;
+    }
+}
+#endif   // _MSC_VER: the per-manoeuvre census
+
 static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float dt) {
     const float r  = vlen(s->pos);
     const float bt = vg_bout_time();
@@ -777,6 +844,9 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
         s_cen_ps[i]     = vg.seat_pull;
         s_cen_run[i]    = 0.0f;
         s_cen_runf[i]   = 0;
+        s_cen_otan[i] = 0.0f;
+        s_cen_ow[i]   = 0.0f;
+        for (int q = 0; q < 2; q++) { s_cen_orun[i][q] = 0.0f; s_cen_orunf[i][q] = 0; }
         s_cen_state[i]  = 0;
         s_cen_rounds[i] = s->rounds;
         s_cen_lock_was[i] = s->locked;
@@ -788,6 +858,9 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
         }
         for (int k = 0; k < CEN_SOLS; k++) s_cen_sol_t[i][k] = -1.0f;
         s_cen_fr_t[i] = -1.0f;
+#if defined(_MSC_VER)
+        for (int q = 0; q < CEN_MNVL; q++) s_cen_ml_t[i][q] = -1.0f;
+#endif
     }
     s_cen_bout[i] = bt;
     const float k = (dt > 0.0f) ? fminf(1.0f, dt / CEN_TAU) : 0.0f;
@@ -879,6 +952,69 @@ static void census_fight(const Ship* s, const ShipSpec* sp, int c, int i, float 
         }
     }
 
+    {   // ORBIT: the relative velocity's share across the line of sight, and the
+        // bearing rate round the seat it gives.
+        const float rr   = fmaxf(r, 1.0f);
+        const Vec3  u    = vmul(s->pos, 1.0f / rr);
+        const Vec3  vrel = vsub(vmul(s->fwd, s->speed), v3(0, 0, vg.speed));
+        const float al   = vdot(vrel, u);
+        const float vp   = vlen(vsub(vrel, vmul(u, al)));
+        const float vv   = vlen(vrel);
+        s_cen_otan[i] += (((vv > 1.0f) ? vp / vv : 0.0f) - s_cen_otan[i]) * k;
+        s_cen_ow[i]   += (vp / rr - s_cen_ow[i]) * k;
+        g_cen_otan_sum[c] += s_cen_otan[i];
+        g_cen_ow_sum[c]   += s_cen_ow[i];
+        for (int q = 0; q < 2; q++) {
+            if (s_cen_otan[i] >= CEN_ORBIT_TAN && s_cen_ow[i] >= CEN_ORBIT_W[q]
+                && r <= CEN_ORBIT_R * sp->lock_range) {
+                s_cen_orun[i][q] += dt;
+                s_cen_orunf[i][q]++;
+                if (s_cen_orun[i][q] >= CEN_ORBIT_T) {
+                    g_cen_orbit[c][q] += s_cen_orunf[i][q];
+                    s_cen_orunf[i][q] = 0;
+                }
+            } else {
+                s_cen_orun[i][q]  = 0.0f;
+                s_cen_orunf[i][q] = 0;
+            }
+        }
+    }
+#if defined(_MSC_VER)
+    {   // PER MANOEUVRE: its frames, its launches, and its first threat.
+        const int m = (int)vg_mnv_current(i);
+        if (m >= 0 && m < VG_MNV_N) {
+            g_cen_mnv_frames[c][m]++;
+            if (vg_mnv_preempted(i) != FLOOR_NONE) g_cen_mnv_floorf[c][m]++;
+            if (fired) {
+                g_cen_mnv_launch[c][m] += (uint32_t)fired;
+                s_cen_ml_k[i] = (s_cen_ml_k[i] + 1) % CEN_MNVL;
+                s_cen_ml_t[i][s_cen_ml_k[i]] = bt;
+                s_cen_ml_m[i][s_cen_ml_k[i]] = (uint8_t)m;
+            }
+            if (!s_cen_mnv_thr[i] && (inbound || s->locked)) {
+                s_cen_mnv_thr[i] = true;
+                g_cen_mnv_thr_n[c][m]++;
+                g_cen_mnv_thr_t[c][m] += vg_mnv_time_in(i);
+            }
+        }
+    }
+    if (vg_census_selector_tap) {
+        // A DECISION POINT: every 6th frame, keyed on the frame and the index, or an event.
+        int nin = 0;
+        for (int q = 0; q < MAX_MISSILES; q++) {
+            const Missile* ms = &vg.msl[q];
+            if (ms->alive && ms->from_player && ms->locked && ms->target == i) nin++;
+        }
+        if (nin > s_cen_sel_nin[i] && !s_cen_sel_ev[i]) s_cen_sel_ev[i] = 3;
+        s_cen_sel_nin[i] = nin;
+        const bool tick = ((vg_host_frame + 3u * (uint32_t)i) % 6u) == 0u;
+        // Only inside a live bout: between a death and the next spawn an opponent may
+        // still fly, and those frames are no decision the selector will ever face.
+        const bool live = vg.state == VG_PLAYING || vg.state == VG_HIT;
+        if (live && (tick || s_cen_sel_ev[i])) vg_census_selector_tap(i, s_cen_sel_ev[i]);
+        s_cen_sel_ev[i] = 0;
+    }
+#endif
     const bool circ = s_cen_ps[i] >= CEN_PULL && s_cen_pe[i] >= CEN_PULL
                    && fabsf(s_cen_rdot[i]) <= CEN_RDOT_K * sp->speed_max
                    && r <= sp->lock_range && !vg_wpn.locked && !s->locked;
@@ -1491,6 +1627,20 @@ static bool cen_inside(const float* a, const float* b, float t) {
 // `why` the missile census's reason (3 is the wall), `age` how long it flew. For
 // the fight census; counting only.
 void vg_census_round_end(int shooter, float age, bool hit, int why) {
+#if defined(_MSC_VER)
+    if (hit && shooter >= 0 && shooter < MAX_ENEMIES && vg.enemy[shooter].spec) {
+        // PER MANOEUVRE: the manoeuvre the round was launched in, by its launch time.
+        const int mc = (int)(vg.enemy[shooter].spec - &vg_ship_class[0]);
+        const float launched = vg_bout_time() - age;
+        for (int q = 0; q < CEN_MNVL && mc >= 0 && mc < SHIP_CLASSES; q++) {
+            if (s_cen_ml_t[shooter][q] >= 0.0f
+                && fabsf(s_cen_ml_t[shooter][q] - launched) <= CEN_SOL_EDGE) {
+                g_cen_mnv_hits[mc][s_cen_ml_m[shooter][q]]++;
+                break;
+            }
+        }
+    }
+#endif
     if (shooter < 0 || shooter >= MAX_ENEMIES || !vg.enemy[shooter].spec) return;
     const int c = class_of(vg.enemy[shooter].spec);
     if (c < 0) return;
@@ -2386,6 +2536,10 @@ uint32_t vg_host_frame = 0;
 
 static void mnv_emit(const Ship* s, int index, uint8_t kind, uint8_t mnv, uint8_t status,
                      uint8_t fl, float t) {
+#if defined(_MSC_VER)
+    // The per-manoeuvre census counts every event, with or without the log.
+    vg_census_mnv_event(index, kind, mnv, status, t);
+#endif
     if (!vg_mnv_tap) return;
     VgMnvEvent e;
     const int c = s->spec ? class_of(s->spec) : -1;
