@@ -589,6 +589,7 @@ static float s_evade_sy = 0.0f;
 // The trigger's own memory: whether a press is already outstanding, and the rack
 // count it was made at. See the note where the trigger is decided.
 static bool  s_fired       = false;
+static int   s_fired_wait = 0;      // frames since a press that has not spent a round
 static float s_prev_rounds = 1.0f;
 // WHERE THE STICK IS, for the trained pilot only.
 //
@@ -603,6 +604,7 @@ void vg_bot_reset(void) {
     s_np = s_ny = 0.0f;
     s_nt = 0.5f;
     s_fired       = false;
+    s_fired_wait  = 0;
     s_prev_rounds = 1.0f;
     s_break_t = s_evade_t = 0.0f;
     s_evade_sx = 1.0f;
@@ -623,6 +625,13 @@ void vg_bot_reset(void) {
 // `judged` is the policy's opinion, or -1 when nothing has one. The GATES are
 // never the policy's business: a lock has to exist and the rack has to hold
 // something, whoever is flying.
+// A PRESS THE GATE REFUSED IS NOT A SHOT, and the edge below only re-armed when
+// a round left the rack or the lock dropped. So a press that landed in the gap
+// between two rounds, with the lock held straight through it, latched the trigger
+// shut until the lock broke: a seat holding a long lock fired once and then sat on
+// a full rack (a parked seat: 2 rounds in 2 minutes, locked 94% of the time). A
+// press that spends nothing in BOT_REPRESS_FRAMES is forgotten and may come again.
+#define BOT_REPRESS_FRAMES 15
 static void trigger(const VgObs* o, VgInput* in, bool may_fire, int judged) {
     const bool locked = (o->v[OBS_OWN_LOCK] >= 0.999f);
     bool want = may_fire && locked && o->v[OBS_OWN_ROUNDS] > 0.0f;
@@ -643,9 +652,13 @@ static void trigger(const VgObs* o, VgInput* in, bool may_fire, int judged) {
 
     const float rounds_now = o->v[OBS_OWN_ROUNDS];
     if (rounds_now < s_prev_rounds - 1e-4f) s_fired = false;
+    if (s_fired && ++s_fired_wait >= BOT_REPRESS_FRAMES) s_fired = false;
     in->fire_edge = want && !s_fired;
     in->fire_btn  = in->fire_edge;
-    if (in->fire_edge) s_fired = true;
+    if (in->fire_edge) {
+        s_fired      = true;
+        s_fired_wait = 0;
+    }
     if (!want)         s_fired = false;
     s_prev_rounds = rounds_now;
 }
