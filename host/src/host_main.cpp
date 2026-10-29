@@ -59,6 +59,122 @@ static void selector_dump_tap(int index, int event) {
     fwrite(tail, 1, 4, s_sel_dump);
     fwrite(obs, 4, n, s_sel_dump);
 }
+// THE SELECTOR (hybrid pilot, stage 3), desktop side: a small network loaded from a
+// file (--selector-file), installed behind vg_mnv_chooser. Float32 here; the board
+// will carry a compiled int8 copy once one is chosen.
+struct SelNet {
+    int    obs_n = 0, hidden = 0, mnv_n = 0;
+    float  margin = 0.0f;
+    // v2: the manoeuvres the selector may pick itself (bit m), and output 0 ("none",
+    // never a manoeuvre) means FOLLOW THE RULES: their own choice, this frame. A
+    // held pick that is not the rules' breaks their frame-by-frame state (the rules
+    // fly first and keep their timers), so the selector overrides them only with
+    // library manoeuvres and otherwise lets them fly (clone_flown.txt).
+    uint32_t selectable = 0xFFFFFFFFu;
+    uint32_t lib_hold[MAX_ENEMIES];   // frames left on a library pick's own MIN
+    float* buf = nullptr;      // mean, std, W0, b0, W1, b1, W2, b2, in that order
+    const float *mean, *std, *w0, *b0, *w1, *b1, *w2, *b2;
+};
+static SelNet s_sel;
+// SCORE AT ONE RATE, CHOOSE AT ANOTHER (--sel-score-every N): the network runs on every
+// Nth frame (keyed like the decision points) and its scores are kept; every call in
+// between picks from the CURRENT allowed set with the kept scores. The rules react to
+// the mask frame by frame, and a held choice breaks them (chooser_sweep.txt).
+static uint32_t s_sel_score_every = 1;
+static float    s_sel_y[MAX_ENEMIES][32];
+static bool     s_sel_have[MAX_ENEMIES];
+static VgMnv selector_choose(int index, uint32_t allowed, VgMnv current, float t_in, float p[3]) {
+    (void)t_in;
+    p[0] = p[1] = p[2] = 0.0f;
+    const SelNet& n = s_sel;
+    float* y = s_sel_y[index];
+    const bool fresh = !s_sel_have[index] || s_sel_score_every <= 1
+                    || ((vg_host_frame + 3u * (uint32_t)index) % s_sel_score_every) == 0u;
+    if (fresh) {
+    s_sel_have[index] = true;
+    float x[128], h0[64], h1[64];
+    vg_bot_selector_obs(index, x);
+    for (int k = 0; k < n.obs_n; k++) x[k] = (x[k] - n.mean[k]) / n.std[k];
+    for (int j = 0; j < n.hidden; j++) {
+        float a = n.b0[j];
+        for (int k = 0; k < n.obs_n; k++) a += n.w0[j * n.obs_n + k] * x[k];
+        h0[j] = tanhf(a);
+    }
+    for (int j = 0; j < n.hidden; j++) {
+        float a = n.b1[j];
+        for (int k = 0; k < n.hidden; k++) a += n.w1[j * n.hidden + k] * h0[k];
+        h1[j] = tanhf(a);
+    }
+    for (int m = 0; m < n.mnv_n; m++) {
+        float a = n.b2[m];
+        for (int k = 0; k < n.hidden; k++) a += n.w2[m * n.hidden + k] * h1[k];
+        y[m] = a;
+    }
+    }
+    const int cur = (int)current;
+    if (n.selectable != 0xFFFFFFFFu) {
+        // v2: follow the rules, or fly a library manoeuvre for at least its MIN.
+        SelNet& w = s_sel;
+        // A pick that ENDED this frame is not held: holding it would restart it, since
+        // the director takes its DONE before the hook asks (vg_mnv_ended).
+        if (vg_mnv_ended(index)) w.lib_hold[index] = 0;
+        if (w.lib_hold[index] > 0 && cur > 0 && ((allowed >> cur) & 1u)) {
+            w.lib_hold[index]--;
+            return current;
+        }
+        w.lib_hold[index] = 0;
+        int best = 0;                                  // 0: follow the rules
+        for (int m = 1; m < n.mnv_n; m++)
+            if (((n.selectable >> m) & 1u) && ((allowed >> m) & 1u) && y[m] > y[best]) best = m;
+        if (best == 0) return vg_mnv_rules_choice(index);
+        if (best != cur) {
+            const int cls = (int)(vg.enemy[index].spec - &vg_ship_class[0]);
+            w.lib_hold[index] = (uint32_t)(vg_mnv_min_t(best, cls) * 60.0f);
+        }
+        return (VgMnv)best;
+    }
+    int best = -1;
+    for (int m = 1; m < n.mnv_n; m++)
+        if (((allowed >> m) & 1u) && (best < 0 || y[m] > y[best])) best = m;
+    if (best < 0) return current;
+    if (cur > 0 && cur < n.mnv_n && ((allowed >> cur) & 1u) && y[best] - y[cur] <= n.margin)
+        return current;
+    return (VgMnv)best;
+}
+static bool selector_load(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    char magic[4];
+    uint16_t h[4];
+    float margin;
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "PHSE", 4) || fread(h, 2, 4, f) != 4
+        || fread(&margin, 4, 1, f) != 1 || (h[0] != 1 && h[0] != 2)) { fclose(f); return false; }
+    SelNet& n = s_sel;
+    n.obs_n = h[1]; n.hidden = h[2]; n.mnv_n = h[3]; n.margin = margin;
+    if (h[0] == 2 && fread(&n.selectable, 4, 1, f) != 1) { fclose(f); return false; }
+    if (n.obs_n != vg_bot_selector_obs_n() || n.obs_n > 128 || n.hidden > 64 || n.mnv_n != VG_MNV_N
+        || n.mnv_n > 32) {
+        fprintf(stderr, "selector %s: %d inputs, %d hidden, %d manoeuvres; the game has %d and %d\n",
+                path, n.obs_n, n.hidden, n.mnv_n, vg_bot_selector_obs_n(), (int)VG_MNV_N);
+        fclose(f);
+        return false;
+    }
+    const size_t cnt = 2u * n.obs_n + (size_t)n.hidden * n.obs_n + n.hidden
+                     + (size_t)n.hidden * n.hidden + n.hidden + (size_t)n.mnv_n * n.hidden + n.mnv_n;
+    n.buf = (float*)malloc(cnt * sizeof(float));
+    const bool ok = n.buf && fread(n.buf, sizeof(float), cnt, f) == cnt && fgetc(f) == EOF;
+    fclose(f);
+    if (!ok) return false;
+    const float* q = n.buf;
+    n.mean = q; q += n.obs_n;  n.std = q; q += n.obs_n;
+    n.w0 = q; q += (size_t)n.hidden * n.obs_n;  n.b0 = q; q += n.hidden;
+    n.w1 = q; q += (size_t)n.hidden * n.hidden; n.b1 = q; q += n.hidden;
+    n.w2 = q; q += (size_t)n.mnv_n * n.hidden;  n.b2 = q;
+    vg_mnv_want_mask = true;
+    vg_mnv_chooser = selector_choose;
+    return true;
+}
+
 static bool selector_dump_open(const char* path) {
     s_sel_dump = fopen(path, "wb");
     if (!s_sel_dump) return false;
@@ -428,6 +544,18 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--agg") && i + 1 < argc)
             vg_agg_bias = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--selector-file") && i + 1 < argc) {
+            if (!selector_load(argv[++i])) {
+                fprintf(stderr, "could not load the selector %s\n", argv[i]);
+                return 1;
+            }
+        }
+        else if (!strcmp(argv[i], "--mnv-sel-every") && i + 1 < argc)
+            vg_mnv_sel_every = (uint32_t)strtoul(argv[++i], nullptr, 10);
+        else if (!strcmp(argv[i], "--mnv-sel-min") && i + 1 < argc)
+            vg_mnv_sel_min = (float)atof(argv[++i]);
+        else if (!strcmp(argv[i], "--sel-score-every") && i + 1 < argc)
+            s_sel_score_every = (uint32_t)strtoul(argv[++i], nullptr, 10);
         else if (!strcmp(argv[i], "--dump-selector") && i + 1 < argc) {
             if (!selector_dump_open(argv[++i])) {
                 fprintf(stderr, "could not open %s for writing\n", argv[i]);
