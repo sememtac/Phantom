@@ -69,6 +69,18 @@ zero unless --weights sets them:
                  light on its round
     + illumhold  share of frames it held the light
     + letgo      times a minute it let go for a round judged likely to hit it
+    - orbit      share of frames the opponent flew round the seat: its motion
+                 relative to the seat mostly across the line of sight, for 2 s or
+                 more, locks or not (the census `orbit` line). This is the circling
+                 the author complained of in playtest 7
+
+THE SELECTOR (--selector-start): train a stage-3 selector file (PHSE) in place of
+a pilot network. Each copy is a selector file. The game flies the rules
+(--no-enemy-net), and the selector chooses behind the chooser hook
+(--selector-file). The noise and the step are absolute, not a share of a layer's
+spread, because a selector that starts as "follow the rules" has weights of zero.
+The default --flags are then the selector's own: a choice every frame, no MIN, and
+the network run every 6th frame. Needs a game built with the selector.
 
 The eval table also gives the EXCHANGE: hits on the seat divided by hits on the
 network. It ranked the author's own sittings in the right order, so it is the
@@ -103,6 +115,7 @@ import argparse
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -136,6 +149,10 @@ ILLUM = re.compile(r"^break \w+.*\| illum hold ([\d.]+)% letgo (\d+) hits (\d+)"
 AGGR = re.compile(r"^aggr \w+\s+shots (\d+) solution (\d+) \| ended (\d+) wall (\d+) hits (\d+)"
                   r" \| evade ([\d.]+)%(?: \| solution hits (\d+))?", re.M)
 RAMSPLIT = re.compile(r"^aggr \w+.*\| rams net (\d+) seat (\d+)", re.M)
+ORBIT = re.compile(r"^orbit \w+\s+orbit ([\d.]+)%", re.M)
+# The default game flags: for a pilot network, and for a stage-3 selector.
+NET_FLAGS = "--net-all-phases --net-rules-trigger --no-modes --net-corner-exempt"
+SEL_FLAGS = "--mnv-sel-every 1 --mnv-sel-min 0 --sel-score-every 6"
 
 # The weights, and the sign each part enters with. See the docstring for each.
 # Set against the M2 network's own numbers (2026-10-25): it drew almost every
@@ -149,14 +166,15 @@ DEFAULT_WEIGHTS = {"kills": 1.0, "ttk": 0.5, "deaths": 1.0, "draws": 0.75,
                    "breakhits": 0.0, "breakshots": 0.0, "hitseat": 0.0,
                    "expohits": 0.0, "exposhots": 0.0,
                    "evade": 0.0, "solshots": 0.0, "wallshots": 0.0, "solhits": 0.0,
-                   "illumhits": 0.0, "illumhold": 0.0, "letgo": 0.0, "seatrams": 0.0}
+                   "illumhits": 0.0, "illumhold": 0.0, "letgo": 0.0, "seatrams": 0.0,
+                   "orbit": 0.0}
 SIGN = {"kills": 1, "ttk": 1, "deaths": -1, "draws": -1, "rams": -1, "seatwall": 0,
         "damage": 1, "hit": -1,
         "armed": 1, "reengage": 1, "dead": -1, "lock": 1, "guided": 1,
         "circle": -1, "tail": 1, "tailshots": 1, "passes": 1,
         "breakhits": 1, "breakshots": 1, "hitseat": 1, "expohits": 1, "exposhots": 1,
         "evade": 1, "solshots": 1, "wallshots": -1, "solhits": 1,
-        "illumhits": 1, "illumhold": 1, "letgo": 1, "seatrams": -1}
+        "illumhits": 1, "illumhold": 1, "letgo": 1, "seatrams": -1, "orbit": -1}
 
 
 def span(text):
@@ -232,6 +250,46 @@ def write_blob(path, d, a):
     qp.write_blob(path, q, int(d.get("PILOT_MODE_N", 0)))
 
 
+# A stage-3 selector file (PHSE v2): 'PHSE', uint16 version, inputs, hidden, outputs,
+# float32 margin, uint32 selectable mask, then the input mean and spread and the three
+# layers (float32). The layout is set by the game's --selector-file loader.
+SEL_NAMES = ["W0", "B0", "W1", "B1", "W2", "B2"]
+
+
+def read_selector(path):
+    """Return the header numbers and the arrays of a selector file."""
+    raw = open(path, "rb").read()
+    if raw[:4] != b"PHSE":
+        raise ValueError("%s is not a selector file" % path)
+    version, n_in, n_h, n_out = struct.unpack("<4H", raw[4:12])
+    margin = struct.unpack("<f", raw[12:16])[0]
+    if version != 2:
+        raise ValueError("%s is version %d; this script trains version 2" % (path, version))
+    selectable = struct.unpack("<I", raw[16:20])[0]
+    shapes = [("mean", (n_in,)), ("std", (n_in,)), ("W0", (n_h, n_in)), ("B0", (n_h,)),
+              ("W1", (n_h, n_h)), ("B1", (n_h,)), ("W2", (n_out, n_h)), ("B2", (n_out,))]
+    vals = np.frombuffer(raw[20:], dtype="<f4").astype(np.float64)
+    a, i = {}, 0
+    for name, shape in shapes:
+        k = int(np.prod(shape))
+        a[name] = vals[i:i + k].reshape(shape)
+        i += k
+    if i != vals.size:
+        raise ValueError("%s has %d numbers, %d expected" % (path, vals.size, i))
+    return {"n_in": n_in, "n_h": n_h, "n_out": n_out, "margin": margin,
+            "selectable": selectable}, a
+
+
+def write_selector(path, h, a):
+    with open(path, "wb") as f:
+        f.write(b"PHSE")
+        f.write(struct.pack("<4H", 2, h["n_in"], h["n_h"], h["n_out"]))
+        f.write(struct.pack("<f", h["margin"]))
+        f.write(struct.pack("<I", h["selectable"]))
+        for name in ["mean", "std"] + SEL_NAMES:
+            f.write(np.asarray(a[name], dtype="<f4").reshape(-1).tobytes())
+
+
 # ---------------------------------------------------------------------------
 # Flying and scoring
 # ---------------------------------------------------------------------------
@@ -241,6 +299,9 @@ def fly(job):
     # control for an --eval.
     if job["blob"] == "tactics":
         net = ["--no-enemy-net"]
+    elif job["blob"].endswith(".phse"):
+        # A stage-3 selector: the rules fly, and it chooses behind the chooser hook.
+        net = ["--no-enemy-net", "--selector-file", job["blob"]]
     else:
         net = ["--enemy-net", "--net-file", job["blob"]]
     cmd = [job["exe"], "--headless", "--gym", str(job["seat"]), str(job["enemy"]),
@@ -344,6 +405,10 @@ def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False, ram_split=Tr
         illumhold = float(il.group(1)) / 100.0
         letgo = int(il.group(2))
         illumhits = int(il.group(3))
+    orbit = 0.0
+    ob = ORBIT.search(text)
+    if ob:
+        orbit = float(ob.group(1)) / 100.0
     parts = {"kills": len(kills) / minutes, "ttk": ttk / minutes,
              "deaths": deaths / minutes, "draws": draws / minutes,
              "rams": rams / minutes, "seatwall": seatwall / minutes,
@@ -357,7 +422,7 @@ def score_fight(text, enemy, frames, w, bout_limit, ram_rule=False, ram_split=Tr
              "evade": evade, "solshots": solshots / minutes, "wallshots": wallshots / minutes,
              "solhits": solhits / minutes, "illumhits": illumhits / minutes,
              "illumhold": illumhold, "letgo": letgo / minutes,
-             "seatrams": seatrams / minutes}
+             "seatrams": seatrams / minutes, "orbit": orbit}
     total = sum(SIGN[k] * w[k] * parts[k] for k in SIGN)
     return total, parts
 
@@ -518,6 +583,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="Improve a pilot network by evolution in the headless game.")
     ap.add_argument("--start", help="the float header to start from")
+    ap.add_argument("--selector-start",
+                    help="train a stage-3 selector from this selector file (PHSE version "
+                         "2), not a pilot network. See THE SELECTOR")
     ap.add_argument("--name", help="folder name under captures/ai_eval/es")
     ap.add_argument("--resume", type=int, metavar="GEN",
                     help="continue the run in --name at generation GEN. The weights come "
@@ -565,10 +633,10 @@ def main():
                     help="count every ram bout as a ram of the network, as before the "
                          "census ram split. Use it to compare with old tables")
     ap.add_argument("--flags",
-                    default="--net-all-phases --net-rules-trigger --no-modes --net-corner-exempt",
-                    help="game flags for every fight (default: the network flies every "
-                         "phase, the rules fire, no mode head, and the cornered pull "
-                         "leaves the network alone)")
+                    help="game flags for every fight. Default for a network: it flies "
+                         "every phase, the rules fire, no mode head, and the cornered "
+                         "pull leaves it alone. Default for a selector: a choice every "
+                         "frame, no MIN, the network run every 6th frame")
     ap.add_argument("--weights", default="",
                     help="score weights, for example kills=1,draws=0.5")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2),
@@ -582,10 +650,13 @@ def main():
                          "(seeds 1 .. --seeds) and print the parts of the score. "
                          "The name tactics flies the same fights with the network off")
     args = ap.parse_args()
+    selector = bool(args.selector_start) or any(b.endswith(".phse") for b in (args.eval or []))
+    if args.flags is None:
+        args.flags = SEL_FLAGS if selector else NET_FLAGS
     if args.eval:
         return cmd_eval(args)
-    if not args.start or not args.name:
-        print("error: --start and --name are necessary to train")
+    if not (args.start or args.selector_start) or not args.name:
+        print("error: --start (or --selector-start) and --name are necessary to train")
         return 1
 
     if args.pop % 2:
@@ -599,11 +670,25 @@ def main():
             return 1
         w[k] = float(v)
 
-    text, d, a = qp.read_header(args.start)
-    names = param_names(d)
-    theta0 = flatten(a, names)
+    if args.selector_start:
+        hdr, a = read_selector(args.selector_start)
+        names = SEL_NAMES
+        theta0 = flatten(a, names)
+        sc = np.ones_like(theta0)       # absolute: a "follow the rules" start is all zeros
+        ext = ".phse"
+
+        def write_copy(path, arrays):
+            write_selector(path, hdr, arrays)
+    else:
+        text, d, a = qp.read_header(args.start)
+        names = param_names(d)
+        theta0 = flatten(a, names)
+        sc = scales(a, names)
+        ext = ".bin"
+
+        def write_copy(path, arrays):
+            write_blob(path, d, arrays)
     theta = theta0.copy()
-    sc = scales(a, names)
     out = os.path.join(OUT_ROOT, args.name)
     os.makedirs(out, exist_ok=True)
     rng = np.random.default_rng(args.seed)
@@ -620,6 +705,10 @@ def main():
             if theta.shape != theta0.shape:
                 print("error: %s does not fit the start header" % resume_npy)
                 return 1
+        elif args.selector_start:
+            print("error: %s does not exist (a selector run continues from .npy only)"
+                  % resume_npy)
+            return 1
         elif os.path.isfile(resume_h):
             source = resume_h
             # ONLY 7 DECIMALS in the header. The weights are about 1e-7 from the
@@ -655,18 +744,19 @@ def main():
             eps = np.concatenate([eps, -eps])
             blobs = []
             for i in range(args.pop):
-                p = os.path.join(out, "cand_%02d.bin" % i)
-                write_blob(p, d, unflatten(theta + args.sigma * sc * eps[i], a, names))
+                p = os.path.join(out, "cand_%02d%s" % (i, ext))
+                write_copy(p, unflatten(theta + args.sigma * sc * eps[i], a, names))
                 blobs.append(p)
-            mean_blob = os.path.join(out, "gen_%03d.bin" % gen)
-            write_blob(mean_blob, d, unflatten(theta, a, names))
+            mean_blob = os.path.join(out, "gen_%03d%s" % (gen, ext))
+            write_copy(mean_blob, unflatten(theta, a, names))
             # The fights of the generation's own network are kept (one file a fight, not
             # the whole population's), so the causes of its bouts can be read later.
             scores, parts, short, cls = evaluate(blobs + [mean_blob], fights, args, w, pool,
                                                os.path.join(out, "fights"), {mean_blob})
             cand, mean_score = scores[:-1], scores[-1]
-            write_float_header(os.path.join(out, "gen_%03d.h" % gen), text,
-                               unflatten(theta, a, names), names)
+            if not args.selector_start:
+                write_float_header(os.path.join(out, "gen_%03d.h" % gen), text,
+                                   unflatten(theta, a, names), names)
             # The exact weights, for --resume.
             np.save(os.path.join(out, "gen_%03d.npy" % gen), theta)
             # The step: toward the copies that ranked well, then back toward the start.
