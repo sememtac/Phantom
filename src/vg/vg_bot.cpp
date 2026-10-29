@@ -778,11 +778,53 @@ static bool net_act(const VgObs* o, VgInput* in, float dt) {
     return true;
 }
 
+// THE PARKER (a test seat; host --seat-parker P). Playtest 8: the author's winning
+// move is to PARK -- "lowest throttle but highest turn rate ... keep spinning around
+// and catch my opponent's tail" -- and no other seat does it. P is the share of time
+// parked: 1 always; between 0 and 1, in BOT_PARK_BLOCK-frame blocks, a block parked
+// when a hash of its index falls under P (no game random draws, so the opponents'
+// sequence is untouched); otherwise the seat flies whatever it was given. The wall
+// still outranks it. 0 changes nothing.
+float vg_bot_parker = 0.0f;
+#define BOT_PARK_BLOCK 240u
+static bool parker_now(void) {
+    if (vg_bot_parker <= 0.0f) return false;
+    if (vg_bot_parker >= 1.0f) return true;
+    uint32_t h = (vg_host_frame / BOT_PARK_BLOCK) * 2654435761u;
+    h ^= h >> 15;
+    return (float)(h & 0xFFFFu) / 65536.0f < vg_bot_parker;
+}
+
 void vg_bot_act(const VgObs* o, VgInput* in, float dt) {
     if (!o || !in) return;
 
     *in = VgInput{};
     in->throttle = o->v[OBS_OWN_THROTTLE];
+
+    if (o->has_target && o->v[OBS_WALL] >= BOT_WALL_TURN && parker_now()) {
+        // PARKED: the slowest the ship can fly and the hardest it can turn, nose to
+        // the opponent, firing on the lock.
+        in->throttle = 0.0f;
+        const float wx = o->v[OBS_TGT_X], wy = o->v[OBS_TGT_Y], wz = o->v[OBS_TGT_Z];
+        const float fwd = (wz > 0.20f) ? wz : 0.20f;
+        float yaw = (wx / fwd) * 6.0f, pitch = -(wy / fwd) * 6.0f;
+        if (wz < 0.0f) {
+            yaw   = (wx >= 0.0f) ? 1.0f : -1.0f;
+            pitch = (wy >= 0.0f) ? -1.0f : 1.0f;
+        }
+        in->yaw   = clamp1(yaw);
+        in->pitch = clamp1(pitch);
+        // ON A LOCK, A PRESS EVERY QUARTER SECOND. trigger() arms one press and
+        // re-arms only when the rack goes down or the lock drops; a parker holds
+        // its lock without a break, so a press refused by the round gap latched it
+        // shut (2 presses in 2 minutes, measured). The gate refuses the extra
+        // presses for free; a semi-active round in flight still blocks a second.
+        const bool locked = o->v[OBS_OWN_LOCK] >= 0.999f && o->v[OBS_OWN_ROUNDS] > 0.0f;
+        const bool guiding = o->v[OBS_OWN_SAAM] > 0.5f && o->v[OBS_OWN_INFLIGHT] > 0.0f;
+        in->fire_edge = locked && !guiding && (vg_host_frame % 15u) == 0u;
+        in->fire_btn  = in->fire_edge;
+        return;
+    }
 
     // The trained pilot steers, and if it does the scripted one is skipped --
     // but the TRIGGER below runs either way, because the network does not have

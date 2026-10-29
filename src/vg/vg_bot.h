@@ -314,6 +314,7 @@ extern bool vg_net_rules_trigger;
 // that there is something for a policy to be trained against and something for
 // it to be measured against once there is one.
 void vg_bot_act(const VgObs* o, VgInput* in, float dt);
+extern float vg_bot_parker;   // test seat: the share of time it parks (host --seat-parker)
 
 // Whether the seat is being flown by the bot at all. Off unless something turns
 // it on -- the desktop's --bot flag today.

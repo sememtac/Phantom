@@ -302,6 +302,8 @@ int main(int argc, char** argv) {
         // of them fight -- which is the point: a matchup nobody is holding can be
         // run for as long as it takes to mean something.
         else if (!strcmp(argv[i], "--bot")) vg_bot_on = true;
+        else if (!strcmp(argv[i], "--seat-parker") && i + 1 < argc)
+            vg_bot_parker = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--headless")) headless = true;
         // WHAT THE SHIP GATE SEES, printed and nothing else. The inspector reads
         // this rather than parsing the class table, so the numbers it shows are
