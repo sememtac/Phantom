@@ -455,7 +455,7 @@ int main(int argc, char** argv) {
             rec_done = (float)atof(argv[++i]);
         // The opponent is flown by the network. This is the one you fight.
         else if (!strcmp(argv[i], "--enemy-net")) vg_enemy_net = true;
-        else if (!strcmp(argv[i], "--no-enemy-net")) vg_enemy_net = false;
+        else if (!strcmp(argv[i], "--no-enemy-net")) { vg_enemy_net = false; vg_enemy_net_table = false; }
         else if (!strcmp(argv[i], "--demo")) vg_demo_wanted = true;
         else if (!strcmp(argv[i], "--show-ai")) vg_show_ai = true;
         else if (!strcmp(argv[i], "--net-survival")) vg_net_owns_survival = true;
@@ -626,7 +626,10 @@ int main(int argc, char** argv) {
                    "  --show-ai    name the layer flying the nearest opponent, on\n"
                    "               the panel. NET is the trained pilot.\n"
                    "  --demo       let the title screen play the game to itself.\n"
-                   "  --no-enemy-net  hand the opponents back to the tactics.\n"
+                   "  --no-enemy-net  hand every opponent back to the tactics,\n"
+                   "               BALLISTA included. With neither this nor\n"
+                   "               --enemy-net, the knob table decides\n"
+                   "               (AGG_NET_ON: the network flies BALLISTA).\n"
                    "  --enemy-net  the OPPONENT is flown by the network. Fly the\n"
                    "               gym as usual and you are fighting it.\n"
                    "  --pilot N    which character the gym sends: 0 RAW, 1 JRN,\n"

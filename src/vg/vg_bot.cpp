@@ -220,6 +220,9 @@ void vg_bot_observe(VgObs* o) {
 // plan rather than a frame: see the mode layer in vg_modes.h, which is the shape
 // of that, and is not there yet.
 bool vg_enemy_net = false;
+// THE KNOB TABLE'S SAY (AGG_NET_ON), on unless --no-enemy-net turns it off too: so
+// "hand the opponents back to the tactics" still means every hull, BALLISTA included.
+bool vg_enemy_net_table = true;
 // ON, measured. Asked before the missile-evasion and tail rules rather than
 // after them, the network both deals more damage and dies less, on every seed:
 //

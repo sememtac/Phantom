@@ -338,7 +338,7 @@ static void update_aim(Ship* s, float dt) {
 // THE NETWORK FLIES THIS HULL BY THE KNOB TABLE (AGG_NET_ON), not by a flag: the final
 // playtest's BALLISTA. See vg_bot.h.
 bool vg_ai_net_hull(const ShipSpec* sp) {
-    return sp && agg(AGG_NET_ON, agg_col(sp)) > 0.5f;
+    return vg_enemy_net_table && sp && agg(AGG_NET_ON, agg_col(sp)) > 0.5f;
 }
 // ...and by the table alone, so the switches playtest 10 flew it under apply. With
 // --enemy-net the global switches decide, as they always have.
