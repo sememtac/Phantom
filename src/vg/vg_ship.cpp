@@ -129,7 +129,14 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // full four is a payoff. The round profile is untouched: these are the
         // same geometry-gated darts, so a salvo on a good line is devastating and
         // one thrown across a turn is four rounds wasted at once.
-        /* speed      */ 340.0f, /* accel */ 220.0f, /* max */ 900.0f, /* needs */ 0.98f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.95f,
+        // PLAYTEST 9, THE AUTHOR'S REDESIGN (2026-10-28), and the numbers in this row
+        // and the two below replace the ones the notes above describe. "Fire if you
+        // can find a direct line to let the missile travel fast", and "easily
+        // danced away if ships do quick turns": 650.0 on the rail, 300.0 a second more
+        // while its nose is on them, up to 1100.0, and a turn of only 1.2 rad/s. The
+        // lock is 0.25 s and a stack 0.25 s, so a full salvo is about a second of
+        // contact, and an opponent banks all four as easily as the player does.
+        /* speed      */ 650.0f, /* accel */ 300.0f, /* max */ 1100.0f, /* needs */ 0.98f, /* reach */ 1.00f, /* coast */ 0.00f, /* trade */ 0.00f, /* stack */ 0.25f,
         // FIRE AND FORGET, which is the half of the class the round could not keep.
         //
         // The bargain is that the PILOT earns the shot by lining the geometry up,
@@ -145,7 +152,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // jinks forces the round to turn, turning costs it the acceleration, and it
         // arrives slow. Set the geometry up and it is fast and unanswerable; make
         // it work for the intercept and it is neither.
-        /* seeker arc */ 2.80f, 10.0f, 0.35f,
+        /* seeker arc */ 1.2f, 10.0f, 0.35f,
         /* seeker     */ 0.50f, 2.0f, 0.9f,
         /* tactic     */ TACTIC_GEOMETRY,
         // HOLD IS THE VIEWPORT AGAIN, on purpose and for the opposite reason to
@@ -154,7 +161,7 @@ constexpr ShipSpec vg_ship_class[SHIP_CLASSES] = {
         // the idiom for "as long as they are on screen". Acquiring still costs a
         // 26 degree cone, so the contact has to be made deliberately.
         /* weapon     */ WPN_SLAAM,
-        /* fire ctrl  */ 0.90f, -2.0f, 1600.0f, 0.60f, 4, 0.55f, 6.5f,
+        /* fire ctrl  */ 0.90f, -2.0f, 1600.0f, 0.25f, 4, 0.55f, 6.5f,
     },
 
     // ---- CHARIOT -- the speed ------------------------------------------------
