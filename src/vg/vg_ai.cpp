@@ -2732,6 +2732,7 @@ static VgMnv fly_punish(Ship* s, MnvCtx* c) {
             desired         = (r > 1.0f) ? vmul(to, 1.0f / r) : s->fwd;
             s->target_speed = run;
             s->stale_t      = 0.0f;
+            broke           = true;   // its own plan, as below: no cornered pull
             return MNV_LIGHT;
         }
         const VgMnv m = fly_light(s, c);
@@ -2756,6 +2757,12 @@ static VgMnv fly_punish(Ship* s, MnvCtx* c) {
         Vec3 side = vsub(s->fwd, vmul(los, vdot(s->fwd, los)));
         if (vlen2(side) < 1e-4f) side = vcross(los, s->up);
         desired = vnorm(vadd(to, vmul(vnorm(side), agg(AGG_PP_OFS, k))));
+        // TURNING IN FROM FAR OUT (AGG_PP_TURNSPD): with the aim behind it, slower
+        // than the pass speed if that is set, because slow is a tighter turn. A
+        // CHARIOT caught far out at full speed otherwise comes round on its widest
+        // circle, and the player reads the delay as not reacting.
+        if (vdot(s->fwd, desired) < 0.0f)
+            s->target_speed = fminf(run, smin + (smax - smin) * agg(AGG_PP_TURNSPD, k));
     } else {
         // Out, away from them and on along its heading. Mostly heading, and a slow ship
         // close in settles into a circle round them; mostly away, and it leaves.
