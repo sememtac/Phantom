@@ -933,6 +933,18 @@ enum AggKnob {
     AGG_SL_PIVOT,          // 1: a pivot follows a slash; 0: straight back to the chooser
     AGG_DIR_EVTOW,         // 1: the director's evade crosses the round's path on the side toward the player
     AGG_PV_AWAY,           // 1: a pivot slows on its heading even pointing away; 0: pointing away, it turns at once
+    // PUNISH THE PARKER (playtest 9): see fly_punish.
+    AGG_PP_ON,             // 1: punish the parker (playtest 9)
+    AGG_PP_THR,            // the player's throttle at or under this is parking...
+    AGG_PP_T,              // ...for this many seconds
+    AGG_PP_SPEED,          // of its speed range, on the passes
+    AGG_PP_OFS,            // units beside the player it aims on the way in
+    AGG_PP_PASS,           // inside this range the pass is over
+    AGG_PP_EXT,            // it runs out to this range, then turns back in (0: no run out)
+    AGG_PP_ESPD,           // of its speed range, breaking across a round
+    AGG_PP_HOLD,           // 1: a semi-active round in the air is lit whatever comes in
+    AGG_PP_OUT,            // the run out: this much straight away from them...
+    AGG_PP_OUTF,           // ...plus this much of its own heading
     AGG_KNOBS
 };
 
@@ -999,6 +1011,17 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* SL_PIVOT      */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* DIR_EVTOW     */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* PV_AWAY       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_ON         */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_THR        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_T          */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_SPEED      */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_OFS        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_PASS       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_EXT        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_ESPD       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_HOLD       */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_OUT        */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* PP_OUTF       */ { 0.0f, 0.0f, 0.0f, 0.0f },
 };
 
 // THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
@@ -1109,6 +1132,18 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* SL_PIVOT      */ { 0.0f, 1.0f, 0.0f, 0.0f },
     /* DIR_EVTOW     */ { 1.0f, 0.0f, 0.0f, 0.0f },
     /* PV_AWAY       */ { 1.0f, 0.0f, 0.0f, 0.0f },
+    // PUNISH THE PARKER (playtest 9): see fly_punish.
+    /* PP_ON         */ { 1.0f, 1.0f, 1.0f, 1.0f },
+    /* PP_THR        */ { 0.03f, 0.03f, 0.03f, 0.03f },
+    /* PP_T          */ { 0.5f, 0.5f, 0.5f, 0.5f },
+    /* PP_SPEED      */ { 1.0f, 0.6f, 1.0f, 0.0f },
+    /* PP_OFS        */ { 300.0f, 0.0f, 300.0f, 0.0f },
+    /* PP_PASS       */ { 350.0f, 350.0f, 350.0f, 350.0f },
+    /* PP_EXT        */ { 1000.0f, 1000.0f, 1000.0f, 0.0f },
+    /* PP_ESPD       */ { 1.0f, 1.0f, 1.0f, 1.0f },
+    /* PP_HOLD       */ { 0.0f, 0.0f, 0.0f, 1.0f },
+    /* PP_OUT        */ { 0.5f, 0.15f, 0.5f, 0.5f },
+    /* PP_OUTF       */ { 1.0f, 1.0f, 1.0f, 1.0f },
 };
 
 // =============================================================================

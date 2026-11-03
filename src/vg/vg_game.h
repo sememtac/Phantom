@@ -217,6 +217,9 @@ struct Ship {
     uint8_t  dir_next;       // VgMnv a manoeuvre asked to be followed by
     int8_t   lib_rounds;     // rounds when the running library manoeuvre started
     float    lib_clock;      // s since the running library manoeuvre started
+    float    pp_t;           // the player's parked time, as fly_punish reads it
+    uint8_t  pp_on;          // 1 while it punishes a parked player
+    uint8_t  pp_in;          // 1 on the run in, 0 on the run out
     // NOTHING HAS LANDED FOR THIS LONG, in seconds, either way.
     //
     // A trained pilot has no idea a fight is going nowhere. Cloning teaches what

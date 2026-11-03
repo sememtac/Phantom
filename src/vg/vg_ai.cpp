@@ -2687,6 +2687,83 @@ static VgMnv fly_evade_dir(Ship* s, MnvCtx* c) {
     return MNV_EVADE;
 }
 
+// PUNISH THE PARKER (playtest 9). The player parked: throttle at the bottom, the best
+// turn in the game, and the nose kept on whoever is in front. Measured against a seat
+// that does exactly that, every hull died 14-34 times in ten minutes and never killed
+// it -- not because its rounds missed (they hit nearly every time) but because it flew
+// slow and nose-on while the parker fired each round as it came back. The author's
+// answer: "the NPC can read my throttle at all times to know when im parking and then
+// quickly turn around to attack me".
+//
+// So it reads the throttle, and while it reads parked it flies firing passes at speed:
+// in, aimed AGG_PP_OFS beside them on the side it is already crossing to, so the nose
+// sweeps the lock cone on the way and the pass never meets them; out to AGG_PP_EXT; and
+// back. A parked ship turns on the spot but cannot chase, so being fast and crossing is
+// what it cannot answer.
+static void pp_tick(Ship* s, const ShipSpec* sp, float dt) {
+    const int c = agg_col(sp);
+    if (agg(AGG_PP_ON, c) < 0.5f) { s->pp_t = 0.0f; s->pp_on = 0; return; }
+    if (vg.throttle <= agg(AGG_PP_THR, c)) s->pp_t = fminf(s->pp_t + dt, 2.0f);
+    else                                   s->pp_t = fmaxf(s->pp_t - 2.0f * dt, 0.0f);
+    const uint8_t was = s->pp_on;
+    s->pp_on = (s->pp_t >= agg(AGG_PP_T, c)) || (was && s->pp_t > 0.0f);
+    if (s->pp_on && !was) s->pp_in = 1;
+}
+
+static VgMnv fly_punish(Ship* s, MnvCtx* c) {
+    MNV_LOCALS(c);
+    const int   k  = agg_col(sp);
+    const Vec3  to = vsub(v3(0, 0, 0), s->pos);
+    const float r  = vlen(to);
+    const float run = smin + (smax - smin) * agg(AGG_PP_SPEED, k);
+    // A ROUND IN THE AIR THAT THIS SHIP IS LIGHTING (BALLISTA) keeps its light -- and
+    // with AGG_PP_HOLD keeps it whatever comes in. A parked BALLISTA lights its own
+    // rounds the whole way and they turn at five radians a second: no run outflies them,
+    // so the answer is the same duel, nose on, rounds lit.
+    if (sp->wpn == WPN_SAAAM) {
+        bool lit = false;
+        for (int i = 0; i < MAX_MISSILES && !lit; i++) {
+            const Missile* m = &vg.msl[i];
+            lit = m->alive && !m->from_player && m->shooter == index && m->locked;
+        }
+        if (lit && agg(AGG_PP_HOLD, k) > 0.5f) {
+            s->illum        = ILLUM_HOLD;
+            s->steer_by     = STEER_PRESS;
+            desired         = (r > 1.0f) ? vmul(to, 1.0f / r) : s->fwd;
+            s->target_speed = run;
+            s->stale_t      = 0.0f;
+            return MNV_LIGHT;
+        }
+        const VgMnv m = fly_light(s, c);
+        if (m != MNV_NONE) { s->target_speed = run; return m; }
+    }
+    // A ROUND COMING IN, across it, and at speed: the parker's rounds are the danger.
+    if (fly_evade(s, c) != MNV_NONE) {
+        s->target_speed = smin + (smax - smin) * agg(AGG_PP_ESPD, k);
+        return MNV_EVADE;
+    }
+    s->steer_by     = STEER_PRESS;
+    s->target_speed = run;
+    // ITS OWN PLAN, so the cornered pull leaves it alone. Bending a run out 55% toward
+    // them is what turned it into a circle round a parked player (ORBIT 47%).
+    broke = true;
+    if (r < 1.0f) { desired = s->fwd; return MNV_PRESS; }
+    const Vec3 los = vmul(to, 1.0f / r);
+    if (s->pp_in && (r < agg(AGG_PP_PASS, k) || vdot(s->fwd, los) < 0.0f)) s->pp_in = 0;
+    else if (!s->pp_in && r > agg(AGG_PP_EXT, k)) s->pp_in = 1;
+    if (s->pp_in) {
+        // The side it is already crossing to, so the run in is a curve and not a turn.
+        Vec3 side = vsub(s->fwd, vmul(los, vdot(s->fwd, los)));
+        if (vlen2(side) < 1e-4f) side = vcross(los, s->up);
+        desired = vnorm(vadd(to, vmul(vnorm(side), agg(AGG_PP_OFS, k))));
+    } else {
+        // Out, away from them and on along its heading. Mostly heading, and a slow ship
+        // close in settles into a circle round them; mostly away, and it leaves.
+        desired = vnorm(vsub(vmul(s->fwd, agg(AGG_PP_OUTF, k)), vmul(los, agg(AGG_PP_OUT, k))));
+    }
+    return MNV_PRESS;
+}
+
 static VgMnv director_choose(Ship* s, MnvCtx* c) {
     const LibFacts x   = lib_facts(s, c);
     const VgMnv    cur = (VgMnv)s->mnv;
@@ -2935,6 +3012,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
                   &desired, &broke };
     const bool directed = agg(AGG_DIR_ON, agg_col(sp)) > 0.5f;   // see director_choose
     if (directed) dir_tick(s, &mc);
+    pp_tick(s, sp, dt);
     if (vg_mnv_want_mask) s->mnv_valid = mnv_valid_mask(s, &mc);
 
     s->steer_by = STEER_NONE;
@@ -2974,6 +3052,10 @@ void vg_update_enemy(Ship* s, int index, float dt) {
 
     // EVERYTHING BELOW THE FLOORS IS A MANOEUVRE, and the rules choose it: the
     // old chain, in its old order. See rules_choose.
+    // A PARKED PLAYER, under the floors and over everything else. See fly_punish.
+    } else if (s->pp_on) {
+        flew = fly_punish(s, &mc);
+
     } else {
         flew = directed ? director_choose(s, &mc) : rules_choose(s, &mc);
         flew = mnv_select(s, &mc, flew);   // the chooser hook, if one is set

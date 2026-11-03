@@ -158,6 +158,9 @@ void vg_spawn_enemy(int i, ShipClass cls, float skill, float hue,
     s->dir_next     = 0;
     s->lib_rounds   = 0;
     s->lib_clock    = 0.0f;
+    s->pp_t         = 0.0f;
+    s->pp_on        = 0;
+    s->pp_in        = 1;
 }
 
 // ---------------------------------------------------------------------------
