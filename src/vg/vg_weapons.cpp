@@ -147,7 +147,7 @@ void vg_update_reload(float dt) {
     for (int i = 0; i < MAX_ENEMIES && !contact; i++) {
         const Ship* e = &vg.enemy[i];
         if (!e->alive) continue;
-        contact = vg_wpn_on_radar(e->pos.x, e->pos.z);
+        contact = vg_wpn_on_radar(e->pos.z, vlen(e->pos));
     }
     vg_wpn_reload_step(vg_wpn, vg.spec, dt, contact);
 }

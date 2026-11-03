@@ -152,9 +152,9 @@ inline void vg_wpn_spend(W& w, const ShipSpec* sp) {
 // price. CHARIOT dumps twelve rounds in two seconds and then has nine of nothing.
 //
 // AR-AAM REARMS BY STAYING IN THE FIGHT. The bay works a round at a time, and only
-// while a contact is held on the radar -- inside RADAR_RANGE and in the forward
-// half. Fire one, keep them in front of you, and it comes back. Turn away and
-// nothing rearms at all.
+// while a contact is held on the radar -- in the forward half, or anywhere inside
+// the radar's first arc. Fire one, keep them in front of you or close, and it
+// comes back. Turn away from a contact that is far off and nothing rearms at all.
 //
 // That inversion is the whole point of the class. AEGIS was six rounds on a short
 // trigger, which reads as "a lot of missiles" and not as anything in particular --
@@ -194,9 +194,10 @@ inline void vg_wpn_reload_step(W& w, const ShipSpec* sp, float dt, bool contact)
     }
 }
 
-// Is this contact far enough forward to hold the bay open?
+// Is this contact far enough forward, or close enough, to hold the bay open?
 //
-// `rel` is the contact in the SHOOTER's frame, +z ahead. The forward half is
+// `rel_z` is the contact in the SHOOTER's frame, +z ahead, and `range` its
+// distance. The forward half is
 // exactly the half-ellipse the radar draws: a contact behind you is parked under
 // the chord as a caret, which is a warning rather than a track.
 //
@@ -206,7 +207,11 @@ inline void vg_wpn_reload_step(W& w, const ShipSpec* sp, float dt, bool contact)
 // RADAR_RANGE looked right and was measured wrong: AEGIS fights at about 1400
 // mean range, so the bay almost never opened and the class fell from top of the
 // roster to 226 damage a run. What holds the bay open is FACING them.
-static inline bool vg_wpn_on_radar(float rel_x, float rel_z) {
-    (void)rel_x;
-    return rel_z > 0.0f;
+//
+// OR BEING CLOSE, in any direction (AR_NEAR_RANGE, the first arc). Playtest 8: a
+// pilot -- or an opponent -- that dances behind an AEGIS at knife range left it
+// with an empty bay the whole time, and the class's answer to a close fight was
+// to have nothing. Inside the first arc the radar holds them wherever they are.
+static inline bool vg_wpn_on_radar(float rel_z, float range) {
+    return rel_z > 0.0f || range <= AR_NEAR_RANGE;
 }

@@ -21,6 +21,9 @@
 #define RADAR_RX             152.0f
 #define RADAR_RY             78.0f
 #define RADAR_RANGE          1300.0f  // world units at the rim
+// AR-AAM REARMS INSIDE THE FIRST ARC, in any direction (vg_wpn_on_radar): the inner
+// ring draw_radar puts at 0.33 of the rim. 0 is the forward half only.
+#define AR_NEAR_RANGE        (RADAR_RANGE * 0.33f)
 
 // --- throttle --------------------------------------------------------------
 // A vertical strip on the LEFT edge, under the left thumb. Contacts that BEGIN

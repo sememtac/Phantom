@@ -3110,14 +3110,12 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     s->fire_cd -= dt;
 
     // THE SAME REARM RULE THE PLAYER GETS. The contact is the player, tested in
-    // this ship's own frame: inside RADAR_RANGE and in its forward half. An AEGIS
-    // that has turned its back rearms no faster than the player's would.
+    // this ship's own frame: in its forward half, or inside the radar's first arc.
+    // An AEGIS that has turned its back on a far contact rearms no faster than the
+    // player's would.
     {
         const Vec3  rel  = vsub(v3(0, 0, 0), s->pos);
-        const float fwd  = vdot(s->fwd, rel);
-        const float side = vlen(rel);
-        const float lat  = sqrtf(fmaxf(0.0f, side * side - fwd * fwd));
-        vg_wpn_reload_step(*s, sp, dt, vg_wpn_on_radar(lat, fwd));
+        vg_wpn_reload_step(*s, sp, dt, vg_wpn_on_radar(vdot(s->fwd, rel), vlen(rel)));
     }
 
     // WHETHER THIS SHOT OPENS A BURST, read before the trigger is reset.
