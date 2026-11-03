@@ -401,8 +401,18 @@ static float s_mode_t[MAX_ENEMIES];
 // a second network, and then the answer is confounded by the fit.
 bool vg_bot_modes_on = true;
 
+// THE NETWORK FLIES THIS ENEMY: the flag for every hull, or the knob table for its
+// own (vg_ai_net_hull) -- and by the table alone, playtest 10's switches.
+static bool net_for(int index) {
+    if (vg_enemy_net) return true;
+    return index >= 0 && index < MAX_ENEMIES && vg_ai_net_hull(vg.enemy[index].spec);
+}
+static bool net_by_table(int index) {
+    return !vg_enemy_net && net_for(index);
+}
+
 int vg_bot_enemy_mode(int index) {
-    if (!vg_bot_modes_on) return -1;
+    if (!vg_bot_modes_on || net_by_table(index)) return -1;
     if (index < 0 || index >= MAX_ENEMIES) return -1;
     return s_enemy_mode[index];
 }
@@ -419,7 +429,7 @@ bool vg_net_rules_trigger = false;
 
 int vg_bot_enemy_fire(int index) {
     if (index < 0 || index >= MAX_ENEMIES) return -1;
-    if (vg_net_rules_trigger) return -1;   // no opinion: the class discipline fires
+    if (vg_net_rules_trigger || net_by_table(index)) return -1;   // no opinion: the class discipline fires
     if (!s_enf_ok[index]) return -1;
     return s_enf[index] ? 1 : 0;
 }
@@ -441,7 +451,7 @@ void vg_bot_modes_reset(void) {
 }
 
 bool vg_bot_enemy_may_fly(int index) {
-    if (!vg_enemy_net || !vg_net_available()) return false;
+    if (!net_for(index) || !vg_net_available()) return false;
     if (index < 0 || index >= MAX_ENEMIES) return false;
     VgObs o;
     vg_bot_observe_enemy(index, &o);
@@ -452,7 +462,7 @@ bool vg_bot_enemy_may_fly(int index) {
 
 bool vg_bot_fly_enemy(int index, const Ship* s, Vec3* desired,
                       float* target_speed, float dt) {
-    if (!vg_enemy_net || !vg_net_available()) return false;
+    if (!net_for(index) || !vg_net_available()) return false;
     if (index < 0 || index >= MAX_ENEMIES) return false;
     if (!s || !desired || !target_speed) return false;
     // Cleared up front, so a frame the policy declines leaves no stale opinion

@@ -227,6 +227,10 @@ void vg_bot_observe_enemy(int index, VgObs* o);
 // Off by default. The hand-written AI is the game; this is the experiment, and
 // it takes the wheel only when asked.
 extern bool vg_enemy_net;
+// ...or the knob table's AGG_NET_ON for the enemy's own hull (vg_ai.cpp): the final
+// playtest's BALLISTA, flown by the baked network with no flag at all.
+struct ShipSpec;
+bool vg_ai_net_hull(const ShipSpec* sp);
 
 // HOW MUCH OF THE FIGHT THE NETWORK IS ALLOWED TO OWN.
 //

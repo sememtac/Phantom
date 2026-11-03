@@ -947,6 +947,8 @@ enum AggKnob {
     AGG_PP_OUTF,           // ...plus this much of its own heading
     // PUNISH THE PARKER, playtest 10: see fly_punish.
     AGG_PP_TURNSPD,        // of its speed range, turning in while the aim is behind it (1: no change)
+    // THE NETWORK FLIES THIS HULL (the final playtest): see vg_ai_net_hull.
+    AGG_NET_ON,            // 1: the baked network flies it, with playtest 10's switches
     AGG_KNOBS
 };
 
@@ -1025,6 +1027,7 @@ static constexpr float AGG_CALM[AGG_KNOBS][4] = {
     /* PP_OUT        */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* PP_OUTF       */ { 0.0f, 0.0f, 0.0f, 0.0f },
     /* PP_TURNSPD    */ { 0.0f, 0.0f, 0.0f, 0.0f },
+    /* NET_ON        */ { 0.0f, 0.0f, 0.0f, 1.0f },   // BALLISTA
 };
 
 // THE HOT ROW. Each hull keeps its shape -- AEGIS resets shortest, LANCE a little
@@ -1149,6 +1152,7 @@ static constexpr float AGG_HOT[AGG_KNOBS][4] = {
     /* PP_OUTF       */ { 1.0f, 1.0f, 1.0f, 1.0f },
     // PUNISH THE PARKER, playtest 10: see fly_punish.
     /* PP_TURNSPD    */ { 1.0f, 1.0f, 0.0f, 1.0f },
+    /* NET_ON        */ { 0.0f, 0.0f, 0.0f, 1.0f },   // BALLISTA
 };
 
 // =============================================================================

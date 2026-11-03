@@ -335,13 +335,25 @@ static void update_aim(Ship* s, float dt) {
 // A reflex class is better served by the reflex, and a shape class by the shape.
 // This is not a tuning constant -- it is which of the two has the memory the
 // class needs, and the tactic enum already says which class is which.
-static bool net_owns_phase(ShipTactic t) {
+// THE NETWORK FLIES THIS HULL BY THE KNOB TABLE (AGG_NET_ON), not by a flag: the final
+// playtest's BALLISTA. See vg_bot.h.
+bool vg_ai_net_hull(const ShipSpec* sp) {
+    return sp && agg(AGG_NET_ON, agg_col(sp)) > 0.5f;
+}
+// ...and by the table alone, so the switches playtest 10 flew it under apply. With
+// --enemy-net the global switches decide, as they always have.
+static bool net_by_table(const ShipSpec* sp) {
+    return !vg_enemy_net && vg_ai_net_hull(sp);
+}
+
+static bool net_owns_phase(const ShipSpec* sp) {
+    const ShipTactic t = sp->tactic;
     // UNLESS THE NETWORK IS TOLD IT OWNS THEM ALL. The table above was measured on
     // a network with no plan; the author's direction since is that every hull is
     // flown by the network inside its class's style, so this is the switch that
     // asks whether a network with a plan can fly the two classes it was kept out
     // of. Off unless a harness turns it on: see vg_net_all_phases.
-    if (vg_net_all_phases) return true;
+    if (vg_net_all_phases || net_by_table(sp)) return true;
     switch (t) {
         case TACTIC_SLASH:      // CHARIOT -- the pass has to be set up
         case TACTIC_STANDOFF:   // BALLISTA -- the whole class is holding a range
@@ -1520,7 +1532,7 @@ static bool hunting(Ship* s, const ShipSpec* sp, bool reacted, const Missile* in
     const int   c  = agg_col(sp);
     const Vec3  to = vsub(v3(0, 0, 0), s->pos);
     const float r  = vlen(to);
-    const float lo = (vg_enemy_net && vg_net_available()) ? agg(AGG_NET_HUNT_MIN, c)
+    const float lo = ((vg_enemy_net || vg_ai_net_hull(sp)) && vg_net_available()) ? agg(AGG_NET_HUNT_MIN, c)
                                                          : agg(AGG_HUNT_MIN, c);
     if (r < 1.0f || r > agg(AGG_HUNT_RANGE, c) * sp->lock_range || r < lo * sp->lock_range)
         return false;
@@ -1774,7 +1786,7 @@ static VgMnv fly_net_early(Ship* s, MnvCtx* c) {
     // THE NETWORK, ASKED EARLY, when it is allowed to own more than positioning.
     // It declines a class it never learned and a boundary, so the layers below
     // still fly everything it will not.
-    if (!(vg_net_owns_survival && net_owns_phase(sp->tactic) &&
+    if (!(vg_net_owns_survival && net_owns_phase(sp) &&
           vg_bot_fly_enemy(index, s, &desired, &s->target_speed, dt)))
         return MNV_NONE;
     s->steer_by = STEER_NET;
@@ -2468,7 +2480,7 @@ static uint32_t mnv_valid_mask(const Ship* s, const MnvCtx* c) {
 // WHERE EACH SITS IN THE RULES' ORDER. The network is asked early only when it owns
 // survival. The hunt and its break-away are one layer.
 static int rules_rank(VgMnv m, const ShipSpec* sp) {
-    const bool early = vg_net_owns_survival && net_owns_phase(sp->tactic);
+    const bool early = vg_net_owns_survival && net_owns_phase(sp);
     switch (m) {
         case MNV_LIGHT:    return 0;
         case MNV_EXPOSED:  return 1;
@@ -2495,7 +2507,7 @@ static VgMnv mnv_first_valid(const Ship* s, const ShipSpec* sp) {
     static const VgMnv ORDER[] = { MNV_LIGHT, MNV_EXPOSED, MNV_CBREAK, MNV_BREAKOUT, MNV_HUNT,
                                    MNV_RESET, MNV_NET, MNV_EVADE, MNV_TAIL, MNV_DRY,
                                    MNV_PRESS, MNV_NET, MNV_STANDOFF, MNV_PLAN };
-    const bool early = vg_net_owns_survival && net_owns_phase(sp->tactic);
+    const bool early = vg_net_owns_survival && net_owns_phase(sp);
     for (int k = 0; k < (int)(sizeof(ORDER) / sizeof(ORDER[0])); k++) {
         if (k == 6 && !early) continue;
         if (s->mnv_valid & (1u << ORDER[k])) return ORDER[k];
@@ -3130,7 +3142,7 @@ void vg_update_enemy(Ship* s, int index, float dt) {
     // vg_net_corner_exempt.
     if (s->hull < sp->hull * ENEMY_CORNERED_HULL &&
         s->steer_by != STEER_WALL && s->steer_by != STEER_EVADE && !broke &&
-        !(vg_net_corner_exempt && s->steer_by == STEER_NET)) {
+        !((vg_net_corner_exempt || net_by_table(sp)) && s->steer_by == STEER_NET)) {
         const Vec3  to = vsub(v3(0, 0, 0), s->pos);
         const float r  = vlen(to);
         if (r > 1.0f) {
